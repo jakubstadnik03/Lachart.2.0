@@ -6,6 +6,8 @@ import {
   getSportsWithZoneData,
   pickZoneTimes,
   pickZoneDefs,
+  formatZoneBoundaryLabel,
+  pickZoneDef,
   SPORT_LABELS,
   SPORT_ICON_COLORS,
 } from '../../utils/zoneSportStats';
@@ -31,14 +33,6 @@ function fmtDuration(secs) {
   return `${h}h ${m}m`;
 }
 
-/** Format seconds/km → "4:32" */
-function fmtPace(sPerKm) {
-  if (!sPerKm || sPerKm <= 0 || !isFinite(sPerKm)) return '∞';
-  const mn = Math.floor(sPerKm / 60);
-  const sc = Math.round(sPerKm % 60);
-  return `${mn}:${String(sc).padStart(2, '0')}`;
-}
-
 /** Returns the YYYY-MM key for the current or previous month. */
 function monthKey(offset = 0) {
   const now = new Date();
@@ -57,30 +51,6 @@ function weekBounds(offset = 0) {
   sunday.setDate(monday.getDate() + 6);
   sunday.setHours(23, 59, 59, 999);
   return { startDate: monday, endDate: sunday };
-}
-
-/** Format a zone boundary range string from a def object. */
-function zoneRangeLabel(zoneDef, type) {
-  if (!zoneDef) return null;
-
-  if (type === 'pace') {
-    // Pace zones: min/max in seconds/km. Faster = lower number.
-    // min = fastest (harder), max = slowest (easier)
-    const fastStr = (zoneDef.max != null && zoneDef.max !== Infinity) ? fmtPace(zoneDef.max) : null;
-    const slowStr = zoneDef.min != null ? fmtPace(zoneDef.min) : null;
-    if (fastStr && slowStr) return `${fastStr}–${slowStr}/km`;
-    if (fastStr)             return `faster than ${fastStr}/km`;
-    if (slowStr)             return `slower than ${slowStr}/km`;
-    return null;
-  }
-
-  const unit = type === 'hr' ? 'bpm' : 'W';
-  const lo = zoneDef.min != null ? Math.round(zoneDef.min) : null;
-  const hi = (zoneDef.max != null && zoneDef.max !== Infinity) ? Math.round(zoneDef.max) : null;
-  if (lo == null && hi == null) return null;
-  if (hi == null) return `> ${lo} ${unit}`;
-  if (lo == null || lo === 0) return `< ${hi} ${unit}`;
-  return `${lo}–${hi} ${unit}`;
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -427,9 +397,13 @@ export default function ZoneDistCard({ athleteId = null }) {
 
               // Zone boundary from server
               const def = zoneBoundaries
-                ? (zoneBoundaries.defs[zNum] ?? zoneBoundaries.defs[String(zNum)])
+                ? pickZoneDef(zoneBoundaries.defs, zNum)
                 : null;
-              const boundLabel = def ? zoneRangeLabel(def, zoneBoundaries.type) : null;
+              const boundLabel = def
+                ? formatZoneBoundaryLabel(zNum, def, zoneBoundaries?.defs, zoneBoundaries?.type, {
+                    paceUnit: sport === 'swim' ? '/100m' : '/km',
+                  })
+                : null;
 
               // Icon in expanded panel
               const BoundIcon = () => {

@@ -6,6 +6,8 @@ import { getMonthlyPowerAnalysis } from '../../services/api';
 import { useAuth } from '../../context/AuthProvider';
 import {
   getSportsWithZoneData,
+  formatZoneBoundaryLabel,
+  pickZoneDef,
   SPORT_LABELS,
   SPORT_ICON_COLORS,
 } from '../../utils/zoneSportStats';
@@ -448,24 +450,11 @@ export default function ZoneDistributionChart({ selectedAthleteId = null }) {
 
   // ── Zone boundary range string ─────────────────────────────────────────────
   const getZoneRange = (zoneNum) => {
-    const def = pickBucket(zoneDefs, zoneNum);
+    const def = pickZoneDef(zoneDefs, zoneNum);
     if (!def) return '';
-    const minVal = def.min;
-    const maxVal = def.max;
-    const maxStr = (maxVal === Infinity || maxVal === null || maxVal === undefined)
-      ? '∞'
-      : Math.round(maxVal);
-    const minStr = Math.round(minVal) || 0;
-
-    if (metric === 'power') return `${minStr}–${maxStr} W`;
-    if (metric === 'hr')    return `${minStr}–${maxStr} bpm`;
-    if (metric === 'pace') {
-      // Pace zones: higher number = slower; display fast end → slow end
-      const fastStr = maxVal === Infinity || !maxVal ? '∞' : fmtPace(maxVal);
-      const slowStr = fmtPace(minVal);
-      return `${fastStr}–${slowStr}/km`;
-    }
-    return '';
+    return formatZoneBoundaryLabel(zoneNum, def, zoneDefs, metric, {
+      paceUnit: sport === 'swim' ? '/100m' : '/km',
+    });
   };
 
   // ── Average value formatter ───────────────────────────────────────────────

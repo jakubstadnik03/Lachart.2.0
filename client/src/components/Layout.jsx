@@ -18,6 +18,7 @@ import {
   markZonesDashboardPromptDismissed,
 } from "../utils/trainingZonesSetup";
 import { setupStravaOAuthReturnListener } from "../utils/stravaOAuthReturn";
+import { setupGarminOAuthReturnListener } from "../utils/garminOAuthReturn";
 
 // Admin sees coach UI only when their role is not 'athlete'.
 const isCoachRole = (user) =>
@@ -335,7 +336,7 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
   // ── Garmin: frontend polling (no webhook support) ─────────────────────────
   useEffect(() => {
     if (!user?._id) return undefined;
-    const hasGarmin = !!(user?.garmin?.autoSync && user?.garmin?.accessToken);
+    const hasGarmin = !!(user?.garmin?.connected && user?.garmin?.autoSync);
     if (!hasGarmin) return undefined;
 
     let cancelled = false;
@@ -389,7 +390,7 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
   }, [
     user?._id,
     user?.garmin?.autoSync,
-    user?.garmin?.accessToken,
+    user?.garmin?.connected,
   ]);
 
   // ── Strava: frontend polling fallback ────────────────────────────────────
@@ -465,6 +466,12 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
   useEffect(() => {
     if (!user?._id) return undefined;
     return setupStravaOAuthReturnListener({ onNotify: addNotification });
+  }, [user?._id, addNotification]);
+
+  // Garmin OAuth return — Settings redirect after OAuth connect.
+  useEffect(() => {
+    if (!user?._id) return undefined;
+    return setupGarminOAuthReturnListener({ onNotify: addNotification });
   }, [user?._id, addNotification]);
 
   // First-time product tour (after onboarding modals — delay so they don't stack)

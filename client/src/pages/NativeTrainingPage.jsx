@@ -4,7 +4,7 @@
 //   2. Workout progress     — pick a repeated workout, see all instances overlaid
 //                             on a multi-series chart (Power / HR / Lactate / RPE),
 //                             and a session list with delta vs first session
-//   3. Lactate-tested list  — history of trainings with mmol values
+//   3. Interval trainings   — exported / structured sessions with lap bars (with or without lactate)
 //
 // Tapping any activity opens the same ActivityFullModal CalendarView uses
 // (Summary / Laps / Edit · stats · map · chart · Lactate button).
@@ -25,6 +25,7 @@ import api from '../services/api';
 import { buildActivityMatcher, metricsPatchFromDetail } from '../utils/activityEventPatches';
 import { addTraining, updateTraining, getStravaActivityDetail, createFieldLactateMeasurement, updateStravaLactateValues, getFieldLactateMeasurements, deleteFieldLactateMeasurement, assignFieldLactateMeasurement } from '../services/api';
 import { useCategories, hexToRgba } from '../context/CategoryContext';
+import { normalizeCategoryKey } from '../utils/trainingCategory';
 import RecordLactateModal from '../components/training/RecordLactateModal';
 import { SearchableSelect } from '../components/SearchableSelect';
 // Lazy-load — keeps the heavy editor/modal chunks out of this page's bundle
@@ -144,6 +145,67 @@ function mergeLapsPreserveLactate(freshLaps, stubLaps) {
 }
 
 function activityKey(a) { if (!a) return ''; return String(a.stravaId || a._id || a.id || ''); }
+
+const INTERVAL_CAT_ALL = '__all__';
+const INTERVAL_CAT_UNCATEGORIZED = '__uncategorized__';
+
+function filterTrainingsByCategory(list, categoryId) {
+  if (categoryId === INTERVAL_CAT_ALL) return list;
+  if (categoryId === INTERVAL_CAT_UNCATEGORIZED) {
+    return list.filter(t => !normalizeCategoryKey(t.category));
+  }
+  return list.filter(t => normalizeCategoryKey(t.category) === categoryId);
+}
+
+function buildCategoryCounts(trainings) {
+  const counts = { [INTERVAL_CAT_ALL]: trainings.length, [INTERVAL_CAT_UNCATEGORIZED]: 0 };
+  trainings.forEach((t) => {
+    const cat = normalizeCategoryKey(t.category);
+    if (cat) counts[cat] = (counts[cat] || 0) + 1;
+    else counts[INTERVAL_CAT_UNCATEGORIZED] += 1;
+  });
+  return counts;
+}
+
+function CategoryFilterChips({ categories, categoryCounts, categoryId, onChange, style }) {
+  const chips = [
+    { id: INTERVAL_CAT_ALL, label: 'All', color: '#6b7280', count: categoryCounts[INTERVAL_CAT_ALL] },
+    ...categories
+      .filter(c => (categoryCounts[c.id] || 0) > 0)
+      .map(c => ({ id: c.id, label: c.label, color: c.color, count: categoryCounts[c.id] })),
+    ...(categoryCounts[INTERVAL_CAT_UNCATEGORIZED] > 0
+      ? [{ id: INTERVAL_CAT_UNCATEGORIZED, label: 'Uncategorized', color: '#9ca3af', count: categoryCounts[INTERVAL_CAT_UNCATEGORIZED] }]
+      : []),
+  ];
+  return (
+    <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', ...style }}>
+      {chips.map((c) => {
+        const active = categoryId === c.id;
+        return (
+          <button
+            key={c.id}
+            type="button"
+            onClick={() => onChange(c.id)}
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 5,
+              padding: '3px 9px', borderRadius: 9999,
+              border: active ? `1px solid ${c.color}` : '1px solid rgba(118,126,181,.18)',
+              background: active ? hexToRgba(c.color, 0.16) : 'rgba(255,255,255,.55)',
+              color: active ? c.color : '#6B7280',
+              fontFamily: 'inherit', fontSize: 10, fontWeight: 700,
+              cursor: 'pointer',
+              WebkitTapHighlightColor: 'transparent', touchAction: 'manipulation',
+            }}
+          >
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: c.color, flexShrink: 0 }} />
+            {c.label}
+            <span style={{ fontVariantNumeric: 'tabular-nums', opacity: 0.75 }}>{c.count}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 // Parse a "result" interval's duration (seconds). Mirrors TrainingComparison.
 // Handles both time-based intervals (duration is seconds) and distance-based
@@ -1328,7 +1390,9 @@ export default function NativeTrainingPage({
 }) {
   const navigate = useNavigate();
   useNativeTabScrollToTop('training');
+  const { categories } = useCategories();
   const [selectedSport, setSelectedSport] = useState('all');
+  const [categoryFilterId, setCategoryFilterId] = useState(INTERVAL_CAT_ALL);
   const [showRecordLactate, setShowRecordLactate] = useState(false);
 
   // ── Field lactate measurements (Record button) ─────────────────────────────
@@ -1454,10 +1518,13 @@ export default function NativeTrainingPage({
   // ── Pagination state (declared early — used by the slicing logic below) ───
   const PAGE_SIZE = 4;
   const [annotateLimit, setAnnotateLimit] = useState(PAGE_SIZE);   // "Add lactate" → Show More
-  const [annotatedPage,  setAnnotatedPage]  = useState(0);          // "Lactate-tested" → prev/next pages
-  const [expandedTestedId, setExpandedTestedId] = useState(null);   // which row in Lactate-tested is expanded
-  const toggleExpanded = (id) => setExpandedTestedId(prev => (String(prev) === String(id) ? null : String(id)));
-  useEffect(() => { setAnnotateLimit(PAGE_SIZE); setAnnotatedPage(0); }, [selectedSport]);
+  const [intervalPage, setIntervalPage] = useState(0);             // "Interval trainings" → prev/next pages
+  const [expandedIntervalId, setExpandedIntervalId] = useState(null);
+  const toggleExpanded = (id) => setExpandedIntervalId(prev => (String(prev) === String(id) ? null : String(id)));
+  useEffect(() => {
+    setAnnotateLimit(PAGE_SIZE);
+    setIntervalPage(0);
+  }, [selectedSport, categoryFilterId]);
 
   // ── Lactate annotation queue (full list — pagination happens at render) ──
   //
@@ -1488,11 +1555,24 @@ export default function NativeTrainingPage({
   const annotateQueue = annotateQueueAll.slice(0, annotateLimit);
 
   // ── Group by title — used for the comparison chart ────────────────────────
-  // Only sessions with intervals (and ideally with lactate) are useful for comparison.
+  const intervalTrainingsBase = useMemo(
+    () => dedupBySession(filtered.filter(t => hasLaps(t))),
+    [filtered]
+  );
+
+  const categoryCounts = useMemo(
+    () => buildCategoryCounts(intervalTrainingsBase),
+    [intervalTrainingsBase]
+  );
+
+  const categoryFilteredTrainings = useMemo(
+    () => filterTrainingsByCategory(intervalTrainingsBase, categoryFilterId),
+    [intervalTrainingsBase, categoryFilterId]
+  );
+
   const grouped = useMemo(() => {
     const m = {};
-    for (const t of filtered) {
-      if (!hasLaps(t)) continue; // need intervals to compare
+    for (const t of categoryFilteredTrainings) {
       const key = (t.title || t.name || 'Untitled').trim();
       if (!m[key]) m[key] = [];
       m[key].push(t);
@@ -1522,13 +1602,17 @@ export default function NativeTrainingPage({
         const bLatest = Math.max(...b[1].map(getDate).map(d => d.getTime()));
         return bLatest - aLatest;
       });
-  }, [filtered]);
+  }, [categoryFilteredTrainings]);
 
-  // Auto-select the most-repeated workout once data arrives
+  // Auto-select the most-repeated workout once data or category filter changes
   useEffect(() => {
+    if (grouped.length === 0) {
+      setSelectedTitle(null);
+      return;
+    }
     if (selectedTitle && grouped.find(([t]) => t === selectedTitle)) return;
-    if (grouped.length > 0) setSelectedTitle(grouped[0][0]);
-  }, [grouped, selectedTitle]);
+    setSelectedTitle(grouped[0][0]);
+  }, [grouped, selectedTitle, categoryFilterId]);
 
   const sessions = useMemo(() => {
     if (!selectedTitle) return [];
@@ -1538,16 +1622,13 @@ export default function NativeTrainingPage({
     return g[1].slice().sort((a, b) => getDate(a) - getDate(b));
   }, [grouped, selectedTitle]);
 
-  // ── All annotated trainings (full list — pagination happens at render) ────
-  const annotatedAll = useMemo(
-    () => filtered.filter(t => hasLactate(t)),
-    [filtered]
-  );
-  const annotatedTotalPages = Math.max(1, Math.ceil(annotatedAll.length / PAGE_SIZE));
-  const annotatedPageClamped = Math.min(annotatedPage, annotatedTotalPages - 1);
-  const annotated = annotatedAll.slice(
-    annotatedPageClamped * PAGE_SIZE,
-    annotatedPageClamped * PAGE_SIZE + PAGE_SIZE
+  const intervalTrainingsAll = categoryFilteredTrainings;
+
+  const intervalTotalPages = Math.max(1, Math.ceil(intervalTrainingsAll.length / PAGE_SIZE));
+  const intervalPageClamped = Math.min(intervalPage, intervalTotalPages - 1);
+  const intervalTrainings = intervalTrainingsAll.slice(
+    intervalPageClamped * PAGE_SIZE,
+    intervalPageClamped * PAGE_SIZE + PAGE_SIZE
   );
 
   // ── Activity full modal ───────────────────────────────────────────────────
@@ -2251,7 +2332,7 @@ export default function NativeTrainingPage({
           )}
 
           {/* ─── Training History — the visual comparison card ─── */}
-          {grouped.length > 0 && (() => {
+          {intervalTrainingsBase.length > 0 && (() => {
             // Workout title navigation (prev/next chevrons)
             const titleIdx = Math.max(0, grouped.findIndex(([t]) => t === selectedTitle));
             const goPrev = () => { const i = (titleIdx - 1 + grouped.length) % grouped.length; setSelectedTitle(grouped[i][0]); };
@@ -2295,13 +2376,32 @@ export default function NativeTrainingPage({
                         <path d="M3 5h18M6 12h12M10 19h4" />
                       </svg>
                     </button>
-                    <span style={{ fontSize: 10, color: '#9CA3AF', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
-                      {titleIdx + 1}/{totalTitles}
-                    </span>
-                    <ChevronBtn dir="prev" onClick={goPrev} disabled={totalTitles <= 1} small />
-                    <ChevronBtn dir="next" onClick={goNext} disabled={totalTitles <= 1} small />
+                    {totalTitles > 0 && (
+                      <>
+                        <span style={{ fontSize: 10, color: '#9CA3AF', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
+                          {titleIdx + 1}/{totalTitles}
+                        </span>
+                        <ChevronBtn dir="prev" onClick={goPrev} disabled={totalTitles <= 1} small />
+                        <ChevronBtn dir="next" onClick={goNext} disabled={totalTitles <= 1} small />
+                      </>
+                    )}
                   </div>
                 </div>
+
+                <CategoryFilterChips
+                  categories={categories}
+                  categoryCounts={categoryCounts}
+                  categoryId={categoryFilterId}
+                  onChange={setCategoryFilterId}
+                  style={{ marginBottom: 10 }}
+                />
+
+                {grouped.length === 0 ? (
+                  <p style={{ fontSize: 11, color: '#9CA3AF', margin: 0, padding: '4px 2px 8px' }}>
+                    No interval trainings in this category.
+                  </p>
+                ) : (
+                <>
 
                 {/* Workout selector — searchable dropdown shared with the
                     Training Comparison block, so a coach with hundreds of
@@ -2707,6 +2807,8 @@ export default function NativeTrainingPage({
                     </>
                   );
                 })()}
+                </>
+                )}
               </GlassCard>
             </div>
             );
@@ -2782,58 +2884,73 @@ export default function NativeTrainingPage({
             </GlassCard>
           </div>
 
-          {/* ─── Lactate-tested — paginated, with inline lap strips ─── */}
-          {annotatedAll.length > 0 && (
+          {/* ─── Interval trainings — paginated, with inline lap strips ─── */}
+          {intervalTrainingsBase.length > 0 && (
             <div style={{ ...cardEntry(4), ...snap }}>
               <GlassCard>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    {/* Target / activity icon — 'Lactate-tested' */}
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-                      <circle cx="12" cy="12" r="10" />
-                      <polyline points="9 12 11 14 15.5 9.5" />
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#5E6590" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                      <rect x="3" y="12" width="3" height="8" rx="1" />
+                      <rect x="9" y="8" width="3" height="12" rx="1" />
+                      <rect x="15" y="4" width="3" height="16" rx="1" />
                     </svg>
-                    <SectionTitle>Lactate-tested</SectionTitle>
+                    <SectionTitle>Interval trainings</SectionTitle>
                     <span style={{ fontSize: 10.5, color: '#9CA3AF', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
-                      ({annotatedAll.length})
+                      ({intervalTrainingsAll.length}{categoryFilterId !== INTERVAL_CAT_ALL ? ` / ${intervalTrainingsBase.length}` : ''})
                     </span>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                     <span style={{ fontSize: 10, color: '#9CA3AF', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
-                      {annotatedTotalPages > 1 ? `${annotatedPageClamped + 1}/${annotatedTotalPages}` : ''}
+                      {intervalTotalPages > 1 ? `${intervalPageClamped + 1}/${intervalTotalPages}` : ''}
                     </span>
                     <ChevronBtn dir="prev"
-                      onClick={() => setAnnotatedPage(p => Math.max(0, p - 1))}
-                      disabled={annotatedPageClamped === 0} small
+                      onClick={() => setIntervalPage(p => Math.max(0, p - 1))}
+                      disabled={intervalPageClamped === 0} small
                     />
                     <ChevronBtn dir="next"
-                      onClick={() => setAnnotatedPage(p => Math.min(annotatedTotalPages - 1, p + 1))}
-                      disabled={annotatedPageClamped >= annotatedTotalPages - 1} small
+                      onClick={() => setIntervalPage(p => Math.min(intervalTotalPages - 1, p + 1))}
+                      disabled={intervalPageClamped >= intervalTotalPages - 1} small
                     />
                   </div>
                 </div>
-                <div
-                  key={`tested-page-${annotatedPageClamped}`}
-                  style={{
-                    display: 'flex', flexDirection: 'column', gap: 6,
-                    animation: 'ndFadeIn .3s cubic-bezier(.22,1,.36,1) both',
-                  }}
-                >
-                  {annotated.map((t, idx) => {
-                    const id = activityKey(t);
-                    const isExpanded = String(expandedTestedId) === String(id);
-                    return (
-                      <ExpandableLactateRow
-                        key={id + '-' + idx}
-                        activity={t}
-                        delay={idx * 30}
-                        expanded={isExpanded}
-                        onToggle={() => toggleExpanded(id)}
-                        onOpenFull={() => openActivity(t)}
-                      />
-                    );
-                  })}
-                </div>
+
+                <CategoryFilterChips
+                  categories={categories}
+                  categoryCounts={categoryCounts}
+                  categoryId={categoryFilterId}
+                  onChange={setCategoryFilterId}
+                  style={{ marginBottom: 10 }}
+                />
+
+                {intervalTrainingsAll.length === 0 ? (
+                  <p style={{ fontSize: 11, color: '#9CA3AF', margin: 0, padding: '4px 2px 8px' }}>
+                    No interval trainings in this category.
+                  </p>
+                ) : (
+                  <div
+                    key={`interval-page-${intervalPageClamped}-${categoryFilterId}`}
+                    style={{
+                      display: 'flex', flexDirection: 'column', gap: 6,
+                      animation: 'ndFadeIn .3s cubic-bezier(.22,1,.36,1) both',
+                    }}
+                  >
+                    {intervalTrainings.map((t, idx) => {
+                      const id = activityKey(t);
+                      const isExpanded = String(expandedIntervalId) === String(id);
+                      return (
+                        <ExpandableLactateRow
+                          key={id + '-' + idx}
+                          activity={t}
+                          delay={idx * 30}
+                          expanded={isExpanded}
+                          onToggle={() => toggleExpanded(id)}
+                          onOpenFull={() => openActivity(t)}
+                        />
+                      );
+                    })}
+                  </div>
+                )}
               </GlassCard>
             </div>
           )}
@@ -3179,7 +3296,7 @@ function ActivityRow({ activity, onTap, onAddLactate, delay = 0, showLactateActi
         </span>
       )}
 
-      {/* Inline lap strip + lactate badge — for the Lactate-tested card */}
+      {/* Inline lap strip + lactate badge — for the Interval trainings card */}
       {showLapStrip && (
         <div style={{
           display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 3,
@@ -3222,7 +3339,7 @@ function ActivityRow({ activity, onTap, onAddLactate, delay = 0, showLactateActi
 }
 
 // ─── ExpandableLactateRow — tap to expand inline lap details ─────────────────
-// Used in the "Lactate-tested" card. Tap header → expands showing per-lap
+// Used in the "Interval trainings" card. Tap header → expands showing per-lap
 // values + lactate. Tap "Open full training" → opens activity modal.
 
 function ExpandableLactateRow({ activity, delay = 0, expanded, onToggle, onOpenFull }) {
@@ -3238,7 +3355,7 @@ function ExpandableLactateRow({ activity, delay = 0, expanded, onToggle, onOpenF
   const title = t.title || t.name || t.titleManual || `${sport.charAt(0).toUpperCase() + sport.slice(1)} workout`;
   const isPaceSport = sport === 'run' || sport === 'swim';
 
-  // Lactate-tested trainings often have no totalTime/duration on the activity
+  // Interval trainings often have no totalTime/duration on the activity
   // itself — derive the duration by summing the intervals/laps instead so the
   // card shows the real workout length instead of "0m".
   const intervalsAll = getIntervals(t);

@@ -916,6 +916,12 @@ router.put("/edit-profile", verifyToken, async (req, res) => {
                 autoSync: updatedUser.strava.autoSync !== undefined ? updatedUser.strava.autoSync : false,
                 lastSyncDate: updatedUser.strava.lastSyncDate
             } : null,
+            garmin: updatedUser.garmin?.accessToken ? {
+                athleteId: updatedUser.garmin.athleteId || null,
+                autoSync: updatedUser.garmin.autoSync !== undefined ? updatedUser.garmin.autoSync : false,
+                lastSyncDate: updatedUser.garmin.lastSyncDate || null,
+                connected: true,
+            } : null,
             coachBranding: updatedUser.coachBranding
                 ? {
                     logoUrl:      updatedUser.coachBranding.logoUrl      ?? null,
@@ -1249,7 +1255,13 @@ router.get("/athlete/:athleteId/profile", verifyToken, async (req, res) => {
               athleteId: athlete.strava.athleteId,
               autoSync: athlete.strava.autoSync !== undefined ? athlete.strava.autoSync : false,
               lastSyncDate: athlete.strava.lastSyncDate
-            } : null
+            } : null,
+            garmin: athlete.garmin?.accessToken ? {
+              athleteId: athlete.garmin.athleteId || null,
+              autoSync: athlete.garmin.autoSync !== undefined ? athlete.garmin.autoSync : false,
+              lastSyncDate: athlete.garmin.lastSyncDate || null,
+              connected: true,
+            } : null,
         };
 
         res.status(200).json(athleteResponse);
@@ -1330,6 +1342,12 @@ router.get("/profile", verifyToken, async (req, res) => {
               autoSync: user.strava.autoSync !== undefined ? user.strava.autoSync : false,
               lastSyncDate: user.strava.lastSyncDate
               // Don't include accessToken, refreshToken, expiresAt for security
+            } : null,
+            garmin: user.garmin?.accessToken ? {
+              athleteId: user.garmin.athleteId || null,
+              autoSync: user.garmin.autoSync !== undefined ? user.garmin.autoSync : false,
+              lastSyncDate: user.garmin.lastSyncDate || null,
+              connected: true,
             } : null,
             coachBranding: user.coachBranding
               ? {

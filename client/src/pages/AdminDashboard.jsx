@@ -4689,7 +4689,7 @@ function WhatsNewMay2026Card() {
   return (
     <PacedEmailCampaignCard
       title="What's new — May 2026"
-      description="Re-engagement email announcing lactate-test, training-log, calendar improvements + coming-soon mobile app. Auto-detects CZ/EN per recipient. Honours email-notifications opt-out and is idempotent (no double sends)."
+      description="Re-engagement email (English only) highlighting the iPhone app on the App Store, workout planner, training calendar, and lactate-test upgrades. Honours email-notifications opt-out and is idempotent (no double sends)."
       fetchStatusApi={fetchWhatsNewMay2026Status}
       sendPreviewApi={sendWhatsNewMay2026Preview}
       runCampaignApi={runWhatsNewMay2026Campaign}

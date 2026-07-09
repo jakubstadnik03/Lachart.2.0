@@ -15,6 +15,7 @@ import { useAuth } from '../../context/AuthProvider';
 import { resolveDistanceUnitSystem } from '../../utils/unitsConverter';
 import { SearchableSelect } from '../SearchableSelect';
 import { getStravaActivityDetail } from '../../services/api';
+import { filterWorkResults } from '../../utils/workLapFilter';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend);
 
@@ -192,23 +193,6 @@ function parsePowerToNumber(value, isRun) {
   return null;
 }
 
-// ── Keep only the "work" intervals for the chart ──────────────────────────────
-// Lactate / interval sessions include warm-up, recovery and cool-down laps. The
-// graph should plot only the actual work intervals. If the training has any
-// explicitly tagged interval, drop the ones tagged warmup / recovery / cooldown
-// / rest (keeping 'work' and untagged). If nothing is tagged, leave the data as
-// is so non-interval trainings still render.
-function filterWorkResults(results) {
-  if (!Array.isArray(results) || results.length === 0) return results || [];
-  const tagged = results.some(r => r && r.intervalType);
-  if (!tagged) return results;
-  const workOnly = results.filter(r => {
-    const t = String(r?.intervalType || '').toLowerCase();
-    return t !== 'warmup' && t !== 'recovery' && t !== 'cooldown' && t !== 'rest';
-  });
-  return workOnly.length > 0 ? workOnly : results;
-}
-
 // ── Main component ──────────────────────────────────────────────────────────
 const TrainingGraph = ({
   trainingList = [],
@@ -251,10 +235,16 @@ const TrainingGraph = ({
     (training, sport) => sport === 'all' || trainingSport(training) === normalizeSport(sport),
     [trainingSport, normalizeSport]
   );
-  // Strava activities use `id`, FIT/regular use `_id` — match either.
+  // Strava activities use `id`, FIT/regular use `_id` — match either (+ stravaId).
   const matchesId = useCallback((t, id) => {
     if (t == null || id == null) return false;
-    return String(t._id) === String(id) || String(t.id) === String(id);
+    const sid = String(id);
+    for (const key of [t._id, t.id, t.stravaId]) {
+      if (key != null && String(key) === sid) return true;
+    }
+    const raw = String(t.id || '');
+    if (raw.startsWith('strava-') && raw.slice(7) === sid) return true;
+    return false;
   }, []);
   // Strava: startDate/start_date, FIT: timestamp, regular: date.
   const trainingDateMs = useCallback((t) => {
@@ -404,10 +394,13 @@ const TrainingGraph = ({
     }
     const hasResults = (t) => Array.isArray(t?.results) && t.results.length > 0;
 
-    // Happy path: current pair is consistent.
-    if (selectedTraining && selectedTitle) {
-      const currentTraining = trainingList.find(t => matchesId(t, selectedTraining));
-      if (currentTraining && currentTraining.title === selectedTitle && matchesSport(currentTraining, currentSelectedSport)) {
+    // Trust explicit id from parent (TrainingStats) when it resolves in our list.
+    if (selectedTraining) {
+      const byId = trainingList.find(t => matchesId(t, selectedTraining));
+      if (byId && matchesSport(byId, currentSelectedSport)) {
+        if (setSelectedTitle && byId.title && byId.title !== selectedTitle) {
+          setSelectedTitle(byId.title);
+        }
         return;
       }
     }
@@ -416,9 +409,11 @@ const TrainingGraph = ({
     if (selectedTitle) {
       const trainingsWithTitle = sportTrainings.filter(t => t.title === selectedTitle).sort((a, b) => trainingDateMs(b) - trainingDateMs(a));
       if (trainingsWithTitle.length > 0) {
-        const pick = trainingsWithTitle.find(hasResults) ?? trainingsWithTitle[0];
+        const pick = (selectedTraining && trainingsWithTitle.find(t => matchesId(t, selectedTraining)))
+          || trainingsWithTitle.find(hasResults)
+          || trainingsWithTitle[0];
         const pickId = pick._id || pick.id;
-        if (!selectedTraining || !trainingsWithTitle.some(t => matchesId(t, selectedTraining))) {
+        if (!selectedTraining || !matchesId(pick, selectedTraining)) {
           if (setSelectedTraining) setSelectedTraining(pickId);
         }
         return;
@@ -434,16 +429,12 @@ const TrainingGraph = ({
     }
 
     // No title yet — pick newest with results.
-    if (selectedTraining) {
-      const currentTraining = trainingList.find(t => matchesId(t, selectedTraining));
-      if (currentTraining && matchesSport(currentTraining, currentSelectedSport)) {
-        if (setSelectedTitle && currentTraining.title !== selectedTitle) setSelectedTitle(currentTraining.title);
-        return;
-      }
-    }
     const sortedTrainings = [...sportTrainings].sort((a, b) => trainingDateMs(b) - trainingDateMs(a));
     const newest = sortedTrainings.find(hasResults) ?? sortedTrainings[0];
-    if (newest) { if (setSelectedTitle) setSelectedTitle(newest.title); if (setSelectedTraining) setSelectedTraining(newest._id || newest.id); }
+    if (newest) {
+      if (setSelectedTitle) setSelectedTitle(newest.title);
+      if (setSelectedTraining) setSelectedTraining(newest._id || newest.id);
+    }
   }, [currentSelectedSport, trainingList, selectedTraining, selectedTitle, setSelectedTitle, setSelectedTraining, matchesSport, matchesId, trainingDateMs]);
 
   const computeRanges = useCallback((resultsArr, sport) => {
@@ -453,13 +444,24 @@ const TrainingGraph = ({
     const isPace = isRun || isSwim;
     const powers = resultsArr.map(r => parsePowerToNumber(r.power, isPace)).filter(v => v !== null && v > 0);
     const heartRates = resultsArr.map(r => { const n = Number(r.heartRate); return isFinite(n) && n > 0 ? n : null; }).filter(v => v !== null);
+
+    const niceBounds = (min, max, stepHint) => {
+      const span = max - min || stepHint;
+      const step = Math.max(stepHint, Math.pow(10, Math.floor(Math.log10(span / 4))) * Math.ceil(span / 4 / Math.pow(10, Math.floor(Math.log10(span / 4)))));
+      const niceMin = Math.floor(min / step) * step;
+      const niceMax = Math.ceil(max / step) * step;
+      return { min: niceMin, max: Math.max(niceMax, niceMin + step) };
+    };
+
     const newRanges = { power: { min: 0, max: 100 }, heartRate: { min: 60, max: 200 } };
     if (powers.length > 0) {
       const pad = isPace ? 30 : 20;
-      newRanges.power = { min: Math.floor(Math.min(...powers) - pad), max: Math.ceil(Math.max(...powers) + pad) };
+      const rawMin = Math.min(...powers) - pad;
+      const rawMax = Math.max(...powers) + pad;
+      newRanges.power = niceBounds(rawMin, rawMax, isPace ? 15 : 10);
     }
     if (heartRates.length > 0) {
-      newRanges.heartRate = { min: Math.floor(Math.min(...heartRates) - 5), max: Math.ceil(Math.max(...heartRates) + 5) };
+      newRanges.heartRate = niceBounds(Math.min(...heartRates) - 5, Math.max(...heartRates) + 5, 5);
     }
     return newRanges;
   }, [normalizeSport]);
@@ -468,7 +470,11 @@ const TrainingGraph = ({
   useEffect(() => {
     if (selectedTraining && trainingList?.length > 0) {
       const selectedData = trainingList.find(t => matchesId(t, selectedTraining));
-      const resultsArr = filterWorkResults(selectedData?.results?.length > 0 ? selectedData.results : (fetchedLaps?.results ?? []));
+      const sport = resolveTrainingSport(selectedData);
+      const resultsArr = filterWorkResults(
+        selectedData?.results?.length > 0 ? selectedData.results : (fetchedLaps?.results ?? []),
+        sport
+      );
       if (resultsArr.length > 0) {
         setRanges(computeRanges(resultsArr, selectedData?.sport));
       } else {
@@ -478,7 +484,7 @@ const TrainingGraph = ({
     const handleClickOutside = (e) => { if (settingsRef.current && !settingsRef.current.contains(e.target)) setIsSettingsOpen(false); };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [selectedTraining, trainingList, fetchedLaps, normalizeSport, matchesId, computeRanges]);
+  }, [selectedTraining, trainingList, fetchedLaps, normalizeSport, matchesId, computeRanges, resolveTrainingSport]);
 
   // ── Shared header button ────────────────────────────────────────────────
   const SettingsButton = () => (
@@ -554,7 +560,8 @@ const TrainingGraph = ({
   const effectiveResults = filterWorkResults(
     (selectedTrainingData?.results?.length > 0)
       ? selectedTrainingData.results
-      : (fetchedLaps?.results ?? [])
+      : (fetchedLaps?.results ?? []),
+    resolveTrainingSport(selectedTrainingData)
   );
 
   // Sentinel option that lists every lactate-tagged training regardless of
@@ -632,6 +639,9 @@ const TrainingGraph = ({
   const chartOptions = {
     responsive: true,
     maintainAspectRatio: false,
+    layout: {
+      padding: { left: 4, right: 8, top: 4, bottom: 0 },
+    },
     plugins: {
       legend: {
         position: "top",
@@ -660,8 +670,9 @@ const TrainingGraph = ({
         min: ranges.power.min,
         max: ranges.power.max,
         reverse: isPaceScale,
+        grace: 0,
         ticks: {
-          stepSize: Math.round((ranges.power.max - ranges.power.min) / 4),
+          count: 5,
           callback: (value) => formatPowerValue(value, sportForScale),
           display: true,
           autoSkip: false,
@@ -676,8 +687,9 @@ const TrainingGraph = ({
         title: { display: false },
         min: ranges.heartRate.min,
         max: ranges.heartRate.max,
+        grace: 0,
         ticks: {
-          stepSize: Math.round((ranges.heartRate.max - ranges.heartRate.min) / 4),
+          count: 5,
           callback: (value) => `${value}`,
           display: true,
           autoSkip: false,
@@ -754,9 +766,7 @@ const TrainingGraph = ({
       <div className="flex-1 min-h-0 relative px-3 pt-1 pb-1">
         <Line
           data={{
-            labels: effectiveResults.map((r, i) =>
-              r.interval != null ? String(r.interval) : String(i + 1)
-            ),
+            labels: effectiveResults.map((_r, i) => String(i + 1)),
             datasets: [
               {
                 label: isPaceScale ? "Pace" : "Power",
@@ -769,8 +779,8 @@ const TrainingGraph = ({
                 pointRadius: 5,
                 pointHoverRadius: 8,
                 borderWidth: 2,
-                tension: 0.4,
-                spanGaps: true,
+                tension: 0,
+                spanGaps: false,
               },
               {
                 label: "Heart Rate",
@@ -785,8 +795,8 @@ const TrainingGraph = ({
                 pointHoverRadius: 8,
                 borderWidth: 2,
                 yAxisID: "y1",
-                tension: 0.4,
-                spanGaps: true,
+                tension: 0,
+                spanGaps: false,
               }
             ]
           }}

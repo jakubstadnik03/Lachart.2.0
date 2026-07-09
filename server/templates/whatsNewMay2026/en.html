@@ -339,6 +339,10 @@
     padding: 4px 9px;
     border-radius: 9999px;
   }
+  .soon-card__badge--live {
+    background: var(--lc-success);
+    box-shadow: 0 0 0 3px rgba(75,168,125,0.18);
+  }
   .soon-card__icon {
     width: 44px; height: 44px;
     border-radius: 12px;
@@ -502,7 +506,7 @@
         <span class="mail-meta__from-name">LaChart</span>
         <span>&lt;hello@lachart.net&gt;</span>
       </div>
-      <div class="mail-meta__subject">Come back to LaChart — a few upgrades (and something extra) 🟣</div>
+      <div class="mail-meta__subject">What's new in LaChart — iPhone app, workout planner &amp; more 🟣</div>
     </div>
     <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 6px;">
       <span class="mail-meta__date">May 16, 2026 · 9:14 AM</span>
@@ -520,10 +524,10 @@
         <img src="assets/lachart-logo-horizontal.png" alt="LaChart" />
       </div>
 
-      <div class="hero__eyebrow">Update · May 2026</div>
-      <h1 class="hero__title">We've been busy on LaChart.<br/><em>You'll feel it.</em></h1>
+      <div class="hero__eyebrow">Product update · 2026</div>
+      <h1 class="hero__title">Plan smarter. Test sharper.<br/><em>Train from your pocket.</em></h1>
       <p class="hero__lede">
-        Sharper lactate analysis, proper interval planning and a calendar that keeps up with your season. Here's a quick tour of what shipped &mdash; and what's coming next.
+        LaChart for iPhone is live on the App Store. Build structured workouts in the planner, drop them onto your calendar, and track lactate and load — on the web or on your phone.
       </p>
 
       <!-- mini lactate curve, references the brand motif -->
@@ -561,16 +565,133 @@
     </header>
 
     <!-- ============================== -->
-    <!-- SECTION 1 — Lactate analysis  -->
+    <!-- SECTION 1 — iPhone app         -->
     <!-- ============================== -->
-    <section class="section section--first">
+    <section class="section section--first soon">
+      <span class="section__eyebrow">New · iPhone app</span>
+      <h2 class="section__title">LaChart is on the App Store.</h2>
+      <p class="section__desc">
+        The full LaChart experience — dashboard, calendar, workouts and lactate curves — now fits in your pocket. Sign in with your existing account; everything syncs instantly.
+      </p>
+
+      <div class="soon-grid">
+
+        <div class="soon-card">
+          <span class="soon-card__badge soon-card__badge--live">Live now</span>
+          <div class="soon-card__icon">
+            <svg viewBox="0 0 24 24"><rect x="6" y="2" width="12" height="20" rx="2.5"/><line x1="11" y1="18.5" x2="13" y2="18.5"/></svg>
+          </div>
+          <h3>Download for iPhone</h3>
+          <p>Free on the App Store. Today's training, Form / Fitness / Fatigue widget, Apple Health sync and push notifications — without opening the browser.</p>
+          <div class="soon-card__eta" style="color: var(--lc-success);">Available on iOS 16+</div>
+        </div>
+
+        <div class="soon-card">
+          <span class="soon-card__badge soon-card__badge--live">On device</span>
+          <div class="soon-card__icon">
+            <svg viewBox="0 0 24 24">
+              <rect x="3" y="4" width="18" height="16" rx="2"/>
+              <line x1="3" y1="9" x2="21" y2="9"/>
+              <line x1="8" y1="2" x2="8" y2="6"/>
+              <line x1="16" y1="2" x2="16" y2="6"/>
+            </svg>
+          </div>
+          <h3>Calendar &amp; dashboard on the go</h3>
+          <p>Check planned vs. completed sessions, weekly load and your PMC chart from the home screen widget or inside the app.</p>
+          <div class="soon-card__eta" style="color: var(--lc-success);">Same account, instant sync</div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ============================== -->
+    <!-- SECTION 2 — Training         -->
+    <!-- ============================== -->
+    <section class="section">
+      <span class="section__eyebrow">New · Training planning</span>
+      <h2 class="section__title">From a blank day to a structured session in minutes.</h2>
+      <p class="section__desc">
+        LaChart is built for coaches and self-coached athletes who plan intervals, not just log them. Build a workout, schedule it on the calendar, then compare plan vs. actual after the ride.
+      </p>
+
+      <!-- Training feature 1: Interval planning -->
+      <div class="feat">
+        <div class="feat__media feat__media--shot">
+          <span class="media-chip media-chip--coral">
+            <span class="media-chip__dot"></span>
+            Workout builder
+          </span>
+          <img src="assets/workout-planner.png" alt="Interval workout planner with structured workout preview" />
+        </div>
+        <div class="feat__body">
+          <span class="feat__kicker feat__kicker--coral">Workout planner</span>
+          <h3 class="feat__title">Build structured sessions down to the rep</h3>
+          <p class="feat__desc">
+            Stack warm-up, work blocks, recoveries and cool-down. Set targets by power, heart rate or pace from your lactate zones. The plan renders as a live power profile and rolls up total load before you schedule it.
+          </p>
+          <ul class="feat__list">
+            <li><span><b>Interval blocks</b> — 4&times;(3&times;2&prime; / 1&prime; off) in a few clicks</span></li>
+            <li><span><b>Quick templates</b> — VO2max, threshold, sweet spot, sprint</span></li>
+            <li><span><b>Save &amp; reuse</b> — build once, drop onto any week</span></li>
+            <li><span><b>Assign to athletes</b> — coaches send the plan with one click</span></li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- Training feature 2: Calendar -->
+      <div class="feat feat--reverse">
+        <div class="feat__media">
+          <span class="media-chip media-chip--right">Calendar &middot; week 12</span>
+          <img src="assets/training-calendar.png" alt="Training calendar" />
+        </div>
+        <div class="feat__body">
+          <span class="feat__kicker">Calendar</span>
+          <h3 class="feat__title">Plan your season on one page</h3>
+          <p class="feat__desc">
+            Drag planned workouts onto any day, colour them by load type, and see planned vs. completed side-by-side. Coaches get a multi-athlete weekly view without switching accounts.
+          </p>
+          <ul class="feat__list">
+            <li><span><b>Week and month views</b> with TSS / load totals</span></li>
+            <li><span><b>Drag &amp; drop</b> sessions between days</span></li>
+            <li><span><b>Multi-athlete view</b> for coaches</span></li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- Training feature 3: Lactate at intervals + training view -->
+      <div class="feat">
+        <div class="feat__media feat__media--shot">
+          <span class="media-chip">
+            <span class="media-chip__dot"></span>
+            Session detail
+          </span>
+          <img src="assets/training-log-lactate.png" alt="Training log with lactate measurements per interval" />
+        </div>
+        <div class="feat__body">
+          <span class="feat__kicker">Lactate per interval</span>
+          <h3 class="feat__title">Log lactate against a specific interval</h3>
+          <p class="feat__desc">
+            A finger-prick after every rep? Log it straight onto the interval where you measured. The session shows zones, power, heart rate and lactate markers on a single timeline — then compare against what you planned.
+          </p>
+          <ul class="feat__list">
+            <li><span><b>Lactate-by-interval</b> entry for each rep</span></li>
+            <li><span><b>Session visual</b> with work blocks and recovery interleaved</span></li>
+            <li><span><b>Plan vs. actual</b> — prescribed vs. ridden</span></li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================== -->
+    <!-- SECTION 3 — Lactate analysis  -->
+    <!-- ============================== -->
+    <section class="section">
       <span class="section__eyebrow">New · Lactate tests</span>
       <h2 class="section__title">Smarter analysis. And finally — your curve, your call.</h2>
       <p class="section__desc">
         We rewrote the algorithm behind LT1 and LT2. The result: a cleaner fit, more stable thresholds, and a PDF report you'll happily send to athletes and colleagues.
       </p>
 
-      <!-- Feature row 1: Lactate analysis + PDF -->
       <div class="feat">
         <div class="feat__media">
           <span class="media-chip">
@@ -593,7 +714,6 @@
         </div>
       </div>
 
-      <!-- Feature row 2: Manual override -->
       <div class="feat feat--reverse">
         <div class="feat__media feat__media--contain">
           <span class="media-chip media-chip--coral">
@@ -616,7 +736,6 @@
         </div>
       </div>
 
-      <!-- Feature row 3: PDF -->
       <div class="feat">
         <div class="feat__media">
           <img src="assets/lactate-pdf-report.jpg" alt="Redesigned PDF report" />
@@ -637,105 +756,20 @@
     </section>
 
     <!-- ============================== -->
-    <!-- SECTION 2 — Training         -->
-    <!-- ============================== -->
-    <section class="section">
-      <span class="section__eyebrow">New · Training</span>
-      <h2 class="section__title">From a one-off test to a full training cycle.</h2>
-      <p class="section__desc">
-        LaChart isn't just about tests anymore. Track lactate inside a specific session, plan intervals down to the rep, and keep your whole season in one calendar.
-      </p>
-
-      <!-- Training feature 1: Lactate at intervals + training view -->
-      <div class="feat">
-        <div class="feat__media feat__media--shot">
-          <span class="media-chip">
-            <span class="media-chip__dot"></span>
-            Session detail
-          </span>
-          <img src="assets/training-log-lactate.png" alt="Training log with lactate measurements per interval" />
-        </div>
-        <div class="feat__body">
-          <span class="feat__kicker">Lactate per interval</span>
-          <h3 class="feat__title">Log lactate against a specific interval</h3>
-          <p class="feat__desc">
-            A finger-prick after every rep? Now you log it straight onto the interval where you measured. The session shows up with zones, power, heart rate and lactate markers on a single timeline.
-          </p>
-          <ul class="feat__list">
-            <li><span><b>Lactate-by-interval</b> entry for each rep</span></li>
-            <li><span><b>Session visual</b> with work blocks and recovery interleaved</span></li>
-            <li><span><b>Plan vs. actual</b> — what was prescribed vs. what was ridden</span></li>
-          </ul>
-        </div>
-      </div>
-
-      <!-- Training feature 2: Interval planning -->
-      <div class="feat feat--reverse">
-        <div class="feat__media feat__media--shot">
-          <img src="assets/workout-planner.png" alt="Interval workout planner with structured workout preview" />
-        </div>
-        <div class="feat__body">
-          <span class="feat__kicker">Planner</span>
-          <h3 class="feat__title">Build an interval workout down to the rep</h3>
-          <p class="feat__desc">
-            Stack warm-up, work blocks, recoveries and cool-down. The plan renders as a power profile and rolls up target time, power and expected lactate from your zones.
-          </p>
-          <ul class="feat__list">
-            <li><span><b>Templates</b> — VO2max, threshold, sweet spot, sprint</span></li>
-            <li><span><b>Block repeats</b> — 4&times;(3&times;2&prime; / 1&prime; off)</span></li>
-            <li><span><b>Send to athlete</b> with one click</span></li>
-          </ul>
-        </div>
-      </div>
-
-      <!-- Training feature 3: Calendar -->
-      <div class="feat">
-        <div class="feat__media">
-          <span class="media-chip media-chip--right">Calendar &middot; week 12</span>
-          <img src="assets/training-calendar.png" alt="Training calendar" />
-        </div>
-        <div class="feat__body">
-          <span class="feat__kicker">Calendar</span>
-          <h3 class="feat__title">Your season on one page</h3>
-          <p class="feat__desc">
-            Drop sessions into the calendar, drag &amp; drop between days, color them by load type. Coaches see all of their athletes in a single weekly view.
-          </p>
-          <ul class="feat__list">
-            <li><span><b>Week and month views</b></span></li>
-            <li><span><b>Drag &amp; drop</b> sessions between days</span></li>
-            <li><span><b>Multi-athlete view</b> for coaches</span></li>
-          </ul>
-        </div>
-      </div>
-    </section>
-
-    <!-- ============================== -->
-    <!-- SECTION 3 — Coming soon       -->
+    <!-- SECTION 4 — Coming soon       -->
     <!-- ============================== -->
     <section class="section soon">
       <span class="section__eyebrow">Coming soon</span>
-      <h2 class="section__title">And what the team is shipping next.</h2>
+      <h2 class="section__title">What the team is shipping next.</h2>
       <p class="section__desc">
-        Two bigger pieces already in the works. If you want to be in the early beta, just hit reply on this email.
+        Already in the works. If you want to be in the early beta, just hit reply on this email.
       </p>
 
       <div class="soon-grid">
 
         <div class="soon-card">
-          <span class="soon-card__badge">Beta · Q3</span>
-          <div class="soon-card__icon">
-            <!-- phone icon, Lucide-style stroke -->
-            <svg viewBox="0 0 24 24"><rect x="6" y="2" width="12" height="20" rx="2.5"/><line x1="11" y1="18.5" x2="13" y2="18.5"/></svg>
-          </div>
-          <h3>Mobile app for iOS and Android</h3>
-          <p>Native LaChart in your pocket. Log lactate seconds after a rep, check your thresholds, follow today's session from the watch on your wrist.</p>
-          <div class="soon-card__eta">In active development</div>
-        </div>
-
-        <div class="soon-card">
           <span class="soon-card__badge">Tech preview</span>
           <div class="soon-card__icon">
-            <!-- trainer icon -->
             <svg viewBox="0 0 24 24">
               <circle cx="6.5" cy="17" r="3.5"/>
               <circle cx="17.5" cy="17" r="3.5"/>
@@ -749,6 +783,16 @@
           <div class="soon-card__eta">Pilot with select athletes</div>
         </div>
 
+        <div class="soon-card">
+          <span class="soon-card__badge">Roadmap</span>
+          <div class="soon-card__icon">
+            <svg viewBox="0 0 24 24"><rect x="6" y="2" width="12" height="20" rx="2.5"/><line x1="11" y1="18.5" x2="13" y2="18.5"/></svg>
+          </div>
+          <h3>Android app</h3>
+          <p>Native LaChart for Android is next on the roadmap. iPhone users can download today; reply if you'd like early access when the Android beta opens.</p>
+          <div class="soon-card__eta">After iOS launch</div>
+        </div>
+
       </div>
     </section>
 
@@ -756,16 +800,17 @@
     <!-- CTA                           -->
     <!-- ============================== -->
     <section class="cta">
-      <h2 class="cta__title">Open LaChart and give it a spin. It takes a minute.</h2>
+      <h2 class="cta__title">Try the workout planner — or grab the iPhone app.</h2>
       <p class="cta__desc">
-        Your tests, athletes and season plan are right where you left them. Just sign in.
+        Your tests, athletes and season plan are right where you left them. Sign in on the web, or download the app and pick up on your phone.
       </p>
       <div class="cta-row">
-        <a class="btn btn--primary" href="https://lachart.net/login">
-          Open LaChart
+        <a class="btn btn--primary" href="https://apps.apple.com/app/lachart/id6764768876">
+          Download on the App Store
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
         </a>
-        <a class="btn btn--ghost" href="https://lachart.net/changelog">Read the full changelog</a>
+        <a class="btn btn--ghost" href="https://lachart.net/workout-planner">Open workout planner</a>
+        <a class="btn btn--ghost" href="https://lachart.net/login">Sign in on web</a>
       </div>
     </section>
 

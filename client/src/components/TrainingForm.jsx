@@ -506,6 +506,46 @@ function fmtDist(d) {
   return `${Math.round(n)}m`;
 }
 
+function metersFromResult(r) {
+  const raw = r?.distanceMeters ?? r?.distance;
+  if (raw == null || raw === '') return 0;
+  if (typeof raw === 'string') {
+    const parsed = fmtDist(raw);
+    if (!parsed) return 0;
+    const s = parsed.toLowerCase();
+    if (s.endsWith('km')) return parseFloat(s) * 1000;
+    if (s.endsWith('m')) return parseFloat(s);
+  }
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  return n >= 100 ? n : n * 1000;
+}
+
+function fmtDistMeters(meters, sport) {
+  if (!meters || meters <= 0) return null;
+  if (sport === 'swim') {
+    if (meters >= 1000) return `${(meters / 1000).toFixed(meters % 1000 === 0 ? 0 : 1)}km`;
+    return `${Math.round(meters)}m`;
+  }
+  if (meters >= 1000) {
+    const km = meters / 1000;
+    return `${km % 1 === 0 ? km.toFixed(0) : km.toFixed(1)}km`;
+  }
+  return `${Math.round(meters)}m`;
+}
+
+function parseDurationToSeconds(dur) {
+  if (dur == null || dur === '') return null;
+  if (typeof dur === 'string' && dur.includes(':')) {
+    const parts = dur.split(':').map(Number);
+    if (parts.some((n) => !Number.isFinite(n) || n < 0)) return null;
+    if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+    if (parts.length === 2) return parts[0] * 60 + parts[1];
+  }
+  const n = parseFloat(dur);
+  return Number.isFinite(n) ? n : null;
+}
+
 function generateTrainingTitle(sport, category, results) {
   const sportLabel = { bike: 'ride', run: 'run', swim: 'swim' }[sport] || 'workout';
 
@@ -529,16 +569,8 @@ function generateTrainingTitle(sport, category, results) {
 
   // Format duration rounded to whole minutes: "5min" / "30s"
   const fmtDurLabel = (dur) => {
-    if (!dur) return null;
-    let totalSec;
-    if (typeof dur === 'string' && dur.includes(':')) {
-      const parts = dur.split(':').map(Number);
-      totalSec = (parts[0] || 0) * 60 + (parts[1] || 0);
-    } else {
-      const n = parseFloat(dur);
-      if (isNaN(n)) return null;
-      totalSec = n;
-    }
+    const totalSec = parseDurationToSeconds(dur);
+    if (totalSec == null || totalSec <= 0) return null;
     if (totalSec < 60) return `${Math.round(totalSec)}s`;
     return `${Math.round(totalSec / 60)}min`;
   };
@@ -581,14 +613,32 @@ function generateTrainingTitle(sport, category, results) {
   // Total reps
   const totalReps = workResults.reduce((s, r) => s + (Number(r.repeatCount) || 1), 0);
   const first = workResults[0];
+  const preferDistance = sport === 'run' || sport === 'swim';
 
-  // Build work interval string: e.g. "8x5min" or "5x1km"
+  // Build work interval string: e.g. "8x5min", "6x800m", or "10.5km"
   let workStr = null;
-  if (first.durationType === 'distance' && first.duration) {
-    const d = fmtDist(first.duration);
+  const firstMeters = metersFromResult(first);
+
+  if (preferDistance) {
+    const repDistances = workResults.map(metersFromResult).filter((m) => m > 0);
+    const totalMeters = repDistances.reduce((s, m) => s + m, 0);
+    const uniformReps = repDistances.length > 0
+      && repDistances.every((m) => Math.abs(m - firstMeters) <= Math.max(5, firstMeters * 0.02));
+
+    if (uniformReps && firstMeters > 0) {
+      const d = fmtDistMeters(firstMeters, sport);
+      if (d) workStr = `${totalReps}x${d}`;
+    } else if (totalMeters > 0) {
+      const d = fmtDistMeters(totalMeters, sport);
+      if (d) workStr = d;
+    }
+  }
+
+  if (!workStr && first.durationType === 'distance' && first.duration) {
+    const d = fmtDist(first.duration) || fmtDistMeters(metersFromResult(first), sport);
     if (d) workStr = `${totalReps}x${d}`;
-  } else if (first.distance) {
-    const d = fmtDist(first.distance);
+  } else if (!workStr && (first.distance || first.distanceMeters)) {
+    const d = fmtDistMeters(firstMeters, sport) || fmtDist(first.distance);
     if (d) workStr = `${totalReps}x${d}`;
   }
   if (!workStr && first.duration) {
@@ -752,9 +802,19 @@ const TrainingForm = ({
       : formattedData.results;
 
     // Auto-generate title if empty or a generic default name
+    const plannedTitle = String(formattedData.plannedWorkoutTitle || '').trim();
     const existingTitle = formattedData.customTitle || formattedData.title || '';
     const needsTitle = !existingTitle || isDefaultTitle(existingTitle);
-    if (needsTitle) {
+
+    if (plannedTitle && needsTitle) {
+      setIsCustomTitle(true);
+      setFormData({
+        ...formattedData,
+        results: processedResults,
+        customTitle: plannedTitle,
+        title: '',
+      });
+    } else if (needsTitle) {
       const generated = generateTrainingTitle(sportKey, formattedData.category, processedResults);
       setIsCustomTitle(true);
       setFormData({

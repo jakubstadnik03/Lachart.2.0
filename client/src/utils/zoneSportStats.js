@@ -14,6 +14,87 @@ function zOut(src) {
   return out;
 }
 
+function parseZoneBoundaryNum(v) {
+  if (v === null || v === undefined) return null;
+  if (typeof v === 'number') return Number.isFinite(v) ? v : null;
+  if (typeof v !== 'string') return null;
+  const cleaned = v.trim().toLowerCase();
+  if (!cleaned) return null;
+  if (cleaned === '∞' || cleaned.includes('inf')) return Infinity;
+  const n = Number(cleaned.replace(',', '.'));
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Pick zone definition by zone number (1–5) from server defs map. */
+export function pickZoneDef(defs, zoneNum) {
+  if (!defs) return null;
+  return defs[zoneNum] ?? defs[String(zoneNum)] ?? defs[`zone${zoneNum}`] ?? null;
+}
+
+/**
+ * Human-readable zone boundary for charts.
+ * Z1 includes everything from 0 (or slowest pace); Z5 has no upper cap for power/HR.
+ */
+export function formatZoneBoundaryLabel(zoneNum, zoneDef, allDefs, type, { paceUnit = '/km' } = {}) {
+  if (!zoneDef) return '';
+
+  const z1 = pickZoneDef(allDefs, 1);
+  const z2 = pickZoneDef(allDefs, 2);
+  const z5 = pickZoneDef(allDefs, 5);
+
+  if (type === 'pace') {
+    const fmtPace = (s) => {
+      if (!s || s <= 0 || !Number.isFinite(s)) return '∞';
+      const mn = Math.floor(s / 60);
+      const sc = Math.round(s % 60);
+      return `${mn}:${String(sc).padStart(2, '0')}`;
+    };
+    const z1Min = parseZoneBoundaryNum(z1?.min);
+    const z5Max = parseZoneBoundaryNum(z5?.max);
+    const lo = parseZoneBoundaryNum(zoneDef.min);
+    const hi = parseZoneBoundaryNum(zoneDef.max);
+
+    if (zoneNum === 1) {
+      if (z1Min != null) return `≥ ${fmtPace(z1Min)}${paceUnit}`;
+      if (hi != null && hi !== Infinity) return `≥ ${fmtPace(hi)}${paceUnit}`;
+    }
+    if (zoneNum === 5) {
+      if (z5Max != null && z5Max !== Infinity) return `≤ ${fmtPace(z5Max)}${paceUnit}`;
+      if (lo != null) return `≤ ${fmtPace(lo)}${paceUnit}`;
+    }
+    const fastStr = hi != null && hi !== Infinity ? fmtPace(hi) : null;
+    const slowStr = lo != null ? fmtPace(lo) : null;
+    if (fastStr && slowStr) return `${fastStr}–${slowStr}${paceUnit}`;
+    if (fastStr) return `≤ ${fastStr}${paceUnit}`;
+    if (slowStr) return `≥ ${slowStr}${paceUnit}`;
+    return '';
+  }
+
+  const unit = type === 'hr' ? 'bpm' : 'W';
+  const lo = parseZoneBoundaryNum(zoneDef.min);
+  const hi = parseZoneBoundaryNum(zoneDef.max);
+  const z2Min = parseZoneBoundaryNum(z2?.min);
+  const z1Max = parseZoneBoundaryNum(z1?.max);
+  const z5Min = parseZoneBoundaryNum(z5?.min ?? zoneDef.min);
+
+  if (zoneNum === 1) {
+    if (z1Max != null && z1Max !== Infinity) return `0–${Math.round(z1Max)} ${unit}`;
+    if (z2Min != null) return `0–${Math.round(z2Min)} ${unit}`;
+    if (lo != null && lo > 0) return `0–${Math.round(lo)} ${unit}`;
+    return `0+ ${unit}`;
+  }
+
+  if (zoneNum === 5) {
+    if (z5Min != null) return `≥ ${Math.round(z5Min)} ${unit}`;
+    if (lo != null) return `≥ ${Math.round(lo)} ${unit}`;
+  }
+
+  if (lo != null && hi != null && hi !== Infinity) return `${Math.round(lo)}–${Math.round(hi)} ${unit}`;
+  if (lo != null) return `≥ ${Math.round(lo)} ${unit}`;
+  if (hi != null && hi !== Infinity) return `≤ ${Math.round(hi)} ${unit}`;
+  return '';
+}
+
 function hrZonesHaveData(hrZones) {
   if (!hrZones) return false;
   return Object.values(hrZones).some((z) => Number(z?.time) > 0);

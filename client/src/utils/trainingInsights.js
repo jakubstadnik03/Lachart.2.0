@@ -4,10 +4,15 @@
 import { assessReadiness, baseline } from './recovery';
 import { findCompliance, getCompliance, plannedWorkoutDurationSecs } from './planCompliance';
 import { resolveActivityTss } from './computeTss';
+import { enrichProfileForTss } from './inferThresholdsFromActivities';
 import { activityCalendarDateKey } from './formFitnessFromActivities';
 
 const HARD_TSS = 80;
-const HARD_CATEGORIES = /vo2|threshold|interval|tempo|race|hard/i;
+const HARD_CATEGORIES = /vo2|threshold|interval|tempo|race|hard|lt2|vo2max|hills/i;
+const ENDURANCE_PATTERNS = /\b(long|endurance|z2|zone\s*2|easy|lt1|aerobic|base|brick|off\s*bike)\b/i;
+const INTERVAL_PATTERNS = /\b(interval|vo2|vo₂|threshold|lt2|tempo|hard|sprint|reps?|×|\d+\s*[x×]\s*\d+)\b/i;
+const EASY_CATEGORY_IDS = new Set(['endurance', 'zone2', 'lt1']);
+const HARD_CATEGORY_IDS = new Set(['vo2max', 'lt2', 'tempo', 'hills']);
 
 function toLocalDateStr(d = new Date()) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -66,17 +71,125 @@ function activityDateStr(a) {
   return activityCalendarDateKey(a) || '';
 }
 
-function yesterdayTss(activities, userProfile) {
-  const y = new Date();
-  y.setDate(y.getDate() - 1);
-  const key = toLocalDateStr(y);
-  return (activities || []).reduce((s, a) => {
-    if (activityDateStr(a) !== key) return s;
-    return s + (resolveActivityTss(a, userProfile) || 0);
-  }, 0);
+function sessionDisplayLabel(item) {
+  const title = String(item?.title || item?.name || '').trim();
+  if (title) return title;
+  const cat = String(item?.category || '').trim();
+  if (cat) return cat.replace(/_/g, ' ');
+  const sport = normSport(item?.sport || item?.type);
+  if (sport !== 'other') return sport;
+  return 'session';
 }
 
-function detectMonotony(activities) {
+function classifySessionIntensity(item, tss = 0) {
+  const text = `${item?.title || ''} ${item?.name || ''} ${item?.category || ''}`;
+  const cat = String(item?.category || '').toLowerCase();
+
+  if (HARD_CATEGORY_IDS.has(cat) || INTERVAL_PATTERNS.test(text)) return 'hard';
+  if (EASY_CATEGORY_IDS.has(cat) || ENDURANCE_PATTERNS.test(text)) return 'endurance';
+  if (tss >= 120) return 'endurance';
+  if (tss >= HARD_TSS || HARD_CATEGORIES.test(text)) return 'hard';
+  if (tss >= 35) return 'moderate';
+  return 'easy';
+}
+
+function buildTssContext(activities, userProfile) {
+  if (!userProfile) return { profile: null, user: null };
+  const profile = enrichProfileForTss(userProfile, activities);
+  return { profile, user: userProfile };
+}
+
+function resolveInsightTss(activity, tssCtx) {
+  if (!tssCtx?.profile) return resolveActivityTss(activity) || 0;
+  return resolveActivityTss(activity, tssCtx.profile, { user: tssCtx.user || tssCtx.profile }) || 0;
+}
+
+function summarizeActivityDay(activities, dateKey, tssCtx) {
+  const sessions = (activities || [])
+    .filter((a) => activityDateStr(a) === dateKey)
+    .map((a) => {
+      const tss = resolveInsightTss(a, tssCtx);
+      return {
+        label: sessionDisplayLabel(a),
+        sport: normSport(a.sport || a.type),
+        tss,
+        intensity: classifySessionIntensity(a, tss),
+      };
+    })
+    .filter((s) => s.tss >= 5 || s.label !== 'session')
+    .sort((a, b) => b.tss - a.tss);
+
+  const totalTss = sessions.reduce((s, x) => s + x.tss, 0);
+  const hardCount = sessions.filter((s) => s.intensity === 'hard').length;
+  const enduranceCount = sessions.filter((s) => s.intensity === 'endurance').length;
+  const sports = new Set(sessions.map((s) => s.sport).filter((s) => s !== 'other'));
+
+  let profile = 'easy';
+  if (hardCount > 0 && hardCount >= enduranceCount) profile = 'intensity';
+  else if (enduranceCount > 0 || totalTss >= 120) profile = 'endurance_volume';
+  else if (sessions.length >= 2 && sports.size >= 2) profile = 'multi_sport';
+  else if (totalTss >= HARD_TSS) profile = 'moderate';
+
+  return { totalTss, sessions, profile, sessionCount: sessions.length, sportCount: sports.size };
+}
+
+function summarizePlannedDay(plannedWorkouts, dateKey) {
+  const sessions = (plannedWorkouts || [])
+    .filter((p) => planDateStr(p) === dateKey && p.status !== 'skipped')
+    .map((p) => {
+      const tss = Number(p.targetTss) || 0;
+      return {
+        label: sessionDisplayLabel(p),
+        sport: normSport(p.sport),
+        tss,
+        intensity: classifySessionIntensity(p, tss),
+        hard: isHardPlannedWorkout(p),
+      };
+    });
+
+  const hardSessions = sessions.filter((s) => s.hard);
+  const totalTss = sessions.reduce((s, x) => s + x.tss, 0);
+  return { totalTss, sessions, hardSessions, sessionCount: sessions.length };
+}
+
+function describePastDay(summary) {
+  const tss = Math.round(summary.totalTss || 0);
+  if (!tss) return 'a hard day yesterday';
+
+  const { sessions, profile, sessionCount } = summary;
+  const main = sessions[0];
+  const mainLabel = main?.label;
+
+  if (profile === 'endurance_volume') {
+    if (sessionCount > 1) {
+      return `${tss} TSS yesterday — ${mainLabel || 'long ride'} plus ${sessionCount - 1} more session${sessionCount - 1 === 1 ? '' : 's'}`;
+    }
+    return `${tss} TSS yesterday — ${mainLabel || 'endurance volume'}`;
+  }
+
+  if (profile === 'intensity') {
+    const hardLabels = sessions.filter((s) => s.intensity === 'hard').map((s) => s.label);
+    if (hardLabels.length === 1) return `${tss} TSS yesterday — ${hardLabels[0]}`;
+    return `${tss} TSS yesterday — ${hardLabels.slice(0, 2).join(' + ')}`;
+  }
+
+  if (profile === 'multi_sport' && sessionCount > 1) {
+    const labels = sessions.slice(0, 3).map((s) => s.label).join(', ');
+    return `${tss} TSS yesterday — ${sessionCount}-session day (${labels})`;
+  }
+
+  if (mainLabel) return `${tss} TSS yesterday — ${mainLabel}`;
+  return `${tss} TSS yesterday`;
+}
+
+function describeTodayHardPlan(hardSessions) {
+  if (!hardSessions?.length) return 'a hard session on today\'s plan';
+  if (hardSessions.length === 1) return `"${hardSessions[0].label}" on today's plan`;
+  const labels = hardSessions.map((s) => s.label).slice(0, 2).join(', ');
+  return `${hardSessions.length} quality sessions today (${labels})`;
+}
+
+function detectMonotony(activities, tssCtx) {
   const days = [];
   for (let i = 0; i < 14; i++) {
     const d = new Date();
@@ -87,7 +200,7 @@ function detectMonotony(activities) {
   (activities || []).forEach((a) => {
     const key = activityDateStr(a);
     if (!days.includes(key)) return;
-    const tss = resolveActivityTss(a) || 0;
+    const tss = resolveInsightTss(a, tssCtx);
     if (tss < 5) return;
     if (!byDay.has(key)) byDay.set(key, []);
     byDay.get(key).push(normSport(a.sport || a.type));
@@ -145,7 +258,7 @@ function daysSinceTest(tests) {
   return Math.round((Date.now() - sorted[0].getTime()) / 86400000);
 }
 
-function risingVolume(activities) {
+function risingVolume(activities, tssCtx) {
   const now = new Date();
   const thisWeek = [];
   const prevWeek = [];
@@ -155,7 +268,7 @@ function risingVolume(activities) {
     const key = toLocalDateStr(d);
     const tss = (activities || []).reduce((s, a) => {
       if (activityDateStr(a) !== key) return s;
-      return s + (resolveActivityTss(a) || 0);
+      return s + resolveInsightTss(a, tssCtx);
     }, 0);
     if (i < 7) thisWeek.push(tss);
     else prevWeek.push(tss);
@@ -192,6 +305,104 @@ function atlSpikeFromSeries(sparklineData) {
 
 const SEVERITY_RANK = { warning: 0, watch: 1, ok: 2 };
 
+/** Daily TSS that counts as genuinely hard relative to chronic fitness (CTL). */
+function relativeHardDayThreshold(fitness) {
+  const ctl = Number(fitness) || 0;
+  if (ctl >= 120) return Math.round(ctl * 1.35);
+  if (ctl >= 80) return Math.round(ctl * 1.3);
+  if (ctl >= 50) return Math.round(Math.max(90, ctl * 1.25));
+  return 100;
+}
+
+function isGenuinelyHardYesterday(summary, fitness) {
+  const yTss = Number(summary?.totalTss) || 0;
+  if (yTss < 40) return false;
+  const ctl = Number(fitness) || 0;
+  const threshold = relativeHardDayThreshold(fitness);
+
+  if (summary?.profile === 'intensity') {
+    return yTss >= Math.max(70, ctl * 0.55);
+  }
+  if (summary?.profile === 'endurance_volume') {
+    return yTss >= Math.max(threshold, ctl * 1.5);
+  }
+  return yTss >= threshold;
+}
+
+function formatFormShort(form) {
+  if (form == null || !Number.isFinite(form)) return null;
+  const rounded = Math.round(form);
+  return rounded >= 0 ? `+${rounded}` : String(rounded);
+}
+
+/**
+ * Yesterday load + today's hard plan, scaled to CTL/Form — not fixed 120 TSS.
+ */
+function buildStackedTrainingInsight(yesterdaySummary, todayPlanSummary, { form, fitness, hardToday }) {
+  const yTss = yesterdaySummary.totalTss || 0;
+  if (!hardToday.length || yTss < 40) return null;
+
+  const ctl = Number(fitness) || 0;
+  const formVal = form != null ? Number(form) : null;
+  const genuinelyHard = isGenuinelyHardYesterday(yesterdaySummary, fitness);
+  const yesterdayDesc = describePastDay(yesterdaySummary);
+  const todayDesc = describeTodayHardPlan(todayPlanSummary.hardSessions);
+  const formStr = formatFormShort(formVal);
+  const ctlStr = ctl > 0 ? String(Math.round(ctl)) : null;
+
+  const contextBits = [];
+  if (formStr != null) contextBits.push(`Form ${formStr}`);
+  if (ctlStr) contextBits.push(`CTL ${ctlStr}`);
+  const context = contextBits.length ? ` (${contextBits.join(', ')})` : '';
+
+  if (genuinelyHard && formVal != null && formVal <= -20) {
+    return {
+      headline: 'Hard day yesterday',
+      detail: `${yesterdayDesc}; ${todayDesc}${context}. Legs likely need Z2 — shift or shorten the quality work.`,
+      severity: 'warning',
+    };
+  }
+
+  if (genuinelyHard && formVal != null && formVal <= -10) {
+    return {
+      headline: 'Back-to-back load',
+      detail: `${yesterdayDesc}; ${todayDesc}${context}. Consider Z2 or moving one session if legs feel heavy.`,
+      severity: 'watch',
+    };
+  }
+
+  if (genuinelyHard) {
+    return {
+      headline: 'Back-to-back load',
+      detail: `${yesterdayDesc}; ${todayDesc}${context}. Form looks OK — start easy and adjust by feel.`,
+      severity: 'watch',
+    };
+  }
+
+  // Moderate / easy yesterday (e.g. 150 TSS at CTL 164) + quality today — normal training pattern
+  if (formVal != null && formVal <= -22) {
+    return {
+      headline: 'Fatigue building',
+      detail: `${yesterdayDesc}; ${todayDesc}${context}. Form is low — lighter work or postpone intensity.`,
+      severity: 'watch',
+    };
+  }
+
+  if (hardToday.length >= 2) {
+    return {
+      headline: 'Quality day ahead',
+      detail: `${yesterdayDesc}; ${todayDesc}${context}. Yesterday was manageable for your fitness — execute if you feel ready.`,
+      severity: formVal != null && formVal < -12 ? 'watch' : 'ok',
+    };
+  }
+
+  return {
+    headline: 'Quality session today',
+    detail: `${yesterdayDesc}; ${todayDesc}${context}. Load yesterday fits your fitness — stick to plan if legs feel fine.`,
+    severity: formVal != null && formVal < -15 ? 'watch' : 'ok',
+  };
+}
+
 /**
  * All active insights, highest severity first.
  */
@@ -212,6 +423,7 @@ export function computeAllInsights({
   const hardToday = todayPlans.filter(isHardPlannedWorkout);
   const readiness = assessReadiness(wellnessDays, { tsb: form });
   const insights = [];
+  const tssCtx = buildTssContext(activities, userProfile);
 
   if (acuteFatigueFromSeries(sparklineData)) {
     insights.push({
@@ -253,14 +465,18 @@ export function computeAllInsights({
     }
   }
 
-  const yTss = yesterdayTss(activities, userProfile);
-  if (yTss > 120 && hardToday.length > 0) {
-    insights.push({
-      headline: 'Hard day yesterday',
-      detail: `${Math.round(yTss)} TSS yesterday with intervals today — consider Z2 or a shift.`,
-      severity: 'warning',
-    });
-  }
+  const y = new Date();
+  y.setDate(y.getDate() - 1);
+  const yesterdayKey = toLocalDateStr(y);
+  const yesterdaySummary = summarizeActivityDay(activities, yesterdayKey, tssCtx);
+  const todayPlanSummary = summarizePlannedDay(plannedWorkouts, today);
+
+  const stacked = buildStackedTrainingInsight(yesterdaySummary, todayPlanSummary, {
+    form,
+    fitness,
+    hardToday,
+  });
+  if (stacked) insights.push(stacked);
 
   if (form != null && form <= -28 && hardToday.length > 0) {
     insights.push({
@@ -268,7 +484,13 @@ export function computeAllInsights({
       detail: `"${hardToday[0]?.title || 'hard session'}" on plan → Z2 or reschedule.`,
       severity: 'warning',
     });
-  } else if (form != null && form <= -15) {
+  } else if (form != null && form <= -15 && form > -22) {
+    insights.push({
+      headline: `Form ${Math.round(form)}`,
+      detail: 'Slightly fatigued — keep intensity controlled or trim volume.',
+      severity: 'watch',
+    });
+  } else if (form != null && form <= -22) {
     insights.push({
       headline: `Form ${Math.round(form)}`,
       detail: 'Body may not be keeping up — lighter volume or recovery.',
@@ -276,7 +498,7 @@ export function computeAllInsights({
     });
   }
 
-  const mono = detectMonotony(activities);
+  const mono = detectMonotony(activities, tssCtx);
   if (mono) {
     insights.push({
       headline: 'Low variety',
@@ -328,7 +550,7 @@ export function computeAllInsights({
     }
   }
 
-  if (daysSinceTest(tests) >= 28 && risingVolume(activities)) {
+  if (daysSinceTest(tests) >= 28 && risingVolume(activities, tssCtx)) {
     insights.push({
       headline: 'Zone check due',
       detail: '4+ weeks without a test and rising volume — lactate or FTP check.',
@@ -369,7 +591,7 @@ export function computeDailyInsight(opts = {}) {
   return { ...top, moreCount: Math.max(0, all.length - 1), all };
 }
 
-function sumWeekActualTss(activities, userProfile, ref = new Date()) {
+function sumWeekActualTss(activities, tssCtx, ref = new Date()) {
   const dow = (ref.getDay() + 6) % 7;
   const mon = new Date(ref);
   mon.setDate(ref.getDate() - dow);
@@ -383,7 +605,7 @@ function sumWeekActualTss(activities, userProfile, ref = new Date()) {
     if (!raw) return s;
     const d = new Date(raw);
     if (d < mon || d > sun) return s;
-    return s + (resolveActivityTss(a, userProfile) || 0);
+    return s + resolveInsightTss(a, tssCtx);
   }, 0);
 }
 
@@ -399,7 +621,8 @@ export function computeWeeklyOverview({
   wellnessDays = [],
 } = {}) {
   const weekPlanned = sumWeekPlannedTss(plannedWorkouts);
-  const weekActual = sumWeekActualTss(activities, userProfile);
+  const tssCtx = buildTssContext(activities, userProfile);
+  const weekActual = sumWeekActualTss(activities, tssCtx);
   const form = todayMetrics.form != null ? Number(todayMetrics.form) : null;
   const fitness = todayMetrics.fitness != null ? Number(todayMetrics.fitness) : null;
   const fatigue = todayMetrics.fatigue != null ? Number(todayMetrics.fatigue) : null;

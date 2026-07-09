@@ -143,7 +143,7 @@ export function buildActivityMatcher(id) {
   };
 }
 
-/** Build a patch object for in-memory activity lists from a save payload. */
+  /** Build a patch object for in-memory activity lists from a save payload. */
 export function metricsPatchFromDetail(detail = {}) {
   if (!detail || typeof detail !== 'object') return {};
 
@@ -166,12 +166,14 @@ export function metricsPatchFromDetail(detail = {}) {
     patch.totalElapsedTime = s;
     patch.totalTimerTime = s;
     patch.totalTime = s;
+    patch.metricsManualized = true;
   }
 
   if (detail.distance != null && Number.isFinite(Number(detail.distance))) {
     const m = Math.round(Number(detail.distance));
     patch.distance = m;
     patch.totalDistance = m;
+    patch.metricsManualized = true;
   }
 
   if (detail.tss != null && Number.isFinite(Number(detail.tss))) {
@@ -182,6 +184,7 @@ export function metricsPatchFromDetail(detail = {}) {
     // is recomputed client-side from duration + zones and must not stick as manual.
     if (detail.tssDisplayMode === 'manual' || detail.manualTss != null) {
       patch.manualTss = t;
+      patch.metricsManualized = true;
     }
   }
 
@@ -194,6 +197,7 @@ export function metricsPatchFromDetail(detail = {}) {
   if (detail.lactate != null) patch.lactate = Number(detail.lactate) || 0;
 
   if (detail.tssDisplayMode) patch.tssDisplayMode = detail.tssDisplayMode;
+  if (detail.metricsManualized === true) patch.metricsManualized = true;
 
   return patch;
 }

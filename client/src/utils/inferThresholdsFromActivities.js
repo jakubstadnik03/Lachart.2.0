@@ -191,6 +191,7 @@ export function mergeProfileZones(base, zonesSource) {
     ...base,
     powerZones: zonesSource.powerZones || base.powerZones,
     heartRateZones: zonesSource.heartRateZones || base.heartRateZones,
+    trainingPreferences: base.trainingPreferences || zonesSource.trainingPreferences,
     units: base.units || zonesSource.units,
     ftp: base.ftp || zonesSource.ftp,
     thresholdPace: base.thresholdPace || zonesSource.thresholdPace,

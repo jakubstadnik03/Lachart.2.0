@@ -2,12 +2,27 @@ import React, { useMemo, useState, useEffect, useRef, useCallback } from "react"
 import ReactDOM from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { EllipsisVerticalIcon } from "@heroicons/react/24/outline";
-import { formatSpeedForUser, resolveDistanceUnitSystem } from "../../utils/unitsConverter";
-import { SearchableSelect } from "../SearchableSelect";
+import { resolveDistanceUnitSystem } from "../../utils/unitsConverter";
 import { getStravaActivityDetail } from "../../services/api";
 import { useCategories } from "../../context/CategoryContext";
+import { filterWorkResults, getWorkLapMetricValue } from "../../utils/workLapFilter";
+import { enrichTrainingsWithCategory, normalizeCategoryKey } from "../../utils/trainingCategory";
 
 const CATEGORY_OPTION_PREFIX = '__category__:';
+const PICKER_ALL = "__all__";
+const PICKER_LACTATE = "__lactate__";
+const PICKER_UNCATEGORIZED = "__uncategorized__";
+
+function trainingKey(t) {
+  if (!t) return "";
+  return String(t._id || t.id || t.stravaId || `${t.title || "training"}-${t.date || t.timestamp || ""}`);
+}
+
+function formatTrainingPickerDate(t) {
+  const d = t?.date || t?.startDate || t?.timestamp;
+  if (!d) return "—";
+  return new Date(d).toLocaleDateString("en-US", { day: "numeric", month: "short", year: "2-digit" });
+}
 
 /** Matches LapsBarChart / TrainingItem palette exactly. */
 const INTERVAL_TYPE_BAR = {
@@ -16,26 +31,9 @@ const INTERVAL_TYPE_BAR = {
   cooldown: { normal: '#38bdf8', hovered: '#0ea5e9' },
 };
 
-/** Return only work intervals (or all if no types set).
- *  Treats explicit warmup / recovery / cooldown as non-work; untagged
- *  entries are kept when at least one tag exists so partially-annotated
- *  sessions still produce a sane average. */
-function workOnly(results) {
-  if (!results || results.length === 0) return [];
-  const hasTypes = results.some(r => r && r.intervalType);
-  if (!hasTypes) return results;
-  const filtered = results.filter(r => {
-    const t = r && r.intervalType;
-    return t !== 'warmup' && t !== 'recovery' && t !== 'cooldown';
-  });
-  return filtered.length > 0 ? filtered : results;
-}
-
-const GRAPH_H = 120;
-
 /* ── tiny helpers ──────────────────────────────────────────────────────────── */
-function axisTickY(i, n, h = GRAPH_H) {
-  return n <= 1 ? h / 2 : (i / (n - 1)) * h;
+function axisTickPercent(i, n) {
+  return n <= 1 ? 50 : (i / (n - 1)) * 100;
 }
 function trainingResultsOf(t) {
   return Array.isArray(t?.results) ? t.results : [];
@@ -105,7 +103,7 @@ function parseDurationSecs(r) {
 }
 
 /* ── Bar tooltip ───────────────────────────────────────────────────────────── */
-function BarTooltip({ barRef, barHeight, visible, index, power, heartRate, lactate, duration, durationType, distance, sport, user, intervalType = null }) {
+function BarTooltip({ barRef, visible, index, power, heartRate, lactate, duration, durationType, distance, sport, user, intervalType = null }) {
   const [pos, setPos] = useState({ top: 0, left: 0, barCenterX: 0 });
   const tooltipRef = useRef(null);
   const unitSystem = resolveDistanceUnitSystem(user, "metric");
@@ -116,10 +114,10 @@ function BarTooltip({ barRef, barHeight, visible, index, power, heartRate, lacta
       const r = barRef.current?.getBoundingClientRect();
       if (!r) return;
       const TIP_W = 170, GAP = 8, MARGIN = 8;
-      // bar is bottom-aligned inside the column container → compute its actual top edge
-      const actualBarH = Math.max(barHeight || 0, 3);
-      const barTop = r.bottom - actualBarH;
-      const top = barTop - GAP; // tooltip sits just above the bar top
+      const fillEl = barRef.current?.querySelector('[data-bar-fill]');
+      const fillRect = fillEl?.getBoundingClientRect();
+      const barTop = fillRect?.top ?? r.top;
+      const top = barTop - GAP;
       const idealLeft = r.left + r.width / 2;
       const left = Math.max(TIP_W / 2 + MARGIN, Math.min(idealLeft, window.innerWidth - TIP_W / 2 - MARGIN));
       setPos({ top, left, barCenterX: idealLeft });
@@ -128,7 +126,7 @@ function BarTooltip({ barRef, barHeight, visible, index, power, heartRate, lacta
     window.addEventListener("scroll", upd, true);
     window.addEventListener("resize", upd);
     return () => { window.removeEventListener("scroll", upd, true); window.removeEventListener("resize", upd); };
-  }, [visible, barRef, barHeight]);
+  }, [visible, barRef]);
 
   if (!visible || !pos.top) return null;
 
@@ -251,7 +249,7 @@ const BAR_COLORS = ["#4c1d95","#5b21b6","#6d28d9","#7c3aed","#8b5cf6","#a78bfa",
 // Amber/orange shades for bars with lactate data
 const BAR_LACTATE_COLORS = ["#92400e","#b45309","#d97706","#f59e0b","#fbbf24","#fcd34d","#fde68a"];
 
-function VerticalBar({ height, colorIdx, intervalType, power, pace, distance, heartRate, lactate, duration, durationType, index, isHovered, onHover, sport, user = null, widthPercent = null }) {
+function VerticalBar({ heightPercent, colorIdx, intervalType, power, pace, distance, heartRate, lactate, duration, durationType, index, isHovered, onHover, sport, user = null, widthPercent = null }) {
   const barRef = useRef(null);
 
   /* intervalType-based color overrides (warmup / recovery / cooldown) */
@@ -281,9 +279,10 @@ function VerticalBar({ height, colorIdx, intervalType, power, pace, distance, he
         onTouchEnd={() => setTimeout(() => onHover(false), 1800)}
       >
         <div
+          data-bar-fill
           className="absolute bottom-0 w-full rounded-t-sm"
           style={{
-            height: `${Math.max(height, 3)}px`,
+            height: `${Math.max(heightPercent, 0.8)}%`,
             backgroundColor: bg,
             opacity: hoverOpacity,
             transition: "opacity 0.15s",
@@ -292,7 +291,6 @@ function VerticalBar({ height, colorIdx, intervalType, power, pace, distance, he
       </div>
       <BarTooltip
         barRef={barRef}
-        barHeight={Math.max(height, 3)}
         visible={isHovered}
         index={index}
         intervalType={intervalType}
@@ -310,14 +308,14 @@ function VerticalBar({ height, colorIdx, intervalType, power, pace, distance, he
 }
 
 /* ── Y-axis scale ──────────────────────────────────────────────────────────── */
-function Scale({ values, formatValue, height = GRAPH_H }) {
+function Scale({ values, formatValue }) {
   return (
-    <div className="relative shrink-0 w-8 sm:w-10 text-right" style={{ height }}>
+    <div className="relative shrink-0 w-9 sm:w-11 text-right h-full min-h-[100px] self-stretch">
       {values.map((v, i) => (
         <div
           key={i}
           className="absolute right-0 left-0 flex items-center justify-end pr-1"
-          style={{ top: `${axisTickY(i, values.length)}px`, transform: "translateY(-50%)" }}
+          style={{ top: `${axisTickPercent(i, values.length)}%`, transform: "translateY(-50%)" }}
         >
           <span className="text-[11px] text-gray-400 bg-white pl-0.5 leading-none whitespace-nowrap">
             {formatValue ? formatValue(v) : v}
@@ -337,19 +335,17 @@ function TrainingComparison({ training, trainingResults, previousTraining, previ
   const normSport = normalizeSport(sport);
   const isRun  = normSport === "run";
   const isSwim = normSport === "swim";
-  const isBike = normSport === "bike";
-
-  /* Use only work intervals for averages (falls back to all if no types set) */
-  const workResults  = workOnly(results);
-  const workPrevRes  = workOnly(prevRes);
+  const workResults  = filterWorkResults(results, sport);
+  const workPrevRes  = filterWorkResults(prevRes, sport);
 
   const avg = (arr, fn) => {
     const vals = arr.map(fn).filter(x => x != null && x > 0);
     return vals.length ? Math.round(vals.reduce((a, b) => a + b) / vals.length) : 0;
   };
 
-  const curPow  = avg(workResults,  r => { const p = Number(r.power); return isNaN(p) ? null : p; });
-  const prevPow = avg(workPrevRes,  r => { const p = Number(r.power); return isNaN(p) ? null : p; });
+  const lapPower = (r) => getWorkLapMetricValue(r);
+  const curPow  = avg(workResults, lapPower);
+  const prevPow = avg(workPrevRes, lapPower);
   const curPace  = avg(workResults, r => parsePaceSecs(r.power));
   const prevPace = avg(workPrevRes, r => parsePaceSecs(r.power));
 
@@ -363,17 +359,13 @@ function TrainingComparison({ training, trainingResults, previousTraining, previ
     return `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}${unitSystem === "imperial" ? "/100yd" : "/100m"}`;
   };
 
-  const avgSpeed = Number(training.avgSpeed || 0);
-  // Fallback for Strava swims: compute pace from average_speed (m/s → sec/100m)
   const stravaSpdMs = Number(training.average_speed || training.avgSpeed || 0);
   const swimPaceFromStrava = isSwim && stravaSpdMs > 0 ? Math.round(100 / stravaSpdMs) : 0;
   const metricStr = isRun
     ? fmtPace(curPace || 0)
     : isSwim
       ? fmtSwimPace(curPace || swimPaceFromStrava)
-      : isBike && avgSpeed > 0
-        ? formatSpeedForUser(avgSpeed, user)
-        : `${curPow} W`;
+      : `${curPow} W`;
 
   const isPaceMetric = isRun || isSwim;
   const rawDiff  = isPaceMetric ? (prevPace ? curPace - prevPace : null) : (prevPow ? curPow - prevPow : null);
@@ -399,6 +391,238 @@ function TrainingComparison({ training, trainingResults, previousTraining, previ
   );
 }
 
+/* ── Category + multi-select session picker ───────────────────────────────── */
+function TrainingHistoryPicker({
+  categories = [],
+  categoryCounts = {},
+  trainings = [],
+  selectedCategoryId,
+  onCategoryChange,
+  selectedKeys = [],
+  onSelectionChange,
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [dropPos, setDropPos] = useState({ top: 0, left: 0, width: 320 });
+  const btnRef = useRef(null);
+  const panelRef = useRef(null);
+
+  const DROPDOWN_W = 320;
+  const MARGIN = 8;
+
+  useEffect(() => {
+    if (!open) return;
+    const onMouse = (e) => {
+      if (
+        btnRef.current && !btnRef.current.contains(e.target) &&
+        panelRef.current && !panelRef.current.contains(e.target)
+      ) setOpen(false);
+    };
+    const onScroll = (e) => {
+      if (panelRef.current?.contains(e.target)) return;
+      if (panelRef.current?.contains(document.activeElement)) return;
+      setOpen(false);
+    };
+    document.addEventListener("mousedown", onMouse);
+    window.addEventListener("scroll", onScroll, true);
+    return () => {
+      document.removeEventListener("mousedown", onMouse);
+      window.removeEventListener("scroll", onScroll, true);
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open || !btnRef.current) return;
+    const r = btnRef.current.getBoundingClientRect();
+    const dropW = Math.max(r.width, DROPDOWN_W);
+    const wouldOverflowRight = r.left + dropW > window.innerWidth - MARGIN;
+    let left = wouldOverflowRight
+      ? r.right + window.scrollX - dropW
+      : r.left + window.scrollX;
+    setDropPos({
+      top: r.bottom + window.scrollY + 4,
+      left: Math.max(MARGIN + window.scrollX, left),
+      width: dropW,
+    });
+  }, [open]);
+
+  const categoryOptions = useMemo(() => {
+    const opts = [{ id: PICKER_ALL, label: "All sessions", color: "#6b7280", count: categoryCounts[PICKER_ALL] }];
+    categories.forEach((c) => {
+      opts.push({ id: c.id, label: c.label, color: c.color, count: categoryCounts[c.id] || 0 });
+    });
+    if (categoryCounts[PICKER_LACTATE] > 0) {
+      opts.push({ id: PICKER_LACTATE, label: "Lactate tested", color: "#f97316", count: categoryCounts[PICKER_LACTATE] });
+    }
+    if (categoryCounts[PICKER_UNCATEGORIZED] > 0) {
+      opts.push({ id: PICKER_UNCATEGORIZED, label: "Uncategorized", color: "#9ca3af", count: categoryCounts[PICKER_UNCATEGORIZED] });
+    }
+    return opts;
+  }, [categories, categoryCounts]);
+
+  const activeCategory = categoryOptions.find(c => c.id === selectedCategoryId) || categoryOptions[0];
+
+  const pickerTrainings = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return trainings;
+    return trainings.filter(t =>
+      String(t.title || "").toLowerCase().includes(q) ||
+      formatTrainingPickerDate(t).toLowerCase().includes(q)
+    );
+  }, [trainings, query]);
+
+  const selectedSet = useMemo(() => new Set(selectedKeys), [selectedKeys]);
+  const allVisibleSelected = pickerTrainings.length > 0
+    && pickerTrainings.every(t => selectedSet.has(trainingKey(t)));
+  const someSelected = selectedKeys.length > 0;
+
+  const toggleKey = (key) => {
+    if (selectedSet.has(key)) {
+      onSelectionChange(selectedKeys.filter(k => k !== key));
+    } else {
+      onSelectionChange([...selectedKeys, key]);
+    }
+  };
+
+  const selectAllVisible = () => {
+    const merged = new Set(selectedKeys);
+    pickerTrainings.forEach(t => merged.add(trainingKey(t)));
+    onSelectionChange([...merged]);
+  };
+
+  const buttonLabel = someSelected
+    ? `${activeCategory?.label || "Sessions"} · ${selectedKeys.length}`
+    : (activeCategory?.label || "Select sessions");
+
+  const dropdown = open ? ReactDOM.createPortal(
+    <div
+      ref={panelRef}
+      className="bg-white rounded-xl shadow-2xl border border-gray-200 overflow-hidden"
+      style={{ position: "absolute", top: dropPos.top, left: dropPos.left, width: dropPos.width, zIndex: 99999 }}
+    >
+      <div className="p-2.5 border-b border-gray-100 bg-gray-50/80">
+        <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400 mb-2">Category</p>
+        <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
+          {categoryOptions.map((c) => {
+            const active = c.id === selectedCategoryId;
+            return (
+              <button
+                key={c.id}
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => onCategoryChange(c.id)}
+                className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-[11px] font-medium border transition-colors ${
+                  active
+                    ? "bg-white border-gray-300 text-gray-900 shadow-sm"
+                    : "bg-white/60 border-transparent text-gray-600 hover:bg-white hover:border-gray-200"
+                }`}
+              >
+                <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: c.color }} />
+                <span className="truncate max-w-[120px]">{c.label}</span>
+                {c.count != null && (
+                  <span className="text-[10px] text-gray-400 tabular-nums">{c.count}</span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="p-2 border-b border-gray-100 flex items-center gap-2">
+        <input
+          type="text"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search sessions…"
+          className="flex-1 text-xs px-2.5 py-1.5 rounded-lg bg-gray-50 border border-gray-200 outline-none focus:ring-2 focus:ring-violet-400/30 placeholder-gray-400"
+        />
+        <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={selectAllVisible}
+          className="text-[11px] font-medium text-violet-600 hover:text-violet-800 whitespace-nowrap">All</button>
+        <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => onSelectionChange([])}
+          className="text-[11px] font-medium text-gray-400 hover:text-gray-600 whitespace-nowrap">Clear</button>
+      </div>
+
+      <div className="px-2.5 py-1.5 text-[10px] text-gray-400 border-b border-gray-50 flex justify-between">
+        <span>{pickerTrainings.length} in category</span>
+        <span className="tabular-nums">{selectedKeys.length} selected</span>
+      </div>
+
+      <div className="overflow-y-auto max-h-56 py-1">
+        {pickerTrainings.length === 0 ? (
+          <div className="px-3 py-6 text-xs text-gray-400 text-center">No sessions in this category</div>
+        ) : pickerTrainings.map((t) => {
+          const key = trainingKey(t);
+          const checked = selectedSet.has(key);
+          return (
+            <label
+              key={key}
+              className={`flex items-start gap-2.5 px-3 py-2 cursor-pointer transition-colors ${
+                checked ? "bg-violet-50/80" : "hover:bg-gray-50"
+              }`}
+            >
+              <input
+                type="checkbox"
+                checked={checked}
+                onChange={() => toggleKey(key)}
+                className="mt-0.5 w-3.5 h-3.5 rounded border-gray-300 text-violet-600 focus:ring-violet-400"
+              />
+              <span className="min-w-0 flex-1">
+                <span className="block text-xs font-medium text-gray-800 truncate">{t.title || "Untitled"}</span>
+                <span className="block text-[10px] text-gray-400 mt-0.5 tabular-nums">
+                  {formatTrainingPickerDate(t)}
+                  {t.sport ? ` · ${t.sport}` : ""}
+                </span>
+              </span>
+            </label>
+          );
+        })}
+      </div>
+
+      {trainings.length > 0 && (
+        <div className="p-2 border-t border-gray-100 bg-gray-50/50 flex justify-end">
+          <button
+            type="button"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => {
+              if (!allVisibleSelected) selectAllVisible();
+              setOpen(false);
+            }}
+            className="px-3 py-1.5 text-xs font-semibold text-white bg-violet-600 hover:bg-violet-700 rounded-lg transition-colors"
+          >
+            {someSelected ? "Done" : "Select all & close"}
+          </button>
+        </div>
+      )}
+    </div>,
+    document.body
+  ) : null;
+
+  return (
+    <div className="relative inline-block">
+      <button
+        ref={btnRef}
+        type="button"
+        onClick={() => { setOpen(o => !o); setQuery(""); }}
+        className="flex items-center gap-1.5 px-2.5 py-1.5 bg-gray-100 hover:bg-gray-200 rounded-lg text-xs font-medium text-gray-700 max-w-[220px] transition-colors"
+      >
+        {activeCategory?.color && (
+          <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: activeCategory.color }} />
+        )}
+        <span className="truncate">{buttonLabel}</span>
+        {someSelected && (
+          <span className="shrink-0 text-[10px] font-semibold text-violet-600 bg-violet-100 px-1.5 py-0.5 rounded-full tabular-nums">
+            {selectedKeys.length}
+          </span>
+        )}
+        <svg className="w-3 h-3 shrink-0 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+      {dropdown}
+    </div>
+  );
+}
+
 /* ── Main component ────────────────────────────────────────────────────────── */
 export function TrainingStats({
   trainings, selectedSport, onSportChange,
@@ -408,14 +632,19 @@ export function TrainingStats({
   // Coach viewing another athlete: pass the athlete's id so the Strava
   // detail endpoint resolves their token, not the coach's.
   integrationAthleteId = null,
+  /** Full trainings list (incl. Strava/FIT) — used to inherit calendar category tags. */
+  categoryCatalog = null,
 }) {
   const navigate   = useNavigate();
   const unitSystem = resolveDistanceUnitSystem(user, "metric");
   const { categories } = useCategories();
 
   const trainingsList = useMemo(
-    () => (Array.isArray(trainings) ? trainings : []),
-    [trainings]
+    () => enrichTrainingsWithCategory(
+      Array.isArray(trainings) ? trainings : [],
+      categoryCatalog || trainings
+    ),
+    [trainings, categoryCatalog]
   );
 
   const availableSports = [...new Set(trainingsList.map(t => t.sport))].filter(Boolean);
@@ -434,9 +663,18 @@ export function TrainingStats({
     onSportChange?.(sport);
   };
 
-  const [internalSelectedTitle, setInternalSelectedTitle] = useState(null);
-  const currentSelectedTitle  = selectedTitle  !== undefined ? selectedTitle  : internalSelectedTitle;
+  const [, setInternalSelectedTitle] = useState(null);
   const setCurrentSelectedTitle = setSelectedTitle || setInternalSelectedTitle;
+
+  const [pickerCategoryId, setPickerCategoryId] = useState(() => {
+    try { return localStorage.getItem("trainingStats_category") || PICKER_ALL; } catch { return PICKER_ALL; }
+  });
+  const [selectedTrainingKeys, setSelectedTrainingKeys] = useState(null);
+  const categorySelectionRef = useRef({ categoryId: null, sport: null });
+
+  useEffect(() => {
+    try { localStorage.setItem("trainingStats_category", pickerCategoryId); } catch {}
+  }, [pickerCategoryId]);
 
   const [hoveredBar,          setHoveredBar]          = useState(null);
   const [visibleTrainingIndex, setVisibleTrainingIndex] = useState(0);
@@ -454,7 +692,6 @@ export function TrainingStats({
   const containerRef = useRef(null);
   const chartBarsRef = useRef(null);
   const [containerWidth, setContainerWidth] = useState(0);
-  const [chartHeight, setChartHeight] = useState(GRAPH_H);
 
   /* close settings on outside click */
   useEffect(() => {
@@ -463,38 +700,6 @@ export function TrainingStats({
     return () => document.removeEventListener("mousedown", h);
   }, []);
 
-  /* auto-select latest training (by date) only when there is no valid pick
-     yet. Don't clobber a user's explicit choice just because it's a sport
-     other than the current sport filter — that was making the dropdown
-     snap back the moment they picked a swim title while filtering by run. */
-  useEffect(() => {
-    if (!trainingsList.length) return;
-    const rel = currentSelectedSport === "all" ? trainingsList : trainingsList.filter(t => t.sport === currentSelectedSport);
-    if (!rel.length) return;
-
-    // Special sentinel options (lactate-only, category filter) are never
-    // a real title — leave them as-is.
-    const isSentinel = typeof currentSelectedTitle === 'string'
-      && (currentSelectedTitle === LACTATE_OPTION
-          || currentSelectedTitle.startsWith(CATEGORY_OPTION_PREFIX));
-    if (isSentinel) return;
-
-    // Keep the user's pick if it exists ANYWHERE in trainingsList — not just
-    // in the sport-filtered slice.
-    const titleExistsAnywhere = currentSelectedTitle
-      && trainingsList.some(t => t.title === currentSelectedTitle);
-    if (titleExistsAnywhere) return;
-
-    // Otherwise fall back to the newest training in the current sport slice.
-    const latest = [...rel].sort((a, b) => new Date(b.date || b.timestamp || 0) - new Date(a.date || a.timestamp || 0))[0];
-    setCurrentSelectedTitle(latest.title);
-    if (setSelectedTrainingId) setSelectedTrainingId(latest._id || latest.id);
-  }, [trainingsList, currentSelectedSport, currentSelectedTitle, setCurrentSelectedTitle, setSelectedTrainingId]);
-
-  // Sentinel option that surfaces every lactate-tagged training regardless
-  // of its title — mirrors the mobile "Lactate-tested" panel so coaches /
-  // athletes can see every export with lactate even if the original Strava
-  // name differs.
   const LACTATE_OPTION = '__lactate__';
   const hasLactateValue = useCallback((t) => {
     if (!t) return false;
@@ -508,45 +713,92 @@ export function TrainingStats({
     return false;
   }, []);
 
-  const trainingOptions = useMemo(() => {
-    const sportFiltered = trainingsList.filter(t =>
+  const sportFilteredTrainings = useMemo(() => {
+    return trainingsList.filter(t =>
       currentSelectedSport === "all" || normalizeSport(t.sport) === normalizeSport(currentSelectedSport)
     );
-    const titles = [...new Set(sportFiltered.map(t => t.title).filter(Boolean))];
-    const lactateCount = sportFiltered.filter(hasLactateValue).length;
-    const opts = titles.map(t => ({ value: t, label: t }));
+  }, [trainingsList, currentSelectedSport]);
 
-    // Build category options for categories that have at least one training
-    const catCounts = new Map();
-    sportFiltered.forEach(t => {
-      if (t.category) catCounts.set(t.category, (catCounts.get(t.category) || 0) + 1);
+  const categoryCounts = useMemo(() => {
+    const counts = { [PICKER_ALL]: sportFilteredTrainings.length };
+    sportFilteredTrainings.forEach(t => {
+      const cat = normalizeCategoryKey(t.category);
+      if (cat) counts[cat] = (counts[cat] || 0) + 1;
+      else counts[PICKER_UNCATEGORIZED] = (counts[PICKER_UNCATEGORIZED] || 0) + 1;
     });
-    const catOpts = categories
-      .filter(c => (catCounts.get(c.id) || 0) > 0)
-      .map(c => ({
-        value: `${CATEGORY_OPTION_PREFIX}${c.id}`,
-        label: `${c.label} (${catCounts.get(c.id)})`,
-      }));
+    const lactateN = sportFilteredTrainings.filter(hasLactateValue).length;
+    if (lactateN > 0) counts[PICKER_LACTATE] = lactateN;
+    return counts;
+  }, [sportFilteredTrainings, hasLactateValue]);
 
-    if (lactateCount > 0) {
-      opts.unshift({ value: LACTATE_OPTION, label: `Lactate trainings (${lactateCount})` });
+  const categoryPool = useMemo(() => {
+    const sportOk = (t) => currentSelectedSport === "all" || normalizeSport(t.sport) === normalizeSport(currentSelectedSport);
+    let list;
+    if (pickerCategoryId === PICKER_LACTATE) {
+      list = trainingsList.filter(t => sportOk(t) && hasLactateValue(t));
+    } else if (pickerCategoryId === PICKER_UNCATEGORIZED) {
+      list = trainingsList.filter(t => sportOk(t) && !normalizeCategoryKey(t.category));
+    } else if (pickerCategoryId === PICKER_ALL) {
+      list = trainingsList.filter(sportOk);
+    } else {
+      list = trainingsList.filter(t => sportOk(t) && normalizeCategoryKey(t.category) === pickerCategoryId);
     }
-    return [...catOpts, ...opts];
-  }, [trainingsList, currentSelectedSport, hasLactateValue, categories]);
+    return list.sort((a, b) => new Date(b.date || b.startDate || 0) - new Date(a.date || a.startDate || 0));
+  }, [trainingsList, currentSelectedSport, pickerCategoryId, hasLactateValue]);
+
+  /* Default: only the newest session in the pool. */
+  useEffect(() => {
+    if (categoryPool.length === 0) return;
+    const prev = categorySelectionRef.current;
+    const filterChanged = prev.categoryId !== pickerCategoryId || prev.sport !== currentSelectedSport;
+    if (!filterChanged && selectedTrainingKeys !== null) return;
+
+    categorySelectionRef.current = { categoryId: pickerCategoryId, sport: currentSelectedSport };
+    const newest = categoryPool[0];
+    const keys = newest ? [trainingKey(newest)] : [];
+    setSelectedTrainingKeys(keys);
+    setVisibleTrainingIndex(0);
+    setProgressIndex(0);
+    if (newest) {
+      if (newest.title) setCurrentSelectedTitle(newest.title);
+      if (setSelectedTrainingId) setSelectedTrainingId(newest._id || newest.id || newest.stravaId || null);
+    }
+  }, [pickerCategoryId, currentSelectedSport, categoryPool, selectedTrainingKeys, setSelectedTrainingId, setCurrentSelectedTitle]);
 
   const filteredTrainings = useMemo(() => {
-    const sportOk = (t) => currentSelectedSport === "all" || normalizeSport(t.sport) === normalizeSport(currentSelectedSport);
-    const isCatOpt = typeof currentSelectedTitle === 'string' && currentSelectedTitle.startsWith(CATEGORY_OPTION_PREFIX);
-    const list = currentSelectedTitle === LACTATE_OPTION
-      ? trainingsList.filter(t => sportOk(t) && hasLactateValue(t))
-      : isCatOpt
-        ? (() => {
-            const catId = currentSelectedTitle.slice(CATEGORY_OPTION_PREFIX.length);
-            return trainingsList.filter(t => sportOk(t) && t.category === catId);
-          })()
-        : trainingsList.filter(t => sportOk(t) && t.title === currentSelectedTitle);
-    return list.sort((a, b) => new Date(b.date) - new Date(a.date));
-  }, [trainingsList, currentSelectedSport, currentSelectedTitle, hasLactateValue]);
+    const keys = selectedTrainingKeys === null
+      ? (categoryPool[0] ? [trainingKey(categoryPool[0])] : [])
+      : selectedTrainingKeys;
+    if (!keys.length) return [];
+    const selected = new Set(keys);
+    return categoryPool.filter(t => selected.has(trainingKey(t)));
+  }, [categoryPool, selectedTrainingKeys]);
+
+  const effectiveSelectedKeys = selectedTrainingKeys === null
+    ? (categoryPool[0] ? [trainingKey(categoryPool[0])] : [])
+    : selectedTrainingKeys;
+
+  const handleCategoryChange = (catId) => {
+    setPickerCategoryId(catId);
+    if (catId === PICKER_LACTATE) {
+      setCurrentSelectedTitle(LACTATE_OPTION);
+    } else if (catId !== PICKER_ALL) {
+      setCurrentSelectedTitle(`${CATEGORY_OPTION_PREFIX}${catId}`);
+    }
+  };
+
+  const handleSelectionChange = (keys) => {
+    setSelectedTrainingKeys(keys);
+    setVisibleTrainingIndex(0);
+    setProgressIndex(0);
+    if (keys.length === 1) {
+      const t = categoryPool.find(x => trainingKey(x) === keys[0]);
+      if (t?.title) {
+        setCurrentSelectedTitle(t.title);
+        if (setSelectedTrainingId) setSelectedTrainingId(t._id || t.id || t.stravaId || null);
+      }
+    }
+  };
 
   // Lazy-fetch Strava laps for filtered trainings that have no results
   const [stravaLapsCache, setStravaLapsCache] = useState({}); // { stravaId: [...results] }
@@ -630,53 +882,31 @@ export function TrainingStats({
     return [];
   }, [stravaLapsCache, filterWarmCool]);
 
-  useEffect(() => { setProgressIndex(0); }, [filteredTrainings.length, currentSelectedTitle]);
+  const getWorkResults = useCallback((t) => {
+    const sport = resolveTrainingSport(t) || normalizeSport(currentSelectedSport) || 'bike';
+    return filterWorkResults(getResults(t), sport);
+  }, [getResults, currentSelectedSport]);
 
-  const handleTitleChange = (title) => {
-    setCurrentSelectedTitle(title);
-    // Sentinel options (Lactate-only / category) don't map to a single
-    // training id — let downstream components pick their own. Just propagate
-    // the new value and bail.
-    if (title === LACTATE_OPTION || (typeof title === 'string' && title.startsWith(CATEGORY_OPTION_PREFIX))) {
-      return;
-    }
-    // Match the title across the full set (regardless of sport filter) and
-    // fall back to .id when .  _id is absent (Strava activities). Otherwise
-    // the parent's selectedTraining would land on `undefined` and a sibling
-    // sync effect could pick a default that doesn't match the new title.
-    const matches = trainingsList
-      .filter(t => t.title === title)
-      .sort((a, b) => new Date(b.date || b.startDate || 0) - new Date(a.date || a.startDate || 0));
-    if (matches.length && setSelectedTrainingId) {
-      const pick = matches[0];
-      setSelectedTrainingId(pick._id || pick.id || pick.stravaId || null);
-    }
-  };
+  useEffect(() => { setProgressIndex(0); }, [filteredTrainings.length, pickerCategoryId, effectiveSelectedKeys.length]);
 
   const visibleTrainings = useMemo(
     () => filteredTrainings.slice(visibleTrainingIndex, visibleTrainingIndex + displayCount),
     [filteredTrainings, visibleTrainingIndex, displayCount]
   );
 
-  /* measure chart container */
+  /* measure chart container width */
   useEffect(() => {
     const upd = () => {
       if (containerRef.current) setContainerWidth(containerRef.current.clientWidth);
-      if (chartBarsRef.current) {
-        const h = chartBarsRef.current.clientHeight;
-        if (h > 0) setChartHeight(Math.max(GRAPH_H, h));
-      }
     };
     upd();
-    const els = [containerRef.current, chartBarsRef.current].filter(Boolean);
-    const ro = typeof ResizeObserver !== "undefined"
-      ? new ResizeObserver(upd)
-      : null;
-    els.forEach((el) => ro?.observe(el));
+    const el = containerRef.current;
+    const ro = typeof ResizeObserver !== "undefined" && el ? new ResizeObserver(upd) : null;
+    ro?.observe(el);
     window.addEventListener("resize", upd);
     return () => {
       window.removeEventListener("resize", upd);
-      els.forEach((el) => ro?.unobserve(el));
+      if (el) ro?.unobserve(el);
     };
   }, [visibleTrainings.length, filteredTrainings.length, visibleTrainingIndex, displayCount]);
 
@@ -780,10 +1010,14 @@ export function TrainingStats({
         </div>
 
         <div className="flex items-center gap-2">
-          <SearchableSelect
-            value={currentSelectedTitle}
-            options={trainingOptions}
-            onChange={handleTitleChange}
+          <TrainingHistoryPicker
+            categories={categories}
+            categoryCounts={categoryCounts}
+            trainings={categoryPool}
+            selectedCategoryId={pickerCategoryId}
+            onCategoryChange={handleCategoryChange}
+            selectedKeys={effectiveSelectedKeys}
+            onSelectionChange={handleSelectionChange}
           />
           {/* settings gear */}
           <div className="relative" ref={settingsRef}>
@@ -833,11 +1067,19 @@ export function TrainingStats({
       </div>
 
       {/* Chart */}
+      {filteredTrainings.length === 0 ? (
+        <div className="flex flex-1 min-h-[120px] items-center justify-center rounded-xl border border-dashed border-gray-200 bg-gray-50/50 px-4 text-center">
+          <p className="text-sm text-gray-400">
+            {categoryPool.length === 0
+              ? "No sessions in this category"
+              : "Select one or more sessions in the picker above"}
+          </p>
+        </div>
+      ) : (
       <div className="flex flex-1 min-h-0 gap-1 sm:gap-2 items-stretch w-full min-w-0">
         <Scale
           values={isPaceSport ? paceValues : powerValues}
           formatValue={isPaceSport ? formatPaceVal : null}
-          height={chartHeight}
         />
 
         <div ref={containerRef} className="relative flex flex-1 min-w-0 min-h-0 flex-col" style={{ overflow: "visible" }}>
@@ -848,7 +1090,7 @@ export function TrainingStats({
               <div
                 key={i}
                 className="absolute left-0 right-0 border-t border-gray-100"
-                style={{ top: `${axisTickY(i, arr.length, chartHeight)}px`, transform: "translateY(-50%)" }}
+                style={{ top: `${axisTickPercent(i, arr.length)}%`, transform: "translateY(-50%)" }}
               />
             ))}
           </div>
@@ -902,19 +1144,22 @@ export function TrainingStats({
                     style={{ gap: `${gapPx}px` }}
                   >
                     {results.map((r, rIdx) => {
-                      let height = 0;
-                      if (isPaceSport) {
-                        const pace = parsePaceSecs(r.power);
-                        if (pace && pace > 0) height = ((maxPace - pace) / (maxPace - minPace)) * chartHeight;
-                      } else {
-                        const pow = Number(r.power);
-                        if (!isNaN(pow) && pow > 0) height = ((pow - minPower) / (maxPower - minPower)) * chartHeight;
+                      let heightPercent = 0;
+                      const denom = isPaceSport ? (maxPace - minPace) : (maxPower - minPower);
+                      if (denom > 0) {
+                        if (isPaceSport) {
+                          const pace = parsePaceSecs(r.power);
+                          if (pace && pace > 0) heightPercent = ((maxPace - pace) / denom) * 100;
+                        } else {
+                          const pow = Number(r.power);
+                          if (!isNaN(pow) && pow > 0) heightPercent = ((pow - minPower) / denom) * 100;
+                        }
                       }
 
                       return (
                         <VerticalBar
                           key={`${training._id||tIdx}-${rIdx}`}
-                          height={height}
+                          heightPercent={heightPercent}
                           colorIdx={colorMap.get(rIdx) ?? rIdx}
                           intervalType={r.intervalType || null}
                           power={r.power}
@@ -944,6 +1189,7 @@ export function TrainingStats({
           </div>
         </div>
       </div>
+      )}
 
       {/* Training Progress */}
       {filteredTrainings.length > 0 && (
@@ -975,9 +1221,9 @@ export function TrainingStats({
               <TrainingComparison
                 key={t._id || t.id || i}
                 training={t}
-                trainingResults={getResults(t)}
+                trainingResults={getWorkResults(t)}
                 previousTraining={filteredTrainings[progressIndex + i + 1] ?? null}
-                previousResults={getResults(filteredTrainings[progressIndex + i + 1] ?? null)}
+                previousResults={getWorkResults(filteredTrainings[progressIndex + i + 1] ?? null)}
                 sport={resolveTrainingSport(t) || normalizeSport(currentSelectedSport) || "bike"}
                 onTrainingClick={handleTrainingClick}
                 user={user}
@@ -989,3 +1235,5 @@ export function TrainingStats({
     </div>
   );
 }
+
+export default TrainingStats;

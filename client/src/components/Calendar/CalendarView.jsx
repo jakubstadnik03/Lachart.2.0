@@ -2055,9 +2055,12 @@ function CompareContent({ merged, athleteId, onOpen }) {
 
       return {
         intervalType: l.intervalType,
+        durationType: distM > 0 && (actIsRun || actIsSwim) ? 'distance' : 'time',
         durationSeconds: durSec,
         distanceMeters: distM || undefined,
-        distance: distM || undefined,
+        distance: distM ? (distM >= 1000
+          ? `${(distM / 1000).toFixed(distM % 1000 === 0 ? 0 : 1)}km`
+          : `${Math.round(distM)}m`) : undefined,
         power: powerValue,
         heartRate: Number(l.average_heartrate || l.avgHeartRate || l.heartRate || 0) || undefined,
         lactate: l.lactate != null ? Number(l.lactate) : undefined,
@@ -2479,6 +2482,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
             manualTss: raw.manualTss ?? raw.detail?.manualTss,
             tssDisplayMode: raw.tssDisplayMode ?? raw.detail?.tssDisplayMode,
             tss: raw.manualTss ?? raw.tss ?? raw.detail?.manualTss,
+            metricsManualized: raw.metricsManualized ?? false,
             calories: raw.calories ?? raw.detail?.calories ?? null,
             kilojoules: raw.detail?.kilojoules ?? null,
             rpe: raw.rpe ?? null,
@@ -2545,8 +2549,10 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
     }
   }, [a.id, a._id, athleteId]);
 
-  // Merge summary + detail. Keep app ids/type/source from the calendar row and
-  // prefer list-level metrics (user edits) over Strava raw detail fields.
+  // Merge summary + detail. When the user has manually overridden duration /
+  // distance / TSS, prefer the detail snapshot (just saved to DB) over the
+  // calendar list row — otherwise a stale list entry wins until the parent
+  // re-renders and the modal keeps showing Strava's original values.
   const merged = useMemo(() => {
     if (!detail) return a;
     const pickNum = (...vals) => {
@@ -2556,12 +2562,27 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
       }
       return undefined;
     };
-    const moving = pickNum(
-      a.movingTime, a.moving_time, a.totalElapsedTime, a.duration, a.elapsed_time, a.elapsedTime,
-      detail.movingTime, detail.moving_time, detail.totalElapsedTime, detail.duration, detail.elapsed_time,
-    );
-    const distVal = pickNum(a.distance, a.totalDistance, detail.distance, detail.totalDistance);
-    const userManualTss = pickNum(a.manualTss, detail.manualTss);
+    const pickFrom = (sources, keys) => {
+      for (const src of sources) {
+        if (!src) continue;
+        for (const key of keys) {
+          const n = Number(src[key]);
+          if (Number.isFinite(n) && n >= 0) return n;
+        }
+      }
+      return undefined;
+    };
+    const metricsManualized = Boolean(a?.metricsManualized || detail?.metricsManualized);
+    const metricSources = metricsManualized ? [detail, a] : [a, detail];
+    const timeKeys = [
+      'movingTime', 'moving_time', 'totalTimerTime', 'duration',
+      'elapsed_time', 'totalElapsedTime', 'elapsedTime', 'totalTime',
+    ];
+    const moving = pickFrom(metricSources, timeKeys);
+    const distVal = pickFrom(metricSources, ['distance', 'totalDistance']);
+    const userManualTss = metricsManualized
+      ? pickNum(detail.manualTss, a.manualTss)
+      : pickNum(a.manualTss, detail.manualTss);
     const fileTss = pickNum(
       a.trainingStressScore, a.trainingLoad, a.tss,
       detail.trainingStressScore, detail.tss,
@@ -2585,12 +2606,14 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
       duration: moving,
       elapsed_time: moving,
       totalElapsedTime: moving,
+      totalTime: moving,
       distance: distVal,
       totalDistance: distVal,
       manualTss: userManualTss,
       tss: displayTss,
-      tssDisplayMode: a.tssDisplayMode ?? detail.tssDisplayMode ?? null,
+      tssDisplayMode: detail.tssDisplayMode ?? a.tssDisplayMode ?? null,
       trainingStressScore: fileTss ?? userManualTss,
+      metricsManualized,
       ...(caloriesVal > 0 ? { calories: caloriesVal, totalCalories: caloriesVal } : {}),
     };
   }, [a, detail]);
@@ -3559,6 +3582,14 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
         if (fields.tssDisplayMode) patch.tssDisplayMode = fields.tssDisplayMode;
         if (fields.rpe != null) patch.rpe = fields.rpe;
         if (fields.lactate != null) patch.lactate = fields.lactate;
+        if (
+          fields.movingTime != null
+          || fields.distance != null
+          || fields.tss != null
+          || fields.tssDisplayMode === 'manual'
+        ) {
+          patch.metricsManualized = true;
+        }
         return patch;
       };
 
@@ -3629,6 +3660,12 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
         duration: savedMoving,
         distance: savedDist,
         tssDisplayMode: effectiveMode,
+        metricsManualized: Boolean(
+          savedAct.metricsManualized
+          || extraFields.movingTime != null
+          || extraFields.distance != null
+          || extraFields.tss != null
+        ),
         calories: savedAct.calories ?? extraFields.calories,
         rpe: savedAct.rpe ?? extraFields.rpe,
         lactate: savedAct.lactate ?? extraFields.lactate,

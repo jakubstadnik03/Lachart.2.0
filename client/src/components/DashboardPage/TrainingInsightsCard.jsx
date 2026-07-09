@@ -1,8 +1,9 @@
 /**
  * TrainingInsightsCard — compact daily hint; tap for full + weekly overview.
  */
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import ReactDOM from 'react-dom';
+import { motion, useDragControls } from 'framer-motion';
 import { getRaceEvents } from '../../services/api';
 import { fetchWellness } from '../../services/wellnessData';
 import {
@@ -185,11 +186,52 @@ export default function TrainingInsightsCard({
 }
 
 function InsightSheet({ insight, weekly, style, onClose, onDismiss }) {
+  const dragControls = useDragControls();
+  const scrollRef = useRef(null);
+  const pullRef = useRef({ startY: 0, active: false });
+
   useEffect(() => {
     const prev = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     return () => { document.body.style.overflow = prev; };
   }, []);
+
+  const startSheetDrag = (e) => {
+    if (e.target.closest('button')) return;
+    dragControls.start(e);
+  };
+
+  const onContentTouchStart = (e) => {
+    const el = scrollRef.current;
+    if (!el || el.scrollTop > 0) {
+      pullRef.current.active = false;
+      return;
+    }
+    pullRef.current = { startY: e.touches[0].clientY, active: true };
+  };
+
+  const onContentTouchMove = (e) => {
+    const p = pullRef.current;
+    if (!p.active) return;
+    const el = scrollRef.current;
+    if (el && el.scrollTop > 0) {
+      p.active = false;
+      return;
+    }
+    const dy = e.touches[0].clientY - p.startY;
+    if (dy > 100) {
+      p.active = false;
+      onClose();
+    }
+  };
+
+  const onContentTouchEnd = (e) => {
+    const p = pullRef.current;
+    if (!p.active) return;
+    p.active = false;
+    const dy = e.changedTouches[0].clientY - p.startY;
+    if (dy > 70) onClose();
+  };
 
   return (
     <div
@@ -198,18 +240,37 @@ function InsightSheet({ insight, weekly, style, onClose, onDismiss }) {
       onClick={onClose}
       role="presentation"
     >
-      <div
+      <motion.div
         className="bg-white rounded-t-2xl shadow-2xl max-h-[85vh] flex flex-col"
         style={{ paddingBottom: 'max(16px, env(safe-area-inset-bottom))' }}
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-labelledby="insight-sheet-title"
+        initial={{ y: '100%' }}
+        animate={{ y: 0 }}
+        exit={{ y: '110%' }}
+        transition={{ type: 'spring', damping: 30, stiffness: 300 }}
+        drag="y"
+        dragControls={dragControls}
+        dragListener={false}
+        dragConstraints={{ top: 0 }}
+        dragElastic={{ top: 0, bottom: 0.35 }}
+        onDragEnd={(_, info) => {
+          if (info.offset.y > 90 || info.velocity.y > 450) onClose();
+        }}
       >
-        <div className="flex justify-center pt-2 pb-1">
+        <div
+          className="flex justify-center pt-2 pb-1 cursor-grab active:cursor-grabbing select-none"
+          style={{ touchAction: 'none' }}
+          onPointerDown={startSheetDrag}
+        >
           <div className="w-10 h-1 rounded-full bg-gray-200" />
         </div>
 
-        <div className="flex items-center justify-between px-4 pb-2">
+        <div
+          className="flex items-center justify-between px-4 pb-2 cursor-grab active:cursor-grabbing select-none"
+          onPointerDown={startSheetDrag}
+        >
           <div className="flex items-center gap-2">
             <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: style.dot }} />
             <h2 id="insight-sheet-title" className="text-sm font-bold text-gray-900">
@@ -243,7 +304,14 @@ function InsightSheet({ insight, weekly, style, onClose, onDismiss }) {
           </div>
         </div>
 
-        <div className="overflow-y-auto px-4 pb-4" style={{ WebkitOverflowScrolling: 'touch' }}>
+        <div
+          ref={scrollRef}
+          className="overflow-y-auto px-4 pb-4"
+          style={{ WebkitOverflowScrolling: 'touch' }}
+          onTouchStart={onContentTouchStart}
+          onTouchMove={onContentTouchMove}
+          onTouchEnd={onContentTouchEnd}
+        >
           <p className="text-base font-bold text-gray-900 leading-snug">{insight.headline}</p>
           {insight.detail && (
             <p className="text-sm text-gray-600 mt-1.5 leading-relaxed">{insight.detail}</p>
@@ -293,7 +361,7 @@ function InsightSheet({ insight, weekly, style, onClose, onDismiss }) {
             </div>
           )}
         </div>
-      </div>
+      </motion.div>
     </div>
   );
 }

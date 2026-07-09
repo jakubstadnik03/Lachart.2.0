@@ -511,53 +511,28 @@ const SettingsPage = () => {
     return () => window.removeEventListener('strava:integration-refreshed', refresh);
   }, [refreshStravaWebhookStatus]);
 
+  // Garmin OAuth return is handled globally in Layout. Refresh integration card when done.
+  useEffect(() => {
+    const refresh = async () => {
+      try {
+        const status = await getIntegrationStatus();
+        setGarminConnected(Boolean(status.garminConnected));
+        if (status.garminAutoSync !== undefined) setGarminAutoSync(Boolean(status.garminAutoSync));
+        if (status.garminLastSync) setGarminLastSync(status.garminLastSync);
+      } catch (_) { /* ignore */ }
+    };
+    window.addEventListener('garmin:integration-refreshed', refresh);
+    return () => window.removeEventListener('garmin:integration-refreshed', refresh);
+  }, []);
+
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
     const garminState = urlParams.get('garmin');
-    if (!garminState) return;
+    if (garminState !== 'error') return;
 
-    const finalizeGarminCallback = async () => {
-      if (garminState === 'error') {
-        addNotification(urlParams.get('message') || 'Garmin connection failed', 'error');
-        return;
-      }
-
-      if (garminState !== 'connected') return;
-
-      try {
-        const token = getStoredAuthToken();
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-
-        const profileResponse = await fetch(`${API_BASE_URL}/user/profile`, {
-          headers: {
-            'Authorization': `Bearer ${token}`
-          }
-        });
-
-        if (profileResponse.ok) {
-          const updatedUser = await profileResponse.json();
-          saveUserToStorage(updatedUser);
-          window.dispatchEvent(new CustomEvent('userUpdated', { detail: updatedUser }));
-        }
-
-        const status = await getIntegrationStatus();
-        const isConnected = Boolean(status.garminConnected);
-        setGarminConnected(isConnected);
-
-        const cleanPath = `${window.location.pathname}?tab=integrations`;
-        window.history.replaceState({}, document.title, cleanPath);
-        if (isConnected) {
-          addNotification('Garmin account connected successfully', 'success');
-        } else {
-          addNotification('Garmin callback finished, but account is still not marked as connected', 'warning');
-        }
-      } catch (e) {
-        console.error('Error finalizing Garmin callback:', e);
-        addNotification('Garmin connected, but profile refresh failed', 'warning');
-      }
-    };
-
-    finalizeGarminCallback();
+    addNotification(urlParams.get('message') || 'Garmin connection failed', 'error');
+    const cleanPath = `${window.location.pathname}?tab=integrations`;
+    window.history.replaceState({}, document.title, cleanPath);
   }, [addNotification]);
 
   // Load Strava auto-sync setting from user profile
@@ -1134,6 +1109,21 @@ const SettingsPage = () => {
       setShowGarminLoginForm(false);
       setGarminLoginForm({ username: '', password: '' });
       setGarminSyncError(null);
+
+      const profileResponse = await fetch(`${API_BASE_URL}/user/profile`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (profileResponse.ok) {
+        const updatedUser = await profileResponse.json();
+        saveUserToStorage(updatedUser);
+        window.dispatchEvent(new CustomEvent('userUpdated', { detail: updatedUser }));
+      }
+
+      autoSyncGarminActivities()
+        .then((r) => {
+          window.dispatchEvent(new CustomEvent('garminSyncComplete', { detail: r }));
+        })
+        .catch(() => {});
     } catch (err) {
       addNotification(`Garmin login failed: ${err.message}`, 'error');
     } finally {
@@ -1165,9 +1155,16 @@ const SettingsPage = () => {
         setGarminSyncError(msg);
         return;
       }
+      if (res?.backfillPending || res?.status === 'backfill_pending') {
+        const msg = res.message || 'Garmin is importing your activities in the background. Check back in a few minutes.';
+        addNotification(msg, 'info');
+        setGarminSyncError(null);
+        return;
+      }
       addNotification(`Garmin sync: imported ${res.imported || 0}, updated ${res.updated || 0}`, 'success');
       setGarminLastSync(new Date().toISOString());
       await handleSyncComplete();
+      window.dispatchEvent(new CustomEvent('garminSyncComplete', { detail: res }));
     } catch (e) {
       console.error('Garmin sync error:', e);
       const msg = garminSyncErrorMessage(e, res);
@@ -1194,9 +1191,16 @@ const SettingsPage = () => {
         setGarminSyncError(msg);
         return;
       }
+      if (res?.backfillPending || res?.status === 'backfill_started') {
+        const msg = res.message || 'Garmin is importing your history. Activities usually arrive within a few minutes.';
+        addNotification(msg, 'info');
+        setGarminSyncError(null);
+        return;
+      }
       addNotification(`History import: ${res.imported || 0} new, ${res.updated || 0} updated`, 'success');
       setGarminLastSync(new Date().toISOString());
       await handleSyncComplete();
+      window.dispatchEvent(new CustomEvent('garminSyncComplete', { detail: res }));
     } catch (e) {
       console.error('Garmin history sync error:', e);
       const msg = garminSyncErrorMessage(e, res);
@@ -3561,12 +3565,12 @@ const SettingsPage = () => {
                     </span>
                   </div>
                   
-                  {(user?.admin || user?.role === 'admin') && garminConnected && (
+                  {garminConnected && (
                     <div className={`${isMobile ? 'mb-2 pb-2' : 'mb-4 pb-4'} border-b`}>
                       <div className={`flex items-center justify-between ${isMobile ? 'flex-col gap-1.5' : ''}`}>
                         <div className={isMobile ? 'w-full' : ''}>
                           <label className={`${isMobile ? 'text-[10px]' : 'text-sm'} font-medium text-gray-900`}>Auto-sync</label>
-                          <p className={`${isMobile ? 'text-[9px]' : 'text-xs'} text-gray-500`}>Automatically sync new activities</p>
+                          <p className={`${isMobile ? 'text-[9px]' : 'text-xs'} text-gray-500`}>Automatically sync new activities when you open the app</p>
                         </div>
                         <label className={`relative inline-flex items-center cursor-pointer ${isMobile ? 'self-end' : ''}`}>
                           <input
@@ -3584,169 +3588,154 @@ const SettingsPage = () => {
                       </div>
                     </div>
                   )}
-                  
-                  {(user?.admin || user?.role === 'admin') ? (
-                    <>
-                      {/* Last sync info */}
-                      {garminConnected && garminLastSync && (
-                        <p className={`${isMobile ? 'text-[9px]' : 'text-xs'} text-gray-400 mb-2`}>
-                          Last sync: {new Date(garminLastSync).toLocaleString()}
-                        </p>
-                      )}
-                      {!garminConnected && (
-                        <div className="mb-2 space-y-1.5">
-                          <p className={`flex gap-1.5 items-start ${isMobile ? 'text-[9px]' : 'text-xs'} text-amber-600 bg-amber-50 border border-amber-200 rounded px-2 py-1.5`}>
-                            <AlertTriangle className="shrink-0 mt-0.5" size={13} aria-hidden />
-                            <span>OAuth Connect requires <strong>Health API</strong> access in your Garmin developer account. If you have an Evaluation tier, use <strong>Connect with credentials</strong> below instead.</span>
-                          </p>
-                        </div>
-                      )}
-                      {/* Garmin credentials login form */}
-                      {showGarminLoginForm && !garminConnected && (
-                        <form onSubmit={handleConnectGarminCredentials} className="mb-2 p-3 bg-gray-50 border border-gray-200 rounded space-y-2">
-                          <p className="text-xs text-gray-600 font-medium">Connect with Garmin Connect credentials:</p>
-                          <input
-                            type="text"
-                            placeholder="Garmin email"
-                            value={garminLoginForm.username}
-                            onChange={e => setGarminLoginForm(f => ({ ...f, username: e.target.value }))}
-                            className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded"
-                            autoComplete="username"
-                          />
-                          <input
-                            type="password"
-                            placeholder="Garmin password"
-                            value={garminLoginForm.password}
-                            onChange={e => setGarminLoginForm(f => ({ ...f, password: e.target.value }))}
-                            className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded"
-                            autoComplete="current-password"
-                          />
-                          <div className="flex gap-2">
-                            <button type="submit" disabled={isConnectingGarminCreds} className="px-3 py-1.5 text-xs bg-primary text-white rounded hover:bg-primary-dark disabled:opacity-60">
-                              {isConnectingGarminCreds ? 'Connecting…' : 'Connect'}
-                            </button>
-                            <button type="button" onClick={() => setShowGarminLoginForm(false)} className="px-3 py-1.5 text-xs bg-gray-200 text-gray-700 rounded hover:bg-gray-300">
-                              Cancel
-                            </button>
-                          </div>
-                        </form>
-                      )}
-                      <div className={`flex ${isMobile ? 'flex-col gap-1.5' : 'flex-wrap gap-2'}`}>
-                        <button
-                          onClick={handleConnectGarmin}
-                          className={`${isMobile ? 'px-2.5 py-1.5 text-[10px] w-full' : 'px-3 py-2'} bg-primary text-white ${isMobile ? 'rounded-md' : 'rounded'} hover:bg-primary-dark`}
-                        >
-                          {garminConnected ? 'Reconnect (OAuth)' : 'Connect (OAuth)'}
+
+                  <p className={`${isMobile ? 'text-[9px] mb-2' : 'text-xs mb-3'} text-gray-500`}>
+                    Import workouts from Garmin Connect. You can connect both Strava and Garmin — overlapping activities are merged automatically.
+                    <strong> Sync now</strong> = recent activities.
+                    <strong> Import history</strong> = up to 2 years of past workouts.
+                  </p>
+
+                  {garminConnected && garminLastSync && (
+                    <p className={`${isMobile ? 'text-[9px]' : 'text-xs'} text-gray-400 mb-2`}>
+                      Last sync: {new Date(garminLastSync).toLocaleString()}
+                    </p>
+                  )}
+
+                  {!garminConnected && (
+                    <div className="mb-2 space-y-1.5">
+                      <p className={`flex gap-1.5 items-start ${isMobile ? 'text-[9px]' : 'text-xs'} text-amber-600 bg-amber-50 border border-amber-200 rounded px-2 py-1.5`}>
+                        <AlertTriangle className="shrink-0 mt-0.5" size={13} aria-hidden />
+                        <span>OAuth Connect requires <strong>Health API</strong> pull permissions in your Garmin developer account. If sync fails with a pull-token error, use <strong>Connect with credentials</strong> below — it works without partner API approval.</span>
+                      </p>
+                    </div>
+                  )}
+
+                  {showGarminLoginForm && !garminConnected && (
+                    <form onSubmit={handleConnectGarminCredentials} className="mb-2 p-3 bg-gray-50 border border-gray-200 rounded space-y-2">
+                      <p className="text-xs text-gray-600 font-medium">Connect with Garmin Connect credentials:</p>
+                      <input
+                        type="text"
+                        placeholder="Garmin email"
+                        value={garminLoginForm.username}
+                        onChange={e => setGarminLoginForm(f => ({ ...f, username: e.target.value }))}
+                        className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded"
+                        autoComplete="username"
+                      />
+                      <input
+                        type="password"
+                        placeholder="Garmin password"
+                        value={garminLoginForm.password}
+                        onChange={e => setGarminLoginForm(f => ({ ...f, password: e.target.value }))}
+                        className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded"
+                        autoComplete="current-password"
+                      />
+                      <div className="flex gap-2">
+                        <button type="submit" disabled={isConnectingGarminCreds} className="px-3 py-1.5 text-xs bg-primary text-white rounded hover:bg-primary-dark disabled:opacity-60">
+                          {isConnectingGarminCreds ? 'Connecting…' : 'Connect'}
                         </button>
-                        {!garminConnected && (
-                          <button
-                            onClick={() => setShowGarminLoginForm(v => !v)}
-                            className={`${isMobile ? 'px-2.5 py-1.5 text-[10px] w-full' : 'px-3 py-2'} bg-gray-700 text-white ${isMobile ? 'rounded-md' : 'rounded'} hover:bg-gray-900`}
-                          >
-                            Connect with credentials
-                          </button>
-                        )}
-                        {garminConnected && (
-                          <button
-                            onClick={handleSyncGarmin}
-                            disabled={isSyncingGarmin || isSyncingGarminHistory}
-                            className={`${isMobile ? 'px-2.5 py-1.5 text-[10px] w-full' : 'px-3 py-2'} bg-gray-100 text-gray-800 ${isMobile ? 'rounded-md' : 'rounded'} hover:bg-gray-200 disabled:opacity-60 disabled:cursor-not-allowed`}
-                          >
-                            {isSyncingGarmin ? 'Syncing...' : 'Sync Now'}
-                          </button>
-                        )}
-                        {garminConnected && (
-                          <button
-                            onClick={handleSyncGarminHistory}
-                            disabled={isSyncingGarminHistory || isSyncingGarmin}
-                            title="Download full Garmin activity history (all time)"
-                            className={`${isMobile ? 'px-2.5 py-1.5 text-[10px] w-full' : 'px-3 py-2'} bg-gray-100 text-gray-800 ${isMobile ? 'rounded-md' : 'rounded'} hover:bg-gray-200 disabled:opacity-60 disabled:cursor-not-allowed`}
-                          >
-                            {isSyncingGarminHistory ? 'Importing...' : 'Import History'}
-                          </button>
-                        )}
-                          {garminConnected && (
-                          <button
-                            onClick={handleTestGarminConnection}
-                            disabled={isTestingGarmin || isSyncingGarmin || isSyncingGarminHistory}
-                            title="Test whether the Garmin API token is valid"
-                            className={`${isMobile ? 'px-2.5 py-1.5 text-[10px] w-full' : 'px-3 py-2'} bg-gray-100 text-gray-800 ${isMobile ? 'rounded-md' : 'rounded'} hover:bg-gray-200 disabled:opacity-60 disabled:cursor-not-allowed`}
-                          >
-                            {isTestingGarmin ? 'Testing…' : 'Test Connection'}
-                          </button>
-                        )}
-                        {garminConnected && (
-                          <button
-                            onClick={handleDisconnectGarmin}
-                            className={`${isMobile ? 'px-2.5 py-1.5 text-[10px] w-full' : 'px-3 py-2'} bg-red-600 text-white ${isMobile ? 'rounded-md' : 'rounded'} hover:bg-red-700`}
-                          >
-                            Disconnect
-                          </button>
-                        )}
+                        <button type="button" onClick={() => setShowGarminLoginForm(false)} className="px-3 py-1.5 text-xs bg-gray-200 text-gray-700 rounded hover:bg-gray-300">
+                          Cancel
+                        </button>
                       </div>
-                      {/* Persistent sync error display */}
-                      {garminSyncError && (
-                        <div className="mt-2 rounded-lg px-3 py-2 text-xs bg-red-50 text-red-700 border border-red-200 space-y-1">
-                          <div className="font-semibold">Sync error:</div>
-                          <div className="font-mono break-all">{garminSyncError}</div>
-                          {garminSyncError.includes('InvalidPullTokenException') && (
-                            <div className="mt-1 text-red-600 font-medium flex gap-1.5 items-start">
-                              <AlertTriangle className="shrink-0 mt-0.5" size={13} aria-hidden />
-                              <span>Your Garmin token doesn't have activity pull permissions.
-                              Fix: <strong>Disconnect</strong> then <strong>Reconnect</strong> and make sure
-                              to enable <strong>Activities</strong> + <strong>Historical Data</strong> toggles
-                              on the Garmin consent screen. If the problem persists, your Garmin Health API app
-                              may need SUMMARY_PULL enabled in the developer portal.</span>
-                            </div>
-                          )}
-                          {garminSyncError.includes('401') || garminSyncError.includes('403') ? (
-                            <div className="mt-1 text-red-600 font-medium flex gap-1.5 items-start">
-                              <AlertTriangle className="shrink-0 mt-0.5" size={13} aria-hidden />
-                              <span>Access denied. Try disconnecting and reconnecting your Garmin account.</span>
-                            </div>
-                          ) : null}
-                        </div>
-                      )}
-                      {/* Test connection result */}
-                      {garminTestResult && (
-                        <div className={`mt-2 rounded-lg px-3 py-2 text-xs space-y-1 ${garminTestResult.ok ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
-                          <div>
-                            User/ID: {garminTestResult.userIdEndpoint?.ok ? '✓ OK' : `✗ HTTP ${garminTestResult.userIdEndpoint?.status} — ${JSON.stringify(garminTestResult.userIdEndpoint?.body)}`}
-                            {garminTestResult.athleteId ? ` (ID: ${garminTestResult.athleteId})` : ''}
-                          </div>
-                          {garminTestResult.permissionsEndpoint && (
-                            <div>
-                              Permissions: {garminTestResult.permissionsEndpoint.ok
-                                ? <span className="text-green-700 font-mono">{JSON.stringify(garminTestResult.permissionsEndpoint.permissions)}</span>
-                                : `✗ HTTP ${garminTestResult.permissionsEndpoint.status} — ${JSON.stringify(garminTestResult.permissionsEndpoint.body)}`
-                              }
-                            </div>
-                          )}
-                          <div>
-                            Activities: {garminTestResult.activitiesEndpoint?.ok
-                              ? `✓ OK (${garminTestResult.activitiesEndpoint.count ?? 0} in last 24h)`
-                              : `✗ HTTP ${garminTestResult.activitiesEndpoint?.status} — ${JSON.stringify(garminTestResult.activitiesEndpoint?.body)}`
-                            }
-                          </div>
-                          {garminTestResult.activitiesEndpoint && !garminTestResult.activitiesEndpoint.ok && (
-                            JSON.stringify(garminTestResult.activitiesEndpoint.body).includes('InvalidPullToken') && (
-                              <div className="font-medium text-red-700 border-t border-red-200 pt-1 mt-1">
-                                → Your token is missing ACTIVITY pull permission. Disconnect and reconnect — enable <strong>Activities</strong> + <strong>Historical Data</strong> on the Garmin screen.
-                              </div>
-                            )
-                          )}
-                          {garminTestResult.error && <div>✗ {garminTestResult.error}</div>}
-                        </div>
-                      )}
-                    </>
-                  ) : (
+                    </form>
+                  )}
+
+                  <div className={`flex ${isMobile ? 'flex-col gap-1.5' : 'flex-wrap gap-2'}`}>
                     <button
-                      type="button"
-                      disabled
-                      className={`${isMobile ? 'px-2.5 py-1.5 text-[10px] w-full' : 'px-3 py-2'} bg-gray-100 text-gray-400 ${isMobile ? 'rounded-md' : 'rounded'} cursor-not-allowed`}
+                      onClick={handleConnectGarmin}
+                      className={`${isMobile ? 'px-2.5 py-1.5 text-[10px] w-full' : 'px-3 py-2'} bg-primary text-white ${isMobile ? 'rounded-md' : 'rounded'} hover:bg-primary-dark`}
                     >
-                      Coming soon
+                      {garminConnected ? 'Reconnect' : 'Connect'}
                     </button>
+                    {!garminConnected && (
+                      <button
+                        onClick={() => setShowGarminLoginForm(v => !v)}
+                        className={`${isMobile ? 'px-2.5 py-1.5 text-[10px] w-full' : 'px-3 py-2'} bg-gray-700 text-white ${isMobile ? 'rounded-md' : 'rounded'} hover:bg-gray-900`}
+                      >
+                        Connect with credentials
+                      </button>
+                    )}
+                    {garminConnected && (
+                      <button
+                        onClick={handleSyncGarmin}
+                        disabled={isSyncingGarmin || isSyncingGarminHistory}
+                        className={`${isMobile ? 'px-2.5 py-1.5 text-[10px] w-full' : 'px-3 py-2'} bg-gray-100 text-gray-800 ${isMobile ? 'rounded-md' : 'rounded'} hover:bg-gray-200 disabled:opacity-60 disabled:cursor-not-allowed`}
+                      >
+                        {isSyncingGarmin ? 'Syncing...' : 'Sync Now'}
+                      </button>
+                    )}
+                    {garminConnected && (
+                      <button
+                        onClick={handleSyncGarminHistory}
+                        disabled={isSyncingGarminHistory || isSyncingGarmin}
+                        title="Download Garmin activity history (up to 2 years)"
+                        className={`${isMobile ? 'px-2.5 py-1.5 text-[10px] w-full' : 'px-3 py-2'} bg-gray-100 text-gray-800 ${isMobile ? 'rounded-md' : 'rounded'} hover:bg-gray-200 disabled:opacity-60 disabled:cursor-not-allowed`}
+                      >
+                        {isSyncingGarminHistory ? 'Importing...' : 'Import History'}
+                      </button>
+                    )}
+                    {(user?.admin || user?.role === 'admin') && garminConnected && (
+                      <button
+                        onClick={handleTestGarminConnection}
+                        disabled={isTestingGarmin || isSyncingGarmin || isSyncingGarminHistory}
+                        title="Test whether the Garmin API token is valid"
+                        className={`${isMobile ? 'px-2.5 py-1.5 text-[10px] w-full' : 'px-3 py-2'} bg-gray-100 text-gray-800 ${isMobile ? 'rounded-md' : 'rounded'} hover:bg-gray-200 disabled:opacity-60 disabled:cursor-not-allowed`}
+                      >
+                        {isTestingGarmin ? 'Testing…' : 'Test Connection'}
+                      </button>
+                    )}
+                    {garminConnected && (
+                      <button
+                        onClick={handleDisconnectGarmin}
+                        className={`${isMobile ? 'px-2.5 py-1.5 text-[10px] w-full' : 'px-3 py-2'} bg-red-600 text-white ${isMobile ? 'rounded-md' : 'rounded'} hover:bg-red-700`}
+                      >
+                        Disconnect
+                      </button>
+                    )}
+                  </div>
+
+                  {garminSyncError && (
+                    <div className="mt-2 rounded-lg px-3 py-2 text-xs bg-red-50 text-red-700 border border-red-200 space-y-1">
+                      <div className="font-semibold">Sync error:</div>
+                      <div className="font-mono break-all">{garminSyncError}</div>
+                      {garminSyncError.includes('InvalidPullTokenException') || garminSyncError.includes('InvalidOAuthTokenException') || garminSyncError.includes('pull permission') ? (
+                        <div className="mt-1 text-red-600 font-medium flex gap-1.5 items-start">
+                          <AlertTriangle className="shrink-0 mt-0.5" size={13} aria-hidden />
+                          <span>Your Garmin OAuth token doesn't have activity pull permissions.
+                          Fix: <strong>Disconnect</strong>, then use <strong>Connect with credentials</strong> (recommended), or reconnect OAuth and enable <strong>Activities</strong> + <strong>Historical Data</strong> on the Garmin consent screen.</span>
+                        </div>
+                      ) : null}
+                      {garminSyncError.includes('401') || garminSyncError.includes('403') ? (
+                        <div className="mt-1 text-red-600 font-medium flex gap-1.5 items-start">
+                          <AlertTriangle className="shrink-0 mt-0.5" size={13} aria-hidden />
+                          <span>Access denied. Try disconnecting and reconnecting your Garmin account.</span>
+                        </div>
+                      ) : null}
+                    </div>
+                  )}
+
+                  {(user?.admin || user?.role === 'admin') && garminTestResult && (
+                    <div className={`mt-2 rounded-lg px-3 py-2 text-xs space-y-1 ${garminTestResult.ok ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+                      <div>
+                        User/ID: {garminTestResult.userIdEndpoint?.ok ? '✓ OK' : `✗ HTTP ${garminTestResult.userIdEndpoint?.status} — ${JSON.stringify(garminTestResult.userIdEndpoint?.body)}`}
+                        {garminTestResult.athleteId ? ` (ID: ${garminTestResult.athleteId})` : ''}
+                      </div>
+                      {garminTestResult.permissionsEndpoint && (
+                        <div>
+                          Permissions: {garminTestResult.permissionsEndpoint.ok
+                            ? <span className="text-green-700 font-mono">{JSON.stringify(garminTestResult.permissionsEndpoint.permissions)}</span>
+                            : `✗ HTTP ${garminTestResult.permissionsEndpoint.status} — ${JSON.stringify(garminTestResult.permissionsEndpoint.body)}`
+                          }
+                        </div>
+                      )}
+                      <div>
+                        Activities: {garminTestResult.activitiesEndpoint?.ok
+                          ? `✓ OK (${garminTestResult.activitiesEndpoint.count ?? 0} in last 24h)`
+                          : `✗ HTTP ${garminTestResult.activitiesEndpoint?.status} — ${JSON.stringify(garminTestResult.activitiesEndpoint?.body)}`
+                        }
+                      </div>
+                      {garminTestResult.error && <div>✗ {garminTestResult.error}</div>}
+                    </div>
                   )}
                 </div>
 

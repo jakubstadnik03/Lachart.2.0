@@ -297,6 +297,221 @@ function getGarminActivityApiBaseUrl() {
   return `${getGarminApiBaseUrl()}/activity-api`;
 }
 
+function isGarminPullTokenError(bodyOrMessage) {
+  const s = typeof bodyOrMessage === 'string' ? bodyOrMessage : JSON.stringify(bodyOrMessage || '');
+  return s.includes('InvalidPullTokenException')
+    || s.includes('InvalidOAuthTokenException')
+    || s.includes('InvalidPullToken')
+    || s.includes('pull token');
+}
+
+function normalizeGarminActivityBatch(data) {
+  const arr = Array.isArray(data)
+    ? data
+    : Array.isArray(data?.activities)
+      ? data.activities
+      : [];
+  return arr.map((item) => {
+    if (item?.summary && typeof item.summary === 'object') {
+      const summary = item.summary;
+      return {
+        ...summary,
+        activityId: summary.activityId || summary.summaryId || item.activityId,
+        activityName: summary.activityName || summary.activityType || item.activityName,
+      };
+    }
+    return item;
+  });
+}
+
+async function fetchGarminUserPermissions(tokenData) {
+  try {
+    const r = await axios.get(`${getGarminWellnessApiBaseUrl()}/rest/user/permissions`, {
+      headers: { Authorization: `${tokenData.tokenType} ${tokenData.accessToken}` },
+      timeout: 15000,
+    });
+    const perms = r.data;
+    return Array.isArray(perms) ? perms : (Array.isArray(perms?.permissions) ? perms.permissions : []);
+  } catch (e) {
+    console.warn('Garmin permissions lookup failed:', e?.response?.data || e.message);
+    return null;
+  }
+}
+
+async function fetchGarminWellnessActivitiesByDay(user, tokenData, path, startSec, endSec) {
+  const CHUNK_SEC = 86400;
+  const activitiesUrl = `${getGarminWellnessApiBaseUrl()}${path}`;
+  const allActivities = [];
+  let cursor = startSec;
+
+  while (cursor < endSec) {
+    const windowEnd = Math.min(cursor + CHUNK_SEC, endSec);
+    console.log(`Garmin OAuth: ${path} ${new Date(cursor * 1000).toISOString().slice(0, 10)} → ${new Date(windowEnd * 1000).toISOString().slice(0, 10)}`);
+
+    let resp;
+    try {
+      resp = await axios.get(activitiesUrl, {
+        headers: { Authorization: `${tokenData.tokenType} ${tokenData.accessToken}` },
+        params: {
+          uploadStartTimeInSeconds: cursor,
+          uploadEndTimeInSeconds: windowEnd,
+        },
+        timeout: 20000,
+      });
+    } catch (apiErr) {
+      const status = apiErr.response?.status;
+      const body = apiErr.response?.data;
+      const bodyStr = typeof body === 'object' ? JSON.stringify(body) : (body || '');
+      console.error(`Garmin activity API error ${status} (${path}):`, body || apiErr.message);
+      if (isGarminPullTokenError(bodyStr)) {
+        throw new Error(
+          'InvalidPullTokenException: your Garmin OAuth token does not have activity pull permission. ' +
+          'Please disconnect and reconnect your Garmin account, and make sure to enable the ' +
+          '"Activities" and "Historical Data" toggles on the Garmin consent screen. ' +
+          'If this persists, your Garmin Health API app may need SUMMARY_PULL permission enabled ' +
+          'in the Garmin developer portal (health.developer.garmin.com), or configure Push/Ping ' +
+          'webhooks to https://lachart.onrender.com/api/integrations/garmin/webhook'
+        );
+      }
+      if (status === 401 || status === 403) {
+        throw new Error(
+          `Garmin API access denied (${status}). Try reconnecting your Garmin account. ` +
+          `Error: ${bodyStr || apiErr.message}`
+        );
+      }
+      throw new Error(`Garmin API returned ${status || 'network error'}: ${bodyStr || apiErr.message}`);
+    }
+
+    const batch = normalizeGarminActivityBatch(resp.data);
+    allActivities.push(...batch);
+    cursor = windowEnd;
+  }
+
+  return allActivities;
+}
+
+async function triggerGarminBackfillRange(user, startSec, endSec) {
+  const tokenData = await getValidGarminToken(user);
+  const url = `${getGarminWellnessApiBaseUrl()}/rest/backfill/activities`;
+  const MAX_CHUNK = 90 * 24 * 3600;
+  let cursor = startSec;
+  let chunks = 0;
+
+  while (cursor < endSec) {
+    const chunkEnd = Math.min(cursor + MAX_CHUNK, endSec);
+    try {
+      const resp = await axios.get(url, {
+        headers: { Authorization: `${tokenData.tokenType} ${tokenData.accessToken}` },
+        params: {
+          summaryStartTimeInSeconds: cursor,
+          summaryEndTimeInSeconds: chunkEnd,
+        },
+        timeout: 30000,
+        validateStatus: (s) => s === 202 || s === 200,
+      });
+      console.log(`Garmin backfill requested ${new Date(cursor * 1000).toISOString().slice(0, 10)} → ${new Date(chunkEnd * 1000).toISOString().slice(0, 10)} (HTTP ${resp.status})`);
+      chunks += 1;
+    } catch (e) {
+      console.warn('Garmin backfill chunk failed:', e?.response?.data || e.message);
+    }
+    cursor = chunkEnd;
+  }
+  return chunks;
+}
+
+/**
+ * Fetch Garmin activities for sync. On OAuth pull-token failure, triggers backfill
+ * and returns empty activities with backfillPending instead of throwing.
+ */
+async function fetchGarminActivitiesForSync(user, since = null) {
+  try {
+    const activities = await getGarminActivities(user, since);
+    return { activities, backfillPending: false, backfillChunks: 0, message: null };
+  } catch (err) {
+    if (!user?.garmin?.refreshToken || !isGarminPullTokenError(err.message)) {
+      throw err;
+    }
+
+    const nowSec = Math.floor(Date.now() / 1000);
+    let startSec = nowSec - 7 * 24 * 3600;
+    if (since) {
+      const d = new Date(since);
+      if (!Number.isNaN(d.getTime())) {
+        startSec = Math.floor(d.getTime() / 1000);
+      }
+    }
+
+    const chunks = await triggerGarminBackfillRange(user, startSec, nowSec);
+    return {
+      activities: [],
+      backfillPending: true,
+      backfillChunks: chunks,
+      message:
+        'Garmin cannot pull activities directly (missing pull permission). ' +
+        `Requested historical backfill in ${chunks} chunk(s) — data usually arrives within a few minutes via Garmin Push/Ping. ` +
+        'Ensure Push or Ping is configured in the Garmin developer portal to ' +
+        'https://lachart.onrender.com/api/integrations/garmin/webhook — or use Connect with credentials in Settings.',
+    };
+  }
+}
+
+async function findUserByGarminHealthId(healthUserId, userAccessToken = null) {
+  if (!healthUserId && !userAccessToken) return null;
+  if (healthUserId) {
+    const byId = await User.findOne({ 'garmin.athleteId': String(healthUserId) });
+    if (byId) return byId;
+  }
+  if (userAccessToken) {
+    const byToken = await User.findOne({ 'garmin.accessToken': String(userAccessToken) });
+    if (byToken) return byToken;
+  }
+  return null;
+}
+
+async function processGarminWebhookPayload(payload) {
+  if (!payload || typeof payload !== 'object') return { imported: 0, updated: 0 };
+
+  let imported = 0;
+  let updated = 0;
+
+  for (const [summaryType, items] of Object.entries(payload)) {
+    if (!Array.isArray(items) || items.length === 0) continue;
+
+    for (const entry of items) {
+      const healthUserId = entry.userId || entry.userID || null;
+      const user = await findUserByGarminHealthId(healthUserId, entry.userAccessToken);
+      if (!user) continue;
+
+      // Push payload — summary fields inline
+      if (summaryType === 'activities' && (entry.summaryId || entry.activityType || entry.startTimeInSeconds)) {
+        const r = await upsertGarminActivities(user, normalizeGarminActivityBatch([entry]));
+        imported += r.imported;
+        updated += r.updated;
+        continue;
+      }
+
+      // Ping payload — fetch pre-formed callback URL
+      if (entry.callbackURL) {
+        try {
+          const tokenData = await getValidGarminToken(user);
+          const resp = await axios.get(entry.callbackURL, {
+            headers: { Authorization: `${tokenData.tokenType} ${tokenData.accessToken}` },
+            timeout: 30000,
+          });
+          const acts = normalizeGarminActivityBatch(resp.data);
+          const r = await upsertGarminActivities(user, acts);
+          imported += r.imported;
+          updated += r.updated;
+        } catch (e) {
+          console.warn('Garmin ping callback fetch failed:', e?.response?.data || e.message);
+        }
+      }
+    }
+  }
+
+  return { imported, updated };
+}
+
 // Apple Health is LAST so when the same workout exists in Strava/Garmin (very
 // common — both feed Health) the better-quality source wins the merge.
 const EXTERNAL_SOURCE_PRIORITY = ['strava', 'garmin', 'coros', 'polar', 'fit', 'apple_health'];
@@ -2139,7 +2354,48 @@ router.get('/garmin/callback', async (req, res) => {
       lastSyncDate: user.garmin?.lastSyncDate || null
     };
 
+    try {
+      const perms = await fetchGarminUserPermissions({ accessToken, tokenType });
+      if (perms) {
+        user.garmin.permissions = perms;
+        user.garmin.permissionsCheckedAt = new Date();
+      }
+    } catch (_) { /* ignore */ }
+
     await user.save();
+
+    // Pull recent activities immediately so the calendar has data while history import runs.
+    setTimeout(() => {
+      User.findById(user._id)
+        .then(async (freshUser) => {
+          if (!freshUser?.garmin?.accessToken) return null;
+          const thirtyDaysAgo = new Date();
+          thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+          const { activities, backfillPending, backfillChunks } = await fetchGarminActivitiesForSync(freshUser, thirtyDaysAgo);
+          const { imported, updated } = await upsertGarminActivities(freshUser, activities);
+          if (imported > 0 || updated > 0) {
+            await User.findByIdAndUpdate(freshUser._id, { 'garmin.lastSyncDate': new Date() });
+          }
+          console.log(`[Garmin callback] immediate sync: ${imported} imported, ${updated} updated` +
+            (backfillPending ? ` (backfill pending, ${backfillChunks} chunks)` : ''));
+          return { imported, updated, backfillPending };
+        })
+        .catch((e) => console.warn('[Garmin callback] immediate sync failed:', e?.message || e));
+    }, 800);
+
+    // Full history import in background via Garmin backfill API (async delivery).
+    setTimeout(() => {
+      User.findById(user._id)
+        .then(async (freshUser) => {
+          if (!freshUser?.garmin?.accessToken || !freshUser?.garmin?.refreshToken) return null;
+          const nowSec = Math.floor(Date.now() / 1000);
+          const twoYearsAgo = nowSec - 2 * 365 * 24 * 3600;
+          const chunks = await triggerGarminBackfillRange(freshUser, twoYearsAgo, nowSec);
+          console.log(`[Garmin callback] backfill requested: ${chunks} chunk(s)`);
+          return { chunks };
+        })
+        .catch((e) => console.warn('[Garmin callback] backfill failed:', e?.message || e));
+    }, 5000);
 
     const params = new URLSearchParams({ garmin: 'connected' });
     return res.redirect(`${frontend}/settings?tab=integrations&${params.toString()}`);
@@ -2191,9 +2447,9 @@ router.post('/garmin/login', verifyToken, async (req, res) => {
     
     // Store credentials (base64 encoded)
     user.garmin = {
-      athleteId: username, // Use username as identifier
+      athleteId: username,
       accessToken: Buffer.from(`${username}:${password}`).toString('base64'),
-      autoSync: user.garmin?.autoSync !== undefined ? user.garmin.autoSync : false,
+      autoSync: user.garmin?.autoSync !== undefined ? user.garmin.autoSync : true,
       lastSyncDate: user.garmin?.lastSyncDate || null
     };
     
@@ -2205,6 +2461,20 @@ router.post('/garmin/login', verifyToken, async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+
+// Garmin Push/Ping webhook — no auth (Garmin servers call this directly)
+async function handleGarminWebhook(req, res) {
+  res.status(200).json({ ok: true });
+  const payload = req.body;
+  setImmediate(() => {
+    processGarminWebhookPayload(payload)
+      .then((r) => console.log(`[Garmin webhook] processed: ${r.imported} imported, ${r.updated} updated`))
+      .catch((e) => console.warn('[Garmin webhook] processing failed:', e?.message || e));
+  });
+}
+
+router.post('/garmin/webhook', handleGarminWebhook);
+router.post('/garmin/ping', handleGarminWebhook);
 
 // POST /api/integrations/garmin/disconnect - remove Garmin credentials & disable auto-sync
 router.post('/garmin/disconnect', verifyToken, async (req, res) => {
@@ -2227,12 +2497,9 @@ router.post('/garmin/disconnect', verifyToken, async (req, res) => {
 // Helper function to get Garmin activities using garmin-connect library
 async function getGarminActivities(user, since = null) {
   // ── OAuth path ────────────────────────────────────────────────────────────
-  // Garmin Health API max window per request = 86400 seconds (1 day).
-  // We loop through 1-day chunks from startSec → nowSec.
   if (user?.garmin?.refreshToken) {
-    const CHUNK_SEC = 86400; // Garmin API hard limit: 1 day per request
     const nowSec = Math.floor(Date.now() / 1000);
-    let startSec = nowSec - 7 * 24 * 3600; // default: last 7 days for "Sync Now"
+    let startSec = nowSec - 7 * 24 * 3600;
     if (since) {
       const d = new Date(since);
       if (!Number.isNaN(d.getTime())) {
@@ -2240,62 +2507,46 @@ async function getGarminActivities(user, since = null) {
       }
     }
 
-    const activitiesUrl = `${getGarminWellnessApiBaseUrl()}/rest/activities`;
-    const allActivities = [];
-    let cursor = startSec;
-
-    while (cursor < nowSec) {
-      const windowEnd = Math.min(cursor + CHUNK_SEC, nowSec);
-      const tokenData = await getValidGarminToken(user); // refreshes token if needed
-      console.log(`Garmin OAuth: fetching activities ${new Date(cursor * 1000).toISOString().slice(0,10)} → ${new Date(windowEnd * 1000).toISOString().slice(0,10)}`);
-
-      let resp;
-      try {
-        resp = await axios.get(activitiesUrl, {
-          headers: { Authorization: `${tokenData.tokenType} ${tokenData.accessToken}` },
-          params: {
-            uploadStartTimeInSeconds: cursor,
-            uploadEndTimeInSeconds: windowEnd
-          },
-          timeout: 15000
-        });
-      } catch (apiErr) {
-        const status = apiErr.response?.status;
-        const body   = apiErr.response?.data;
-        const bodyStr = typeof body === 'object' ? JSON.stringify(body) : (body || '');
-        console.error(`Garmin activity API error ${status}:`, body || apiErr.message);
-        if (bodyStr.includes('InvalidPullTokenException')) {
-          throw new Error(
-            `InvalidPullTokenException: your Garmin OAuth token does not have activity pull permission. ` +
-            `Please disconnect and reconnect your Garmin account, and make sure to enable the ` +
-            `"Activities" and "Historical Data" toggles on the Garmin consent screen. ` +
-            `If this persists, your Garmin Health API app may need SUMMARY_PULL permission enabled ` +
-            `in the Garmin developer portal (health.developer.garmin.com).`
-          );
-        }
-        if (status === 401 || status === 403) {
-          throw new Error(
-            `Garmin API access denied (${status}). Try reconnecting your Garmin account. ` +
-            `Error: ${bodyStr || apiErr.message}`
-          );
-        }
-        throw new Error(
-          `Garmin API returned ${status || 'network error'}: ${bodyStr || apiErr.message}`
-        );
-      }
-
-      const batch = Array.isArray(resp.data)
-        ? resp.data
-        : Array.isArray(resp.data?.activities)
-          ? resp.data.activities
-          : [];
-
-      allActivities.push(...batch);
-      cursor = windowEnd;
+    const tokenData = await getValidGarminToken(user);
+    const permissions = await fetchGarminUserPermissions(tokenData);
+    if (permissions) {
+      console.log(`Garmin permissions for user ${user._id}:`, JSON.stringify(permissions));
+      user.garmin = { ...user.garmin, permissions, permissionsCheckedAt: new Date() };
+      await user.save().catch(() => {});
     }
 
-    console.log(`Garmin OAuth: fetched ${allActivities.length} activities total`);
-    return allActivities;
+    try {
+      const acts = await fetchGarminWellnessActivitiesByDay(
+        user, tokenData, '/rest/activities', startSec, nowSec
+      );
+      console.log(`Garmin OAuth (/activities): fetched ${acts.length} activities`);
+      return acts;
+    } catch (activitiesErr) {
+      if (!isGarminPullTokenError(activitiesErr.message)) throw activitiesErr;
+      console.warn('Garmin /activities pull failed, trying /activityDetails:', activitiesErr.message);
+    }
+
+    try {
+      const details = await fetchGarminWellnessActivitiesByDay(
+        user, tokenData, '/rest/activityDetails', startSec, nowSec
+      );
+      console.log(`Garmin OAuth (/activityDetails): fetched ${details.length} activities`);
+      return details;
+    } catch (detailsErr) {
+      if (!isGarminPullTokenError(detailsErr.message)) throw detailsErr;
+      console.warn('Garmin /activityDetails pull failed, requesting backfill:', detailsErr.message);
+    }
+
+    const chunks = await triggerGarminBackfillRange(user, startSec, nowSec);
+    const err = new Error(
+      'Garmin cannot pull activities directly (missing pull permission). ' +
+      `Requested historical backfill in ${chunks} chunk(s) — data usually arrives within a few minutes via Garmin Push/Ping. ` +
+      'Ensure Push or Ping is configured in the Garmin developer portal to ' +
+      'https://lachart.onrender.com/api/integrations/garmin/webhook — or use Connect with credentials in Settings.'
+    );
+    err.backfillPending = true;
+    err.backfillChunks = chunks;
+    throw err;
   }
 
   // ── Username/password path (legacy garmin-connect library) ────────────────
@@ -2505,11 +2756,10 @@ router.post('/garmin/sync', verifyToken, async (req, res) => {
 
     const { since } = req.body || {};
 
-    let activities;
+    let syncResult;
     try {
-      activities = await getGarminActivities(user, since);
+      syncResult = await fetchGarminActivitiesForSync(user, since);
     } catch (apiErr) {
-      // Surface the real Garmin API error to the frontend
       console.error('Garmin API error during sync:', apiErr.message);
       return res.status(502).json({
         error: 'Garmin API error',
@@ -2517,12 +2767,15 @@ router.post('/garmin/sync', verifyToken, async (req, res) => {
       });
     }
 
-    console.log(`Garmin sync: fetched ${activities.length} activities for user ${user._id}`);
+    const { activities, backfillPending, backfillChunks, message } = syncResult;
+    console.log(`Garmin sync: fetched ${activities.length} activities for user ${user._id}` +
+      (backfillPending ? ` (backfill pending, ${backfillChunks} chunks)` : ''));
     const { imported, updated, total } = await upsertGarminActivities(user, activities);
     console.log(`Garmin sync done: imported ${imported}, updated ${updated}, total ${total}`);
 
-    // Stamp sync date
-    await User.findByIdAndUpdate(user._id, { 'garmin.lastSyncDate': new Date() });
+    if (imported > 0 || updated > 0) {
+      await User.findByIdAndUpdate(user._id, { 'garmin.lastSyncDate': new Date() });
+    }
 
     if (imported > 0) {
       const body = imported === 1
@@ -2537,7 +2790,15 @@ router.post('/garmin/sync', verifyToken, async (req, res) => {
       }).catch(() => {});
     }
 
-    res.json({ imported, updated, totalFetched: total, status: 'ok' });
+    res.json({
+      imported,
+      updated,
+      totalFetched: total,
+      status: backfillPending ? 'backfill_pending' : 'ok',
+      backfillPending: !!backfillPending,
+      backfillChunks: backfillChunks || 0,
+      message: backfillPending ? message : undefined,
+    });
   } catch (err) {
     console.error('Garmin sync error:', err);
     res.status(500).json({
@@ -2548,7 +2809,8 @@ router.post('/garmin/sync', verifyToken, async (req, res) => {
 });
 
 // POST /api/integrations/garmin/sync-history
-// Full history import: 2 years back, OAuth path loops in 1-day chunks (Garmin API max = 86400s).
+// OAuth: triggers Garmin backfill API (async delivery via Push/Ping webhook).
+// Credentials: pulls full history via garmin-connect library.
 router.post('/garmin/sync-history', verifyToken, async (req, res) => {
   try {
     const user = await User.findById(req.user.userId);
@@ -2556,19 +2818,58 @@ router.post('/garmin/sync-history', verifyToken, async (req, res) => {
       return res.status(400).json({ error: 'Garmin not connected' });
     }
 
-    // Start from 2 years ago — getGarminActivities handles 1-day chunk looping for OAuth
     const twoYearsAgo = new Date(Date.now() - 2 * 365 * 24 * 3600 * 1000);
 
-    let activities;
+    // OAuth path — backfill is the reliable way to get historical data
+    if (user.garmin.refreshToken) {
+      const nowSec = Math.floor(Date.now() / 1000);
+      const startSec = Math.floor(twoYearsAgo.getTime() / 1000);
+      const chunks = await triggerGarminBackfillRange(user, startSec, nowSec);
+
+      let imported = 0;
+      let updated = 0;
+      let backfillPending = true;
+      let message =
+        `Garmin is importing your activity history (${chunks} backfill chunk(s) requested). ` +
+        'Activities usually arrive within a few minutes. Make sure Push/Ping webhook is configured ' +
+        'in the Garmin developer portal.';
+
+      try {
+        const syncResult = await fetchGarminActivitiesForSync(user, twoYearsAgo);
+        const r = await upsertGarminActivities(user, syncResult.activities);
+        imported = r.imported;
+        updated = r.updated;
+        if (syncResult.backfillPending) {
+          message = syncResult.message || message;
+        } else if (imported > 0 || updated > 0) {
+          backfillPending = false;
+          await User.findByIdAndUpdate(user._id, { 'garmin.lastSyncDate': new Date() });
+        }
+      } catch (apiErr) {
+        console.warn('Garmin history immediate pull failed (backfill still running):', apiErr.message);
+      }
+
+      console.log(`Garmin history backfill: ${chunks} chunks, ${imported} imported, ${updated} updated`);
+      return res.json({
+        imported,
+        updated,
+        backfillChunks: chunks,
+        backfillPending,
+        status: backfillPending ? 'backfill_started' : 'ok',
+        message,
+      });
+    }
+
+    let syncResult;
     try {
-      activities = await getGarminActivities(user, twoYearsAgo);
+      syncResult = await fetchGarminActivitiesForSync(user, twoYearsAgo);
     } catch (apiErr) {
       console.error('Garmin history sync API error:', apiErr.message);
       return res.status(502).json({ error: 'Garmin API error', message: apiErr.message });
     }
 
-    console.log(`Garmin history: fetched ${activities.length} activities over 2 years`);
-    const { imported, updated, total } = await upsertGarminActivities(user, activities);
+    console.log(`Garmin history: fetched ${syncResult.activities.length} activities over 2 years`);
+    const { imported, updated, total } = await upsertGarminActivities(user, syncResult.activities);
     await User.findByIdAndUpdate(user._id, { 'garmin.lastSyncDate': new Date() });
     console.log(`Garmin history done: ${imported} imported, ${updated} updated`);
     res.json({ imported, updated, totalFetched: total, status: 'ok' });
@@ -2600,10 +2901,16 @@ router.post('/garmin/auto-sync', verifyToken, async (req, res) => {
       since = sevenDaysAgo;
     }
     
-    const activities = await getGarminActivities(user, since);
-    const { imported, updated } = await upsertGarminActivities(user, activities);
-    console.log(`Garmin auto-sync completed: ${imported} imported, ${updated} updated`);
-    res.json({ imported, updated });
+    const syncResult = await fetchGarminActivitiesForSync(user, since);
+    const { imported, updated } = await upsertGarminActivities(user, syncResult.activities);
+    console.log(`Garmin auto-sync completed: ${imported} imported, ${updated} updated` +
+      (syncResult.backfillPending ? ` (backfill pending)` : ''));
+    res.json({
+      imported,
+      updated,
+      backfillPending: !!syncResult.backfillPending,
+      message: syncResult.message || undefined,
+    });
   } catch (error) {
     console.error('Garmin auto-sync error:', error);
     res.json({ imported: 0, updated: 0, error: error.message });
@@ -2652,6 +2959,27 @@ router.put('/garmin/auto-sync', verifyToken, async (req, res) => {
     });
   } catch (error) {
     console.error('Error updating Garmin auto-sync setting:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET /api/integrations/garmin/status — connection + sync health for Settings card
+router.get('/garmin/status', verifyToken, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.userId).select('garmin').lean();
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    const g = user.garmin || {};
+    const connected = !!g.accessToken;
+    res.json({
+      connected,
+      autoSync: g.autoSync !== undefined ? !!g.autoSync : false,
+      lastSyncDate: g.lastSyncDate || null,
+      athleteId: g.athleteId || null,
+      method: g.refreshToken ? 'oauth' : (g.accessToken ? 'credentials' : null),
+      permissions: g.permissions || null,
+    });
+  } catch (error) {
+    console.error('Garmin status error:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -3319,11 +3647,11 @@ router.get('/activities', verifyToken, activitiesCacheMiddleware, async (req, re
       dateFilter.$lte = requestedTo;
     }
     const stravaSelect = summaryOnly
-      ? 'stravaId name titleManual category sport startDate elapsedTime movingTime distance averageSpeed averageHeartRate average_heartrate averagePower average_watts weightedAveragePower weighted_average_watts lactate manualTss tssDisplayMode calories rpe'
-      : 'stravaId name titleManual category sport startDate elapsedTime movingTime distance averageSpeed averageHeartRate average_heartrate averagePower average_watts weightedAveragePower weighted_average_watts lactate manualTss tssDisplayMode calories rpe laps.lactate';
+      ? 'stravaId name titleManual category sport startDate elapsedTime movingTime distance averageSpeed averageHeartRate average_heartrate averagePower average_watts weightedAveragePower weighted_average_watts lactate manualTss tssDisplayMode metricsManualized calories rpe'
+      : 'stravaId name titleManual category sport startDate elapsedTime movingTime distance averageSpeed averageHeartRate average_heartrate averagePower average_watts weightedAveragePower weighted_average_watts lactate manualTss tssDisplayMode metricsManualized calories rpe laps.lactate';
     const garminSelect = summaryOnly
-      ? 'garminId name titleManual category sport startDate elapsedTime movingTime distance averageSpeed averageHeartRate averagePower lactate manualTss tssDisplayMode'
-      : 'garminId name titleManual category sport startDate elapsedTime movingTime distance averageSpeed averageHeartRate averagePower lactate manualTss tssDisplayMode laps.lactate';
+      ? 'garminId name titleManual category sport startDate elapsedTime movingTime distance averageSpeed averageHeartRate averagePower lactate manualTss tssDisplayMode metricsManualized'
+      : 'garminId name titleManual category sport startDate elapsedTime movingTime distance averageSpeed averageHeartRate averagePower lactate manualTss tssDisplayMode metricsManualized laps.lactate';
     const appleSelect = summaryOnly
       ? 'healthKitId title name category sport startDate durationSeconds distanceMeters avgHeartRate lactate'
       : null;
@@ -4181,6 +4509,7 @@ router.get('/strava/activities/:id', verifyToken, async (req, res) => {
       distance: savedActivity?.distance ?? null,
       manualTss: savedActivity?.manualTss ?? null,
       tssDisplayMode: savedActivity?.tssDisplayMode ?? null,
+      metricsManualized: savedActivity?.metricsManualized ?? false,
       calories: savedActivity?.calories ?? null,
       rpe: savedActivity?.rpe ?? null,
       lactate: savedActivity?.lactate ?? null,

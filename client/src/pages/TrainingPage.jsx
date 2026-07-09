@@ -3,7 +3,7 @@ import ReactDOM from 'react-dom';
 import { PlusIcon, ListBulletIcon, ChevronDownIcon, CheckIcon, LockClosedIcon, SparklesIcon } from '@heroicons/react/24/outline';
 import UserTrainingsTable from '../components/Training-log/UserTrainingsTable';
 import TrainingForm from '../components/TrainingForm';
-import { TrainingStats } from '../components/DashboardPage/TrainingStats';
+import TrainingStats from '../components/DashboardPage/TrainingStats';
 import UpgradeModal from '../components/UpgradeModal';
 import api from '../services/api';
 import { useAuth } from '../context/AuthProvider';
@@ -1104,6 +1104,7 @@ export default function TrainingPage() {
                 <LockedFeatureOverlay feature="Training Load & LT2 Trend" minHeight={260}>
                   <TrainingStats
                     trainings={filteredTrainings}
+                    categoryCatalog={trainings}
                     selectedSport={selectedSport}
                     onSportChange={setSelectedSport}
                     isFullWidth={true}
@@ -1114,6 +1115,7 @@ export default function TrainingPage() {
               ) : (
                 <TrainingStats
                   trainings={filteredTrainings}
+                  categoryCatalog={trainings}
                   selectedSport={selectedSport}
                   onSportChange={setSelectedSport}
                   isFullWidth={true}
@@ -1135,6 +1137,7 @@ export default function TrainingPage() {
               <LockedFeatureOverlay feature="Training Load & LT2 Trend" minHeight={260}>
                 <TrainingStats
                   trainings={filteredTrainings}
+                  categoryCatalog={trainings}
                   selectedSport={selectedSport}
                   onSportChange={setSelectedSport}
                   isFullWidth={true}
@@ -1145,6 +1148,7 @@ export default function TrainingPage() {
             ) : (
               <TrainingStats
                 trainings={filteredTrainings}
+                categoryCatalog={trainings}
                 selectedSport={selectedSport}
                 onSportChange={setSelectedSport}
                 isFullWidth={true}

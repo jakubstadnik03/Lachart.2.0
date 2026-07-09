@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getStravaActivityDetail } from '../../services/api';
 import { useCategories } from '../../context/CategoryContext';
+import { filterWorkResults } from '../../utils/workLapFilter';
 
 const INTERVALS_PER_PAGE = 10;
 
@@ -318,7 +319,7 @@ function MiniSparkline({ values, color = '#767EB5', width = 80, height = 36 }) {
 }
 
 /* ─── Metric column ─────────────────────────────────────────────────────────── */
-function MetricCol({ label, values, color, formatVal, unit }) {
+function MetricCol({ label, values, avgValues, color, formatVal, unit }) {
   const nums = values.filter(v => v != null && v !== '' && !isNaN(Number(v)) && Number(v) > 0);
   if (nums.length === 0) return (
     <div className="flex flex-col items-center gap-1">
@@ -327,7 +328,10 @@ function MetricCol({ label, values, color, formatVal, unit }) {
     </div>
   );
 
-  const avg = nums.reduce((a, b) => a + Number(b), 0) / nums.length;
+  const avgSource = avgValues ?? values;
+  const avgNums = avgSource.filter(v => v != null && v !== '' && !isNaN(Number(v)) && Number(v) > 0);
+  const avg = (avgNums.length > 0 ? avgNums : nums).reduce((a, b) => a + Number(b), 0)
+    / (avgNums.length > 0 ? avgNums : nums).length;
 
   return (
     <div className="flex flex-col items-center gap-0.5">
@@ -445,17 +449,6 @@ const fmtSpeedAsPace = (mps, isSwim) => {
 
 /* ─── Inline comparison helpers ─────────────────────────────────────────────── */
 
-/** Return only "work" intervals. If no explicit types, fall back to all. */
-function workIntervalsOnly(results) {
-  if (!Array.isArray(results) || results.length === 0) return [];
-  const typed = results.filter(r => r.intervalType);
-  if (typed.length >= Math.ceil(results.length * 0.5)) {
-    const work = results.filter(r => r.intervalType === 'work');
-    if (work.length >= 1) return work;
-  }
-  return results;
-}
-
 /** Average a numeric field over a result array. Returns null if no data. */
 function avgField(results, key) {
   const vals = results
@@ -492,8 +485,8 @@ function fmtPaceSec(sec) {
 function InlineComparison({ currResults, prevResults, prevTraining, sport, accentColor }) {
   const isBike = !sport.toLowerCase().includes('run') && !sport.toLowerCase().includes('swim');
 
-  const cWork = workIntervalsOnly(currResults);
-  const pWork = workIntervalsOnly(prevResults);
+  const cWork = filterWorkResults(currResults, sport);
+  const pWork = filterWorkResults(prevResults, sport);
 
   if (cWork.length === 0 && pWork.length === 0) return null;
 
@@ -712,9 +705,24 @@ const TrainingItem = ({ training, isExpanded, onToggleExpand, prevTraining = nul
   const isSwim  = sport.toLowerCase().includes('swim');
   const isBike  = !isRun && !isSwim;
 
+  const workResults = filterWorkResults(safeResults, sport);
   const powerVals   = safeResults.map(r => r.power).filter(v => v != null && v !== '');
   const hrVals      = safeResults.map(r => r.heartRate).filter(v => v != null && v !== '');
   const lactateVals = safeResults.map(r => r.lactate).filter(v => v != null && v !== '');
+  const workPowerVals   = workResults.map(r => r.power).filter(v => v != null && v !== '');
+  const workHrVals      = workResults.map(r => r.heartRate).filter(v => v != null && v !== '');
+  const workLactateVals = workResults.map(r => r.lactate).filter(v => v != null && v !== '');
+
+  const mapPowerVal = (v) => {
+    if (isBike) return Number(v) || 0;
+    const n = Number(v);
+    if (!isNaN(n)) return n;
+    if (typeof v === 'string' && v.includes(':')) {
+      const [m, s] = v.split(':').map(Number);
+      return (m * 60 + s) || 0;
+    }
+    return 0;
+  };
 
   const hasLactate = lactateVals.length > 0;
   const accentColor = sportColor(sport);
@@ -813,16 +821,8 @@ const TrainingItem = ({ training, isExpanded, onToggleExpand, prevTraining = nul
             </span>
             {powerVals.length > 0 ? (
               <MetricCol
-                values={powerVals.map(v => {
-                  if (isBike) return Number(v) || 0;
-                  const n = Number(v);
-                  if (!isNaN(n)) return n;
-                  if (typeof v === 'string' && v.includes(':')) {
-                    const [m, s] = v.split(':').map(Number);
-                    return (m * 60 + s) || 0;
-                  }
-                  return 0;
-                })}
+                values={powerVals.map(mapPowerVal)}
+                avgValues={workPowerVals.map(mapPowerVal)}
                 color={accentColor}
                 unit={isBike ? ' W' : ''}
                 formatVal={isBike ? (v => Math.round(v)) : (v => { const s = Math.round(v); return `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`; })}
@@ -841,6 +841,7 @@ const TrainingItem = ({ training, isExpanded, onToggleExpand, prevTraining = nul
             {hrVals.length > 0 ? (
               <MetricCol
                 values={hrVals}
+                avgValues={workHrVals}
                 color="#f87171"
                 unit=" bpm"
                 formatVal={v => Math.round(v)}
@@ -859,6 +860,7 @@ const TrainingItem = ({ training, isExpanded, onToggleExpand, prevTraining = nul
             {lactateVals.length > 0 ? (
               <MetricCol
                 values={lactateVals}
+                avgValues={workLactateVals}
                 color="#fb923c"
                 unit=" mmol"
                 formatVal={v => Number(v).toFixed(1)}

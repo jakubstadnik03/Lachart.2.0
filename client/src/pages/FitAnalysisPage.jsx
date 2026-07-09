@@ -3573,6 +3573,7 @@ const FitAnalysisPage = () => {
           totalElapsedTime: a.movingTime || a.elapsedTime || a.totalTime,
           totalTime: a.movingTime || a.elapsedTime || a.totalTime,
           movingTime: a.movingTime || a.elapsedTime,
+          metricsManualized: a.metricsManualized ?? false,
           tss: a.manualTss ?? a.tss ?? a.totalTSS,
           manualTss: a.manualTss,
           tssDisplayMode: a.tssDisplayMode,
@@ -3716,6 +3717,19 @@ const FitAnalysisPage = () => {
       }
       
       const distanceMetersNum = distance && distance > 0 ? Math.round(distance) : undefined;
+      let distanceLabel;
+      if (distanceMetersNum) {
+        if (isSwim) {
+          distanceLabel = distanceMetersNum >= 1000
+            ? `${(distanceMetersNum / 1000).toFixed(1)}km`
+            : `${distanceMetersNum}m`;
+        } else if (distanceMetersNum >= 1000) {
+          const km = distanceMetersNum / 1000;
+          distanceLabel = `${km % 1 === 0 ? km.toFixed(0) : km.toFixed(1)}km`;
+        } else {
+          distanceLabel = `${distanceMetersNum}m`;
+        }
+      }
 
       return {
         interval: idx + 1,
@@ -3727,7 +3741,8 @@ const FitAnalysisPage = () => {
         elevation: elevation != null && Number.isFinite(Number(elevation)) ? Math.round(Number(elevation)).toString() : '',
         duration: formatDuration(duration), // always MM:SS time
         durationSeconds: duration || 0,     // raw seconds for card header + submit conversion
-        durationType: 'time',
+        durationType: useDistance ? 'distance' : 'time',
+        distance: useDistance ? distanceLabel : undefined,
         distanceMeters: distanceMetersNum,  // raw meters for Distance field
         repeatCount: 1,
         isRecovery: isRecovery,
@@ -3933,13 +3948,27 @@ const FitAnalysisPage = () => {
       ? mergeSavedResultsWithFreshLaps(savedTraining.results, results)
       : results;
 
+    const dayKey = `${safeActivityDate.getFullYear()}-${String(safeActivityDate.getMonth() + 1).padStart(2, '0')}-${String(safeActivityDate.getDate()).padStart(2, '0')}`;
+    const matchPw = (plannedWorkoutsCalendar || []).find((pw) => {
+      const pwDate = typeof pw.date === 'string' ? pw.date.slice(0, 10) : '';
+      if (pwDate !== dayKey) return false;
+      const ps = String(pw.sport || '').toLowerCase();
+      return ps === sport || (sport === 'run' && (ps === 'walk' || ps === 'hike'));
+    }) || null;
+    const plannedTitle = String(matchPw?.title || '').trim();
+    const savedTitle = String(savedTraining?.titleManual || savedTraining?.title || '').trim();
+    const stravaTitle = String(strava?.titleManual || strava?.name || '').trim();
+    const resolvedTitle = savedTitle || plannedTitle || stravaTitle || 'Untitled Training';
+
     // Prepare form data with all intervals (user can edit/remove in form)
     const formData = {
       sport: sport,
       type: 'interval',
-      category: savedTraining?.category || strava?.category || '',
-      title: savedTraining?.title || strava?.titleManual || strava?.name || 'Untitled Training',
-      customTitle: '',
+      category: savedTraining?.category || matchPw?.category || strava?.category || '',
+      title: resolvedTitle,
+      customTitle: (!savedTitle && plannedTitle) ? plannedTitle : '',
+      plannedWorkoutTitle: plannedTitle || undefined,
+      plannedWorkoutId: matchPw?._id || undefined,
       description: savedTraining?.description || strava?.description || '',
       date: dateStr,
       ...(savedTraining?._id ? { _id: savedTraining._id } : {}),

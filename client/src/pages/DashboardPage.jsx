@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom';
 import { isCapacitorNative } from '../utils/isNativeApp';
 import { writeFormFitnessToWidget } from '../utils/widgetCache';
 import { compareActivitiesChronologically } from '../utils/calendarDayOrdering';
+import { mapExternalActivitiesToCalendar, mapExternalActivityToCalendar, inferExternalSource } from '../utils/mapExternalActivityToCalendar';
 import NativeDashboardPage from './NativeDashboardPage';
 import { useAthleteSelection } from '../context/AthleteSelectionContext';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
@@ -106,14 +107,21 @@ function buildCalendarActivitiesFromTrainings(allTrainings, regTrainings) {
     .filter((t) => t && !t.sourceStravaActivityId)
     .map((t) => {
       const idStr = String(t.id || '');
+      const stravaId = t.stravaId || (idStr.startsWith('strava-') ? idStr.replace(/^strava-/, '') : null);
+      const garminId = t.garminId || (idStr.startsWith('garmin-') ? idStr.replace(/^garmin-/, '') : null);
+      const source = inferExternalSource(t);
+      const isExternal = Boolean(
+        source === 'garmin' || source === 'apple_health' || source === 'strava'
+        || stravaId || garminId || t.startDate,
+      );
       const isFit = Boolean(
         t.type === 'fit' || t.source === 'fit' || idStr.startsWith('fit-')
         || (t.timestamp && (t.originalFileName || t.titleAuto)),
       );
-      const stravaId = t.stravaId || (idStr.startsWith('strava-') ? idStr.replace(/^strava-/, '') : null);
-      const isStrava = Boolean(t.type === 'strava' || t.source === 'strava' || stravaId || t.startDate);
+      const isStrava = source === 'strava' || Boolean(t.type === 'strava' || stravaId);
+      const isGarmin = source === 'garmin' || Boolean(t.type === 'garmin' || garminId);
 
-      if (isFit && !isStrava) {
+      if (isFit && !isExternal) {
         return {
           ...t,
           type: 'fit',
@@ -129,6 +137,10 @@ function buildCalendarActivitiesFromTrainings(allTrainings, regTrainings) {
           tss: t.trainingStressScore ?? t.tss ?? t.totalTSS,
           tssDisplayMode: t.tssDisplayMode ?? null,
         };
+      }
+
+      if (isGarmin && garminId) {
+        return mapExternalActivityToCalendar({ ...t, garminId, source: 'garmin' }, trainingByStravaId);
       }
 
       if (isStrava && stravaId) {
@@ -149,6 +161,8 @@ function buildCalendarActivitiesFromTrainings(allTrainings, regTrainings) {
           avgHeartRate: t.averageHeartRate || t.average_heartrate || t.avgHeartRate,
           maxHeartRate: t.maxHeartRate || t.max_heartrate,
           totalTime: t.movingTime || t.elapsedTime || t.totalTime,
+          movingTime: t.movingTime || t.elapsedTime || t.totalTime,
+          metricsManualized: t.metricsManualized ?? false,
           distance: t.distance,
           tss: t.manualTss ?? (linkedTraining?.tss || linkedTraining?.totalTSS || t.tss || t.totalTSS || t.total_tss || null),
           tssDisplayMode: t.tssDisplayMode ?? linkedTraining?.tssDisplayMode ?? null,
@@ -1169,39 +1183,9 @@ export default function DashboardPage() {
             avgPower: t.avgPower || t.averagePower || null,
             avgSpeed: t.avgSpeed || t.averageSpeed || null
           })),
-        ...(stravaData || []).map(a => {
-          const stravaId = a.stravaId || a.id;
-          // If there's a linked Training-model entry, use its title (but keep Strava data)
-          const linkedTraining = trainingByStravaId.get(String(stravaId));
-          return {
-          ...a,
-          type: 'strava',
-          date: a.startDate,
-            title: linkedTraining?.title || a.titleManual || a.name || 'Untitled Activity',
-            linkedTrainingTitle: linkedTraining?.title || null,
-          sport: a.sport,
-            stravaId: stravaId, // Ensure stravaId is set (raw ID)
-            id: `strava-${stravaId}`, // Use prefixed ID to match FitAnalysisPage format
-          avgPower: a.averagePower || a.average_watts,
-          weightedAveragePower: a.weightedAveragePower ?? a.weighted_average_watts ?? null,
-          avgSpeed: a.averageSpeed || a.average_speed,
-          maxPower: a.maxPower || a.max_watts,
-          avgHeartRate: a.averageHeartRate || a.average_heartrate,
-          maxHeartRate: a.maxHeartRate || a.max_heartrate,
-          totalTime: a.movingTime || a.elapsedTime,
-          distance: a.distance,
-          tss:
-            a.manualTss ??
-            (linkedTraining?.tss ||
-              linkedTraining?.totalTSS ||
-              a.tss ||
-              a.totalTSS ||
-              a.total_tss ||
-              null),
-          tssDisplayMode: a.tssDisplayMode ?? linkedTraining?.tssDisplayMode ?? null,
-          kilojoules: a.kilojoules ?? a.raw?.kilojoules
-          };
-        })
+        ...(stravaData || []).length > 0
+          ? mapExternalActivitiesToCalendar(stravaData, regTrainings)
+          : [],
       ];
 
       return finalizeCalendar(combined, externalActivitiesError);
@@ -2124,39 +2108,32 @@ export default function DashboardPage() {
   // ─────────────────────────────────────────────────────────────────────────
 
   useEffect(() => {
-    if (recentTrainings.length > 0) {
-      // Get available sports from recent trainings only (keeps UI snappy)
-      const availableSports = [...new Set(recentTrainings.map(t => t.sport))].filter(Boolean);
-      
-      // If current selectedSport is not available and is not 'all', switch to first available
-      // 'all' is always valid, so we don't reset it
+    if (exportedTrainings.length > 0) {
+      const availableSports = [...new Set(exportedTrainings.map(t => t.sport))].filter(Boolean);
+
       if (availableSports.length > 0 && selectedSport !== 'all' && !availableSports.includes(selectedSport)) {
         setSelectedSport(availableSports[0]);
         return;
       }
-      
-      const sportTrainings = selectedSport === 'all'
-        ? recentTrainings
-        : recentTrainings.filter(t => t.sport === selectedSport);
 
-      // Preserve the user's pick across both sport and "raw vs exported"
-      // boundaries. recentTrainings is capped at 40 and includes raw
-      // Strava/FIT imports, so a Training-collection record the user just
-      // picked from the dropdown (which is built from exportedTrainings —
-      // a different 40-slice) may legitimately be absent here. Validate
-      // against the full \`trainings\` array instead.
-      const titleExists = !!selectedTitle && (trainings || []).some(t => t.title === selectedTitle);
-      if (!titleExists) {
-        const latest = [...sportTrainings].sort((a, b) =>
-          new Date(b.date || b.startDate || b.timestamp || 0) - new Date(a.date || a.startDate || a.timestamp || 0)
-        )[0];
-        if (latest) {
-          setSelectedTitle(latest.title);
-          setSelectedTraining(latest._id || latest.id);
-        }
+      const sportTrainings = selectedSport === 'all'
+        ? exportedTrainings
+        : exportedTrainings.filter(t => t.sport === selectedSport);
+      if (sportTrainings.length === 0) return;
+
+      const idInExported = selectedTraining && exportedTrainings.some(t =>
+        String(t._id ?? t.id ?? '') === String(selectedTraining)
+        || (t.stravaId && String(t.stravaId) === String(selectedTraining))
+      );
+      if (idInExported) return;
+
+      const latest = sportTrainings[0];
+      if (latest) {
+        setSelectedTitle(latest.title);
+        setSelectedTraining(latest._id || latest.id);
       }
     }
-  }, [selectedSport, recentTrainings, selectedTitle, trainings]);
+  }, [selectedSport, exportedTrainings, selectedTraining]);
 
   // Reset initialization flag whenever the viewed athlete changes so the banner
   // doesn't flash while the new athlete's data is still being fetched.
@@ -2912,7 +2889,11 @@ export default function DashboardPage() {
           className="lg:col-span-3 md:col-span-2 flex flex-col self-start"
         >
           {isPremium ? (
-            <IntensityDistributionChart athleteId={dashboardDataAthleteId} activities={calendarData || []} />
+            <IntensityDistributionChart
+              athleteId={dashboardDataAthleteId}
+              activities={calendarData || []}
+              profileSport={fitnessProfile?.sport || user?.sport}
+            />
           ) : (
             <PremiumLockedCard
               title="Intensity Distribution"
@@ -2993,6 +2974,7 @@ export default function DashboardPage() {
           <TrainingStats
             key={`ts-${dashboardDataAthleteId}`}
             trainings={exportedTrainings}
+            categoryCatalog={trainings}
             selectedSport={selectedSport}
             onSportChange={setSelectedSport}
             selectedTitle={selectedTitle}

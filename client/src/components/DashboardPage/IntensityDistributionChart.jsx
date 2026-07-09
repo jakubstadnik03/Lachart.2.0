@@ -194,6 +194,36 @@ function filterIntensityActivities(activities, sportMode) {
   });
 }
 
+/** Map profile sport string → chart mode ('bike' | 'run' | null). */
+function profileSportToMode(profileSport) {
+  const s = String(profileSport || '').toLowerCase();
+  if (!s) return null;
+  if (s === 'run' || s === 'running' || s.includes('run') || s.includes('walk') || s.includes('hike')) return 'run';
+  if (s === 'bike' || s === 'cycling' || s.includes('bike') || s.includes('cycl') || s.includes('ride')) return 'bike';
+  return null;
+}
+
+function countIntensityActivities(activities) {
+  return {
+    bike: filterIntensityActivities(activities, 'bike').length,
+    run: filterIntensityActivities(activities, 'run').length,
+  };
+}
+
+/** Default tab: profile run → run; no bike data → run; else stored / bike. */
+function resolveAutoSportMode(activities, profileSport) {
+  const { bike, run } = countIntensityActivities(activities);
+  const profileMode = profileSportToMode(profileSport);
+  if (profileMode === 'run') return 'run';
+  if (bike === 0 && run > 0) return 'run';
+  const stored = readStoredSportMode();
+  if (stored === 'run' && run > 0) return 'run';
+  if (stored === 'bike' && bike > 0) return 'bike';
+  if (bike > 0) return 'bike';
+  if (run > 0) return 'run';
+  return profileMode === 'bike' ? 'bike' : stored;
+}
+
 function inWindow(date, now, daysStart, daysEnd) {
   const t = date.getTime();
   const end = now.getTime() - daysEnd * 86400000;
@@ -315,10 +345,14 @@ function CustomTooltip({ active, payload, label, sportMode }) {
   );
 }
 
-export default function IntensityDistributionChart({ athleteId, activities = [] }) {
+export default function IntensityDistributionChart({ athleteId, activities = [], profileSport: profileSportProp = null }) {
   const [ltProfile, setLtProfile] = useState({ lt1: null, lt2: null });
+  const [athleteProfileSport, setAthleteProfileSport] = useState(null);
   const [presetId, setPresetId] = useState(readStoredPreset);
   const [sportMode, setSportMode] = useState(readStoredSportMode);
+  const sportUserOverride = React.useRef(false);
+
+  const effectiveProfileSport = athleteProfileSport ?? profileSportProp ?? null;
 
   const setPreset = useCallback((id) => {
     setPresetId(id);
@@ -330,6 +364,7 @@ export default function IntensityDistributionChart({ athleteId, activities = [] 
   }, []);
 
   const setSport = useCallback((mode) => {
+    sportUserOverride.current = true;
     setSportMode(mode);
     try {
       localStorage.setItem(STORAGE_SPORT, mode);
@@ -338,12 +373,31 @@ export default function IntensityDistributionChart({ athleteId, activities = [] 
     }
   }, []);
 
+  useEffect(() => {
+    sportUserOverride.current = false;
+  }, [athleteId]);
+
+  useEffect(() => {
+    if (sportUserOverride.current) return;
+    const next = resolveAutoSportMode(activities, effectiveProfileSport);
+    setSportMode((cur) => {
+      if (cur === next) return cur;
+      try {
+        localStorage.setItem(STORAGE_SPORT, next);
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  }, [activities, effectiveProfileSport]);
+
   const activePreset = WINDOW_PRESETS.find((p) => p.id === presetId) || WINDOW_PRESETS[0];
 
   useEffect(() => {
     let cancelled = false;
     if (!athleteId) {
       setLtProfile({ lt1: null, lt2: null });
+      setAthleteProfileSport(null);
       return undefined;
     }
     const zoneKey = sportMode === 'bike' ? 'cycling' : 'running';
@@ -352,6 +406,7 @@ export default function IntensityDistributionChart({ athleteId, activities = [] 
         const { data } = await api.get(`/user/athlete/${athleteId}/profile`);
         if (cancelled) return;
         const z = data?.powerZones?.[zoneKey];
+        setAthleteProfileSport(data?.sport ?? null);
         setLtProfile({
           lt1: toFinitePositive(z?.lt1),
           lt2: toFinitePositive(z?.lt2),

@@ -1,7 +1,7 @@
 /**
  * "What's new — May 2026" re-engagement campaign.
  *
- * Mass-sends the designed HTML email (CZ + EN variants) to every registered
+ * Mass-sends the designed HTML email (English only) to every registered
  * user who hasn't opted out of marketing emails. The campaign runs PACED —
  * a small batch every interval — so:
  *   • Zoho's SMTP throughput limits aren't tripped (free tier ~30/h sustained;
@@ -41,8 +41,7 @@ const ASSETS = [
 ];
 
 const SUBJECT = {
-  en: "Come back to LaChart — a few upgrades (and something extra)",
-  cz: "Vrať se do LaChartu — pár vylepšení (a něco navíc)",
+  en: "What's new in LaChart — iPhone app, workout planner & more",
 };
 
 // Templates are read once on first send and cached for the lifetime of the
@@ -60,8 +59,7 @@ function loadTemplates() {
       `<style>${tokensCss}</style>`
     );
   const en = inlineTokens(fs.readFileSync(path.join(TEMPLATE_DIR, 'en.html'), 'utf8'));
-  const cz = inlineTokens(fs.readFileSync(path.join(TEMPLATE_DIR, 'cz.html'), 'utf8'));
-  cachedTemplates = { en, cz };
+  cachedTemplates = { en };
   return cachedTemplates;
 }
 
@@ -110,14 +108,8 @@ function unsubscribeUrlFor(userId) {
   return `${base}/api/email/unsubscribe?u=${encodeURIComponent(String(userId))}&t=${unsubscribeTokenFor(userId)}`;
 }
 
-/** Detect the recipient's language. We don't store a locale on the user, so
- *  heuristics: Czech email TLDs + Czech-sounding names → cz, else en. */
-function pickLanguage(user) {
-  const email = String(user.email || '').toLowerCase();
-  const name = `${user.name || ''} ${user.surname || ''}`.toLowerCase();
-  if (email.endsWith('.cz') || email.endsWith('.sk')) return 'cz';
-  // Czech-specific diacritics in name
-  if (/[áčďéěíňóřšťúůýž]/i.test(name)) return 'cz';
+/** All recipients receive the English template. */
+function pickLanguage(_user) {
   return 'en';
 }
 
