@@ -1,6 +1,17 @@
 // Blog posts metadata — single source of truth for index cards, related posts, and SEO
 export const blogPosts = [
   {
+    slug:     'zone-2-training-lactate',
+    title:    'Zone 2 Training Explained: How to Find Your True Zone 2 with a Lactate Test',
+    excerpt:  'Everyone talks about Zone 2, almost nobody knows where theirs actually sits. Heart-rate formulas and %FTP put most athletes in the wrong band — here is what Zone 2 really is, why it works, and how a lactate test pins it down to the watt.',
+    date:     '2026-07-11',
+    readTime: '11 min',
+    category: 'Training Science',
+    tags:     ['zone 2', 'zone 2 heart rate', 'aerobic base', 'LT1', 'fat oxidation', 'lactate'],
+    image:    '/images/lactate_curve_calculator_lachart.jpg',
+    featured: true,
+  },
+  {
     slug:     'how-lachart-calculates-lt1-lt2',
     title:    'How LaChart Calculates LT1 and LT2: The Science Behind the Algorithm',
     excerpt:  'An in-depth look at the 8 threshold detection methods LaChart uses — from D-max and OBLA to log-log transformation — and how they are combined to produce accurate, reproducible lactate thresholds.',

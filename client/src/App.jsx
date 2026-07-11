@@ -52,6 +52,7 @@ const LactateTestAtHome = lazy(() => import('./pages/blog/LactateTestAtHome'));
 const LactateTestInterpretation = lazy(() => import('./pages/blog/LactateTestInterpretation'));
 const FtpVsLt2 = lazy(() => import('./pages/blog/FtpVsLt2'));
 const BestLactateAnalyzer2026 = lazy(() => import('./pages/blog/BestLactateAnalyzer2026'));
+const Zone2TrainingLactate = lazy(() => import('./pages/blog/Zone2TrainingLactate'));
 const AdminDashboard = lazy(() => import('./pages/AdminDashboard'));
 const WorkoutPlannerPage = lazy(() => import('./pages/WorkoutPlannerPage'));
 const WorkoutExecutionPage = lazy(() => import('./pages/WorkoutExecutionPage'));
@@ -314,6 +315,7 @@ function AppRoutes() {
         <Route path="/blog/lactate-test-interpretation" element={<LactateTestInterpretation />} />
         <Route path="/blog/ftp-vs-lt2" element={<FtpVsLt2 />} />
         <Route path="/blog/best-lactate-analyzer-2026" element={<BestLactateAnalyzer2026 />} />
+        <Route path="/blog/zone-2-training-lactate" element={<Zone2TrainingLactate />} />
 
         {/* Chráněné routy s Layoutem */}
         <Route
