@@ -3,6 +3,7 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const { JWT_SECRET } = require("../../config/jwt.config");
 const { saveLoginLocation } = require("../../utils/geoip");
+const { resolvePremiumForUserDocument } = require("../../utils/premiumAccess");
 
 class LoginAbl {
     constructor() {
@@ -66,6 +67,8 @@ class LoginAbl {
             // Do not block login on geo lookup/network issues.
             saveLoginLocation(this.userDao, user, req);
 
+            const premiumState = await resolvePremiumForUserDocument(user);
+
             res.status(200).json({
                 token,
                 user: {
@@ -75,6 +78,9 @@ class LoginAbl {
                     surname: user.surname,
                     role: user.role,
                     admin: user.admin,
+                    premium: user.premium === true,
+                    isPremium: premiumState.isPremium,
+                    premiumSource: premiumState.source,
                     athletes: user.athletes || []
                 }
             });

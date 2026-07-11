@@ -325,12 +325,22 @@ export const AuthProvider = ({ children }) => {
       };
 
       if (token && user) {
-        applyLogin(token, user);
+        try {
+          const profileRes = await api.get('/user/profile', { noCache: true, timeout: 8000 });
+          applyLogin(token, profileRes.data);
+        } catch {
+          applyLogin(token, user);
+        }
         return Promise.resolve({ success: true });
       } else {
         const response = await api.post("/user/login", { email, password });
         const { token: loginToken, user: loginUser } = response.data;
-        applyLogin(loginToken, loginUser);
+        try {
+          const profileRes = await api.get('/user/profile', { noCache: true, timeout: 8000 });
+          applyLogin(loginToken, profileRes.data);
+        } catch {
+          applyLogin(loginToken, loginUser);
+        }
         return Promise.resolve({ success: true });
       }
     } catch (error) {

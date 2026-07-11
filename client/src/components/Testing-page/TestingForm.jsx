@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import ReactDOM from 'react-dom';
-import { Trash, Plus, X, Save, HelpCircle, ArrowRight, Edit, Info, Settings2, Lock } from 'lucide-react';
+import { Trash, Plus, X, Save, HelpCircle, ArrowRight, Edit, Info, Settings2 } from 'lucide-react';
 import { useNotification } from '../../context/NotificationContext';
 import { useAuth } from '../../context/AuthProvider';
 import { trackEvent } from '../../utils/analytics';
@@ -1778,9 +1778,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
           {/* Edit Mode Toggle - Only show for existing tests */}
           {!isNewTest && (
             <button
-              disabled={!isPremium}
               onClick={() => {
-                if (!isPremium) return;
                 logClick('Edit/Cancel Button', { isEditMode });
                 if (isEditMode) {
                   // Cancel: restore original data
@@ -1858,7 +1856,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
                 isEditMode
                   ? 'bg-yellow-500 hover:bg-yellow-600 text-white'
                   : 'bg-primary hover:bg-primary-dark text-white'
-              } ${!isPremium ? 'opacity-50 cursor-not-allowed' : ''}`}
+              }`}
             >
               {isEditMode ? (
                 <>
@@ -1867,7 +1865,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
                 </>
               ) : (
                 <>
-                  {isPremium ? <Edit size={14} /> : <Lock size={14} />}
+                  <Edit size={14} />
                   Edit
                 </>
               )}
@@ -2409,15 +2407,13 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
             <button
               data-tour="tour-add-interval"
               type="button"
-              disabled={!isPremium && !isNewTest}
               onClick={() => {
-                if (!isPremium && !isNewTest) return;
                 logClick('Add Interval Button');
                 handleAddRow();
               }}
-              className={`flex items-center justify-center gap-1.5 px-2.5 py-1.5 text-xs sm:text-sm text-white bg-emerald-500 rounded-lg hover:bg-emerald-600 transition-colors whitespace-nowrap ${!isPremium && !isNewTest ? 'opacity-50 cursor-not-allowed' : ''}`}
+              className="flex items-center justify-center gap-1.5 px-2.5 py-1.5 text-xs sm:text-sm text-white bg-emerald-500 rounded-lg hover:bg-emerald-600 transition-colors whitespace-nowrap"
             >
-              {!isPremium && !isNewTest ? <Lock size={14} /> : <Plus size={14} />} Add Interval
+              <Plus size={14} /> Add Interval
             </button>
             <button
               type="button"

@@ -1,6 +1,5 @@
 import { useState, useCallback } from 'react';
 import { useAuth } from '../context/AuthProvider';
-import { isCapacitorNative } from '../utils/isNativeApp';
 
 /**
  * usePremium — gate premium features behind an upgrade modal.
@@ -30,19 +29,15 @@ export function usePremium() {
   // be treated as not-premium (previous `!== false` was leaky — it let any
   // legacy account through).
   //
-  // On native iOS the App Store guideline 3.1.1 forbids any reference to
-  // paid digital content that isn't sold via Apple IAP. The cheapest path
-  // to compliance is to force-unlock every premium gate inside the
-  // Capacitor build — UpgradeModal already returns null on native, and
-  // we make sure no gate ever flips false, so neither the modal nor any
-  // PremiumLockedCard can ever surface in the iOS app.
-  // ── Premium gating ─────────────────────────────────────────────────────────
+  // On native iOS/Android, Stripe checkout stays out of the app (App Store
+  // 3.1.1) — UpgradeModal shows a web-only message instead. Premium access
+  // still follows user.isPremium from the server (e.g. subscription bought on web).
+  //
   // Set FREE_FOR_EVERYONE = true to unlock every gate (early access / launch).
-  // Set false to enforce paywall from user.isPremium (Stripe sub or admin grant).
   const FREE_FOR_EVERYONE = false;
   const isPremium = FREE_FOR_EVERYONE
     ? true
-    : ((user != null && user.isPremium === true) || isCapacitorNative());
+    : (user != null && user.isPremium === true);
   const isCoach = isPremium;
 
   const [modalState, setModalState] = useState({

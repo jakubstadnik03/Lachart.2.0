@@ -7,11 +7,14 @@ import { getStravaActivityDetail } from "../../services/api";
 import { useCategories } from "../../context/CategoryContext";
 import { filterWorkResults, getWorkLapMetricValue } from "../../utils/workLapFilter";
 import { enrichTrainingsWithCategory, normalizeCategoryKey } from "../../utils/trainingCategory";
+import { getChartIntervals, needsStravaLapFetch, resolveStravaNumericId } from "../../utils/trainingChartIntervals";
 
 const CATEGORY_OPTION_PREFIX = '__category__:';
 const PICKER_ALL = "__all__";
 const PICKER_LACTATE = "__lactate__";
 const PICKER_UNCATEGORIZED = "__uncategorized__";
+const CHART_SCROLL_LAP_THRESHOLD = 12;
+const CHART_MIN_BAR_PX = 6;
 
 function trainingKey(t) {
   if (!t) return "";
@@ -87,49 +90,65 @@ function lapPaceSecs(r, sport) {
   }
   return null;
 }
-function computePaceAxisFromPaces(paces, sport) {
+function filterPaceIqr(paces, mult = 1.5) {
+  if (paces.length < 4) return paces;
+  const sorted = [...paces].sort((a, b) => a - b);
+  const q1 = sorted[Math.floor(sorted.length * 0.25)];
+  const q3 = sorted[Math.floor(sorted.length * 0.75)];
+  const iqr = q3 - q1;
+  const lo = q1 - mult * iqr;
+  const hi = q3 + mult * iqr;
+  const filtered = paces.filter((p) => p >= lo && p <= hi);
+  return filtered.length >= 2 ? filtered : paces;
+}
+
+function computePaceAxisFromPaces(workPaces, slowPaces, sport) {
   const isSwim = sport === "swim";
-  const absurdSlow = isSwim ? 600 : 900;
-  const maxSlowCap = isSwim ? 360 : 300;
-
-  let scalePaces = paces.filter(p => p <= absurdSlow);
-  if (scalePaces.length < 2) {
-    const sorted = [...paces].sort((a, b) => a - b);
-    scalePaces = sorted.slice(0, Math.max(2, Math.ceil(sorted.length * 0.9)));
-  }
-
-  if (scalePaces.length >= 4) {
-    const sorted = [...scalePaces].sort((a, b) => a - b);
-    const q1 = sorted[Math.floor(sorted.length * 0.25)];
-    const q3 = sorted[Math.floor(sorted.length * 0.75)];
-    const iqr = q3 - q1;
-    const lo = q1 - 1.5 * iqr;
-    const hi = q3 + 1.5 * iqr;
-    const filtered = scalePaces.filter(p => p >= lo && p <= hi);
-    if (filtered.length >= 2) scalePaces = filtered;
-  }
-
-  const avg = scalePaces.reduce((a, b) => a + b, 0) / scalePaces.length;
-  const globalFast = Math.min(...scalePaces);
-  const globalSlow = Math.max(...scalePaces);
+  const maxSlowCap = isSwim ? 600 : 720;
   const fastPad = isSwim ? 3 : 8;
-  const slowPad = isSwim ? 5 : 12;
+  const slowPad = isSwim ? 5 : 15;
 
-  // Fast edge (top of chart): only slightly faster than the quickest lap.
-  let minP = Math.max(isSwim ? 25 : 100, globalFast - fastPad);
+  const workSet = filterPaceIqr(workPaces, 1.5);
+  const slowSet = filterPaceIqr(slowPaces.length ? slowPaces : workSet, 2);
+
+  const globalFast = Math.min(...workSet);
+  const globalSlow = Math.max(...slowSet);
+
+  let minP = Math.max(isSwim ? 25 : 60, globalFast - fastPad);
   minP = Math.floor(minP / 5) * 5;
 
-  // Slow edge: symmetric around average, but never below the slowest real lap.
-  const halfSpan = Math.max(avg - minP, globalSlow - avg + slowPad, 20);
-  let maxP = Math.min(maxSlowCap, avg + halfSpan);
-  maxP = Math.max(maxP, minP + 20);
-  maxP = Math.ceil(maxP / 15) * 15;
+  let maxP = Math.min(maxSlowCap, globalSlow + slowPad);
+  maxP = Math.ceil(maxP / 5) * 5;
+  maxP = Math.max(maxP, minP + 30);
 
   return {
     minPace: minP,
     maxPace: maxP,
     paceValues: Array.from({ length: 6 }, (_, i) => Math.round(minP + (i * (maxP - minP)) / 5)),
   };
+}
+
+/** Pace Y-axis from lap rows — work laps set the fast edge, all laps set the slow edge. */
+function computePaceAxisFromResults(rows, sport) {
+  const workPaces = [];
+  const allPaces = [];
+  for (const { r, sport: rowSport } of rows) {
+    const s = rowSport || sport;
+    const dur = parseDurationSecs(r);
+    const dist = parseDistMeters(r.distance || (r.durationType === "distance" ? r.duration : null));
+    if ((s === "run" || s === "swim") && (dur < 30 || dist < 100)) continue;
+    const pace = lapPaceSecs(r, s);
+    if (!pace || !isPlausiblePaceSec(pace, s)) continue;
+    if (s === "run" && pace > 1200) continue;
+    allPaces.push(pace);
+    const type = String(r?.intervalType || "").toLowerCase();
+    if (!type || type === "work") workPaces.push(pace);
+  }
+  const fastSet = workPaces.length >= 2 ? workPaces : allPaces;
+  if (!fastSet.length) {
+    return { minPace: 180, maxPace: 330, paceValues: [180, 210, 240, 270, 300, 330] };
+  }
+  return computePaceAxisFromPaces(fastSet, allPaces.length ? allPaces : fastSet, sport);
 }
 function parseDistMeters(d) {
   if (!d) return 0;
@@ -182,7 +201,7 @@ function parseDurationSecs(r) {
 }
 
 /* ── Bar tooltip ───────────────────────────────────────────────────────────── */
-function BarTooltip({ barRef, visible, index, power, heartRate, lactate, duration, durationType, distance, sport, user, intervalType = null }) {
+function BarTooltip({ barRef, visible, index, power, heartRate, lactate, duration, durationType, durationSeconds, distance, sport, user, intervalType = null }) {
   const [pos, setPos] = useState({ top: 0, left: 0, barCenterX: 0 });
   const tooltipRef = useRef(null);
   const unitSystem = resolveDistanceUnitSystem(user, "metric");
@@ -210,11 +229,17 @@ function BarTooltip({ barRef, visible, index, power, heartRate, lactate, duratio
   if (!visible || !pos.top) return null;
 
   const fmtDur = (v) => {
-    if (!v) return null;
-    if (typeof v === "string" && /[km]/i.test(v)) return v;
-    const n = Number(v);
-    if (isNaN(n)) return String(v);
-    return `${Math.floor(n / 60)}:${String(Math.round(n % 60)).padStart(2, "0")}`;
+    if (!v && v !== 0) return null;
+    if (typeof v === "string" && /[km]/i.test(v)) return null;
+    const sec = typeof v === "number" ? v : parseDurationSecs({ duration: v });
+    if (!sec || sec <= 0) return null;
+    if (sec >= 3600) {
+      const h = Math.floor(sec / 3600);
+      const m = Math.floor((sec % 3600) / 60);
+      const s = Math.round(sec % 60);
+      return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+    }
+    return `${Math.floor(sec / 60)}:${String(Math.round(sec % 60)).padStart(2, "0")}`;
   };
   const fmtPace = (v) => {
     const s = parsePaceSecs(v);
@@ -229,15 +254,24 @@ function BarTooltip({ barRef, visible, index, power, heartRate, lactate, duratio
     return `${formatPaceMMSS(displaySec)}${paceUnitShort(unitSystem, 'swim')}`;
   };
   const fmtDist = (v) => {
-    const m = parseDistMeters(v);
+    const m = typeof v === "number" ? v : parseDistMeters(v);
     if (!m) return null;
     return formatDistance(m, unitSystem).formatted;
   };
 
+  const durSec = (() => {
+    if (Number(durationSeconds) > 0) return Number(durationSeconds);
+    if (durationType === "distance") {
+      return parseDurationSecs({ duration: distance, moving_time: distance });
+    }
+    return parseDurationSecs({ duration, durationType, moving_time: duration, elapsed_time: duration });
+  })();
+  const distM = parseDistMeters(distance)
+    || (durationType === "distance" ? parseDistMeters(duration) : 0);
+
   const rows = [
-    durationType === "distance" && duration ? { label: "Distance", value: fmtDist(duration) } : null,
-    durationType !== "distance" && duration ? { label: "Time",     value: fmtDur(duration)  } : null,
-    distance && durationType !== "distance"  ? { label: "Distance", value: fmtDist(distance) } : null,
+    durSec > 0 ? { label: "Time",     value: fmtDur(durSec) } : null,
+    distM > 0  ? { label: "Distance", value: fmtDist(distM) } : null,
     sport === "run"                     && power ? { label: "Pace",  value: fmtPace(power)     } : null,
     sport === "swim"                    && power ? { label: "Pace",  value: fmtSwimPace(power) } : null,
     sport !== "run" && sport !== "swim" && power ? { label: "Power", value: `${power} W`       } : null,
@@ -329,7 +363,7 @@ const BAR_COLORS = ["#4c1d95","#5b21b6","#6d28d9","#7c3aed","#8b5cf6","#a78bfa",
 // Amber/orange shades for bars with lactate data
 const BAR_LACTATE_COLORS = ["#92400e","#b45309","#d97706","#f59e0b","#fbbf24","#fcd34d","#fde68a"];
 
-function VerticalBar({ heightPercent, colorIdx, intervalType, power, pace, distance, heartRate, lactate, duration, durationType, index, isHovered, onHover, sport, user = null, widthPercent = null }) {
+function VerticalBar({ heightPercent, colorIdx, intervalType, power, pace, distance, heartRate, lactate, duration, durationType, durationSeconds, index, isHovered, onHover, sport, user = null, widthPercent = null }) {
   const barRef = useRef(null);
 
   /* intervalType-based color overrides (warmup / recovery / cooldown) */
@@ -344,7 +378,7 @@ function VerticalBar({ heightPercent, colorIdx, intervalType, power, pace, dista
   const hoverOpacity = (intervalType && INTERVAL_TYPE_BAR[intervalType]) ? 1 : (isHovered ? 1 : 0.75);
 
   const style = widthPercent != null
-    ? { flexBasis: `${Math.max(widthPercent, 0.3)}%`, width: `${Math.max(widthPercent, 0.3)}%`, minWidth: "2px", flexShrink: 1, flexGrow: 0 }
+    ? { flexGrow: Math.max(widthPercent, 0.05), flexShrink: 1, flexBasis: 0, minWidth: "2px" }
     : { flex: "1 1 0", minWidth: "2px" };
 
   return (
@@ -379,6 +413,7 @@ function VerticalBar({ heightPercent, colorIdx, intervalType, power, pace, dista
         lactate={lactate}
         duration={duration}
         durationType={durationType}
+        durationSeconds={durationSeconds}
         distance={distance}
         sport={sport}
         user={user}
@@ -775,7 +810,6 @@ export function TrainingStats({
   const settingsRef  = useRef(null);
   const containerRef = useRef(null);
   const chartBarsRef = useRef(null);
-  const [containerWidth, setContainerWidth] = useState(0);
 
   /* close settings on outside click */
   useEffect(() => {
@@ -907,21 +941,12 @@ export function TrainingStats({
   }, []);
 
   useEffect(() => {
-    const stravaNeeded = filteredTrainings.filter(t => {
-      // Strava activities from /api/integrations/activities have source='strava';
-      // t.type holds the sport (Ride/Swim/Run), so checking it was a no-op.
-      const isStrava = t.source === 'strava' || t.type === 'strava' || !!t.stravaId
-                       || String(t.id || '').startsWith('strava-');
-      if (!isStrava) return false;
-      if (Array.isArray(t.results) && t.results.length > 0) return false;
-      const rawId = String(t.stravaId || t.id || '').replace(/^strava-/, '');
-      if (!rawId) return false;
-      return !(rawId in stravaLapsCache);
-    });
+    const stravaNeeded = filteredTrainings.filter(t => needsStravaLapFetch(t, stravaLapsCache));
     if (!stravaNeeded.length) return;
     let cancelled = false;
     stravaNeeded.forEach(t => {
-      const rawId = String(t.stravaId || t.id || '').replace(/^strava-/, '');
+      const rawId = resolveStravaNumericId(t);
+      if (!rawId) return;
       getStravaActivityDetail(rawId, integrationAthleteId).then(raw => {
         if (cancelled) return;
         const laps = raw?.laps ?? [];
@@ -955,16 +980,14 @@ export function TrainingStats({
     return filtered.length > 0 ? filtered : arr;
   }, [hideWarmCool]);
 
+  const getAllIntervals = useCallback((t) => {
+    const sport = resolveTrainingSport(t) || normalizeSport(currentSelectedSport) || 'bike';
+    return getChartIntervals(t, stravaLapsCache, sport);
+  }, [stravaLapsCache, currentSelectedSport]);
+
   const getResults = useCallback((t) => {
-    if (Array.isArray(t?.results) && t.results.length > 0) return filterWarmCool(t.results);
-    const isStrava = t?.source === 'strava' || t?.type === 'strava' || !!t?.stravaId
-                     || String(t?.id || '').startsWith('strava-');
-    if (isStrava) {
-      const rawId = String(t.stravaId || t.id || '').replace(/^strava-/, '');
-      if (rawId && stravaLapsCache[rawId]) return filterWarmCool(stravaLapsCache[rawId]);
-    }
-    return [];
-  }, [stravaLapsCache, filterWarmCool]);
+    return filterWarmCool(getAllIntervals(t));
+  }, [getAllIntervals, filterWarmCool]);
 
   const getWorkResults = useCallback((t) => {
     const sport = resolveTrainingSport(t) || normalizeSport(currentSelectedSport) || 'bike';
@@ -977,22 +1000,6 @@ export function TrainingStats({
     () => filteredTrainings.slice(visibleTrainingIndex, visibleTrainingIndex + displayCount),
     [filteredTrainings, visibleTrainingIndex, displayCount]
   );
-
-  /* measure chart container width */
-  useEffect(() => {
-    const upd = () => {
-      if (containerRef.current) setContainerWidth(containerRef.current.clientWidth);
-    };
-    upd();
-    const el = containerRef.current;
-    const ro = typeof ResizeObserver !== "undefined" && el ? new ResizeObserver(upd) : null;
-    ro?.observe(el);
-    window.addEventListener("resize", upd);
-    return () => {
-      window.removeEventListener("resize", upd);
-      if (el) ro?.unobserve(el);
-    };
-  }, [visibleTrainings.length, filteredTrainings.length, visibleTrainingIndex, displayCount]);
 
   /* navigation */
   const canLeft  = visibleTrainingIndex > 0;
@@ -1030,18 +1037,18 @@ export function TrainingStats({
 
     if (isPaceSport) {
       const paceSport = isSwim ? "swim" : "run";
-      const allPaces = filteredTrainings.flatMap(t => {
+      const allRows = filteredTrainings.flatMap((t) => {
         const sport = resolveTrainingSport(t) || paceSport;
-        return getWorkResults(t).map(r => lapPaceSecs(r, sport)).filter(Boolean);
+        return getResults(t).map((r) => ({ r, sport }));
       });
-      if (!allPaces.length) {
+      if (!allRows.length) {
         return {
           powerValues: [],
           paceValues: [180, 210, 240, 270, 300, 330],
           minPower: 0, maxPower: 100, minPace: 180, maxPace: 330,
         };
       }
-      const { minPace, maxPace, paceValues } = computePaceAxisFromPaces(allPaces, paceSport);
+      const { minPace, maxPace, paceValues } = computePaceAxisFromResults(allRows, paceSport);
       return {
         powerValues: [],
         paceValues,
@@ -1061,12 +1068,7 @@ export function TrainingStats({
         minPower: minP, maxPower: maxP, minPace: 0, maxPace: 600,
       };
     }
-  }, [filteredTrainings, isPaceSport, isSwim, getWorkResults, getResults]);
-
-  /* per-column width in px */
-  const colCount         = Math.max(visibleTrainings.length, 1);
-  const chartInnerPx     = containerWidth > 0 ? containerWidth : 320;
-  const perColPx         = Math.max(36, chartInnerPx / colCount - (colCount > 1 ? 6 : 0));
+  }, [filteredTrainings, isPaceSport, isSwim, getResults]);
 
   /* navigate to training detail */
   const handleTrainingClick = (t) => {
@@ -1197,34 +1199,36 @@ export function TrainingStats({
             {visibleTrainings.map((training, tIdx) => {
               const results = getResults(training);
 
-              /* compute proportional widths for intervals within column */
-              const hasDistData = results.some(r => {
-                const d = r.distance || (r.durationType === "distance" ? r.duration : null);
-                return d && parseDistMeters(d) > 0;
-              });
-              const totalDist = results.reduce((s, r) => {
-                const d = r.distance || (r.durationType === "distance" ? r.duration : null);
-                return s + parseDistMeters(d);
-              }, 0);
-              const totalDur = results.reduce((s, r) => s + parseDurationSecs(r), 0);
-              const useDist  = hasDistData && totalDist > 0;
-              const totalVal = useDist ? totalDist : totalDur;
+              const sportKey = resolveTrainingSport(training) || normalizeSport(currentSelectedSport) || "bike";
+              const isRunSport  = sportKey === "run";
+              const isSwimSport = sportKey === "swim";
+              // Bar width: run/swim → distance, bike → duration (matches Calendar LAPS chart)
+              const widthByDistance = isRunSport || isSwimSport;
 
-              const gapPx    = 3;
-              const gapCnt   = Math.max(0, results.length - 1);
-              const gapPct   = perColPx > 0 && gapCnt > 0 ? Math.min(35, (gapCnt * gapPx / perColPx) * 100) : 0;
-              const availPct = Math.max(55, 100 - gapPct);
-              const equalShare = availPct / Math.max(results.length, 1);
+              const lapWidthVal = (r) => {
+                if (widthByDistance) {
+                  const d = r.distance || (r.durationType === "distance" ? r.duration : null);
+                  return parseDistMeters(d);
+                }
+                return parseDurationSecs(r);
+              };
 
-              const intervalWidths = results.map(r => {
-                const d  = r.distance || (r.durationType === "distance" ? r.duration : null);
-                const val = useDist ? parseDistMeters(d) : parseDurationSecs(r);
-                return totalVal > 0 ? (val / totalVal) * availPct : equalShare;
-              });
+              const widthVals = results.map(lapWidthVal);
+              const totalVal = widthVals.reduce((s, v) => s + (v > 0 ? v : 0), 0);
+
+              const gapPx = 2;
+              const intervalWidths = totalVal > 0
+                ? widthVals.map((v) => (v > 0 ? (v / totalVal) * 100 : 0))
+                : results.map(() => 100 / Math.max(results.length, 1));
+              const widthSum = intervalWidths.reduce((s, w) => s + w, 0) || 1;
+              const normalizedWidths = intervalWidths.map((w) => (w / widthSum) * 100);
+              // Proportional bars always fill the column — scroll only when we lack sizing data
+              const scrollMinPx = totalVal <= 0 && results.length > CHART_SCROLL_LAP_THRESHOLD
+                ? results.length * CHART_MIN_BAR_PX + Math.max(0, results.length - 1) * gapPx
+                : null;
 
               /* color ranking: highest power/pace = darkest */
               const powerPaceVals = results.map((r, i) => {
-                const sportKey = resolveTrainingSport(training) || normalizeSport(currentSelectedSport) || "bike";
                 const val = isPaceSport ? lapPaceSecs(r, sportKey) : Number(r.power);
                 return { val: val != null && val > 0 && !isNaN(val) ? val : null, i };
               }).filter(x => x.val != null && x.val > 0);
@@ -1235,13 +1239,19 @@ export function TrainingStats({
               return (
                 <div key={training._id || tIdx} className="flex flex-1 basis-0 min-w-0 h-full items-end overflow-visible">
                   <div
-                    className="relative flex h-full w-full min-w-0 items-end overflow-visible"
-                    style={{ gap: `${gapPx}px` }}
+                    className={`h-full w-full min-w-0 ${scrollMinPx ? "overflow-x-auto overflow-y-visible" : "overflow-visible"}`}
+                    style={{ WebkitOverflowScrolling: "touch" }}
+                  >
+                  <div
+                    className="relative flex h-full min-w-0 items-end justify-stretch overflow-visible"
+                    style={{
+                      gap: `${gapPx}px`,
+                      minWidth: scrollMinPx ? `${scrollMinPx}px` : "100%",
+                    }}
                   >
                     {results.map((r, rIdx) => {
                       let heightPercent = 0;
                       const denom = isPaceSport ? (maxPace - minPace) : (maxPower - minPower);
-                      const sportKey = resolveTrainingSport(training) || normalizeSport(currentSelectedSport) || "bike";
                       if (denom > 0) {
                         if (isPaceSport) {
                           const pace = lapPaceSecs(r, sportKey);
@@ -1253,6 +1263,15 @@ export function TrainingStats({
                           const pow = Number(r.power);
                           if (!isNaN(pow) && pow > 0) heightPercent = ((pow - minPower) / denom) * 100;
                         }
+                        if (heightPercent <= 0) {
+                          const hasLapData = parseDurationSecs(r) > 0
+                            || parseDistMeters(r.distance || (r.durationType === "distance" ? r.duration : null)) > 0
+                            || Number(r.heartRate) > 0;
+                          if (hasLapData) {
+                            const t = String(r.intervalType || "").toLowerCase();
+                            heightPercent = (t === "recovery" || r.isRecovery) ? 4 : 6;
+                          }
+                        }
                       }
 
                       return (
@@ -1263,20 +1282,22 @@ export function TrainingStats({
                           intervalType={r.intervalType || null}
                           power={r.power}
                           pace={isPaceSport ? r.power : r.pace}
-                          distance={r.distance || (isPaceSport && r.durationType === "distance" ? r.duration : null)}
+                          distance={r.distance || r.distanceMeters || (r.durationType === "distance" ? r.duration : null)}
                           lactate={r.lactate}
                           heartRate={r.heartRate}
                           duration={r.duration}
                           durationType={r.durationType || "time"}
+                          durationSeconds={r.durationSeconds ?? r.moving_time ?? r.elapsed_time ?? null}
                           index={rIdx}
                           isHovered={hoveredBar?.tIdx === tIdx && hoveredBar?.rIdx === rIdx}
                           onHover={h => setHoveredBar(h ? { tIdx, rIdx } : null)}
                           sport={resolveTrainingSport(training) || normalizeSport(currentSelectedSport) || "bike"}
                           user={user}
-                          widthPercent={intervalWidths[rIdx]}
+                          widthPercent={normalizedWidths[rIdx]}
                         />
                       );
                     })}
+                  </div>
                   </div>
                 </div>
               );
@@ -1297,6 +1318,29 @@ export function TrainingStats({
             </div>
           ))}
         </div>
+        {visibleTrainings.length === 1 && (() => {
+          const t = visibleTrainings[0];
+          const all = getAllIntervals(t);
+          const shown = getResults(t);
+          if (all.length < 2) return null;
+          return (
+            <div className="flex items-center justify-between pl-9 sm:pl-11 pr-1 mt-0.5 text-[11px] text-gray-400 tabular-nums shrink-0">
+              <span>
+                {shown.length === all.length
+                  ? `${all.length} intervals`
+                  : `${shown.length}/${all.length} intervals`}
+              </span>
+              {shown.length > CHART_SCROLL_LAP_THRESHOLD && !shown.some((r) => {
+                const sk = resolveTrainingSport(t) || normalizeSport(currentSelectedSport) || "bike";
+                return (sk === "run" || sk === "swim")
+                  ? parseDistMeters(r.distance || (r.durationType === "distance" ? r.duration : null)) > 0
+                  : parseDurationSecs(r) > 0;
+              }) && (
+                <span className="text-gray-300">scroll chart →</span>
+              )}
+            </div>
+          );
+        })()}
       </div>
       )}
 
