@@ -30,6 +30,7 @@ const SignUpPage = () => {
     role: 'athlete'
   });
   const [error, setError] = useState(null);
+  const [emailExists, setEmailExists] = useState(false);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [showTermsModal, setShowTermsModal] = useState(false);
   const [showEditProfileModal, setShowEditProfileModal] = useState(false);
@@ -60,12 +61,22 @@ const SignUpPage = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!acceptedTerms) {
-      setError('You must accept the Terms and Privacy Policy.');
+    setError(null);
+    setEmailExists(false);
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
+      setError('Please enter a valid email address.');
+      return;
+    }
+    if (formData.password.length < 8) {
+      setError('Password must be at least 8 characters long.');
       return;
     }
     if (formData.password !== formData.confirmPassword) {
-      setError("Passwords don't match");
+      setError("Passwords don't match.");
+      return;
+    }
+    if (!acceptedTerms) {
+      setError('You must accept the Terms and Privacy Policy.');
       return;
     }
     try {
@@ -86,15 +97,13 @@ const SignUpPage = () => {
 
       navigate('/login', { replace: true });
     } catch (error) {
-      setError(
-        error.response?.data?.error
-        || error.response?.data?.message
-        || error.response?.data?.details
-        || 'Registration failed',
-      );
-      trackEvent('register_error', { 
-        method: 'email', 
-        error: error.response?.data?.message || 'Registration failed' 
+      const data = error.response?.data;
+      if (data?.code === 'EMAIL_EXISTS') setEmailExists(true);
+      const message = data?.error || data?.message || data?.details || 'Registration failed';
+      setError(message);
+      trackEvent('register_error', {
+        method: 'email',
+        error: data?.code || message,
       });
     }
   };
@@ -394,7 +403,15 @@ const SignUpPage = () => {
             </div>
 
             {error && (
-              <p className="text-sm text-red-600 bg-red-50 rounded-xl px-3 py-2">{error}</p>
+              <p className="text-sm text-red-600 bg-red-50 rounded-xl px-3 py-2">
+                {error}
+                {emailExists && (
+                  <>
+                    {' '}
+                    <Link to="/login" className="font-semibold underline">Log in instead</Link>.
+                  </>
+                )}
+              </p>
             )}
 
             <button
@@ -838,6 +855,12 @@ const SignUpPage = () => {
                 className="text-red-500 text-sm text-center"
               >
                 {error}
+                {emailExists && (
+                  <>
+                    {' '}
+                    <Link to="/login" className="font-semibold underline">Log in instead</Link>.
+                  </>
+                )}
               </motion.div>
             )}
 

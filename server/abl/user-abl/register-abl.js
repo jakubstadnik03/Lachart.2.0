@@ -20,20 +20,20 @@ class RegisterAbl {
             // Validace vstupů
             if (!email || !password || !confirmPassword || !name || !surname) {
                 return res.status(400).json({
-                    error: "Všechna povinná pole musí být vyplněna"
+                    error: "Please fill in all required fields."
                 });
             }
 
             if (password !== confirmPassword) {
                 return res.status(400).json({
-                    error: "Hesla se neshodují"
+                    error: "Passwords don't match."
                 });
             }
 
             // M9 — enforce minimum password length
             if (password.length < 8) {
                 return res.status(400).json({
-                    error: "Heslo musí mít alespoň 8 znaků"
+                    error: "Password must be at least 8 characters long."
                 });
             }
 
@@ -41,15 +41,14 @@ class RegisterAbl {
             const existingUser = await this.userDao.findByEmail(email);
             if (existingUser) {
                 return res.status(400).json({
-                    error: "Uživatel s tímto emailem již existuje"
+                    error: "An account with this email already exists.",
+                    code: "EMAIL_EXISTS"
                 });
             }
 
             // Hash hesla
-            console.log("Original password:", password); // POZOR: Pouze pro debug!
             const salt = await bcrypt.genSalt(10);
             const hashedPassword = await bcrypt.hash(password, salt);
-            console.log("Generated hash:", hashedPassword);
 
             // Generate email verification token
             const emailVerificationToken = crypto.randomBytes(32).toString('hex');
@@ -76,13 +75,10 @@ class RegisterAbl {
                 }
             };
 
-            console.log("Creating new user with hash:", hashedPassword);
             const newUser = await this.userDao.createUser(userData);
-            console.log("User created, stored hash:", newUser.password);
 
             // Zkontrolujeme, že heslo bylo správně uloženo
             const savedUser = await this.userDao.findByEmail(email);
-            console.log("Saved user password hash length:", savedUser.password.length);
 
             // Save registration location (fire-and-forget)
             saveRegistrationLocation(this.userDao, newUser._id, req);
@@ -112,7 +108,7 @@ class RegisterAbl {
             );
 
             res.status(201).json({
-                message: "Uživatel úspěšně vytvořen",
+                message: "Account created successfully",
                 token,
                 user: {
                     _id: newUser._id,
@@ -127,7 +123,7 @@ class RegisterAbl {
         } catch (error) {
             console.error("Registration error:", error);
             res.status(500).json({
-                error: "Chyba při registraci",
+                error: "Something went wrong during registration. Please try again.",
                 details: error.message
             });
         }
