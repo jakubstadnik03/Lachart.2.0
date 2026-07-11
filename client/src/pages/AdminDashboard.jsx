@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getEventStats } from '../utils/eventLogger';
-import { getAdminUsers, getAdminStats, getAdminHealth, getCoachAthletesPage, updateUserAdmin, deleteUserAdmin, deleteAthleteWithTests, sendReactivationEmail, sendThankYouEmail, sendThankYouEmailToAll, sendFeatureAnnouncementEmail, sendStravaReminderEmail, sendAppDownloadEmail, sendCoachOutreachEmail, getCoachOutreachLeads, updateCoachOutreachLead, importCoachOutreachLeads, startBulkOutreachCampaign, stopBulkCampaign, listBulkCampaigns, getDefaultOutreachTemplate, impersonateUser, sendRetentionEmailPreview, fetchWhatsNewMay2026Status, sendWhatsNewMay2026Preview, runWhatsNewMay2026Campaign, resetWhatsNewMay2026, fetchIosLaunchJun2026Status, sendIosLaunchJun2026Preview, runIosLaunchJun2026Campaign, resetIosLaunchJun2026 } from '../services/api';
+import { getAdminUsers, getAdminStats, getAdminHealth, getCoachAthletesPage, updateUserAdmin, deleteUserAdmin, deleteAthleteWithTests, sendReactivationEmail, sendThankYouEmail, sendThankYouEmailToAll, sendFeatureAnnouncementEmail, sendStravaReminderEmail, sendAppDownloadEmail, sendCoachOutreachEmail, getCoachOutreachLeads, updateCoachOutreachLead, importCoachOutreachLeads, startBulkOutreachCampaign, stopBulkCampaign, listBulkCampaigns, getDefaultOutreachTemplate, impersonateUser, sendRetentionEmailPreview, fetchWhatsNewMay2026Status, sendWhatsNewMay2026Preview, runWhatsNewMay2026Campaign, resetWhatsNewMay2026, fetchIosLaunchJun2026Status, sendIosLaunchJun2026Preview, runIosLaunchJun2026Campaign, resetIosLaunchJun2026, fetchPaidLaunchJul2026Status, sendPaidLaunchJul2026Preview, runPaidLaunchJul2026Campaign, resetPaidLaunchJul2026, fetchCampaignRecipients } from '../services/api';
 import { useAuth } from '../context/AuthProvider';
 import { useNotification } from '../context/NotificationContext';
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
@@ -140,6 +140,26 @@ const AdminDashboard = () => {
   const [retentionSending,   setRetentionSending]   = useState(null);
   const [retentionResult,    setRetentionResult]    = useState(null);
 
+  // Paced lifecycle campaigns (paid launch, iOS, what's new) — loaded on Marketing tab
+  const [pacedCampaignStats, setPacedCampaignStats] = useState(null);
+  const [pacedCampaignStatsLoading, setPacedCampaignStatsLoading] = useState(false);
+
+  const loadPacedCampaignOverview = useCallback(async () => {
+    setPacedCampaignStatsLoading(true);
+    try {
+      const [paidLaunch, iosLaunch, whatsNew] = await Promise.all([
+        fetchPaidLaunchJul2026Status(),
+        fetchIosLaunchJun2026Status(),
+        fetchWhatsNewMay2026Status(),
+      ]);
+      setPacedCampaignStats({ paidLaunch, iosLaunch, whatsNew });
+    } catch (e) {
+      console.error('[Admin] Failed to load paced campaign overview:', e);
+    } finally {
+      setPacedCampaignStatsLoading(false);
+    }
+  }, []);
+
   // Lazy-loaded athletes lists inside coach cards (pagination).
   // Key: coachId, Value: { athletes: [], totalLinked: number, totalWithPassword: number }
   const [coachAthletesByCoachId, setCoachAthletesByCoachId] = useState({});
@@ -208,6 +228,10 @@ const AdminDashboard = () => {
     };
     loadOutreachLeads();
   }, [activeTab, addNotification]);
+
+  useEffect(() => {
+    if (activeTab === 'marketing') loadPacedCampaignOverview();
+  }, [activeTab, loadPacedCampaignOverview]);
 
   const handleLoadMoreCoachAthletes = async (coach) => {
     const coachId = coach?._id;
@@ -811,16 +835,27 @@ const AdminDashboard = () => {
       { type: 'Thank You', sentUsers: sentUsersThankYou, totalSent: totalSentThankYou },
       { type: 'Feature', sentUsers: sentUsersFeature, totalSent: totalSentFeature },
       { type: 'Reactivation', sentUsers: sentUsersReactivation, totalSent: totalSentReactivation },
-      { type: 'Strava Reminder', sentUsers: sentUsersStravaReminder, totalSent: totalSentStravaReminder }
+      { type: 'Strava Reminder', sentUsers: sentUsersStravaReminder, totalSent: totalSentStravaReminder },
     ];
+
+    const pacedRows = pacedCampaignStats
+      ? [
+          { type: 'Paid launch Jul 2026', sentUsers: pacedCampaignStats.paidLaunch?.sent ?? 0, totalSent: pacedCampaignStats.paidLaunch?.sent ?? 0 },
+          { type: 'iOS launch Jun 2026', sentUsers: pacedCampaignStats.iosLaunch?.sent ?? 0, totalSent: pacedCampaignStats.iosLaunch?.sent ?? 0 },
+          { type: "What's new May 2026", sentUsers: pacedCampaignStats.whatsNew?.sent ?? 0, totalSent: pacedCampaignStats.whatsNew?.sent ?? 0 },
+        ]
+      : [];
+
+    const pacedSentTotal = pacedRows.reduce((sum, row) => sum + row.totalSent, 0);
 
     return {
       totalUsers,
       emailEligibleUsers,
-      totalCampaignSends: totalSentThankYou + totalSentFeature + totalSentReactivation + totalSentStravaReminder,
-      byType
+      totalCampaignSends: totalSentThankYou + totalSentFeature + totalSentReactivation + totalSentStravaReminder + pacedSentTotal,
+      byType: [...byType, ...pacedRows],
+      pacedCampaigns: pacedCampaignStats,
     };
-  }, [users]);
+  }, [users, pacedCampaignStats]);
 
   const handleBulkSend = async () => {
     if (selectedUsersForBulk.length === 0) {
@@ -2778,12 +2813,25 @@ const AdminDashboard = () => {
             animate={{ opacity: 1, y: 0 }}
             className="space-y-4 sm:space-y-6"
           >
-            <IosLaunchJun2026Card />
-            <WhatsNewMay2026Card />
+            <PaidLaunchJul2026Card onCampaignUpdated={loadPacedCampaignOverview} />
+            <IosLaunchJun2026Card onCampaignUpdated={loadPacedCampaignOverview} />
+            <WhatsNewMay2026Card onCampaignUpdated={loadPacedCampaignOverview} />
 
             <div className="bg-white rounded-lg shadow p-4 sm:p-6">
-              <h3 className="text-base sm:text-lg font-semibold text-gray-900">Email Campaign Stats</h3>
-              <p className="text-xs sm:text-sm text-gray-600 mt-1">Overview of sent campaign emails and reach.</p>
+              <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                <div>
+                  <h3 className="text-base sm:text-lg font-semibold text-gray-900">Email Campaign Stats</h3>
+                  <p className="text-xs sm:text-sm text-gray-600 mt-1">Overview of sent campaign emails and reach.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={loadPacedCampaignOverview}
+                  disabled={pacedCampaignStatsLoading}
+                  className="self-start px-3 py-1.5 text-xs bg-gray-100 hover:bg-gray-200 rounded-md disabled:opacity-50"
+                >
+                  {pacedCampaignStatsLoading ? 'Refreshing…' : 'Refresh paced campaigns'}
+                </button>
+              </div>
               <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div className="rounded-lg bg-gray-50 border border-gray-200 p-4">
                   <div className="text-xs text-gray-600">Total users</div>
@@ -2803,7 +2851,7 @@ const AdminDashboard = () => {
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={emailCampaignStats.byType}>
                     <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="type" tick={{ fontSize: 12 }} />
+                    <XAxis dataKey="type" tick={{ fontSize: 11 }} interval={0} angle={-20} textAnchor="end" height={70} />
                     <YAxis />
                     <Tooltip />
                     <Legend />
@@ -2812,6 +2860,43 @@ const AdminDashboard = () => {
                   </BarChart>
                 </ResponsiveContainer>
               </div>
+
+              {emailCampaignStats.pacedCampaigns && (
+                <div className="mt-6 overflow-x-auto rounded-lg border border-gray-200">
+                  <table className="min-w-full text-xs sm:text-sm">
+                    <thead className="bg-gray-50 text-left text-gray-600">
+                      <tr>
+                        <th className="px-3 py-2 font-medium">Paced campaign</th>
+                        <th className="px-3 py-2 font-medium">Sent</th>
+                        <th className="px-3 py-2 font-medium">Pending</th>
+                        <th className="px-3 py-2 font-medium">Eligible</th>
+                        <th className="px-3 py-2 font-medium">Skipped</th>
+                        <th className="px-3 py-2 font-medium">Progress</th>
+                        <th className="px-3 py-2 font-medium">Last sent</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {[
+                        { label: 'Paid launch — Jul 2026', data: emailCampaignStats.pacedCampaigns.paidLaunch },
+                        { label: 'iOS launch — Jun 2026', data: emailCampaignStats.pacedCampaigns.iosLaunch },
+                        { label: "What's new — May 2026", data: emailCampaignStats.pacedCampaigns.whatsNew },
+                      ].map(({ label, data }) => (
+                        <tr key={label} className="hover:bg-gray-50">
+                          <td className="px-3 py-2 font-medium text-gray-900">{label}</td>
+                          <td className="px-3 py-2 text-emerald-700 font-semibold">{data?.sent ?? '—'}</td>
+                          <td className="px-3 py-2 text-amber-700">{data?.pending ?? '—'}</td>
+                          <td className="px-3 py-2">{data?.totalEligible ?? data?.eligible ?? '—'}</td>
+                          <td className="px-3 py-2 text-gray-500">{data?.ineligible ?? '—'}</td>
+                          <td className="px-3 py-2">
+                            {data?.progressPct != null ? `${data.progressPct}%` : '—'}
+                          </td>
+                          <td className="px-3 py-2 text-gray-500 whitespace-nowrap">{formatCampaignDate(data?.lastSentAt)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
 
             {/* Marketing Controls */}
@@ -4384,28 +4469,52 @@ const AdminDashboard = () => {
   );
 };
 
+function formatCampaignDate(value) {
+  if (!value) return '—';
+  const d = new Date(value);
+  if (!Number.isFinite(d.getTime())) return '—';
+  return d.toLocaleString();
+}
+
+function campaignRecipientReasonLabel(reason) {
+  switch (reason) {
+    case 'email_opted_out': return 'Email opt-out';
+    case 'marketing_opted_out': return 'Marketing opt-out';
+    case 'inactive': return 'Inactive account';
+    case 'no_email': return 'No email';
+    default: return reason || '—';
+  }
+}
+
 // ─── Paced mass-email campaign card (Zoho-safe batching) ───────────────────
 function PacedEmailCampaignCard({
   title,
   description,
   borderAccentClass = 'border-primary',
   badgeLabel = 'Active campaign',
+  campaignSlug,
   fetchStatusApi,
   sendPreviewApi,
   runCampaignApi,
   resetCampaignApi,
+  onCampaignUpdated,
 }) {
-  const [status, setStatus] = useState(null);          // { pending, sent, totalEligible }
+  const [status, setStatus] = useState(null);
   const [loadingStatus, setLoadingStatus] = useState(false);
   const [previewing, setPreviewing] = useState(false);
   const [previewEmail, setPreviewEmail] = useState('');
   const [running, setRunning] = useState(false);
   const [runStats, setRunStats] = useState(null);
   const [error, setError] = useState(null);
-  // Conservative Zoho-free defaults. Admin can tighten if they're on a paid plan.
   const [batchSize, setBatchSize] = useState(1);
-  const [intervalMin, setIntervalMin] = useState(5);       // minutes between batches
+  const [intervalMin, setIntervalMin] = useState(5);
   const [maxThisRun, setMaxThisRun] = useState(20);
+  const [recipientFilter, setRecipientFilter] = useState('sent');
+  const [recipientSearch, setRecipientSearch] = useState('');
+  const [recipientPage, setRecipientPage] = useState(1);
+  const [recipients, setRecipients] = useState(null);
+  const [loadingRecipients, setLoadingRecipients] = useState(false);
+  const [showRecipients, setShowRecipients] = useState(true);
 
   const loadStatus = useCallback(async () => {
     setLoadingStatus(true);
@@ -4420,7 +4529,29 @@ function PacedEmailCampaignCard({
     }
   }, [fetchStatusApi]);
 
+  const loadRecipients = useCallback(async () => {
+    if (!campaignSlug) return;
+    setLoadingRecipients(true);
+    try {
+      const data = await fetchCampaignRecipients(campaignSlug, {
+        status: recipientFilter,
+        search: recipientSearch.trim(),
+        page: recipientPage,
+        limit: 50,
+      });
+      setRecipients(data);
+      setError(null);
+    } catch (e) {
+      setError(e?.response?.data?.error || e.message);
+    } finally {
+      setLoadingRecipients(false);
+    }
+  }, [campaignSlug, recipientFilter, recipientSearch, recipientPage]);
+
   useEffect(() => { loadStatus(); }, [loadStatus]);
+  useEffect(() => {
+    if (showRecipients && campaignSlug) loadRecipients();
+  }, [showRecipients, campaignSlug, loadRecipients]);
 
   const handlePreview = async () => {
     setPreviewing(true);
@@ -4481,6 +4612,8 @@ function PacedEmailCampaignCard({
       });
       setRunStats(r?.stats || null);
       await loadStatus();
+      if (showRecipients && campaignSlug) await loadRecipients();
+      if (typeof onCampaignUpdated === 'function') await onCampaignUpdated();
     } catch (e) {
       setError(e?.response?.data?.error || e.message);
     } finally {
@@ -4494,6 +4627,8 @@ function PacedEmailCampaignCard({
       const r = await resetCampaignApi();
       alert(`Reset: ${r.modified} of ${r.matched} users cleared.`);
       await loadStatus();
+      if (showRecipients && campaignSlug) await loadRecipients();
+      if (typeof onCampaignUpdated === 'function') await onCampaignUpdated();
     } catch (e) {
       setError(e?.response?.data?.error || e.message);
     }
@@ -4502,6 +4637,8 @@ function PacedEmailCampaignCard({
   const pendingPct = status && status.totalEligible
     ? Math.round((status.sent / status.totalEligible) * 100)
     : 0;
+
+  const breakdown = status?.breakdown || {};
 
   return (
     <div className={`bg-white rounded-lg shadow p-4 sm:p-6 border-l-4 ${borderAccentClass}`}>
@@ -4516,16 +4653,19 @@ function PacedEmailCampaignCard({
           </p>
         </div>
         <button
-          onClick={loadStatus}
-          disabled={loadingStatus}
+          onClick={async () => {
+            await loadStatus();
+            if (showRecipients && campaignSlug) await loadRecipients();
+          }}
+          disabled={loadingStatus || loadingRecipients}
           className="self-start sm:self-auto px-3 py-1.5 text-xs bg-gray-100 hover:bg-gray-200 rounded-md disabled:opacity-50"
         >
-          {loadingStatus ? 'Refreshing…' : 'Refresh status'}
+          {loadingStatus || loadingRecipients ? 'Refreshing…' : 'Refresh status'}
         </button>
       </div>
 
       {/* Status pills */}
-      <div className="mt-4 grid grid-cols-3 gap-3">
+      <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
         <div className="rounded-lg bg-gray-50 border border-gray-200 p-3">
           <div className="text-[10px] sm:text-xs text-gray-600 uppercase tracking-wide">Eligible</div>
           <div className="text-xl sm:text-2xl font-bold text-gray-900 mt-1">{status?.totalEligible ?? '—'}</div>
@@ -4538,7 +4678,36 @@ function PacedEmailCampaignCard({
           <div className="text-[10px] sm:text-xs text-amber-700 uppercase tracking-wide">Pending</div>
           <div className="text-xl sm:text-2xl font-bold text-amber-700 mt-1">{status?.pending ?? '—'}</div>
         </div>
+        <div className="rounded-lg bg-slate-50 border border-slate-200 p-3">
+          <div className="text-[10px] sm:text-xs text-slate-600 uppercase tracking-wide">Skipped</div>
+          <div className="text-xl sm:text-2xl font-bold text-slate-700 mt-1">{status?.ineligible ?? '—'}</div>
+        </div>
       </div>
+
+      {status && (
+        <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] text-gray-500">
+          <div>
+            Progress: <span className="font-semibold text-gray-700">{status.progressPct ?? pendingPct}%</span>
+            {status.firstSentAt && (
+              <> · first sent {formatCampaignDate(status.firstSentAt)}</>
+            )}
+          </div>
+          <div className="sm:text-right">
+            {status.lastSentAt && <>Last sent {formatCampaignDate(status.lastSentAt)}</>}
+            {status.totalWithEmail != null && (
+              <> · {status.totalWithEmail} users with email</>
+            )}
+          </div>
+          {(breakdown.email_opted_out > 0 || breakdown.marketing_opted_out > 0 || breakdown.inactive > 0) && (
+            <div className="sm:col-span-2 text-gray-500">
+              Not eligible:
+              {breakdown.email_opted_out > 0 && <> email opt-out <b>{breakdown.email_opted_out}</b></>}
+              {breakdown.marketing_opted_out > 0 && <>, marketing opt-out <b>{breakdown.marketing_opted_out}</b></>}
+              {breakdown.inactive > 0 && <>, inactive <b>{breakdown.inactive}</b></>}
+            </div>
+          )}
+        </div>
+      )}
 
       {status && status.totalEligible > 0 && (
         <div className="mt-3 h-1.5 bg-gray-100 rounded-full overflow-hidden">
@@ -4655,6 +4824,136 @@ function PacedEmailCampaignCard({
         </div>
       )}
 
+      {campaignSlug && (
+        <div className="mt-5 pt-4 border-t border-gray-100">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
+            <div className="text-xs sm:text-sm font-semibold text-gray-900">
+              3. Recipients
+              {recipients?.total != null && (
+                <span className="ml-2 font-normal text-gray-500">({recipients.total} total)</span>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowRecipients((v) => !v)}
+              className="text-xs text-primary hover:underline self-start sm:self-auto"
+            >
+              {showRecipients ? 'Hide list' : 'Show list'}
+            </button>
+          </div>
+
+          {showRecipients && (
+            <>
+              <div className="flex flex-col sm:flex-row gap-2 mb-3">
+                <select
+                  value={recipientFilter}
+                  onChange={(e) => { setRecipientFilter(e.target.value); setRecipientPage(1); }}
+                  className="px-3 py-1.5 text-sm border border-gray-300 rounded-md"
+                >
+                  <option value="sent">Sent</option>
+                  <option value="pending">Pending</option>
+                  <option value="ineligible">Skipped / not eligible</option>
+                  <option value="all">All with email</option>
+                </select>
+                <input
+                  type="text"
+                  placeholder="Search name or email…"
+                  value={recipientSearch}
+                  onChange={(e) => { setRecipientSearch(e.target.value); setRecipientPage(1); }}
+                  className="flex-1 px-3 py-1.5 text-sm border border-gray-300 rounded-md"
+                />
+                <button
+                  type="button"
+                  onClick={loadRecipients}
+                  disabled={loadingRecipients}
+                  className="px-3 py-1.5 text-sm bg-gray-100 hover:bg-gray-200 rounded-md disabled:opacity-50"
+                >
+                  {loadingRecipients ? 'Loading…' : 'Search'}
+                </button>
+              </div>
+
+              <div className="overflow-x-auto rounded-lg border border-gray-200">
+                <table className="min-w-full text-xs sm:text-sm">
+                  <thead className="bg-gray-50 text-left text-gray-600">
+                    <tr>
+                      <th className="px-3 py-2 font-medium">User</th>
+                      <th className="px-3 py-2 font-medium">Email</th>
+                      <th className="px-3 py-2 font-medium">Role</th>
+                      <th className="px-3 py-2 font-medium">Status</th>
+                      <th className="px-3 py-2 font-medium">Sent at</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {loadingRecipients && !recipients?.items?.length ? (
+                      <tr>
+                        <td colSpan={5} className="px-3 py-6 text-center text-gray-400">Loading recipients…</td>
+                      </tr>
+                    ) : (recipients?.items || []).length === 0 ? (
+                      <tr>
+                        <td colSpan={5} className="px-3 py-6 text-center text-gray-400">No users in this filter.</td>
+                      </tr>
+                    ) : (
+                      recipients.items.map((row) => (
+                        <tr key={row._id} className="hover:bg-gray-50">
+                          <td className="px-3 py-2 text-gray-900 whitespace-nowrap">
+                            {[row.name, row.surname].filter(Boolean).join(' ') || '—'}
+                          </td>
+                          <td className="px-3 py-2 text-gray-700">{row.email}</td>
+                          <td className="px-3 py-2 text-gray-500 capitalize">{row.role || '—'}</td>
+                          <td className="px-3 py-2">
+                            {row.status === 'sent' && (
+                              <span className="inline-flex px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[11px] font-medium">Sent</span>
+                            )}
+                            {row.status === 'pending' && (
+                              <span className="inline-flex px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 text-[11px] font-medium">Pending</span>
+                            )}
+                            {row.status === 'ineligible' && (
+                              <span className="inline-flex px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 text-[11px] font-medium" title={row.reason}>
+                                Skipped
+                              </span>
+                            )}
+                            {row.reason && row.status !== 'sent' && (
+                              <div className="text-[10px] text-gray-400 mt-0.5">{campaignRecipientReasonLabel(row.reason)}</div>
+                            )}
+                          </td>
+                          <td className="px-3 py-2 text-gray-500 whitespace-nowrap">{formatCampaignDate(row.sentAt)}</td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              {recipients && recipients.pages > 1 && (
+                <div className="mt-3 flex items-center justify-between text-xs text-gray-600">
+                  <span>
+                    Page {recipients.page} of {recipients.pages} · {recipients.total} total
+                  </span>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      disabled={recipientPage <= 1 || loadingRecipients}
+                      onClick={() => setRecipientPage((p) => Math.max(1, p - 1))}
+                      className="px-2 py-1 border border-gray-300 rounded disabled:opacity-40"
+                    >
+                      Previous
+                    </button>
+                    <button
+                      type="button"
+                      disabled={recipientPage >= recipients.pages || loadingRecipients}
+                      onClick={() => setRecipientPage((p) => p + 1)}
+                      className="px-2 py-1 border border-gray-300 rounded disabled:opacity-40"
+                    >
+                      Next
+                    </button>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
       <div className="mt-4 pt-3 border-t border-gray-100 flex items-center justify-between">
         <span className="text-[11px] text-gray-400">
           Idempotent — already-sent users are skipped automatically.
@@ -4670,30 +4969,53 @@ function PacedEmailCampaignCard({
   );
 }
 
-function IosLaunchJun2026Card() {
+function PaidLaunchJul2026Card({ onCampaignUpdated }) {
+  return (
+    <PacedEmailCampaignCard
+      title="Paid plans launch — July 2026"
+      description="English announcement that LaChart is moving to paid plans (Athlete €6.99 / Coach €14.99). Includes exclusive 3MONTHSOFF coupon for existing users (3 months free). Covers athlete & coach features, personal sign-off from Jakub. Honours marketing-email opt-out. Paced sending — run daily batches."
+      borderAccentClass="border-violet-600"
+      badgeLabel="Paid launch"
+      campaignSlug="paid-launch-2026-07"
+      fetchStatusApi={fetchPaidLaunchJul2026Status}
+      sendPreviewApi={sendPaidLaunchJul2026Preview}
+      runCampaignApi={runPaidLaunchJul2026Campaign}
+      resetCampaignApi={resetPaidLaunchJul2026}
+      onCampaignUpdated={onCampaignUpdated}
+    />
+  );
+}
+
+function IosLaunchJun2026Card({ onCampaignUpdated }) {
   return (
     <PacedEmailCampaignCard
       title="iOS App Store launch — June 2026"
       description="App-download email with App Store CTA, home-screen widget and Apple Health highlights. Auto-detects CZ/EN per recipient. Honours email-notifications opt-out and is idempotent (no double sends). Use this instead of clicking Send app download per user."
       borderAccentClass="border-emerald-600"
       badgeLabel="App download"
+      campaignSlug="ios-launch-2026-06"
       fetchStatusApi={fetchIosLaunchJun2026Status}
       sendPreviewApi={sendIosLaunchJun2026Preview}
       runCampaignApi={runIosLaunchJun2026Campaign}
       resetCampaignApi={resetIosLaunchJun2026}
+      onCampaignUpdated={onCampaignUpdated}
     />
   );
 }
 
-function WhatsNewMay2026Card() {
+function WhatsNewMay2026Card({ onCampaignUpdated }) {
   return (
     <PacedEmailCampaignCard
       title="What's new — May 2026"
       description="Re-engagement email (English only) highlighting the iPhone app on the App Store, workout planner, training calendar, and lactate-test upgrades. Honours email-notifications opt-out and is idempotent (no double sends)."
+      borderAccentClass="border-primary"
+      badgeLabel="Re-engagement"
+      campaignSlug="whats-new-2026-05"
       fetchStatusApi={fetchWhatsNewMay2026Status}
       sendPreviewApi={sendWhatsNewMay2026Preview}
       runCampaignApi={runWhatsNewMay2026Campaign}
       resetCampaignApi={resetWhatsNewMay2026}
+      onCampaignUpdated={onCampaignUpdated}
     />
   );
 }

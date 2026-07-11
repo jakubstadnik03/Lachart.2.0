@@ -24,7 +24,50 @@ const {
 // re-running the May campaign doesn't double-send to anyone who already
 // got the launch email and vice versa.
 const ios = require('../services/iosLaunchCampaignService');
+const paidLaunch = require('../services/paidLaunchCampaignService');
 const appReeng = require('../services/appReengagementCampaignService');
+const {
+  getCampaignAdminStats,
+  getCampaignRecipients,
+} = require('../utils/campaignAdminStats');
+
+const PACED_CAMPAIGNS = {
+  'whats-new-2026-05': {
+    campaignKey: CAMPAIGN_KEY,
+    requireMarketing: true,
+    getPendingCount,
+    runCampaign,
+    sendOne,
+  },
+  'ios-launch-2026-06': {
+    campaignKey: ios.CAMPAIGN_KEY,
+    requireMarketing: false,
+    getPendingCount: ios.getPendingCount,
+    runCampaign: ios.runCampaign,
+    sendOne: ios.sendOne,
+  },
+  'paid-launch-2026-07': {
+    campaignKey: paidLaunch.CAMPAIGN_KEY,
+    requireMarketing: true,
+    getPendingCount: paidLaunch.getPendingCount,
+    runCampaign: paidLaunch.runCampaign,
+    sendOne: paidLaunch.sendOne,
+  },
+};
+
+async function buildPacedCampaignStatus(slug) {
+  const cfg = PACED_CAMPAIGNS[slug];
+  if (!cfg) return null;
+  const detailed = await getCampaignAdminStats(cfg.campaignKey, {
+    requireMarketing: cfg.requireMarketing,
+  });
+  return {
+    pending: detailed.pending,
+    sent: detailed.sent,
+    totalEligible: detailed.eligible,
+    ...detailed,
+  };
+}
 
 async function requireAdmin(req, res) {
   const me = await User.findById(req.user.userId).select('admin role').lean();
@@ -40,16 +83,23 @@ async function requireAdmin(req, res) {
 router.get('/campaigns/whats-new-2026-05/status', verifyToken, async (req, res) => {
   try {
     if (!(await requireAdmin(req, res))) return;
-    const [pending, sent, totalEligible] = await Promise.all([
-      getPendingCount(),
-      User.countDocuments({ [`retentionEmails.${CAMPAIGN_KEY}`]: { $ne: null, $exists: true } }),
-      User.countDocuments({
-        email: { $exists: true, $ne: null, $ne: '' },
-        isActive: { $ne: false },
-        'notifications.emailNotifications': { $ne: false },
-      }),
-    ]);
-    res.json({ pending, sent, totalEligible });
+    res.json(await buildPacedCampaignStatus('whats-new-2026-05'));
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.get('/campaigns/whats-new-2026-05/recipients', verifyToken, async (req, res) => {
+  try {
+    if (!(await requireAdmin(req, res))) return;
+    const cfg = PACED_CAMPAIGNS['whats-new-2026-05'];
+    res.json(await getCampaignRecipients(cfg.campaignKey, {
+      status: req.query.status || 'sent',
+      search: req.query.search || '',
+      page: req.query.page,
+      limit: req.query.limit,
+      requireMarketing: cfg.requireMarketing,
+    }));
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -143,16 +193,23 @@ router.post('/campaigns/whats-new-2026-05/reset', verifyToken, async (req, res) 
 router.get('/campaigns/ios-launch-2026-06/status', verifyToken, async (req, res) => {
   try {
     if (!(await requireAdmin(req, res))) return;
-    const [pending, sent, totalEligible] = await Promise.all([
-      ios.getPendingCount(),
-      User.countDocuments({ [`retentionEmails.${ios.CAMPAIGN_KEY}`]: { $ne: null, $exists: true } }),
-      User.countDocuments({
-        email: { $exists: true, $ne: null, $ne: '' },
-        isActive: { $ne: false },
-        'notifications.emailNotifications': { $ne: false },
-      }),
-    ]);
-    res.json({ pending, sent, totalEligible });
+    res.json(await buildPacedCampaignStatus('ios-launch-2026-06'));
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.get('/campaigns/ios-launch-2026-06/recipients', verifyToken, async (req, res) => {
+  try {
+    if (!(await requireAdmin(req, res))) return;
+    const cfg = PACED_CAMPAIGNS['ios-launch-2026-06'];
+    res.json(await getCampaignRecipients(cfg.campaignKey, {
+      status: req.query.status || 'sent',
+      search: req.query.search || '',
+      page: req.query.page,
+      limit: req.query.limit,
+      requireMarketing: cfg.requireMarketing,
+    }));
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -215,6 +272,97 @@ router.post('/campaigns/ios-launch-2026-06/reset', verifyToken, async (req, res)
     const filter = targetEmail ? { email: targetEmail } : {};
     const result = await User.updateMany(filter, {
       $set: { [`retentionEmails.${ios.CAMPAIGN_KEY}`]: null },
+    });
+    res.json({ matched: result.matchedCount, modified: result.modifiedCount });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ─── Paid plans launch (Jul 2026) — admin endpoints ─────────────────────────
+
+router.get('/campaigns/paid-launch-2026-07/status', verifyToken, async (req, res) => {
+  try {
+    if (!(await requireAdmin(req, res))) return;
+    res.json(await buildPacedCampaignStatus('paid-launch-2026-07'));
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.get('/campaigns/paid-launch-2026-07/recipients', verifyToken, async (req, res) => {
+  try {
+    if (!(await requireAdmin(req, res))) return;
+    const cfg = PACED_CAMPAIGNS['paid-launch-2026-07'];
+    res.json(await getCampaignRecipients(cfg.campaignKey, {
+      status: req.query.status || 'sent',
+      search: req.query.search || '',
+      page: req.query.page,
+      limit: req.query.limit,
+      requireMarketing: cfg.requireMarketing,
+    }));
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.post('/campaigns/paid-launch-2026-07/preview', verifyToken, async (req, res) => {
+  try {
+    const me = await requireAdmin(req, res);
+    if (!me) return;
+    const targetEmail = (req.body?.email || '').toLowerCase().trim();
+    const recipient = targetEmail
+      ? await User.findOne({ email: targetEmail }).lean()
+      : await User.findById(req.user.userId).lean();
+    if (!recipient || !recipient.email) {
+      return res.status(404).json({ error: 'No matching user with an email address' });
+    }
+    const draft = { ...recipient, retentionEmails: { ...(recipient.retentionEmails || {}), [paidLaunch.CAMPAIGN_KEY]: null } };
+    const result = await paidLaunch.sendOne(draft);
+    if (result.sent) {
+      await User.updateOne(
+        { _id: recipient._id },
+        { $set: { [`retentionEmails.${paidLaunch.CAMPAIGN_KEY}`]: null } }
+      );
+    }
+    res.json({ to: recipient.email, ...result });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.post('/campaigns/paid-launch-2026-07/run', verifyToken, async (req, res) => {
+  try {
+    if (!(await requireAdmin(req, res))) return;
+    const {
+      batchSize = 1,
+      batchIntervalMs = 5 * 60 * 1000,
+      maxBatches = 1000,
+      maxEmailsPerRun = 20,
+      dryRun = false,
+    } = req.body || {};
+
+    const stats = await paidLaunch.runCampaign({
+      batchSize: Math.max(1, Math.min(50, Number(batchSize) || 1)),
+      batchIntervalMs: Math.max(5_000, Number(batchIntervalMs) || 5 * 60_000),
+      maxBatches: Math.max(1, Math.min(10_000, Number(maxBatches) || 1000)),
+      maxEmailsPerRun: maxEmailsPerRun === null ? null : Math.max(1, Math.min(1000, Number(maxEmailsPerRun) || 20)),
+      dryRun: !!dryRun,
+    });
+    res.json({ ok: true, stats });
+  } catch (e) {
+    console.error('[paidLaunchCampaign run] error:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.post('/campaigns/paid-launch-2026-07/reset', verifyToken, async (req, res) => {
+  try {
+    if (!(await requireAdmin(req, res))) return;
+    const targetEmail = (req.body?.email || '').toLowerCase().trim();
+    const filter = targetEmail ? { email: targetEmail } : {};
+    const result = await User.updateMany(filter, {
+      $set: { [`retentionEmails.${paidLaunch.CAMPAIGN_KEY}`]: null },
     });
     res.json({ matched: result.matchedCount, modified: result.modifiedCount });
   } catch (e) {

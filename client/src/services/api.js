@@ -1462,6 +1462,49 @@ export const resetIosLaunchJun2026 = async ({ email } = {}) => {
   return data;
 };
 
+// ─── "Paid plans launch — July 2026" mass email campaign ─────────────────────
+export const fetchPaidLaunchJul2026Status = async () => {
+  const { data } = await api.get('/api/email/campaigns/paid-launch-2026-07/status');
+  return data;
+};
+
+export const sendPaidLaunchJul2026Preview = async ({ email } = {}) => {
+  const { data } = await api.post('/api/email/campaigns/paid-launch-2026-07/preview', email ? { email } : {});
+  return data;
+};
+
+export const runPaidLaunchJul2026Campaign = async ({
+  batchSize = 1,
+  batchIntervalMs = 5 * 60 * 1000,
+  maxEmailsPerRun = 20,
+  dryRun = false,
+} = {}) => {
+  const { data } = await api.post(
+    '/api/email/campaigns/paid-launch-2026-07/run',
+    { batchSize, batchIntervalMs, maxEmailsPerRun, dryRun },
+    { timeout: 6 * 60 * 60 * 1000 }
+  );
+  return data;
+};
+
+export const resetPaidLaunchJul2026 = async ({ email } = {}) => {
+  const { data } = await api.post('/api/email/campaigns/paid-launch-2026-07/reset', email ? { email } : {});
+  return data;
+};
+
+/** Paginated recipient list for a paced campaign (admin). */
+export const fetchCampaignRecipients = async (campaignSlug, {
+  status = 'sent',
+  search = '',
+  page = 1,
+  limit = 50,
+} = {}) => {
+  const { data } = await api.get(`/api/email/campaigns/${campaignSlug}/recipients`, {
+    params: { status, search, page, limit },
+  });
+  return data;
+};
+
 export const fetchStravaStatus = async () => {
   try {
     const { data } = await api.get('/api/integrations/strava/status', { timeout: 10000 });

@@ -37,7 +37,7 @@ function fmtMoney(amountMinor, currency) {
 
 function planLabel(plan) {
   return ({
-    pro: 'LaChart Pro',
+    pro: 'LaChart Athlete',
     coach: 'LaChart Coach',
     team: 'LaChart Team',
     enterprise: 'LaChart Enterprise',

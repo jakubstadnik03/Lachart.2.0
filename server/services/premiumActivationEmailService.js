@@ -16,7 +16,7 @@ const { generateEmailTemplate, getClientUrl } = require('../utils/emailTemplate'
  * @param {String}  options.plan        'pro' | 'coach' | 'team' | 'enterprise'
  * @param {String}  options.status      'trialing' | 'active'
  * @param {Date}    [options.trialEnd]  When the free trial ends (if any)
- * @param {Number}  [options.amount]    Price per month in major units (e.g. 9.99)
+ * @param {Number}  [options.amount]    Price per month in major units (e.g. 6.99)
  * @param {String}  [options.currency]  ISO currency code (default 'EUR')
  * @returns {Promise<{sent: boolean, reason?: string}>}
  */
@@ -35,7 +35,7 @@ async function sendPremiumActivationEmail(user, options = {}) {
   }
 
   const planLabel = {
-    pro: 'LaChart Pro',
+    pro: 'LaChart Athlete',
     coach: 'LaChart Coach',
     team: 'LaChart Team',
     enterprise: 'LaChart Enterprise',

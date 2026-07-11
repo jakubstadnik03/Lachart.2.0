@@ -25,10 +25,74 @@ npm install stripe
 1. Vytvořte účet na [Stripe.com](https://stripe.com)
 2. Získejte API klíče z [Stripe Dashboard](https://dashboard.stripe.com/apikeys)
 3. Vytvořte produkty a ceny v Stripe Dashboard:
-   - Pro Plan: $9.99/month
-   - Coach Plan: $19.99/month
+   - Athlete Plan: €6.99/month
+   - Coach Plan: €14.99/month
    - Team Plan: $49.99/month
    - Enterprise Plan: $99.99/month
+
+### Stripe product copy — Coach plan
+
+**Product name:** `LaChart Coach`
+
+**Short description** (Stripe product description field — zobrazí se v Checkoutu):
+
+```
+Full coaching platform for endurance sports coaches. Everything in LaChart Athlete, plus unlimited athletes, a coach dashboard, branded lactate PDF reports, and tools to plan and analyze training for your entire squad. Includes a 2-month free trial.
+```
+
+**Marketing features** (Stripe → Product → Pricing → Features — jedna položka na řádek):
+
+```
+Everything in Athlete (unlimited lactate tests, workout planner, training calendar, session analysis, Strava & Garmin sync, advanced analytics, population comparison, PDF export)
+Unlimited athletes — onboard, invite and manage your full squad
+Coach dashboard with performance overviews across all athletes
+Create and run lactate step tests on behalf of your athletes
+Branded PDF reports — your logo, studio name and contact details
+Plan structured workouts directly into each athlete's calendar
+Analyze athlete training — sessions, laps, lactate overlays and trends
+LT1 / LT2 curves, training zones and historical test comparison per athlete
+Form, fitness & fatigue (CTL / ATL / TSB) tracking for every athlete
+Priority support
+2-month free trial — cancel anytime before billing starts
+```
+
+**Long description** (volitelné — metadata, landing page, interní reference):
+
+```
+LaChart Coach is the complete platform for sports coaches who work with lactate testing and structured endurance training.
+
+Everything in Athlete is included: unlimited lactate tests with LT1/LT2 curve and zone calculation, workout planner, training calendar, live workout mode, smart-trainer support, advanced analytics, population comparison, Strava & Garmin sync, FIT upload, Apple Health integration, and PDF export.
+
+Built for coaches:
+• Unlimited athletes — invite by email, manage your roster, switch between athletes in one tap
+• Coach dashboard — squad-wide overview of tests, training load and performance trends
+• Lactate testing for athletes — design step tests and log samples on behalf of each athlete
+• Branded PDF reports — customise templates with your logo, colours and contact information
+• Workout planning for athletes — schedule sessions into individual athlete calendars
+• Training analysis — review completed workouts, lap splits, pace/HR/power and lactate data
+• Historical comparison — track how LT1, LT2 and zones evolve across your squad over time
+
+€14.99/month after a 60-day free trial. Cancel anytime.
+```
+
+> **Poznámka:** Bulk CSV export je součástí Team / Enterprise plánu, ne Coach — do Coach popisu ho nepřidávejte.
+
+### Promo kód pro stávající uživatele — `3MONTHSOFF`
+
+Používá se v paid-launch marketing e-mailu (jen pro uživatele, kteří se registrovali před spuštěním placených plánů).
+
+V Stripe Dashboard → **Product catalog → Coupons**:
+
+1. **Create coupon**
+   - Name: `3 months free — early users`
+   - ID / code: `3MONTHSOFF` (promotion code, který uživatel zadá v Checkoutu)
+   - Type: **Percent off** 100 % **or** **Amount off** — nejjednodušší je **100 % off for 3 months** (duration: repeating, months: 3)
+   - Applies to: Athlete + Coach price IDs (nebo celý produkt)
+   - Redemption limits: volitelně omezit `Max redemptions` nebo `First time orders` dle potřeby
+
+2. Checkout už má `allow_promotion_codes: true` — uživatel zadá kód na Stripe stránce po kliknutí na plán v **Settings → Subscription**.
+
+3. Po změně textu e-mailu resetuj sent markery v Admin → Marketing → Paid launch, nebo pošli preview sobě.
 
 ## 3. Konfigurace environment proměnných
 
@@ -96,7 +160,7 @@ if (subscription.planDetails.features.includes('advanced_analytics')) {
 - Basic analytics
 - Limit: 5 testů/měsíc
 
-### Pro Plan ($9.99/month)
+### Athlete Plan (€6.99/month)
 - Vše z Free +
 - Advanced analytics
 - Population comparison
@@ -104,8 +168,8 @@ if (subscription.planDetails.features.includes('advanced_analytics')) {
 - Strava sync
 - Neomezené testy
 
-### Coach Plan ($19.99/month)
-- Vše z Pro +
+### Coach Plan (€14.99/month)
+- Vše z Athlete +
 - Coach dashboard
 - Multiple athletes (10)
 - Neomezené testy

@@ -32,8 +32,8 @@ const PLANS = {
   },
   pro: {
     id: 'pro',
-    name: 'Pro',
-    price: 9.99,
+    name: 'Athlete',
+    price: 6.99,
     interval: 'month',
     currency: 'eur',
     stripePriceId: process.env.STRIPE_PRICE_ID_PRO, // Set in .env
@@ -46,7 +46,7 @@ const PLANS = {
   coach: {
     id: 'coach',
     name: 'Coach',
-    price: 19.99,
+    price: 14.99,
     interval: 'month',
     currency: 'eur',
     stripePriceId: process.env.STRIPE_PRICE_ID_COACH,
@@ -902,7 +902,7 @@ exports.sendPromoEmail = async (req, res) => {
     // Fetch all users with email
     const users = await User.find({ email: { $exists: true, $ne: null } }, 'email name').lean();
 
-    const emailSubject = subject || `🎁 3 months of LaChart Pro — free, just for you`;
+    const emailSubject = subject || `🎁 3 months of LaChart Athlete — free, just for you`;
 
     let sent = 0;
     let failed = 0;
@@ -929,10 +929,10 @@ exports.sendPromoEmail = async (req, res) => {
     <div style="padding:32px;">
       <h2 style="margin:0 0 12px;color:#111827;font-size:20px;font-weight:700;">Hey ${firstName} 👋</h2>
       <p style="margin:0 0 16px;color:#4b5563;font-size:15px;line-height:1.6;">
-        Thank you for being an early LaChart user. As a thank-you, I'm giving you <strong>3 months of LaChart Pro completely free</strong>.
+        Thank you for being an early LaChart user. As a thank-you, I'm giving you <strong>3 months of LaChart Athlete completely free</strong>.
       </p>
       <p style="margin:0 0 24px;color:#4b5563;font-size:15px;line-height:1.6;">
-        Pro unlocks FIT file analysis with interval detection &amp; power charts, unlimited lactate tests, PDF report export, and more.
+        Athlete unlocks FIT file analysis with interval detection &amp; power charts, unlimited lactate tests, PDF report export, and more.
       </p>
 
       <!-- Promo code box -->
@@ -946,12 +946,12 @@ exports.sendPromoEmail = async (req, res) => {
       <div style="text-align:center;margin-bottom:24px;">
         <a href="${process.env.FRONTEND_URL}/settings?tab=subscription"
            style="display:inline-block;background:#3b82f6;color:#fff;text-decoration:none;padding:14px 32px;border-radius:10px;font-weight:700;font-size:15px;">
-          Activate my free Pro access →
+          Activate my free Athlete access →
         </a>
       </div>
 
       <p style="margin:0 0 8px;color:#6b7280;font-size:13px;line-height:1.6;">
-        How to use: Go to <strong>Settings → Subscription</strong>, choose the Pro plan, and enter the code at checkout. You won't be charged for 3 months.
+        How to use: Go to <strong>Settings → Subscription</strong>, choose the Athlete plan, and enter the code at checkout. You won't be charged for 3 months.
       </p>
     </div>
 

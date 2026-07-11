@@ -188,7 +188,7 @@ const samples = [
         </ul>
         <p>If you'd rather pause, no action needed — your account drops to the free tier automatically.</p>
       `,
-      buttonText: 'Continue with Pro — €15/mo',
+      buttonText: 'Continue with Athlete — €6.99/mo',
       buttonUrl: 'https://lachart.net/settings?tab=subscription',
       loginButtonText: 'Manage subscription',
       loginButtonUrl: 'https://lachart.net/settings?tab=subscription',
@@ -197,24 +197,24 @@ const samples = [
   },
   {
     name: 'payment-receipt',
-    label: 'Payment receipt — Pro renewal',
+    label: 'Payment receipt — Athlete renewal',
     args: {
       title: "Payment received — thanks for renewing",
       content: `
         <p>Hi Jakub,</p>
-        <p>Your LaChart Pro subscription renewed successfully. Here's the receipt for your records:</p>
+        <p>Your LaChart Athlete subscription renewed successfully. Here's the receipt for your records:</p>
         <table role="presentation" style="width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 14.5px;">
-          <tr><td style="padding: 8px 0; color: #4A5E82;">Plan</td><td style="padding: 8px 0; text-align: right; font-weight: 600;">LaChart Pro · Monthly</td></tr>
-          <tr><td style="padding: 8px 0; color: #4A5E82;">Amount</td><td style="padding: 8px 0; text-align: right; font-weight: 600;">€15.00</td></tr>
-          <tr><td style="padding: 8px 0; color: #4A5E82;">VAT (21%)</td><td style="padding: 8px 0; text-align: right;">€3.15</td></tr>
-          <tr style="border-top: 1px solid #E5E7EB;"><td style="padding: 12px 0 0; color: #0A0E1A; font-weight: 700;">Total charged</td><td style="padding: 12px 0 0; text-align: right; font-weight: 700; color: #0A0E1A;">€18.15</td></tr>
+          <tr><td style="padding: 8px 0; color: #4A5E82;">Plan</td><td style="padding: 8px 0; text-align: right; font-weight: 600;">LaChart Athlete · Monthly</td></tr>
+          <tr><td style="padding: 8px 0; color: #4A5E82;">Amount</td><td style="padding: 8px 0; text-align: right; font-weight: 600;">€6.99</td></tr>
+          <tr><td style="padding: 8px 0; color: #4A5E82;">VAT (21%)</td><td style="padding: 8px 0; text-align: right;">€1.47</td></tr>
+          <tr style="border-top: 1px solid #E5E7EB;"><td style="padding: 12px 0 0; color: #0A0E1A; font-weight: 700;">Total charged</td><td style="padding: 12px 0 0; text-align: right; font-weight: 700; color: #0A0E1A;">€8.46</td></tr>
           <tr><td style="padding: 6px 0; color: #4A5E82;">Next billing date</td><td style="padding: 6px 0; text-align: right;">July 28, 2026</td></tr>
         </table>
         <p>The full invoice is attached as a PDF — or you can download it any time from your subscription settings.</p>
       `,
       buttonText: 'View billing history',
       buttonUrl: 'https://lachart.net/settings?tab=subscription',
-      footerText: 'You will be charged €18.15 on July 28, 2026 unless you cancel before then.',
+      footerText: 'You will be charged €8.46 on July 28, 2026 unless you cancel before then.',
     },
   },
   {
@@ -224,7 +224,7 @@ const samples = [
       title: "Your subscription is canceled",
       content: `
         <p>Hi Jakub,</p>
-        <p>I just processed your cancellation. Your LaChart Pro plan stays active until <strong>July 28, 2026</strong> — after that, your account drops to the free tier. Nothing else is charged.</p>
+        <p>I just processed your cancellation. Your LaChart Athlete plan stays active until <strong>July 28, 2026</strong> — after that, your account drops to the free tier. Nothing else is charged.</p>
         <p>Your data isn't going anywhere. Every test you've saved, every zone you've configured, every Strava activity you've imported — all of it stays in your account, free tier or not.</p>
         <p>If something specific made you cancel, I'd genuinely like to hear about it. Just reply to this email.</p>
       `,
