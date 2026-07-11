@@ -2,7 +2,17 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getStravaActivityDetail } from '../../services/api';
 import { useCategories } from '../../context/CategoryContext';
+import { useAuth } from '../../context/AuthProvider';
 import { filterWorkResults } from '../../utils/workLapFilter';
+import {
+  resolveDistanceUnitSystem,
+  formatDistance,
+  formatElevation,
+  formatPaceFromSpeedMps,
+  formatPaceMMSS,
+  paceSecondsToDisplaySeconds,
+  paceUnitShort,
+} from '../../utils/unitsConverter';
 
 const INTERVALS_PER_PAGE = 10;
 
@@ -135,13 +145,16 @@ const fmtDuration = (dur, type) => {
   return `${s} m`;
 };
 
-const fmtPower = (val, sport) => {
+const fmtPower = (val, sport, unitSystem = 'metric') => {
   if (!val) return '—';
   const sp = String(sport || '').toLowerCase();
   if (sp.includes('bike')) return `${val} W`;
   if (typeof val === 'string' && val.includes(':')) return val;
   const n = Number(val);
-  if (!isNaN(n) && n > 0) return `${Math.floor(n / 60)}:${String(Math.round(n % 60)).padStart(2, '0')}`;
+  if (!isNaN(n) && n > 0) {
+    const displaySec = paceSecondsToDisplaySeconds(n, { sport, unitSystem, testRunPerMileStorage: false });
+    return formatPaceMMSS(displaySec) || '—';
+  }
   return String(val);
 };
 
@@ -344,10 +357,10 @@ function MetricCol({ label, values, avgValues, color, formatVal, unit }) {
 }
 
 /* ─── Interval table (expanded) ─────────────────────────────────────────────── */
-function IntervalTable({ results, sport, startIndex = 0, globalMax = null }) {
+function IntervalTable({ results, sport, startIndex = 0, globalMax = null, unitSystem = 'metric' }) {
   const isRun  = String(sport || '').toLowerCase().includes('run');
   const isSwim = String(sport || '').toLowerCase().includes('swim');
-  const paceUnit = isSwim ? '/100m' : '/km';
+  const paceUnit = isSwim ? paceUnitShort(unitSystem, 'swim') : paceUnitShort(unitSystem, 'run');
 
   // Use provided globalMax so zone colours are consistent across pages
   const maxV = globalMax ?? Math.max(...results.map(x => toPowerNum(x.power, sport)), 0.001);
@@ -387,7 +400,7 @@ function IntervalTable({ results, sport, startIndex = 0, globalMax = null }) {
                     {r.interval || absIdx + 1}
                   </span>
                 </td>
-                <td className="py-1.5 text-center font-medium">{fmtPower(r.power, sport)}</td>
+                <td className="py-1.5 text-center font-medium">{fmtPower(r.power, sport, unitSystem)}</td>
                 <td className="py-1.5 text-center">{r.heartRate ? `${r.heartRate} bpm` : '—'}</td>
                 <td className="py-1.5 text-center">{r.RPE || '—'}</td>
                 <td className={`py-1.5 text-center font-semibold ${lacColor}`}>
@@ -432,19 +445,16 @@ const fmtSeconds = (sec) => {
   return `${m}:${String(ss).padStart(2,'0')}`;
 };
 
-/** Format meters → "x.x km" or "x m". */
-const fmtDistance = (m) => {
+/** Format meters for display. */
+const fmtDistanceM = (m, unitSystem = 'metric') => {
   if (!m) return null;
-  return m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${Math.round(m)} m`;
+  return formatDistance(m, unitSystem).formatted;
 };
 
-/** Format m/s speed → pace string "m:ss /km" or "m:ss /100m". */
-const fmtSpeedAsPace = (mps, isSwim) => {
+/** Format m/s speed → pace string with user units. */
+const fmtSpeedAsPace = (mps, isSwim, unitSystem = 'metric') => {
   if (!mps || mps <= 0) return null;
-  const secPer = isSwim ? (100 / mps) : (1000 / mps);
-  const m = Math.floor(secPer / 60);
-  const s = Math.round(secPer % 60);
-  return `${m}:${String(s).padStart(2,'0')} ${isSwim ? '/100m' : '/km'}`;
+  return formatPaceFromSpeedMps(mps, unitSystem, isSwim ? 'swim' : 'run');
 };
 
 /* ─── Inline comparison helpers ─────────────────────────────────────────────── */
@@ -471,18 +481,17 @@ function relDate(dateStr) {
   return `${months} mo ago`;
 }
 
-/** Format a pace value (sec) → "m:ss". */
-function fmtPaceSec(sec) {
+function fmtPaceSec(sec, unitSystem = 'metric', sport = 'run') {
   if (!sec || isNaN(sec)) return '—';
-  const s = Math.round(sec);
-  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+  const displaySec = paceSecondsToDisplaySeconds(sec, { sport, unitSystem, testRunPerMileStorage: false });
+  return formatPaceMMSS(displaySec) || '—';
 }
 
 /**
  * Inline "vs. previous same workout" comparison panel.
  * Shows a dual mini-skyline + per-metric delta for work intervals.
  */
-function InlineComparison({ currResults, prevResults, prevTraining, sport, accentColor }) {
+function InlineComparison({ currResults, prevResults, prevTraining, sport, accentColor, unitSystem = 'metric' }) {
   const isBike = !sport.toLowerCase().includes('run') && !sport.toLowerCase().includes('swim');
 
   const cWork = filterWorkResults(currResults, sport);
@@ -499,12 +508,11 @@ function InlineComparison({ currResults, prevResults, prevTraining, sport, accen
       //   bike: +watts = better (true)
       //   run/swim: −pace = faster = better (false = lower is better)
       goodWhenPositive: isBike ? true : false,
-      format: (v) => isBike ? `${Math.round(v)} W` : fmtPaceSec(v),
+      format: (v) => isBike ? `${Math.round(v)} W` : fmtPaceSec(v, unitSystem, sport),
       fmtDelta: (d) => {
         if (isBike) return `${d > 0 ? '+' : ''}${Math.round(d)} W`;
-        // pace delta in sec: negative = faster
-        const abs = Math.round(Math.abs(d));
-        return `${d < 0 ? '−' : '+'}${abs}s`;
+        const disp = Math.round(paceSecondsToDisplaySeconds(Math.abs(d), { sport, unitSystem, testRunPerMileStorage: false }));
+        return `${d < 0 ? '−' : '+'}${disp}s`;
       },
     },
     {
@@ -651,6 +659,8 @@ function InlineComparison({ currResults, prevResults, prevTraining, sport, accen
 /* ─── TrainingItem ──────────────────────────────────────────────────────────── */
 const TrainingItem = ({ training, isExpanded, onToggleExpand, prevTraining = null }) => {
   const { getCategory } = useCategories();
+  const { user } = useAuth();
+  const unitSystem = resolveDistanceUnitSystem(user, 'metric');
   const navigate = useNavigate();
   const [intervalPage, setIntervalPage] = useState(0);
   // Full detail loaded on expand (for Strava activities that don't include laps in list)
@@ -746,11 +756,11 @@ const TrainingItem = ({ training, isExpanded, onToggleExpand, prevTraining = nul
 
     // Distance — Strava: distance  |  FIT: totalDistance
     const dist = merged.distance || merged.totalDistance;
-    if (dist) stats.push({ label: 'Dist', value: fmtDistance(dist) });
+    if (dist) stats.push({ label: 'Dist', value: fmtDistanceM(dist, unitSystem) });
 
     // Elevation — Strava: total_elevation_gain  |  FIT: totalAscent
     const elev = merged.total_elevation_gain || merged.totalAscent;
-    if (elev) stats.push({ label: 'Elev', value: `${Math.round(elev)} m` });
+    if (elev) stats.push({ label: 'Elev', value: formatElevation(elev, unitSystem) });
 
     // Avg HR — Strava: averageHeartRate  |  FIT: avgHeartRate
     const hr = merged.averageHeartRate || merged.avgHeartRate || merged.average_heartrate;
@@ -763,7 +773,7 @@ const TrainingItem = ({ training, isExpanded, onToggleExpand, prevTraining = nul
 
     // Avg Pace/Speed — Strava: averageSpeed  |  FIT: avgSpeed
     const spd = merged.averageSpeed || merged.avgSpeed || merged.average_speed;
-    if (spd && !isBike) stats.push({ label: 'Avg Pace', value: fmtSpeedAsPace(spd, isSwim) });
+    if (spd && !isBike) stats.push({ label: 'Avg Pace', value: fmtSpeedAsPace(spd, isSwim, unitSystem) });
 
     return stats;
   })();
@@ -825,7 +835,7 @@ const TrainingItem = ({ training, isExpanded, onToggleExpand, prevTraining = nul
                 avgValues={workPowerVals.map(mapPowerVal)}
                 color={accentColor}
                 unit={isBike ? ' W' : ''}
-                formatVal={isBike ? (v => Math.round(v)) : (v => { const s = Math.round(v); return `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`; })}
+                formatVal={isBike ? (v => Math.round(v)) : (v => fmtPaceSec(v, unitSystem, sport))}
               />
             ) : (() => {
               const stat = activityStats.find(s => s.label === 'Avg Power' || s.label === 'Avg Pace');
@@ -972,7 +982,7 @@ const TrainingItem = ({ training, isExpanded, onToggleExpand, prevTraining = nul
             const globalMax  = Math.max(...safeResults.map(r => toPowerNum(r.power, sport)), 0.001);
             return (
               <div>
-                <IntervalTable results={pageSlice} sport={sport} startIndex={pageStart} globalMax={globalMax} />
+                <IntervalTable results={pageSlice} sport={sport} startIndex={pageStart} globalMax={globalMax} unitSystem={unitSystem} />
                 {totalPages > 1 && (
                   <div className="flex items-center justify-between mt-2 pt-2 border-t border-gray-50">
                     <span className="text-xs text-gray-400">
@@ -1032,6 +1042,7 @@ const TrainingItem = ({ training, isExpanded, onToggleExpand, prevTraining = nul
                 prevTraining={prevTraining}
                 sport={sport}
                 accentColor={accentColor}
+                unitSystem={unitSystem}
               />
             );
           })()}

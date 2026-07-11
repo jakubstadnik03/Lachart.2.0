@@ -1,7 +1,7 @@
 const mongoose = require('mongoose');
 const TrainingCommentSchema = new mongoose.Schema({
   trainingId:   { type: String, required: true, index: true },
-  trainingType: { type: String, enum: ['training', 'fitTraining', 'strava'], default: 'training' },
+  trainingType: { type: String, enum: ['training', 'fitTraining', 'strava', 'planned'], default: 'training' },
   authorId:     { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   authorName:   { type: String, required: true },
   authorRole:   { type: String, enum: ['coach', 'athlete', 'admin'], required: true },

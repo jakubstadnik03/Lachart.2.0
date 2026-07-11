@@ -5,11 +5,20 @@ import React, { useState, useEffect, useRef } from 'react';
 import ReactDOM from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { updatePlannedWorkout, deletePlannedWorkout, exportPlannedWorkout } from '../../services/workoutPlannerApi';
+import { notifyPlannedWorkoutUpdated, notifyPlannedWorkoutDeleted } from '../../utils/activityEventPatches';
 import { SportTile, SPORT_TINT, normSport } from '../native/shared/Tiles';
 import { SportGlyph } from '../shared/SportIcon';
 import { useCategories } from '../../context/CategoryContext';
 import { WorkoutChart } from '../WorkoutPlanner/WorkoutBuilder';
 import api from '../../services/api';
+import TrainingComments from '../TrainingComments';
+import { plannedDistanceMetres } from '../../utils/plannedWorkoutDistance';
+import {
+  distanceInputUnitLabel,
+  formatDistanceInputFromMetres,
+  parseDistanceInputToMetres,
+  resolveDistanceUnitSystem,
+} from '../../utils/unitsConverter';
 
 /** Total seconds across all steps, respecting repeat groups. */
 function planStepSecs(steps) {
@@ -54,26 +63,11 @@ function hmToSecs(h, m) {
   return (hh * 60 + mm) * 60;
 }
 
-/** Server stores metres; legacy builds sometimes wrote km (< 100). */
-function planDistanceToDisplay(raw, sport) {
-  const n = Number(raw);
-  if (!Number.isFinite(n) || n <= 0) return '';
-  if (sport === 'swim') return String(Math.round(n));
-  const km = n >= 100 ? n / 1000 : n;
-  const rounded = Math.round(km * 10) / 10;
-  return Number.isInteger(rounded) ? String(rounded) : String(rounded);
-}
-
-function displayDistanceToMetres(str, sport) {
-  const n = parseFloat(String(str).replace(',', '.'));
-  if (!Number.isFinite(n) || n <= 0) return null;
-  return sport === 'swim' ? Math.round(n) : Math.round(n * 1000);
-}
-
 export default function PlannedWorkoutEditor({
   plannedWorkout,
   linkedActivity,
   athleteId,
+  user = null,
   onClose,
   onSaved,
   onDeleted,
@@ -81,6 +75,7 @@ export default function PlannedWorkoutEditor({
 }) {
   const isOpen = !!plannedWorkout;
   const navigate = useNavigate();
+  const unitSystem = resolveDistanceUnitSystem(user);
 
   // ── Form state ─────────────────────────────────────────────────────────────
   const [title, setTitle]       = useState('');
@@ -91,6 +86,7 @@ export default function PlannedWorkoutEditor({
   const [plannedDist, setPlannedDist] = useState('');
   const [targetTss, setTargetTss] = useState('');
   const [description, setDescription] = useState('');
+  const [comment, setComment] = useState('');
   const [category, setCategory] = useState('');
   const [catOpen, setCatOpen]   = useState(false);
   const { categories, getCategory, getCategoryStyle } = useCategories();
@@ -150,13 +146,20 @@ export default function PlannedWorkoutEditor({
     const { h, m } = secsToHM(durSecs);
     setDurH(h);
     setDurM(m);
-    setPlannedDist(planDistanceToDisplay(plannedWorkout.plannedDistance, ns === 'gym' ? 'strength' : ns));
+    const distSport = ns === 'gym' ? 'strength' : ns;
+    const distMetres = plannedDistanceMetres(plannedWorkout);
+    setPlannedDist(
+      distSport === 'swim'
+        ? (distMetres ? String(Math.round(distMetres)) : '')
+        : (distMetres ? formatDistanceInputFromMetres(distMetres, unitSystem) : ''),
+    );
     setTargetTss(plannedWorkout.targetTss != null ? String(plannedWorkout.targetTss) : '');
-    setDescription(plannedWorkout.description || plannedWorkout.notes || '');
+    setDescription(plannedWorkout.description || plannedWorkout.coachNotes || plannedWorkout.notes || '');
+    setComment(plannedWorkout.comment || '');
     setCategory(plannedWorkout.category || '');
     setError(null);
     setConfirmDelete(false);
-  }, [plannedWorkout]);
+  }, [plannedWorkout, unitSystem]);
 
   // Lock body scroll while open
   useEffect(() => {
@@ -260,9 +263,10 @@ export default function PlannedWorkoutEditor({
         sport,
         date,                                    // YYYY-MM-DD
         plannedDuration: hmToSecs(durH, durM),   // seconds
-        plannedDistance: displayDistanceToMetres(plannedDist, sport),
+        plannedDistance: parseDistanceInputToMetres(plannedDist, unitSystem, { isSwim: sport === 'swim' }),
         targetTss: targetTss !== '' ? Number(targetTss) : null,
         description: description.trim(),
+        comment: comment.trim() || undefined,
         category: category || null,
       };
       const updated = await updatePlannedWorkout(plannedWorkout._id, payload, athleteId);
@@ -307,9 +311,7 @@ export default function PlannedWorkoutEditor({
       }
 
       onSaved && onSaved(updated);
-      try {
-        window.dispatchEvent(new CustomEvent('plannedWorkoutUpdated', { detail: { planned: updated } }));
-      } catch { /* ignore */ }
+      notifyPlannedWorkoutUpdated(updated);
       onClose && onClose();
     } catch (e) {
       setError(e?.response?.data?.error || e?.message || 'Failed to save');
@@ -325,6 +327,7 @@ export default function PlannedWorkoutEditor({
     try {
       await deletePlannedWorkout(plannedWorkout._id, athleteId);
       onDeleted && onDeleted(plannedWorkout._id);
+      notifyPlannedWorkoutDeleted(plannedWorkout._id);
       onClose && onClose();
     } catch (e) {
       setError(e?.response?.data?.error || e?.message || 'Failed to delete');
@@ -592,7 +595,7 @@ export default function PlannedWorkoutEditor({
                   onChange={(e) => setPlannedDist(e.target.value)}
                   style={input}
                 />
-                <span style={inputUnit}>{sport === 'swim' ? 'm' : 'km'}</span>
+                <span style={inputUnit}>{distanceInputUnitLabel(unitSystem, sport === 'swim')}</span>
               </div>
             </Field>
           </div>
@@ -676,16 +679,41 @@ export default function PlannedWorkoutEditor({
             </div>
           </Field>
 
-          {/* Description */}
-          <Field label="Notes">
+          {/* Comment — short note shown on the calendar card */}
+          <Field label="Comment · shown on calendar card">
+            <textarea
+              value={comment}
+              onChange={(e) => setComment(e.target.value)}
+              placeholder="e.g. 3×30 LT1"
+              rows={2}
+              style={{ ...input, resize: 'vertical', minHeight: 52, lineHeight: 1.4, padding: '10px 12px' }}
+            />
+          </Field>
+
+          {/* Description / coach notes */}
+          <Field label="Description / coach notes">
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="Workout notes, intervals, intent…"
+              placeholder="Focus, context, feel…"
               rows={3}
               style={{ ...input, resize: 'vertical', minHeight: 64, lineHeight: 1.4, padding: '10px 12px' }}
             />
           </Field>
+
+          {/* Coach ↔ athlete thread — works for planned workouts too */}
+          {plannedWorkout?._id && (
+            <div style={{
+              padding: '12px 0 4px',
+              borderTop: '1px solid rgba(118,126,181,.12)',
+            }}>
+              <TrainingComments
+                trainingId={String(plannedWorkout._id)}
+                trainingType="planned"
+                isMobile
+              />
+            </div>
+          )}
 
           {/* Error */}
           {error && (

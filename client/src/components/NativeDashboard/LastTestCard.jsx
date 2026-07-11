@@ -2,6 +2,11 @@ import React, { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import useElementWidth from '../../hooks/useElementWidth';
 import { calculateZonesFromTest } from '../Testing-page/zoneCalculator';
+import { useAuth } from '../../context/AuthProvider';
+import {
+  formatStoredPaceSeconds,
+  formatZonesPaceForUser,
+} from '../../utils/unitsConverter';
 // Reuse the exact threshold algorithm DataTable / LactateCurveCalculator use
 // on desktop so the LT1/LT2 stat above matches the zone table below it (the
 // zone table already routes through resolveLtAnchorsFromTest → calculateThresholds).
@@ -30,20 +35,17 @@ function isPaceSport(sport) {
   return sport === 'run' || sport === 'swim';
 }
 
-function fmtPace(secPerKm) {
-  if (!secPerKm || !Number.isFinite(secPerKm) || secPerKm <= 0) return '—';
-  const m = Math.floor(secPerKm / 60);
-  const s = Math.round(secPerKm % 60);
-  return `${m}:${String(s).padStart(2, '0')}/km`;
+function fmtPace(secPerUnit, sport, user, test = null) {
+  return formatStoredPaceSeconds(secPerUnit, user, sport, test);
+}
+
+function fmtVal(v, sport, user, test = null) {
+  return isPaceSport(sport) ? fmtPace(v, sport, user, test) : fmtPower(v);
 }
 
 function fmtPower(w) {
   if (w == null || !Number.isFinite(w)) return '—';
   return `${Math.round(w)} W`;
-}
-
-function fmtVal(v, sport) {
-  return isPaceSport(sport) ? fmtPace(v) : fmtPower(v);
 }
 
 function fmtMmol(v) {
@@ -323,6 +325,7 @@ function LactateCurve({ thresholds }) {
 
 export default function LastTestCard({ tests = [] }) {
   const navigate = useNavigate();
+  const { user } = useAuth() || {};
 
   // Group tests by sport, sorted newest-first
   const testsBySport = useMemo(() => {
@@ -418,7 +421,7 @@ export default function LastTestCard({ tests = [] }) {
   const xMax = last.points.length ? Math.max(...last.points.map(p => p.x)) : null;
   const rangeStr = (xMin != null && xMax != null)
     ? (last.isPace
-        ? `${fmtPace(xMax)}→${fmtPace(xMin)}`
+        ? `${fmtPace(xMax, last.sport, user, last.raw)}→${fmtPace(xMin, last.sport, user, last.raw)}`
         : `${Math.round(xMin)}→${Math.round(xMax)} W`)
     : null;
   const isReviewed = !!(last.raw.thresholdOverrides && (last.raw.thresholdOverrides.LTP1 || last.raw.thresholdOverrides.LTP2));
@@ -480,7 +483,7 @@ export default function LastTestCard({ tests = [] }) {
             </div>
             <div style={styles.subCardValueRow}>
               <span style={styles.subCardValue}>
-                {fmtVal(last.ltp2.power, last.sport)}
+                {fmtVal(last.ltp2.power, last.sport, user, last.raw)}
               </span>
               <DeltaPill value={lt2Delta} sport={last.sport} />
             </div>
@@ -501,7 +504,7 @@ export default function LastTestCard({ tests = [] }) {
             </div>
             <div style={styles.subCardValueRow}>
               <span style={styles.subCardValue}>
-                {fmtVal(last.ltp1.power, last.sport)}
+                {fmtVal(last.ltp1.power, last.sport, user, last.raw)}
               </span>
               <DeltaPill value={lt1Delta} sport={last.sport} />
             </div>
@@ -565,14 +568,14 @@ export default function LastTestCard({ tests = [] }) {
           {[
             {
               lbl: 'LT1',
-              val: fmtVal(last.ltp1.power, last.sport),
+              val: fmtVal(last.ltp1.power, last.sport, user, last.raw),
               col: '#4BA87D',
               lac: last.ltp1.lactate,
               hr:  last.ltp1.hr,
             },
             {
               lbl: 'LT2',
-              val: fmtVal(last.ltp2.power, last.sport),
+              val: fmtVal(last.ltp2.power, last.sport, user, last.raw),
               col: '#E05347',
               lac: last.ltp2.lactate,
               hr:  last.ltp2.hr,
@@ -651,7 +654,12 @@ export default function LastTestCard({ tests = [] }) {
 
         {/* Training zones — derived from this test's thresholds */}
         {(() => {
-          const zones = calculateZonesFromTest(last.raw);
+          const zones = formatZonesPaceForUser(
+            calculateZonesFromTest(last.raw),
+            last.raw,
+            user,
+            last.sport,
+          );
           if (!zones) return null;
           const root = last.isPace ? zones.pace : zones.power;
           const hr = zones.heartRate;

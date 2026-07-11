@@ -28,6 +28,10 @@ import { useAuth } from '../context/AuthProvider';
 import { compareActivitiesChronologically, buildChronologicalDayItems, pairPlannedWithActivities, dedupeCalendarActivities } from '../utils/calendarDayOrdering';
 import { findCompliance, outlineBorder, planSportColor, SPORT_PLAN_COLORS } from '../utils/planCompliance';
 import { plannedDistanceMetres, formatPlannedDistanceMetres } from '../utils/plannedWorkoutDistance';
+import {
+  activityPaceOrPowerDisplay,
+  formatActivityDistance,
+} from '../utils/unitsConverter';
 
 // Lazy-load ActivityFullModal: it lives in CalendarView (4k+ lines) and pulling
 // it eagerly into the dashboard chunk caused a webpack-split circular dep that
@@ -62,6 +66,11 @@ function fmtDuration(secs) {
   if (h === 0) return `${m}m`;
   if (m === 0) return `${h}h`;
   return `${h}h ${m}m`;
+}
+
+/** Pace for run/swim, watts for bike — respects user unit preference. */
+function activityPaceOrPowerStat(act, user) {
+  return activityPaceOrPowerDisplay(act, user);
 }
 
 // Sport colours — mirrors CalendarView SPORT_COLORS_CELL
@@ -294,8 +303,8 @@ function DayActivitiesCard({ date, activities, plannedWorkouts, dayPlans = [], p
           const secs = Number(act.totalTime || act.duration || act.movingTime || act.elapsed_time || act.elapsedTime || act.totalTimerTime || 0);
           const dur = fmtDuration(secs);
           const dist = Number(act.distance || act.totalDistance || 0);
-          const distStr = dist >= 1000 ? `${(dist / 1000).toFixed(1)} km` : dist > 0 ? `${Math.round(dist)} m` : null;
-          const pwr = Number(act.avgPower || act.average_watts || 0);
+          const distStr = formatActivityDistance(dist, user);
+          const paceOrPowerStr = activityPaceOrPowerStat(act, user);
           const tssVal = resolveActivityTss(act, profile, { user });
           const tssStr = tssVal > 0 ? `${Math.round(tssVal)} TSS` : null;
 
@@ -340,7 +349,7 @@ function DayActivitiesCard({ date, activities, plannedWorkouts, dayPlans = [], p
                   )}
                 </div>
                 <div style={{ fontSize: 11, color: '#6B7280', marginTop: 1, fontVariantNumeric: 'tabular-nums' }}>
-                  {[dur, distStr, pwr > 0 ? `${Math.round(pwr)} W` : null, tssStr].filter(Boolean).join(' · ') || 'Completed'}
+                  {[dur, distStr, paceOrPowerStr, tssStr].filter(Boolean).join(' · ') || 'Completed'}
                 </div>
               </div>
               <span style={{ fontSize: 13, color: '#9CA3AF', flexShrink: 0 }}>›</span>
@@ -380,23 +389,12 @@ function DayActivitiesCard({ date, activities, plannedWorkouts, dayPlans = [], p
 
         const dur     = fmtDuration(pwSecs);
         const actDur  = linkedAct ? fmtDuration(actSecs) : null;
-        const pwDistStr = formatPlannedDistanceMetres(plannedDistanceMetres(pw), sport);
+        const pwDistStr = formatPlannedDistanceMetres(plannedDistanceMetres(pw), sport, user);
         const dist    = linkedAct ? Number(linkedAct.distance || linkedAct.totalDistance || 0) : 0;
-        const distStr = dist >= 1000 ? `${(dist / 1000).toFixed(1)} km` : dist > 0 ? `${Math.round(dist)} m` : null;
+        const distStr = formatActivityDistance(dist, user);
         const actTssVal = linkedAct ? resolveActivityTss(linkedAct, profile, { user }) : 0;
         const actTssStr = actTssVal > 0 ? `${Math.round(actTssVal)} TSS` : null;
-        const avgSpeed = linkedAct ? Number(linkedAct.avgSpeed || linkedAct.average_speed || 0) : 0;
-        let paceStr = null;
-        if (linkedAct && avgSpeed > 0) {
-          const sp = String(linkedAct.sport || '').toLowerCase();
-          if (sp.includes('swim')) {
-            const s = 100 / avgSpeed;
-            paceStr = `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}/100m`;
-          } else if (sp.includes('run') || sp.includes('walk') || sp.includes('hike')) {
-            const s = 1000 / avgSpeed;
-            paceStr = `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}/km`;
-          }
-        }
+        const paceStr = linkedAct ? activityPaceOrPowerStat(linkedAct, user) : null;
         const pairedStats = isPaired
           ? [actDur, distStr, paceStr, actTssStr].filter(Boolean).join(' · ')
           : null;
@@ -778,6 +776,25 @@ export default function NativeDashboardPage({
     window.addEventListener('openActivityRequest', onOpenRequest);
     return () => window.removeEventListener('openActivityRequest', onOpenRequest);
   }, [openActivityById, searchParams, setSearchParams]);
+
+  useEffect(() => {
+    const onOpenPlannedRequest = (e) => {
+      const id = e?.detail?.id;
+      if (!id) return;
+      const pw = (plannedWorkouts || []).find(
+        p => String(p._id) === String(id) || String(p.id) === String(id),
+      );
+      if (pw) {
+        openPlanned(pw, null);
+        return;
+      }
+      const next = new URLSearchParams(searchParams);
+      next.set('openPlanned', String(id));
+      setSearchParams(next, { replace: true });
+    };
+    window.addEventListener('openPlannedRequest', onOpenPlannedRequest);
+    return () => window.removeEventListener('openPlannedRequest', onOpenPlannedRequest);
+  }, [plannedWorkouts, searchParams, setSearchParams]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Planned-workout editor (bottom sheet) ────────────────────────────────
   const [editingPlanned, setEditingPlanned] = useState(null); // { pw, linkedAct }
@@ -1196,6 +1213,8 @@ export default function NativeDashboardPage({
               currentCTL={todayMetrics?.fitness}
               currentForm={todayMetrics?.form}
               plannedWorkouts={plannedWorkouts}
+              activities={activities}
+              userProfile={fitnessProfile}
               onTaperApplied={onTaperApplied}
             />
           </div>
@@ -1250,6 +1269,7 @@ export default function NativeDashboardPage({
           plannedWorkout={editingPlanned.pw}
           linkedActivity={editingPlanned.linkedAct}
           athleteId={athleteId || user?._id || user?.id}
+          user={user}
           onClose={closePlanned}
           onOpenLinkedActivity={(act) => { closePlanned(); openActivity(act); }}
           onSaved={(updated) => {

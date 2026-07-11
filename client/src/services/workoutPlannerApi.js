@@ -1,7 +1,7 @@
 /**
  * Workout Planner API helpers
  */
-import api from './api';
+import api, { clearGetCacheMatching } from './api';
 
 const BASE = '/api/workout-planner';
 
@@ -62,6 +62,14 @@ export const deleteWorkoutTemplate = async (id) => {
 const _plannedInflight = new Map();
 const _plannedCache = new Map();
 const PLANNED_CACHE_MS = 60 * 1000;
+let _plannedCacheGen = 0;
+
+function invalidatePlannedWorkoutsCache() {
+  _plannedCacheGen += 1;
+  _plannedCache.clear();
+  _plannedInflight.clear();
+  clearGetCacheMatching('/api/workout-planner/planned');
+}
 
 /**
  * @param {{ from?: string, to?: string, athleteId?: string }} opts
@@ -74,9 +82,12 @@ export const getPlannedWorkouts = async (opts = {}) => {
   }
   if (_plannedInflight.has(key)) return _plannedInflight.get(key);
 
-  const req = api.get(`${BASE}/planned`, { params: opts, cacheTtlMs: 60000 })
+  const genAtStart = _plannedCacheGen;
+  const req = api.get(`${BASE}/planned`, { params: opts, cacheTtlMs: 15000 })
     .then(({ data }) => {
-      _plannedCache.set(key, { data, ts: Date.now() });
+      if (genAtStart === _plannedCacheGen) {
+        _plannedCache.set(key, { data, ts: Date.now() });
+      }
       _plannedInflight.delete(key);
       return data;
     })
@@ -97,12 +108,14 @@ export const getPlannedWorkout = async (id) => {
 export const createPlannedWorkout = async (payload, athleteId = null) => {
   const params = athleteId ? { athleteId } : {};
   const { data } = await api.post(`${BASE}/planned`, normalizePlannedPayload(payload), { params });
+  invalidatePlannedWorkoutsCache();
   return data;
 };
 
 export const updatePlannedWorkout = async (id, payload, athleteId = null) => {
   const params = athleteId ? { athleteId } : {};
   const { data } = await api.put(`${BASE}/planned/${id}`, normalizePlannedPayload(payload), { params });
+  invalidatePlannedWorkoutsCache();
   return data;
 };
 
@@ -110,12 +123,14 @@ export const updatePlannedWorkout = async (id, payload, athleteId = null) => {
 export const reorderPlannedWorkouts = async (date, orderedIds, athleteId = null) => {
   const params = athleteId ? { athleteId } : {};
   const { data } = await api.put(`${BASE}/planned/reorder`, { date, orderedIds }, { params });
+  invalidatePlannedWorkoutsCache();
   return data;
 };
 
 export const deletePlannedWorkout = async (id, athleteId = null) => {
   const params = athleteId ? { athleteId } : {};
   const { data } = await api.delete(`${BASE}/planned/${id}`, { params });
+  invalidatePlannedWorkoutsCache();
   return data;
 };
 

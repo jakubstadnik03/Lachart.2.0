@@ -198,6 +198,7 @@ const SettingsPage = () => {
   // Strava backfill progress — polled every 10s while backfill is running
   const [stravaBackfill, setStravaBackfill] = useState(null); // { state, startedAt, cursorDate, lastError }
   const [isStartingBackfill, setIsStartingBackfill] = useState(false);
+  const [backfillPollNonce, setBackfillPollNonce] = useState(0);
   const [polarConnected] = useState(false);
   const [corosConnected] = useState(false);
   const [files, setFiles] = useState([]);
@@ -554,36 +555,57 @@ const SettingsPage = () => {
     }
   }, [user?.strava?.autoSync, user?.strava]);
 
+  const refreshStravaBackfillStatus = useCallback(async () => {
+    if (!stravaConnected) {
+      setStravaBackfill(null);
+      return null;
+    }
+    try {
+      const s = await fetchStravaStatus();
+      if (!s?.connected) {
+        setStravaBackfill(null);
+        return null;
+      }
+      const state = s.backfillState || null;
+      const cursorDate = s.backfillCursorBefore
+        ? new Date(s.backfillCursorBefore * 1000).toLocaleDateString('cs', { year: 'numeric', month: 'short' })
+        : null;
+      const next = state ? {
+        state,
+        startedAt: s.backfillStartedAt,
+        cursorDate,
+        lastError: s.backfillLastError || null,
+      } : null;
+      setStravaBackfill(next);
+      return next;
+    } catch (_) {
+      return null;
+    }
+  }, [stravaConnected]);
+
   // Poll backfill progress every 10s while a historical import is running.
-  // Stops automatically once state turns 'done' or user disconnects.
+  // Uses stravaConnected — accessToken is never exposed on the client profile.
   useEffect(() => {
-    if (!user?.strava?.accessToken) { setStravaBackfill(null); return; }
+    if (!stravaConnected) {
+      setStravaBackfill(null);
+      return undefined;
+    }
     let timer = null;
+    let cancelled = false;
     const poll = async () => {
-      try {
-        const { fetchStravaStatus } = await import('../services/api');
-        const s = await fetchStravaStatus();
-        if (!s) return;
-        const state = s.backfillState || null;
-        // Estimate the date we've reached based on cursor (Unix timestamp)
-        const cursorDate = s.backfillCursorBefore
-          ? new Date(s.backfillCursorBefore * 1000).toLocaleDateString('cs', { year: 'numeric', month: 'short' })
-          : null;
-        setStravaBackfill(state ? {
-          state,
-          startedAt: s.backfillStartedAt,
-          cursorDate,
-          lastError: s.backfillLastError || null,
-        } : null);
-        // Keep polling while running
-        if (state === 'running') {
-          timer = setTimeout(poll, 10000);
-        }
-      } catch (_) { /* swallow */ }
+      if (cancelled) return;
+      const status = await refreshStravaBackfillStatus();
+      if (cancelled) return;
+      if (status?.state === 'running') {
+        timer = setTimeout(poll, 10000);
+      }
     };
     poll();
-    return () => { if (timer) clearTimeout(timer); };
-  }, [user?.strava?.accessToken]);
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [stravaConnected, refreshStravaBackfillStatus, backfillPollNonce]);
 
   // Load Garmin auto-sync setting from user profile
   useEffect(() => {
@@ -1021,6 +1043,42 @@ const SettingsPage = () => {
     } catch (e) {
       const msg = e?.response?.data?.error || e?.message || 'reset failed';
       addNotification(`Budget reset failed: ${msg}`, 'error');
+    }
+  };
+
+  const handleImportStravaHistory = async () => {
+    if (isStartingBackfill || !stravaConnected) {
+      if (!stravaConnected) {
+        addNotification('Connect Strava first, then import history.', 'warning');
+      }
+      return;
+    }
+    setIsStartingBackfill(true);
+    setStravaBackfill({ state: 'running', cursorDate: null, lastError: null });
+    try {
+      const r = await backfillStravaHistory({ fromNow: true, force: true });
+      addNotification(
+        r?.alreadyRunning
+          ? 'History import already running — see progress above.'
+          : r?.restarted
+            ? 'Restarting Strava history import from today…'
+            : 'Importing your last year of Strava history in the background…',
+        'success'
+      );
+      setBackfillPollNonce((n) => n + 1);
+      await refreshStravaBackfillStatus();
+    } catch (e) {
+      setStravaBackfill(null);
+      if (e?.response?.status === 400 && /not connected/i.test(e?.response?.data?.error || '')) {
+        setStravaConnected(false);
+        addNotification('Strava is no longer connected — reconnect it below first.', 'warning');
+      } else if (!e?.response && /network|failed to fetch/i.test(e?.message || '')) {
+        addNotification('Cannot reach the server. Check that the API is running and try again.', 'error');
+      } else {
+        addNotification(e?.response?.data?.error || e?.message || 'Failed to start history import', 'error');
+      }
+    } finally {
+      setIsStartingBackfill(false);
     }
   };
 
@@ -3460,32 +3518,8 @@ const SettingsPage = () => {
                           : 'Sync Now'}
                     </button>
                     <button
-                      onClick={async () => {
-                        if (isStartingBackfill) return;
-                        setIsStartingBackfill(true);
-                        try {
-                          const r = await backfillStravaHistory({ fromNow: true, force: true });
-                          setStravaBackfill({ state: 'running', cursorDate: null, lastError: null });
-                          addNotification(
-                            r?.alreadyRunning
-                              ? 'History import already running — see progress above.'
-                              : r?.restarted
-                                ? 'Restarting Strava history import from today…'
-                                : 'Importing your last year of Strava history in the background…',
-                            'success'
-                          );
-                        } catch (e) {
-                          if (e?.response?.status === 400 && /not connected/i.test(e?.response?.data?.error || '')) {
-                            setStravaConnected(false);
-                            addNotification('Strava is no longer connected — reconnect it below first.', 'warning');
-                          } else {
-                            addNotification(e?.response?.data?.error || e?.message || 'Failed to start history import', 'error');
-                          }
-                        } finally {
-                          setIsStartingBackfill(false);
-                        }
-                      }}
-                      disabled={isStartingBackfill}
+                      onClick={handleImportStravaHistory}
+                      disabled={isStartingBackfill || !stravaConnected}
                       title="Download your last year of Strava history (runs in the background)"
                       className={`${isMobile ? 'px-2.5 py-1.5 text-[10px] w-full' : 'px-3 py-2'} bg-gray-100 text-gray-800 ${isMobile ? 'rounded-md' : 'rounded'} hover:bg-gray-200 disabled:opacity-60 disabled:cursor-not-allowed`}
                     >

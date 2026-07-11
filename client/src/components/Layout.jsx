@@ -397,7 +397,7 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
   // Continue progressive Strava history import (2-year backfill) on every session.
   // Server rate-limits nudges (~90s); safe to call on each app load.
   useEffect(() => {
-    if (!user?._id || !user?.strava?.accessToken) return undefined;
+    if (!user?._id || !user?.strava?.athleteId) return undefined;
     let cancelled = false;
     const t = setTimeout(() => {
       if (!cancelled) nudgeStravaHistoryImport();
@@ -406,7 +406,7 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
       cancelled = true;
       clearTimeout(t);
     };
-  }, [user?._id, user?.strava?.accessToken]);
+  }, [user?._id, user?.strava?.athleteId]);
 
   // ── Strava: frontend polling fallback ────────────────────────────────────
   // Webhooks deliver new activities in real-time, but they can go stale
@@ -417,7 +417,7 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
   // events use a short cooldown so quota isn't burned on rapid tab switches.
   useEffect(() => {
     if (!user?._id) return undefined;
-    const hasStrava = !!(user?.strava?.autoSync && user?.strava?.accessToken);
+    const hasStrava = !!(user?.strava?.autoSync && user?.strava?.athleteId);
     if (!hasStrava) return undefined;
 
     let cancelled = false;
@@ -474,7 +474,7 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
   }, [
     user?._id,
     user?.strava?.autoSync,
-    user?.strava?.accessToken,
+    user?.strava?.athleteId,
   ]);
 
   // Strava OAuth return — works from any route (training-calendar redirect, Settings, iOS deep link).

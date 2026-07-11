@@ -11,32 +11,34 @@ const METERS_TO_FEET = 3.28084;
 const CM_TO_INCHES = 0.393701;
 const CELSIUS_TO_FAHRENHEIT = (c) => (c * 9/5) + 32;
 
+export const M_PER_YARD = 0.9144;
+export const KM_PER_MILE = 1.609344;
+export const METERS_PER_MILE = 1609.344;
+
 /**
  * Get user's units preference from user object or localStorage
  * @param {Object} user - User object from AuthProvider
  * @returns {Object} Units object with distance, weight, temperature
  */
 export const getUserUnits = (user) => {
-  if (user?.units) {
-    return user.units;
-  }
-  
-  // Fallback to localStorage
+  const defaultUnits = {
+    distance: 'metric',
+    weight: 'kg',
+    temperature: 'celsius',
+  };
+
+  let stored = null;
   try {
     const saved = localStorage.getItem('userUnits');
-    if (saved) {
-      return JSON.parse(saved);
-    }
+    if (saved) stored = JSON.parse(saved);
   } catch (e) {
     console.error('Error loading units from localStorage:', e);
   }
-  
-  // Default to metric
-  return {
-    distance: 'metric',
-    weight: 'kg',
-    temperature: 'celsius'
-  };
+
+  // Device-local preference wins over a possibly stale profile from the API.
+  if (stored) return { ...defaultUnits, ...user?.units, ...stored };
+  if (user?.units) return { ...defaultUnits, ...user.units };
+  return defaultUnits;
 };
 
 /**
@@ -193,6 +195,65 @@ export const formatDistanceForUser = (meters, user) => {
   return formatDistance(meters, units.distance).formatted;
 };
 
+/** Unit suffix for distance form fields (km / mi / m). */
+export const distanceInputUnitLabel = (unitSystem = 'metric', isSwim = false) => {
+  if (isSwim) return 'm';
+  return unitSystem === 'imperial' ? 'mi' : 'km';
+};
+
+/** Placeholder for distance inputs. */
+export const distanceInputPlaceholder = (unitSystem = 'metric', isSwim = false, metres = 0) => {
+  if (isSwim) return metres > 0 ? `${Math.round(metres)} m` : '1500 m';
+  if (metres > 0) return formatDistance(metres, unitSystem).formatted;
+  return unitSystem === 'imperial' ? '10 mi' : '10 km';
+};
+
+/**
+ * Parse free-text distance to metres (run/bike: km or mi by unitSystem; swim: m).
+ */
+export const parseDistanceInputToMetres = (raw, unitSystem = 'metric', { isSwim = false } = {}) => {
+  const s = String(raw ?? '').trim().toLowerCase().replace(',', '.');
+  if (!s) return null;
+  if (/\bmi\b|mile?s?$/.test(s) || s.endsWith('mi')) {
+    const n = parseFloat(s.replace(/[^\d.]/g, ''));
+    return Number.isFinite(n) && n > 0 ? n * METERS_PER_MILE : null;
+  }
+  if (s.endsWith('km')) {
+    const n = parseFloat(s);
+    return Number.isFinite(n) && n > 0 ? n * 1000 : null;
+  }
+  if (s.endsWith('m') && !s.endsWith('mi')) {
+    const n = parseFloat(s);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  }
+  const n = parseFloat(s);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  if (isSwim) return n >= 50 ? n : n * 1000;
+  if (unitSystem === 'imperial') return n * METERS_PER_MILE;
+  return n > 500 ? n : n * 1000;
+};
+
+/** Format metres as a bare number for distance form fields (no unit suffix). */
+export const formatDistanceInputFromMetres = (metres, unitSystem = 'metric', { isSwim = false } = {}) => {
+  const m = Number(metres);
+  if (!Number.isFinite(m) || m <= 0) return '';
+  if (isSwim && m < 1000) return String(Math.round(m));
+  if (unitSystem === 'imperial') {
+    const mi = m / METERS_PER_MILE;
+    return mi >= 10 ? mi.toFixed(1) : mi.toFixed(2).replace(/\.?0+$/, '');
+  }
+  const km = m / 1000;
+  return km % 1 === 0 ? String(km) : km.toFixed(2).replace(/\.?0+$/, '');
+};
+
+/** Format metres with unit suffix for blur-normalised display fields. */
+export const formatDistanceFieldDisplay = (metres, unitSystem = 'metric', { isSwim = false } = {}) => {
+  const m = Number(metres);
+  if (!Number.isFinite(m) || m <= 0) return '';
+  if (isSwim && m < 1000) return `${Math.round(m)} m`;
+  return formatDistance(m, unitSystem).formatted;
+};
+
 /**
  * Format weight with user's units preference
  * @param {Number} kg - Weight in kilograms
@@ -281,10 +342,160 @@ export const formatTemperature = (celsius, unitSystem = 'celsius') => {
  */
 export const paceUnit = (unitSystem = 'metric', sport = 'running') => {
   const s = String(sport).toLowerCase();
-  if (s === 'swim' || s === 'swimming') {
+  if (s === 'swim' || s === 'swimming' || s.includes('swim')) {
     return unitSystem === 'imperial' ? 'min/100y' : 'min/100m';
   }
   return unitSystem === 'imperial' ? 'min/mi' : 'min/km';
+};
+
+/** Short pace suffix for inline labels: /km, /mi, /100m, /100yd */
+export const paceUnitShort = (unitSystem = 'metric', sport = 'run') => {
+  const s = String(sport).toLowerCase();
+  if (s.includes('swim')) return unitSystem === 'imperial' ? '/100yd' : '/100m';
+  return unitSystem === 'imperial' ? '/mi' : '/km';
+};
+
+/** Format seconds as m:ss (no unit). */
+export const formatPaceMMSS = (seconds) => {
+  if (seconds == null || !Number.isFinite(Number(seconds)) || Number(seconds) <= 0) return null;
+  const sec = Math.round(Number(seconds));
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return `${m}:${String(s).padStart(2, '0')}`;
+};
+
+/** Format pace seconds with unit suffix. */
+export const formatPaceSeconds = (seconds, unitSystem = 'metric', sport = 'run') => {
+  const mmss = formatPaceMMSS(seconds);
+  if (!mmss) return '—';
+  return `${mmss}${paceUnitShort(unitSystem, sport)}`;
+};
+
+/** Pace seconds (display units) from speed in m/s. */
+export const paceSecondsFromSpeedMps = (mps, unitSystem = 'metric', sport = 'run') => {
+  if (!mps || !Number.isFinite(Number(mps)) || Number(mps) <= 0) return null;
+  const s = String(sport).toLowerCase();
+  if (s.includes('swim')) {
+    const distM = unitSystem === 'imperial' ? M_PER_YARD * 100 : 100;
+    return distM / Number(mps);
+  }
+  const distM = unitSystem === 'imperial' ? METERS_PER_MILE : 1000;
+  return distM / Number(mps);
+};
+
+export const formatPaceFromSpeedMps = (mps, unitSystem = 'metric', sport = 'run') => {
+  const sec = paceSecondsFromSpeedMps(mps, unitSystem, sport);
+  return sec ? formatPaceSeconds(sec, unitSystem, sport) : null;
+};
+
+/** Pace seconds (display units) from distance (m) + duration (s). */
+export const paceSecondsFromDistanceAndDuration = (meters, seconds, unitSystem = 'metric', sport = 'run') => {
+  if (!meters || !seconds || meters <= 0 || seconds <= 0) return null;
+  const s = String(sport).toLowerCase();
+  if (s.includes('swim')) {
+    const unitDist = unitSystem === 'imperial' ? meters / M_PER_YARD : meters;
+    return seconds / (unitDist / 100);
+  }
+  const unitDist = unitSystem === 'imperial' ? meters / METERS_PER_MILE : meters / 1000;
+  return seconds / unitDist;
+};
+
+export const formatPaceFromDistanceAndDuration = (meters, seconds, unitSystem = 'metric', sport = 'run') => {
+  const sec = paceSecondsFromDistanceAndDuration(meters, seconds, unitSystem, sport);
+  return sec ? formatPaceSeconds(sec, unitSystem, sport) : null;
+};
+
+/** True when a lactate test stored run pace as sec/mile. */
+export const testRunPaceStoredPerMile = (testOrUnitSystem, sport = 'run') => {
+  const s = String(sport || '').toLowerCase();
+  if (!s.includes('run')) return false;
+  const u = typeof testOrUnitSystem === 'string'
+    ? testOrUnitSystem
+    : String(testOrUnitSystem?.unitSystem ?? '').trim().toLowerCase();
+  return u === 'imperial' || u === 'us' || u === 'mile' || u === 'miles' || u === 'mi' || u === 'mph';
+};
+
+/** Convert stored test pace seconds → display seconds for current unit preference. */
+export const paceSecondsToDisplaySeconds = (
+  seconds,
+  { sport = 'run', unitSystem = 'metric', testRunPerMileStorage = false } = {},
+) => {
+  if (seconds == null || !Number.isFinite(Number(seconds))) return seconds;
+  const s = Number(seconds);
+  const displayImperial = unitSystem === 'imperial';
+  const sp = String(sport || '').toLowerCase();
+  if (sp.includes('swim')) {
+    if (!displayImperial) return s;
+    return s * M_PER_YARD;
+  }
+  if (displayImperial && !testRunPerMileStorage) return s * KM_PER_MILE;
+  if (!displayImperial && testRunPerMileStorage) return s / KM_PER_MILE;
+  return s;
+};
+
+/** Format stored test/interval pace (sec/km or sec/mile) for the user's units. */
+export const formatStoredPaceSeconds = (seconds, user, sport = 'run', testData = null) => {
+  const unitSystem = resolveDistanceUnitSystem(user);
+  const testRunPerMileStorage = testData ? testRunPaceStoredPerMile(testData, sport) : false;
+  const displaySec = paceSecondsToDisplaySeconds(seconds, { sport, unitSystem, testRunPerMileStorage });
+  return formatPaceSeconds(displaySec, unitSystem, sport);
+};
+
+const parsePaceMMSS = (str) => {
+  const m = String(str ?? '').match(/^(\d+):(\d{2})$/);
+  if (!m) return null;
+  return Number(m[1]) * 60 + Number(m[2]);
+};
+
+/** Convert zone pace strings (from calculateZonesFromTest) to user's display units. */
+export const formatZonesPaceForUser = (zones, test, user, sport = 'run') => {
+  if (!zones?.pace) return zones;
+  const unitSystem = resolveDistanceUnitSystem(user);
+  const testRunPerMileStorage = test ? testRunPaceStoredPerMile(test, sport) : false;
+  const convert = (str) => {
+    const sec = parsePaceMMSS(str);
+    if (sec == null) return str;
+    const displaySec = paceSecondsToDisplaySeconds(sec, { sport, unitSystem, testRunPerMileStorage });
+    return formatPaceMMSS(displaySec) || str;
+  };
+  const pace = {};
+  for (const [k, v] of Object.entries(zones.pace)) {
+    pace[k] = { min: convert(v.min), max: convert(v.max) };
+  }
+  return { ...zones, pace };
+};
+
+/** Activity row: pace for run/swim, watts for bike. */
+export const activityPaceOrPowerDisplay = (act, user) => {
+  if (!act) return null;
+  const unitSystem = resolveDistanceUnitSystem(user);
+  const dur = Number(
+    act.movingTime || act.moving_time || act.duration
+    || act.elapsed_time || act.elapsedTime || act.totalTimerTime || act.totalTime || act.totalElapsedTime || 0,
+  );
+  const dist = Number(act.distance || act.totalDistance || 0);
+  const power = Number(
+    act.normalizedPower || act.avgPower || act.average_watts || act.averagePower || 0,
+  );
+  const avgSpeed = Number(act.avgSpeed || act.average_speed || 0);
+  const sport = act.sport || act.type || '';
+  const s = String(sport).toLowerCase();
+  const isSwim = s.includes('swim');
+  const isRun = s.includes('run') || s.includes('hike') || s.includes('walk') || s.includes('trail');
+  const isBike = s.includes('ride') || s.includes('cycle') || s.includes('bike') || s.includes('virtual');
+
+  if (isBike && power > 0) return `${Math.round(power)} W`;
+  if (isSwim || isRun) {
+    if (avgSpeed > 0) return formatPaceFromSpeedMps(avgSpeed, unitSystem, sport);
+    if (dist > 0 && dur > 0) return formatPaceFromDistanceAndDuration(dist, dur, unitSystem, sport);
+  }
+  return null;
+};
+
+export const formatActivityDistance = (meters, user) => {
+  if (!meters) return null;
+  const unitSystem = resolveDistanceUnitSystem(user);
+  return formatDistance(meters, unitSystem).formatted;
 };
 
 /**
@@ -330,13 +541,20 @@ export const getPaceDisplay = (user) =>
  */
 export const formatRunPace = (secPerKm, user) => {
   if (!secPerKm || secPerKm <= 0) return '—';
+  const unitSystem = resolveDistanceUnitSystem(user);
   if (getPaceDisplay(user) === 'kmh') {
     const kmh = 3600 / secPerKm;
+    if (unitSystem === 'imperial') {
+      return `${(kmh * KM_TO_MILES).toFixed(1)} mph`;
+    }
     return `${kmh.toFixed(1)} km/h`;
   }
-  const m = Math.floor(secPerKm / 60);
-  const s = Math.round(secPerKm % 60);
-  return `${m}:${String(s).padStart(2, '0')}/km`;
+  const displaySec = paceSecondsToDisplaySeconds(secPerKm, {
+    sport: 'run',
+    unitSystem,
+    testRunPerMileStorage: false,
+  });
+  return formatPaceSeconds(displaySec, unitSystem, 'run');
 };
 
 /**
@@ -344,6 +562,10 @@ export const formatRunPace = (secPerKm, user) => {
  * @param {Object} user
  * @returns {string} e.g. "min/km" or "km/h"
  */
-export const runPaceUnit = (user) =>
-  getPaceDisplay(user) === 'kmh' ? 'km/h' : 'min/km';
+export const runPaceUnit = (user) => {
+  if (getPaceDisplay(user) === 'kmh') {
+    return resolveDistanceUnitSystem(user) === 'imperial' ? 'mph' : 'km/h';
+  }
+  return paceUnit(resolveDistanceUnitSystem(user), 'run');
+};
 

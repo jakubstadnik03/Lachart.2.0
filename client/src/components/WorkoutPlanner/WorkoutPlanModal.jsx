@@ -14,7 +14,7 @@
  *  onDelete(workout)    – called when user deletes an existing workout
  *  onClose()            – close the modal
  */
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import ReactDOM from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence, useDragControls } from 'framer-motion';
@@ -24,6 +24,15 @@ import WorkoutBuilder, { PRESET_CATALOG, buildPresetSteps, computeEstTSS } from 
 import { createWorkoutTemplate, exportPlannedWorkout } from '../../services/workoutPlannerApi';
 import { sendPlannedWorkoutToWatch, isAppleWorkoutPlanSupported } from '../../services/appleWorkoutPlan';
 import { useCategories } from '../../context/CategoryContext';
+import { useAuth } from '../../context/AuthProvider';
+import { plannedDistanceMetres } from '../../utils/plannedWorkoutDistance';
+import {
+  distanceInputUnitLabel,
+  formatDistanceInputFromMetres,
+  getUserUnits,
+  parseDistanceInputToMetres,
+  resolveDistanceUnitSystem,
+} from '../../utils/unitsConverter';
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 export const SPORT_ICONS  = { bike: '/icon/bike.svg', run: '/icon/run.svg', swim: '/icon/swim.svg' };
@@ -275,6 +284,14 @@ function secsToHMS(s) {
 // ─── Main modal ────────────────────────────────────────────────────────────────
 export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onClose, context = {}, templates = [], onAddDayTheme = null, onAddPeriod = null }) {
   const isEdit = Boolean(workout?._id);
+  const { user: authUser } = useAuth() || {};
+  const unitSystem = resolveDistanceUnitSystem({ units: getUserUnits(authUser) });
+  const workoutDistToStr = useCallback((w) => {
+    if (!w?.plannedDistance) return '';
+    if (w.sport === 'swim') return String(plannedDistanceMetres(w) || w.plannedDistance);
+    const m = plannedDistanceMetres(w);
+    return m ? formatDistanceInputFromMetres(m, unitSystem) : '';
+  }, [unitSystem]);
   const navigate = useNavigate();
   const { categories } = useCategories();
   const dragControls = useDragControls();
@@ -316,17 +333,26 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
   const [plannedDurStr, setPlannedDurStr] = useState(
     workout?.plannedDuration ? secsToHMS(workout.plannedDuration) : ''
   );
-  const [plannedDistStr, setPlannedDistStr] = useState(
-    workout?.plannedDistance
-      ? (workout?.sport === 'swim'
-          ? String(workout.plannedDistance)
-          : String((workout.plannedDistance / 1000).toFixed(1)))
-      : ''
-  );
+  const [plannedDistStr, setPlannedDistStr] = useState(workoutDistToStr(workout));
   // Coach comment (visible note shown on calendar card)
   const [comment, setComment] = useState(workout?.comment || '');
   // Lactate test saved notification
   const [lactateSaved, setLactateSaved] = useState(false);
+
+  // Re-sync form when the parent passes a new workout (e.g. reopen after save).
+  useEffect(() => {
+    setSport(workout?.sport || 'bike');
+    setTitle(workout?.title || '');
+    setDesc(workout?.description || '');
+    setTss(workout?.targetTss || '');
+    setSteps(workout?.steps || []);
+    setCategory(workout?.category || '');
+    setComment(workout?.comment || '');
+    setPlannedDurStr(workout?.plannedDuration ? secsToHMS(workout.plannedDuration) : '');
+    setPlannedDistStr(workoutDistToStr(workout));
+    setShowBuilder(Boolean(workout?._id && (workout?.steps?.length > 0)));
+    setStep(workout?._id ? 'build' : 'pick');
+  }, [workout, workoutDistToStr]);
 
   const pickSport = (s) => {
     setSport(s);
@@ -347,10 +373,12 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
       comment: comment.trim() || undefined,
       targetTss:       tss ? Number(tss) : (estTss || undefined),
       steps,
-      category:        category || undefined,
+      category:        category || null,
       plannedDuration: stepsDur || parseDurStr(plannedDurStr) || undefined,
       plannedDistance: plannedDistStr
-        ? parseFloat(plannedDistStr) * (sport === 'swim' ? 1 : 1000)
+        ? (sport === 'swim'
+          ? parseFloat(plannedDistStr)
+          : parseDistanceInputToMetres(plannedDistStr, unitSystem))
         : undefined,
       isLactateTest:   sport === 'lactate' || undefined,
     });
@@ -684,7 +712,7 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
                         className="w-full text-base font-bold text-slate-800 bg-transparent border-0 focus:outline-none placeholder:text-slate-300 placeholder:font-normal"
                       />
                     </div>
-                    <span className="text-[10px] text-slate-400">{sport === 'swim' ? 'm' : 'km'}</span>
+                    <span className="text-[10px] text-slate-400">{distanceInputUnitLabel(unitSystem, sport === 'swim')}</span>
                   </div>
 
                   {/* TSS */}
@@ -964,7 +992,7 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
                         await onSave({
                           _id: workout._id, date, sport, title: title.trim(),
                           description: desc, targetTss: Number(tss) || 0,
-                          steps, category,
+                          steps, category: category || null,
                           plannedDuration: 0, plannedDistance: 0,
                           comment,
                         });

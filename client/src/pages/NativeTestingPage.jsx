@@ -10,6 +10,7 @@ import {
   NATIVE_DASHBOARD_KEYFRAMES, cardEntry,
 } from '../components/NativeDashboard/animations';
 import { getTestingsByAthleteId } from '../services/api';
+import { formatStoredPaceSeconds, formatZonesPaceForUser } from '../utils/unitsConverter';
 import { calculateZonesFromTest } from '../components/Testing-page/zoneCalculator';
 // Reuse the same threshold algorithm DataTable / LactateCurveCalculator use on
 // desktop so LT1/LT2 shown on mobile cards stay in sync with the values on
@@ -20,11 +21,8 @@ import LT2TrendSparkline from '../components/DashboardPage/LT2TrendSparkline';
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
-function fmtPace(secPerKm) {
-  if (!secPerKm || !Number.isFinite(secPerKm) || secPerKm <= 0) return '—';
-  const m = Math.floor(secPerKm / 60);
-  const s = Math.round(secPerKm % 60);
-  return `${m}:${String(s).padStart(2, '0')}/km`;
+function fmtPace(secPerUnit, sport, user, test = null) {
+  return formatStoredPaceSeconds(secPerUnit, user, sport, test);
 }
 
 function fmtMmol(v) {
@@ -66,9 +64,9 @@ function zoneVal(zones, zKey, isPace) {
   return `${r.min}–${r.max} W`;
 }
 
-function fmtThreshold(value, sport) {
+function fmtThreshold(value, sport, user, test = null) {
   if (value == null) return '—';
-  return isPaceSport(sport) ? fmtPace(value) : `${Math.round(value)} W`;
+  return isPaceSport(sport) ? fmtPace(value, sport, user, test) : `${Math.round(value)} W`;
 }
 
 // Threshold extraction (same algorithm as ThresholdHistory.jsx + LastTestCard)
@@ -270,9 +268,6 @@ export default function NativeTestingPage({ user, athleteId: externalAthleteId }
 
   const [tests, setTests] = useState([]);
   const [loading, setLoading] = useState(true);
-  // Default to 'bike' so the page lands on the latest bike test on first open;
-  // the toggle below lets the user switch to 'run'. Tests list is filtered to
-  // the active sport, and the most-recent test in that sport is auto-selected.
   const [selectedSport, setSelectedSport] = useState('bike');
   const [selectedTestId, setSelectedTestId] = useState(testIdFromUrl || null);
   // Compare mode: tap to multi-select up to 2 tests, page shows side-by-side comparison
@@ -316,6 +311,30 @@ export default function NativeTestingPage({ user, athleteId: externalAthleteId }
   useEffect(() => {
     if (testIdFromUrl) setSelectedTestId(testIdFromUrl);
   }, [testIdFromUrl]);
+
+  // Default sport toggle to whichever type actually has tests — run-only athletes
+  // land on Run, bike-only on Bike. When both exist, keep the current choice unless
+  // it has no tests (then pick the sport with the newest test).
+  useEffect(() => {
+    if (!tests.length) return;
+    const available = ['bike', 'run'].filter(sp =>
+      tests.some(t => normSport(t.sport) === sp)
+    );
+    if (!available.length) return;
+
+    if (available.length === 1) {
+      setSelectedSport(available[0]);
+      return;
+    }
+
+    setSelectedSport(prev => {
+      if (tests.some(t => normSport(t.sport) === prev)) return prev;
+      const newest = tests
+        .filter(t => available.includes(normSport(t.sport)))
+        .sort((a, b) => new Date(b.date || b.testDate || 0) - new Date(a.date || a.testDate || 0))[0];
+      return newest ? normSport(newest.sport) : available[0];
+    });
+  }, [tests]);
 
   // Auto-select the latest test for the active sport when no URL-driven
   // selection exists. Runs when tests load or when the user flips the sport
@@ -537,14 +556,14 @@ export default function NativeTestingPage({ user, athleteId: externalAthleteId }
                     {[
                       {
                         lbl: 'LT1',
-                        val: fmtThreshold(selectedTh.lt1, selectedTh.sport),
+                        val: fmtThreshold(selectedTh.lt1, selectedTh.sport, user, selected),
                         col: '#4BA87D',
                         lac: selectedTh.lt1Lac,
                         hr:  selectedTh.lt1Hr,
                       },
                       {
                         lbl: 'LT2',
-                        val: fmtThreshold(selectedTh.lt2, selectedTh.sport),
+                        val: fmtThreshold(selectedTh.lt2, selectedTh.sport, user, selected),
                         col: '#E05347',
                         lac: selectedTh.lt2Lac,
                         hr:  selectedTh.lt2Hr,
@@ -623,7 +642,7 @@ export default function NativeTestingPage({ user, athleteId: externalAthleteId }
 
                   {/* Training zones — derived from this test's thresholds */}
                   {(() => {
-                    const zones = calculateZonesFromTest(selected);
+                    const zones = formatZonesPaceForUser(calculateZonesFromTest(selected), selected, user, normSport(selected.sport));
                     if (!zones) return null;
                     const isPace = isPaceSport(selectedTh.sport);
                     const root = isPace ? zones.pace : zones.power;
@@ -783,8 +802,8 @@ export default function NativeTestingPage({ user, athleteId: externalAthleteId }
             if (!a || !b) return null;
             const tA = extractThresholds(a);
             const tB = extractThresholds(b);
-            const zA = calculateZonesFromTest(a);
-            const zB = calculateZonesFromTest(b);
+            const zA = formatZonesPaceForUser(calculateZonesFromTest(a), a, user, normSport(a.sport));
+            const zB = formatZonesPaceForUser(calculateZonesFromTest(b), b, user, normSport(b.sport));
             const dateA = new Date(a.date || a.testDate || 0);
             const dateB = new Date(b.date || b.testDate || 0);
             // Order: older on the left, newer on the right
@@ -848,13 +867,13 @@ export default function NativeTestingPage({ user, athleteId: externalAthleteId }
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                               <span style={{ fontSize: 9, fontWeight: 800, color: '#4BA87D', letterSpacing: '0.04em' }}>LT1</span>
                               <span style={{ fontSize: 11, fontWeight: 800, color: '#0A0E1A', fontVariantNumeric: 'tabular-nums' }}>
-                                {fmtThreshold(th.lt1, th.sport)}
+                                {fmtThreshold(th.lt1, th.sport, user, t)}
                               </span>
                             </div>
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                               <span style={{ fontSize: 9, fontWeight: 800, color: '#E05347', letterSpacing: '0.04em' }}>LT2</span>
                               <span style={{ fontSize: 11, fontWeight: 800, color: '#0A0E1A', fontVariantNumeric: 'tabular-nums' }}>
-                                {fmtThreshold(th.lt2, th.sport)}
+                                {fmtThreshold(th.lt2, th.sport, user, t)}
                               </span>
                             </div>
                           </div>
@@ -1119,7 +1138,7 @@ export default function NativeTestingPage({ user, athleteId: externalAthleteId }
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                 <span style={{ fontSize: 9, fontWeight: 800, color: '#4BA87D', letterSpacing: '0.04em' }}>LT1</span>
                                 <span style={{ fontSize: 10.5, fontWeight: 800, color: '#0A0E1A' }}>
-                                  {fmtThreshold(th.lt1, th.sport)}
+                                  {fmtThreshold(th.lt1, th.sport, user, t)}
                                 </span>
                               </div>
                             )}
@@ -1127,7 +1146,7 @@ export default function NativeTestingPage({ user, athleteId: externalAthleteId }
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                 <span style={{ fontSize: 9, fontWeight: 800, color: '#E05347', letterSpacing: '0.04em' }}>LT2</span>
                                 <span style={{ fontSize: 10.5, fontWeight: 800, color: '#0A0E1A' }}>
-                                  {fmtThreshold(th.lt2, th.sport)}
+                                  {fmtThreshold(th.lt2, th.sport, user, t)}
                                 </span>
                               </div>
                             )}

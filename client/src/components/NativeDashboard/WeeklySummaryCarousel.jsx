@@ -19,6 +19,7 @@ import { mergeProfileZones } from '../../utils/inferThresholdsFromActivities';
 import { activityCalendarDateKey } from '../../utils/formFitnessFromActivities';
 import { plannedDistanceMetres } from '../../utils/plannedWorkoutDistance';
 import { useAuth } from '../../context/AuthProvider';
+import { formatDistance, resolveDistanceUnitSystem } from '../../utils/unitsConverter';
 import { TSS_DISPLAY_MODE_EVENT } from '../../utils/uiPrefs';
 const ActivityShareSheet = lazy(() => import('../sharing/ActivityShareSheet'));
 
@@ -65,10 +66,20 @@ function normSport(s) {
 }
 
 // ─── formatting ──────────────────────────────────────────────────────────────
-const fmtKm = (m) => {
-  const km = (m || 0) / 1000;
-  if (km <= 0) return '0';
-  return km >= 100 ? `${Math.round(km)}` : `${km.toFixed(1)}`;
+const fmtDistValue = (m, user) => {
+  if (!m) return '0';
+  const unitSystem = resolveDistanceUnitSystem(user);
+  const { formatted } = formatDistance(m, unitSystem);
+  return formatted;
+};
+const fmtDistDelta = (meters, user) => {
+  if (!meters) return '0';
+  const unitSystem = resolveDistanceUnitSystem(user);
+  const { value, unit } = formatDistance(Math.abs(meters), unitSystem);
+  const rounded = unit === 'mi'
+    ? (Math.abs(value) >= 10 ? Math.round(value) : Number(value.toFixed(1)))
+    : (unit === 'km' ? Math.round(value) : Math.round(value));
+  return `${rounded} ${unit}`;
 };
 const fmtTime = (s) => {
   // Round to whole minutes FIRST, then split — otherwise 23h59.5m rounds the
@@ -340,8 +351,8 @@ export default function WeeklySummaryCarousel({
                 delta={<Delta value={data.act.count - data.prev.count} />} />
               <Stat label="Time" value={fmtTime(data.act.secs)}
                 delta={<Delta value={data.act.secs - data.prev.secs} fmt={fmtTime} />} />
-              <Stat label="Distance" value={`${fmtKm(data.act.dist)} km`}
-                delta={<Delta value={Math.round((data.act.dist - data.prev.dist) / 1000)} unit="km" />} />
+              <Stat label="Distance" value={fmtDistValue(data.act.dist, user)}
+                delta={<Delta value={data.act.dist - data.prev.dist} fmt={(v) => fmtDistDelta(v, user)} />} />
             </div>
           </div>
         </div>
@@ -357,7 +368,7 @@ export default function WeeklySummaryCarousel({
                     <SportIcon sport={s.key} className="w-3.5 h-3.5" />
                     <span className="text-[10px] font-bold uppercase tracking-wide" style={{ color: s.color }}>{s.label}</span>
                   </div>
-                  <div className="text-lg font-black text-gray-900 tabular-nums leading-tight">{fmtKm(s.dist)}<span className="text-[10px] text-gray-400 font-semibold ml-0.5">km</span></div>
+                  <div className="text-lg font-black text-gray-900 tabular-nums leading-tight">{fmtDistValue(s.dist, user)}</div>
                   <div className="text-[10px] text-gray-400 tabular-nums">{s.count} · {fmtTime(s.secs)}</div>
                 </div>
               ))}

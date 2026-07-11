@@ -4,6 +4,11 @@ import {
   lapSpeedMpsForChart,
 } from './fitAnalysisUtils';
 import { stravaHalfCadenceToSpm } from './cadenceDisplay';
+import {
+  formatPaceMMSS,
+  METERS_PER_MILE,
+  paceSecondsToDisplaySeconds,
+} from './unitsConverter';
 
 const MOVING_SPEED_THRESHOLD_MPS = 0.14;
 
@@ -69,6 +74,42 @@ function buildKmLapFromRecords(segRecs, kmNumber) {
     lapNumber: kmNumber,
     _elevDelta: elevationDeltaFromRecords(segRecs),
   };
+}
+
+/** Build ~1 mile splits from per-second stream records (Strava / FIT). */
+export function synthesizeMileLapsFromRecords(records) {
+  if (!Array.isArray(records) || records.length < 10) return [];
+
+  const hasDistance = records.some((r) => Number(r.distance) > 0);
+  if (!hasDistance) return [];
+
+  const mileLaps = [];
+  let currentMileRecords = [];
+  let mileNumber = 1;
+  let lastMileDistance = 0;
+
+  records.forEach((record) => {
+    const distance = Number(record.distance || 0);
+    if (distance >= mileNumber * METERS_PER_MILE && distance > lastMileDistance) {
+      if (currentMileRecords.length > 0) {
+        mileLaps.push(buildKmLapFromRecords(currentMileRecords, mileNumber));
+      }
+      lastMileDistance = distance;
+      mileNumber += 1;
+      currentMileRecords = [record];
+    } else {
+      currentMileRecords.push(record);
+    }
+  });
+
+  if (currentMileRecords.length > 10) {
+    const lastDistance = Number(currentMileRecords[currentMileRecords.length - 1]?.distance || 0);
+    if (lastDistance >= (mileNumber - 1) * METERS_PER_MILE + METERS_PER_MILE * 0.3) {
+      mileLaps.push(buildKmLapFromRecords(currentMileRecords, mileNumber));
+    }
+  }
+
+  return mileLaps;
 }
 
 /** Build ~1 km splits from per-second stream records (Strava / FIT). */
@@ -207,10 +248,26 @@ export function buildRunKmSplits(laps = [], records = [], { lapTimeSource = 'fit
   return lapsToSplitRows(laps, records, lapTimeSource);
 }
 
-export function formatSplitPace(paceSecPerKm) {
+/** Per-km or per-mile splits depending on unitSystem. */
+export function buildRunSplits(laps = [], records = [], { lapTimeSource = 'fit', unitSystem = 'metric' } = {}) {
+  const imperial = unitSystem === 'imperial';
+  if (imperial) {
+    const synth = synthesizeMileLapsFromRecords(records);
+    if (synth.length >= 1) return lapsToSplitRows(synth, records, lapTimeSource);
+    if (!Array.isArray(laps) || laps.length < 2) return [];
+    const segmentDistances = resolveLapSegmentDistancesMeters(laps, records, lapTimeSource);
+    const avgDist = segmentDistances.reduce((a, b) => a + b, 0) / segmentDistances.length;
+    const looksLikeMileSplits = avgDist >= 1200 && avgDist <= 2100 && laps.length >= 2;
+    if (!looksLikeMileSplits) return [];
+    return lapsToSplitRows(laps, records, lapTimeSource);
+  }
+  return buildRunKmSplits(laps, records, { lapTimeSource });
+}
+
+export function formatSplitPace(paceSecPerKm, unitSystem = 'metric', sport = 'run') {
   if (!paceSecPerKm || !Number.isFinite(paceSecPerKm)) return '—';
-  const sec = Math.round(paceSecPerKm);
-  const m = Math.floor(sec / 60);
-  const s = sec % 60;
-  return `${m}:${String(s).padStart(2, '0')}`;
+  const displaySec = unitSystem === 'imperial'
+    ? paceSecondsToDisplaySeconds(paceSecPerKm, { sport, unitSystem: 'imperial' })
+    : paceSecPerKm;
+  return formatPaceMMSS(displaySec) || '—';
 }

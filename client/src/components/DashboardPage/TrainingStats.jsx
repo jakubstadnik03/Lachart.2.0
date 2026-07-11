@@ -2,7 +2,7 @@ import React, { useMemo, useState, useEffect, useRef, useCallback } from "react"
 import ReactDOM from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { EllipsisVerticalIcon } from "@heroicons/react/24/outline";
-import { resolveDistanceUnitSystem } from "../../utils/unitsConverter";
+import { resolveDistanceUnitSystem, formatDistance, formatPaceMMSS, paceSecondsToDisplaySeconds, paceUnitShort } from "../../utils/unitsConverter";
 import { getStravaActivityDetail } from "../../services/api";
 import { useCategories } from "../../context/CategoryContext";
 import { filterWorkResults, getWorkLapMetricValue } from "../../utils/workLapFilter";
@@ -147,18 +147,19 @@ function BarTooltip({ barRef, visible, index, power, heartRate, lactate, duratio
   const fmtPace = (v) => {
     const s = parsePaceSecs(v);
     if (!s) return null;
-    const adj = unitSystem === "imperial" ? s * 1.60934 : s;
-    return `${Math.floor(adj / 60)}:${String(Math.round(adj % 60)).padStart(2, "0")}${unitSystem === "imperial" ? "/mi" : "/km"}`;
+    const displaySec = paceSecondsToDisplaySeconds(s, { sport: 'run', unitSystem, testRunPerMileStorage: false });
+    return `${formatPaceMMSS(displaySec)}${paceUnitShort(unitSystem, 'run')}`;
   };
   const fmtSwimPace = (v) => {
     const s = parsePaceSecs(v);
     if (!s) return null;
-    return `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}${unitSystem === "imperial" ? "/100yd" : "/100m"}`;
+    const displaySec = paceSecondsToDisplaySeconds(s, { sport: 'swim', unitSystem, testRunPerMileStorage: false });
+    return `${formatPaceMMSS(displaySec)}${paceUnitShort(unitSystem, 'swim')}`;
   };
   const fmtDist = (v) => {
     const m = parseDistMeters(v);
     if (!m) return null;
-    return m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(m % 1000 === 0 ? 0 : 1)} km`;
+    return formatDistance(m, unitSystem).formatted;
   };
 
   const rows = [
@@ -358,12 +359,13 @@ function TrainingComparison({ training, trainingResults, previousTraining, previ
 
   const fmtPace = (s) => {
     if (!s) return "—";
-    const adj = unitSystem === "imperial" ? s * 1.60934 : s;
-    return `${Math.floor(adj / 60)}:${String(Math.round(adj % 60)).padStart(2, "0")}${unitSystem === "imperial" ? "/mi" : "/km"}`;
+    const displaySec = paceSecondsToDisplaySeconds(s, { sport, unitSystem, testRunPerMileStorage: false });
+    return `${formatPaceMMSS(displaySec)}${paceUnitShort(unitSystem, sport)}`;
   };
   const fmtSwimPace = (s) => {
     if (!s) return "—";
-    return `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}${unitSystem === "imperial" ? "/100yd" : "/100m"}`;
+    const displaySec = paceSecondsToDisplaySeconds(s, { sport: 'swim', unitSystem, testRunPerMileStorage: false });
+    return `${formatPaceMMSS(displaySec)}${paceUnitShort(unitSystem, 'swim')}`;
   };
 
   const stravaSpdMs = Number(training.average_speed || training.avgSpeed || 0);
@@ -940,8 +942,12 @@ export function TrainingStats({
   const isPaceSport = isRun || isSwim;
 
   const formatPaceVal = (s) => {
-    const adj = unitSystem === "imperial" ? s * 1.60934 : s;
-    return `${Math.floor(adj / 60)}:${String(Math.round(adj % 60)).padStart(2, "0")}`;
+    const displaySec = paceSecondsToDisplaySeconds(s, {
+      sport: isSwim ? 'swim' : 'run',
+      unitSystem,
+      testRunPerMileStorage: false,
+    });
+    return formatPaceMMSS(displaySec) || '—';
   };
 
   const { powerValues, paceValues, minPower, maxPower, minPace, maxPace } = useMemo(() => {

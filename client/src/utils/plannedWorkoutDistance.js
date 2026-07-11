@@ -4,6 +4,8 @@
  * Swim distances are always metres (e.g. 3000 m, 26 000 m).
  */
 
+import { formatDistance, resolveDistanceUnitSystem } from './unitsConverter';
+
 /** Sum distanceMeters from structured workout steps (respects interval repeats). */
 export function planStepTotalMetres(steps) {
   if (!Array.isArray(steps)) return 0;
@@ -34,11 +36,12 @@ export function plannedDistanceMetres(plannedWorkout) {
   return planStepTotalMetres(plannedWorkout?.steps);
 }
 
-/** Display string for a planned distance (metres in → "X km" / "X m"). */
-export function formatPlannedDistanceMetres(metres, sport) {
+/** Display string for a planned distance (metres in → user units). */
+export function formatPlannedDistanceMetres(metres, sport, user = null) {
   const m = Number(metres);
   if (!Number.isFinite(m) || m <= 0) return null;
+  const unitSystem = resolveDistanceUnitSystem(user);
   const sp = String(sport || '').toLowerCase();
-  if (sp.includes('swim') || m < 1000) return `${Math.round(m)} m`;
-  return `${(m / 1000).toFixed(m >= 10000 ? 0 : 1)} km`;
+  if (sp.includes('swim') && m < 1000) return `${Math.round(m)} m`;
+  return formatDistance(m, unitSystem).formatted;
 }

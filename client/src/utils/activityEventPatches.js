@@ -215,6 +215,27 @@ export function upsertPlannedWorkoutList(prev, saved) {
   return [...list, saved];
 }
 
+/** Remove a planned workout from an in-memory list by id. */
+export function removePlannedWorkoutFromList(prev, id) {
+  if (!id) return prev;
+  const list = Array.isArray(prev) ? prev : [];
+  return list.filter((p) => String(p._id) !== String(id));
+}
+
+export function notifyPlannedWorkoutUpdated(planned) {
+  if (!planned?._id) return;
+  try {
+    window.dispatchEvent(new CustomEvent('plannedWorkoutUpdated', { detail: { planned } }));
+  } catch { /* ignore */ }
+}
+
+export function notifyPlannedWorkoutDeleted(id) {
+  if (!id) return;
+  try {
+    window.dispatchEvent(new CustomEvent('plannedWorkoutDeleted', { detail: { id: String(id) } }));
+  } catch { /* ignore */ }
+}
+
 export function patchCalendarCache(matches, patch) {
   try {
     for (let i = 0; i < localStorage.length; i += 1) {

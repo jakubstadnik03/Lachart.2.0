@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState, useRef } from 'react';
 import ReactDOM from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthProvider';
-import { resolveDistanceUnitSystem } from '../../utils/unitsConverter';
+import { resolveDistanceUnitSystem, formatDistance, formatPaceMMSS, paceSecondsToDisplaySeconds } from '../../utils/unitsConverter';
 import { SearchableSelect } from '../SearchableSelect';
 import {
   ComposedChart,
@@ -367,15 +367,24 @@ const TrainingComparison = ({ trainings: rawTrainings }) => {
   };
   const areAllTrainingsBike = () => filteredTrainings.every(t => isBikeSport(t.sport));
 
+  const paceSportForDisplay = () => (
+    filteredTrainings.some(t => String(t.sport || '').toLowerCase().includes('swim')) ? 'swim' : 'run'
+  );
+  const formatStoredPace = (value) => {
+    const displaySec = paceSecondsToDisplaySeconds(Number(value), {
+      sport: paceSportForDisplay(),
+      unitSystem,
+      testRunPerMileStorage: false,
+    });
+    return formatPaceMMSS(displaySec) || 'N/A';
+  };
+
   const formatMetricValue = (value, metric) => {
     if (value === null || value === undefined) return 'N/A';
     if (metric === 'power') {
       if (areAllTrainingsBike()) return `${Math.round(value)}W`;
-      if (typeof value === 'number' && value > 100) {
-        const minutes = Math.floor(value / 60);
-        const seconds = Math.round(value % 60);
-        return `${minutes}:${seconds.toString().padStart(2, '0')}`;
-      } else if (typeof value === 'string' && value.includes(':')) return value;
+      if (typeof value === 'number' && value > 100) return formatStoredPace(value);
+      if (typeof value === 'string' && value.includes(':')) return value;
       return `${Math.round(value)}W`;
     }
     if (metric === 'heartRate') return `${Math.round(value)} bpm`;
@@ -388,9 +397,7 @@ const TrainingComparison = ({ trainings: rawTrainings }) => {
     if (value === null || value === undefined) return '';
     if (metric === 'power') {
       if (typeof value === 'number' && value > 100 && !areAllTrainingsBike()) {
-        const minutes = Math.floor(value / 60);
-        const seconds = Math.round(value % 60);
-        return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+        return formatStoredPace(value);
       }
       return `${Math.round(Number(value) || 0)}`;
     }
@@ -1412,9 +1419,7 @@ const TrainingComparison = ({ trainings: rawTrainings }) => {
                     Distance
                   </span>
                   <span className="font-semibold text-gray-900">
-                    {barTooltip.iv.dist >= 1000
-                      ? `${(barTooltip.iv.dist / 1000).toFixed(barTooltip.iv.dist % 1000 === 0 ? 0 : 2)} km`
-                      : `${Math.round(barTooltip.iv.dist)} m`}
+                    {formatDistance(barTooltip.iv.dist, unitSystem).formatted}
                   </span>
                 </div>
               )}

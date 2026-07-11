@@ -18,6 +18,7 @@ import {
   formatThresholdIntensity,
   isPaceLactateSport,
 } from '../utils/extractLactateThresholds';
+import { formatActivityDistance } from '../utils/unitsConverter';
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -258,7 +259,7 @@ export default function NativeProfilePage({ user, userInfo, calendarData = [] })
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 7, marginBottom: 11 }}>
                   <KpiTile label="Sessions" value={stats.sessions} />
                   <KpiTile label="Time"     value={fmtDuration(stats.totalSecs)} />
-                  <KpiTile label="Distance" value={stats.totalDist >= 1000 ? `${Math.round(stats.totalDist / 1000)} km` : `${Math.round(stats.totalDist)} m`} />
+                  <KpiTile label="Distance" value={formatActivityDistance(stats.totalDist, user) || '0'} />
                 </div>
 
                 {/* Per-sport breakdown */}
@@ -281,7 +282,7 @@ export default function NativeProfilePage({ user, userInfo, calendarData = [] })
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ fontSize: 12, fontWeight: 700, color: '#0A0E1A', textTransform: 'capitalize' }}>{s}</div>
                           <div style={{ fontSize: 10.5, color: '#6B7280', marginTop: 1, fontVariantNumeric: 'tabular-nums' }}>
-                            {v.count} session{v.count !== 1 ? 's' : ''} · {fmtDuration(v.secs)} · {v.dist >= 1000 ? `${Math.round(v.dist / 1000)} km` : `${Math.round(v.dist)} m`}
+                            {v.count} session{v.count !== 1 ? 's' : ''} · {fmtDuration(v.secs)} · {formatActivityDistance(v.dist, user) || '0'}
                           </div>
                         </div>
                         <span style={{

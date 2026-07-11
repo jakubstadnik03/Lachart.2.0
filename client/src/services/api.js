@@ -494,6 +494,17 @@ export const clearApiCache = () => {
   } catch { /* ignore */ }
 };
 
+/** Drop in-memory GET cache entries whose key contains `substring`. */
+export function clearGetCacheMatching(substring) {
+  if (!substring) return;
+  for (const key of [...__getCache.keys()]) {
+    if (key.includes(substring)) __getCache.delete(key);
+  }
+  for (const key of [...__getInFlight.keys()]) {
+    if (key.includes(substring)) __getInFlight.delete(key);
+  }
+}
+
 function stableStringify(obj) {
   if (!obj || typeof obj !== 'object') return String(obj ?? '');
   if (Array.isArray(obj)) return `[${obj.map(stableStringify).join(',')}]`;
@@ -1363,7 +1374,7 @@ export const syncStravaActivities = async (since=null) => {
 // Manually (re)start the full historical import of all Strava activities.
 // Runs in the background on the server; progress shows via /strava/status.
 export const backfillStravaHistory = async ({ fromNow = true, force = true } = {}) => {
-  const { data } = await api.post('/api/integrations/strava/backfill', { fromNow, force });
+  const { data } = await api.post('/api/integrations/strava/backfill', { fromNow, force }, { timeout: 15000 });
   return data; // { started, alreadyRunning?, restarted? }
 };
 

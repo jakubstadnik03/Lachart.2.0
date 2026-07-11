@@ -33,7 +33,8 @@ export const NotificationProvider = ({ children }) => {
 
     const id = now + Math.random();
     const openActivity = options?.openActivity ? String(options.openActivity) : null;
-    setNotifications((prev) => [...prev, { id, message, type, openActivity }]);
+    const openPlanned = options?.openPlanned ? String(options.openPlanned) : null;
+    setNotifications((prev) => [...prev, { id, message, type, openActivity, openPlanned }]);
 
     // Auto-remove after 4 seconds
     setTimeout(() => {
@@ -84,7 +85,13 @@ export const NotificationProvider = ({ children }) => {
                 exit={{ opacity: 0, y: -20, scale: 0.95 }}
                 transition={{ duration: 0.2 }}
                 onClick={() => {
-                  if (notification.openActivity) {
+                  if (notification.openPlanned) {
+                    try {
+                      window.dispatchEvent(new CustomEvent('openPlannedRequest', {
+                        detail: { id: notification.openPlanned },
+                      }));
+                    } catch { /* ignore */ }
+                  } else if (notification.openActivity) {
                     try {
                       window.dispatchEvent(new CustomEvent('openActivityRequest', {
                         detail: { id: notification.openActivity },
@@ -101,7 +108,7 @@ export const NotificationProvider = ({ children }) => {
                   boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
                   pointerEvents: 'auto',
                   fontFamily: 'inherit',
-                  cursor: notification.openActivity ? 'pointer' : 'default',
+                  cursor: (notification.openActivity || notification.openPlanned) ? 'pointer' : 'default',
                 }}
               >
                 {notification.message}

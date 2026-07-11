@@ -2,6 +2,8 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { getMonthlyPowerAnalysis } from '../../services/api';
 import { NativeSkeleton } from '../native/shared/Tiles';
 import { SportGlyph } from '../shared/SportIcon';
+import { useAuth } from '../../context/AuthProvider';
+import { paceUnitShort, resolveDistanceUnitSystem } from '../../utils/unitsConverter';
 import {
   getSportsWithZoneData,
   pickZoneTimes,
@@ -56,6 +58,8 @@ function weekBounds(offset = 0) {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function ZoneDistCard({ athleteId = null }) {
+  const { user } = useAuth() || {};
+  const unitSystem = resolveDistanceUnitSystem(user);
   const [range, setRange]           = useState('week');
   const [sport, setSport]           = useState('all');
   const [metric, setMetric]         = useState('hr'); // 'power' | 'hr' | 'pace'
@@ -401,7 +405,7 @@ export default function ZoneDistCard({ athleteId = null }) {
                 : null;
               const boundLabel = def
                 ? formatZoneBoundaryLabel(zNum, def, zoneBoundaries?.defs, zoneBoundaries?.type, {
-                    paceUnit: sport === 'swim' ? '/100m' : '/km',
+                    paceUnit: paceUnitShort(unitSystem, sport),
                   })
                 : null;
 

@@ -5,6 +5,7 @@ import { mergeProfileZones } from '../../utils/inferThresholdsFromActivities';
 import { activityCalendarDateKey, activityOnLocalDay, computePmcFromActivities } from '../../utils/formFitnessFromActivities';
 import { plannedDistanceMetres } from '../../utils/plannedWorkoutDistance';
 import { useAuth } from '../../context/AuthProvider';
+import { formatDistance, resolveDistanceUnitSystem } from '../../utils/unitsConverter';
 import { TSS_DISPLAY_MODE_EVENT } from '../../utils/uiPrefs';
 
 // ─── date helpers ─────────────────────────────────────────────────────────────
@@ -99,9 +100,10 @@ function fmtDuration(secs) {
   return `${h}h ${m}m`;
 }
 
-function fmtDist(m) {
+function fmtDist(m, user) {
   if (!m) return '0';
-  return m >= 1000 ? `${(m / 1000).toFixed(0)} km` : `${Math.round(m)} m`;
+  const unitSystem = resolveDistanceUnitSystem(user);
+  return formatDistance(m, unitSystem).formatted;
 }
 
 // ─── component ────────────────────────────────────────────────────────────────
@@ -251,13 +253,13 @@ export default function WeeklySummaryCard({ activities = [], plannedWorkouts = [
   // ── KPI values depending on metric ────────────────────────────────────────
   const completedLabel = metric === 'TSS' ? Math.round(totalTss) || '—'
     : metric === 'Time' ? fmtDuration(totalSecs)
-    : fmtDist(totalDist);
+    : fmtDist(totalDist, user);
 
   const plannedLabel = metric === 'TSS'
     ? (plannedTotalTss > 0 ? Math.round(plannedTotalTss) : null)
     : metric === 'Time'
     ? (plannedTotalSecs > 0 ? fmtDuration(plannedTotalSecs) : null)
-    : (plannedTotalDist > 0 ? fmtDist(plannedTotalDist) : null);
+    : (plannedTotalDist > 0 ? fmtDist(plannedTotalDist, user) : null);
 
   // Progress % for current metric
   const progressPct = (() => {
@@ -336,7 +338,7 @@ export default function WeeklySummaryCard({ activities = [], plannedWorkouts = [
         {[
           { label: 'Time',     value: fmtDuration(totalSecs) },
           { label: 'TSS',      value: totalTss > 0 ? Math.round(totalTss) : '—' },
-          { label: 'Distance', value: fmtDist(totalDist) },
+          { label: 'Distance', value: fmtDist(totalDist, user) },
           { label: 'Sessions', value: sessions },
         ].map(({ label, value }, idx) => (
           <div
@@ -627,7 +629,7 @@ export default function WeeklySummaryCard({ activities = [], plannedWorkouts = [
                   {comp > 0
                     ? (metric === 'TSS' ? Math.round(comp)
                       : metric === 'Time' ? fmtDuration(comp)
-                      : fmtDist(comp))
+                      : fmtDist(comp, user))
                     : '·'}
                 </span>
               </div>

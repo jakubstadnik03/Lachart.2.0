@@ -834,11 +834,14 @@ const NativeLayout = ({ athletes = [], athleteStatuses = {}, effectiveAthleteId,
       const body = notif?.body || notif?.data?.body;
       const resourceType = notif?.data?.resourceType || notif?.resourceType;
       const resourceId = notif?.data?.resourceId || notif?.resourceId;
-      const openActivity = normalizeNotificationActivityId(resourceType, resourceId);
+      const openPlanned = notif?.data?.openPlanned || notif?.openPlanned
+        || (resourceType === 'planned' && resourceId ? String(resourceId) : null);
+      const openActivity = openPlanned ? null : normalizeNotificationActivityId(resourceType, resourceId);
+      const toastOpts = openPlanned ? { openPlanned } : (openActivity ? { openActivity } : null);
       if (body) {
-        addNotification(body, 'info', openActivity ? { openActivity } : null);
+        addNotification(body, 'info', toastOpts);
       } else if (title) {
-        addNotification(title, 'info', openActivity ? { openActivity } : null);
+        addNotification(title, 'info', toastOpts);
       }
       // Strava import push → tell dashboard to reload activities
       const notifType = notif?.data?.type || notif?.type;
@@ -937,7 +940,7 @@ const NativeLayout = ({ athletes = [], athleteStatuses = {}, effectiveAthleteId,
 
   // Continue progressive Strava history import on app launch.
   useEffect(() => {
-    if (!user?._id || !user?.strava?.accessToken) return undefined;
+    if (!user?._id || !user?.strava?.athleteId) return undefined;
     let cancelled = false;
     const t = setTimeout(() => {
       if (!cancelled) nudgeStravaHistoryImport();
@@ -946,7 +949,7 @@ const NativeLayout = ({ athletes = [], athleteStatuses = {}, effectiveAthleteId,
       cancelled = true;
       clearTimeout(t);
     };
-  }, [user?._id, user?.strava?.accessToken]);
+  }, [user?._id, user?.strava?.athleteId]);
 
   // ── Strava auto-sync on app open / foreground ──────────────────────────
   // Fires on every new session (login / app launch) using sessionStorage so
@@ -954,7 +957,7 @@ const NativeLayout = ({ athletes = [], athleteStatuses = {}, effectiveAthleteId,
   // Subsequent foreground events within the same session use 15-min cooldown.
   useEffect(() => {
     if (!user?._id) return undefined;
-    const hasStrava = !!(user?.strava?.autoSync && user?.strava?.accessToken);
+    const hasStrava = !!(user?.strava?.autoSync && user?.strava?.athleteId);
     if (!hasStrava) return undefined;
 
     let cancelled = false;
@@ -1005,7 +1008,7 @@ const NativeLayout = ({ athletes = [], athleteStatuses = {}, effectiveAthleteId,
       clearTimeout(t);
       capacitorHandle?.remove?.();
     };
-  }, [user?._id, user?.strava?.autoSync, user?.strava?.accessToken]);
+  }, [user?._id, user?.strava?.autoSync, user?.strava?.athleteId]);
 
   // Home-screen widget insurance: push the form/fitness numbers to the iOS
   // App Group cache on app launch and after every Strava sync — independent of

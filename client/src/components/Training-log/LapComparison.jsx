@@ -9,6 +9,14 @@ import { useNavigate } from 'react-router-dom';
 import { getStravaActivityDetail, getFitTraining } from '../../services/api';
 import { SearchableSelect } from '../SearchableSelect';
 import { useCategories } from '../../context/CategoryContext';
+import { useAuth } from '../../context/AuthProvider';
+import {
+  resolveDistanceUnitSystem,
+  formatDistance,
+  formatPaceMMSS,
+  paceSecondsToDisplaySeconds,
+  paceUnitShort,
+} from '../../utils/unitsConverter';
 
 // ─── constants ────────────────────────────────────────────────────────────────
 
@@ -71,20 +79,19 @@ function getLapValue(lap, metric, sport) {
   return null;
 }
 
-function fmtPaceLabel(sec, sport) {
+function fmtPaceLabel(sec, sport, unitSystem = 'metric') {
   if (!sec || sec <= 0) return '—';
-  const s = String(sport || '').toLowerCase();
-  const isSwim = s.includes('swim');
-  const min = Math.floor(sec / 60);
-  const rem = Math.round(sec % 60);
-  return `${min}:${String(rem).padStart(2, '0')}${isSwim ? '/100m' : '/km'}`;
+  const displaySec = paceSecondsToDisplaySeconds(sec, { sport, unitSystem, testRunPerMileStorage: false });
+  const mmss = formatPaceMMSS(displaySec);
+  if (!mmss) return '—';
+  return `${mmss}${paceUnitShort(unitSystem, sport)}`;
 }
 
-function fmtMetricLabel(val, metric, sport) {
+function fmtMetricLabel(val, metric, sport, unitSystem = 'metric') {
   if (val === null || val === undefined) return '—';
   if (metric === 'hr') return `${Math.round(val)} bpm`;
   if (metric === 'power') return `${Math.round(val)} W`;
-  if (metric === 'pace') return fmtPaceLabel(val, sport);
+  if (metric === 'pace') return fmtPaceLabel(val, sport, unitSystem);
   if (metric === 'lactate') return `${Number(val).toFixed(1)} mmol/L`;
   return String(val);
 }
@@ -117,7 +124,7 @@ function filterWorkLaps(laps) {
 
 // ─── Custom recharts tooltip ──────────────────────────────────────────────────
 
-function LapTooltip({ active, payload, label, series, metric, sport }) {
+function LapTooltip({ active, payload, label, series, metric, sport, unitSystem = 'metric' }) {
   if (!active || !payload?.length) return null;
   return (
     <div className="bg-white border border-gray-200 rounded-xl shadow-lg px-3 py-2 text-xs min-w-[120px]">
@@ -129,7 +136,7 @@ function LapTooltip({ active, payload, label, series, metric, sport }) {
             <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: p.color }} />
             <span className="text-gray-500 truncate max-w-[80px]">{s?.label || p.dataKey}</span>
             <span className="font-semibold ml-auto pl-2" style={{ color: p.color }}>
-              {fmtMetricLabel(p.value, metric, sport)}
+              {fmtMetricLabel(p.value, metric, sport, unitSystem)}
             </span>
           </div>
         );
@@ -155,12 +162,12 @@ function fmtLapDuration(sec) {
   if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
   return `${m}:${String(s).padStart(2, '0')}`;
 }
-function fmtLapDistance(m) {
+function fmtLapDistance(m, unitSystem = 'metric') {
   if (!m || m <= 0) return null;
-  return m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(m % 1000 === 0 ? 0 : 2)} km`;
+  return formatDistance(m, unitSystem).formatted;
 }
 
-function LapBars({ laps, sport, metric, color, scaleMin, scaleMax, onBarClick }) {
+function LapBars({ laps, sport, metric, color, scaleMin, scaleMax, onBarClick, unitSystem = 'metric' }) {
   const [hover, setHover] = useState(null); // { idx, x, y }
   const wrapperRef = useRef(null);
 
@@ -215,8 +222,7 @@ function LapBars({ laps, sport, metric, color, scaleMin, scaleMax, onBarClick })
   const fmtTick = (v) => {
     if (!Number.isFinite(v) || v <= 0) return '';
     if (metric === 'pace') {
-      // Strip the "/km" or "/100m" suffix — unitLabel below the axis already shows it.
-      const full = fmtPaceLabel(v, sport);
+      const full = fmtPaceLabel(v, sport, unitSystem);
       return full.replace(/\/\S+$/, '').trim();
     }
     if (metric === 'hr')      return `${Math.round(v)}`;
@@ -224,7 +230,7 @@ function LapBars({ laps, sport, metric, color, scaleMin, scaleMax, onBarClick })
     return `${Math.round(v)}`;
   };
   const unitLabel = metric === 'pace'
-    ? (String(sport || '').toLowerCase().includes('swim') ? '/100m' : '/km')
+    ? paceUnitShort(unitSystem, sport)
     : metric === 'hr' ? 'bpm'
     : metric === 'lactate' ? 'mmol'
     : 'W';
@@ -297,9 +303,9 @@ function LapBars({ laps, sport, metric, color, scaleMin, scaleMax, onBarClick })
           <div className="absolute pointer-events-none z-20 px-2 py-1.5 rounded-lg shadow-lg bg-white border border-gray-200 text-xs leading-tight"
             style={{ left: hover.x, top: Math.max(hover.y - 10, 0), transform: 'translate(-50%, -100%)', minWidth: 110 }}>
             <div className="font-bold text-gray-800 mb-0.5">Lap #{x.i + 1}</div>
-            {x.dist > 0 && <div className="flex justify-between gap-2"><span className="text-gray-400">Distance</span><span className="font-semibold text-gray-700">{fmtLapDistance(x.dist)}</span></div>}
+            {x.dist > 0 && <div className="flex justify-between gap-2"><span className="text-gray-400">Distance</span><span className="font-semibold text-gray-700">{fmtLapDistance(x.dist, unitSystem)}</span></div>}
             {x.dur > 0 && <div className="flex justify-between gap-2"><span className="text-gray-400">Time</span><span className="font-semibold text-gray-700">{fmtLapDuration(x.dur)}</span></div>}
-            {x.val != null && <div className="flex justify-between gap-2"><span className="text-gray-400">{metric === 'pace' ? 'Pace' : metric === 'hr' ? 'HR' : 'Power'}</span><span className="font-semibold text-gray-700">{fmtMetricLabel(x.val, metric, sport)}</span></div>}
+            {x.val != null && <div className="flex justify-between gap-2"><span className="text-gray-400">{metric === 'pace' ? 'Pace' : metric === 'hr' ? 'HR' : 'Power'}</span><span className="font-semibold text-gray-700">{fmtMetricLabel(x.val, metric, sport, unitSystem)}</span></div>}
             {x.lactate != null && <div className="flex justify-between gap-2"><span className="text-gray-400">Lactate</span><span className="font-bold" style={{ color: '#d97706' }}>{x.lactate.toFixed(1)} mmol/L</span></div>}
           </div>
         );
@@ -328,6 +334,8 @@ export default function LapComparison({ trainings: rawTrainings, selectedTitle: 
     [rawTrainings]
   );
   const { categories } = useCategories();
+  const { user } = useAuth();
+  const unitSystem = resolveDistanceUnitSystem(user, 'metric');
   const navigate = useNavigate();
 
   // Open the full activity on the training-calendar page (FitAnalysisPage).
@@ -631,15 +639,14 @@ export default function LapComparison({ trainings: rawTrainings, selectedTitle: 
   // Y-axis formatter (pace is inverted for display)
   const yAxisTickFmt = useCallback((val) => {
     if (metric === 'pace') {
-      // Strip "/km"/"/100m" suffix so the tick fits within the axis width.
-      const full = fmtPaceLabel(val, sport);
+      const full = fmtPaceLabel(val, sport, unitSystem);
       return full.replace(/\/\S+$/, '').trim();
     }
     if (metric === 'hr')      return `${Math.round(val)}`;
     if (metric === 'power')   return `${Math.round(val)}`;
     if (metric === 'lactate') return `${Number(val).toFixed(1)}`;
     return val;
-  }, [metric, sport]);
+  }, [metric, sport, unitSystem]);
 
   const isAnyLoading = selectedSessions.some(s => lapsCache[getSessionId(s)] === 'loading');
   const hasData = chartData.length > 0 && series.length > 0;
@@ -831,7 +838,7 @@ export default function LapComparison({ trainings: rawTrainings, selectedTitle: 
                     const valVals   = laps.map(l => getLapValue(l, metric, s.session.sport || sport)).filter(v => v != null && v > 0);
                     const avgVal    = valVals.length ? valVals.reduce((a, b) => a + b, 0) / valVals.length : null;
 
-                    const distLabel = totalDist > 0 ? (totalDist >= 1000 ? `${(totalDist/1000).toFixed(1)} km` : `${Math.round(totalDist)} m`) : null;
+                    const distLabel = totalDist > 0 ? fmtLapDistance(totalDist, unitSystem) : null;
                     const durLabel  = totalDur > 0 ? fmtLapDuration(totalDur) : null;
 
                     return (
@@ -870,14 +877,14 @@ export default function LapComparison({ trainings: rawTrainings, selectedTitle: 
                         <div className="flex flex-wrap gap-x-4 gap-y-1 mb-2 text-[13px]">
                           {distLabel && <div><span className="text-gray-400">Distance </span><span className="font-bold text-gray-700">{distLabel}</span></div>}
                           {durLabel  && <div><span className="text-gray-400">Time </span><span className="font-bold text-gray-700">{durLabel}</span></div>}
-                          {avgVal != null && <div><span className="text-gray-400">{metric === 'pace' ? 'Avg pace ' : metric === 'hr' ? 'Avg HR ' : 'Avg power '}</span><span className="font-bold text-gray-700">{fmtMetricLabel(avgVal, metric, s.session.sport || sport)}</span></div>}
+                          {avgVal != null && <div><span className="text-gray-400">{metric === 'pace' ? 'Avg pace ' : metric === 'hr' ? 'Avg HR ' : 'Avg power '}</span><span className="font-bold text-gray-700">{fmtMetricLabel(avgVal, metric, s.session.sport || sport, unitSystem)}</span></div>}
                           {avgHr != null && metric !== 'hr' && <div><span className="text-gray-400">Avg HR </span><span className="font-bold text-gray-700">{avgHr} bpm</span></div>}
                           {avgLa != null && <div><span className="text-gray-400">Avg lactate </span><span className="font-bold" style={{ color: '#d97706' }}>{avgLa} mmol/L</span></div>}
                         </div>
 
                         {/* Bars */}
                         <div onClick={(e) => e.stopPropagation()}>
-                          <LapBars laps={laps} sport={s.session.sport || sport} metric={metric} color={s.color} scaleMin={sharedMin} scaleMax={sharedMax} onBarClick={setSelectedLapIdx} />
+                          <LapBars laps={laps} sport={s.session.sport || sport} metric={metric} color={s.color} scaleMin={sharedMin} scaleMax={sharedMax} onBarClick={setSelectedLapIdx} unitSystem={unitSystem} />
                         </div>
                       </div>
                     );
@@ -921,7 +928,7 @@ export default function LapComparison({ trainings: rawTrainings, selectedTitle: 
                           allowDataOverflow={false}
                         />
                         <Tooltip
-                          content={<LapTooltip series={series} metric={metric} sport={sport} />}
+                          content={<LapTooltip series={series} metric={metric} sport={sport} unitSystem={unitSystem} />}
                           cursor={{ stroke: '#e5e7eb', strokeWidth: 1 }}
                         />
                         {series.map(s => (
@@ -962,7 +969,14 @@ export default function LapComparison({ trainings: rawTrainings, selectedTitle: 
                     const cls = improved ? 'text-emerald-500' : 'text-red-400';
                     let text;
                     if (metric === 'pace') {
-                      const s = Math.abs(Math.round(diff));
+                      const dispDiff = Math.abs(
+                        paceSecondsToDisplaySeconds(Math.abs(diff), {
+                          sport,
+                          unitSystem,
+                          testRunPerMileStorage: false,
+                        }),
+                      );
+                      const s = Math.round(dispDiff);
                       text = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
                     } else if (metric === 'lactate') {
                       text = Math.abs(diff).toFixed(1);
@@ -1039,7 +1053,7 @@ export default function LapComparison({ trainings: rawTrainings, selectedTitle: 
                                     <td key={s.key} className="py-1.5 px-2 text-right whitespace-nowrap">
                                       <div className="flex items-center justify-end gap-1.5">
                                         <span className="font-semibold text-gray-800 tabular-nums">
-                                          {val != null ? fmtMetricLabel(val, metric, s.session.sport || sport) : <span className="text-gray-300">—</span>}
+                                          {val != null ? fmtMetricLabel(val, metric, s.session.sport || sport, unitSystem) : <span className="text-gray-300">—</span>}
                                         </span>
                                         {delta && delta.sign !== '=' && (
                                           <span className={`text-[11px] font-bold tabular-nums ${delta.cls}`} title="vs. previous session">
@@ -1048,7 +1062,7 @@ export default function LapComparison({ trainings: rawTrainings, selectedTitle: 
                                         )}
                                       </div>
                                       <div className="text-[11px] text-gray-400 tabular-nums flex items-center justify-end gap-1.5 mt-0.5">
-                                        {dist > 0 && <span>{fmtLapDistance(dist)}</span>}
+                                        {dist > 0 && <span>{fmtLapDistance(dist, unitSystem)}</span>}
                                         {dur > 0 && <span>· {fmtLapDuration(dur)}</span>}
                                         {hr > 0 && <span>· {Math.round(hr)} bpm</span>}
                                         {la != null && <span className="font-bold" style={{ color: '#d97706' }}>· {la.toFixed(1)} mmol</span>}

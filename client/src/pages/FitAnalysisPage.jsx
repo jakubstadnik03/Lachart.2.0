@@ -9,7 +9,7 @@ import TrainingComments from '../components/TrainingComments';
 import { motion } from 'framer-motion';
 import CalendarView, { DayPlanEditSheet, PeriodEditSheet } from '../components/Calendar/CalendarView';
 import { Skeleton, SkeletonCard } from '../components/common/Skeleton';
-import { buildActivityMatcher, metricsPatchFromDetail, upsertPlannedWorkoutList } from '../utils/activityEventPatches';
+import { buildActivityMatcher, metricsPatchFromDetail, upsertPlannedWorkoutList, removePlannedWorkoutFromList, notifyPlannedWorkoutUpdated, notifyPlannedWorkoutDeleted } from '../utils/activityEventPatches';
 import IntervalChart from '../components/FitAnalysis/IntervalChart';
 import { getIntegrationStatus } from '../services/api';
 import { listExternalActivities } from '../services/api';
@@ -1532,15 +1532,22 @@ const FitAnalysisPage = () => {
       if (!planned?._id) return;
       setPlannedWorkoutsCalendar(prev => upsertPlannedWorkoutList(prev, planned));
     };
+    const onPlannedDeleted = (e) => {
+      const id = e?.detail?.id;
+      if (!id) return;
+      setPlannedWorkoutsCalendar(prev => removePlannedWorkoutFromList(prev, id));
+    };
     window.addEventListener('activityTitleUpdated', onTitleUpdated);
     window.addEventListener('activityCategoryUpdated', onCategoryUpdated);
     window.addEventListener('activityMetricsUpdated', onMetricsUpdated);
     window.addEventListener('plannedWorkoutUpdated', onPlannedUpdated);
+    window.addEventListener('plannedWorkoutDeleted', onPlannedDeleted);
     return () => {
       window.removeEventListener('activityTitleUpdated', onTitleUpdated);
       window.removeEventListener('activityCategoryUpdated', onCategoryUpdated);
       window.removeEventListener('activityMetricsUpdated', onMetricsUpdated);
       window.removeEventListener('plannedWorkoutUpdated', onPlannedUpdated);
+      window.removeEventListener('plannedWorkoutDeleted', onPlannedDeleted);
     };
   }, []);
   
@@ -2442,14 +2449,12 @@ const FitAnalysisPage = () => {
       let saved;
       if (planModal?.workout?._id) {
         saved = await updatePlannedWorkout(planModal.workout._id, data, coachAthleteId);
-        setPlannedWorkoutsCalendar(prev => prev.map(p => p._id === saved._id ? saved : p));
+        setPlannedWorkoutsCalendar(prev => upsertPlannedWorkoutList(prev, saved));
       } else {
         saved = await createPlannedWorkout(data, coachAthleteId);
-        setPlannedWorkoutsCalendar(prev => [...prev, saved]);
+        setPlannedWorkoutsCalendar(prev => upsertPlannedWorkoutList(prev, saved));
       }
-      try {
-        window.dispatchEvent(new CustomEvent('plannedWorkoutUpdated', { detail: { planned: saved } }));
-      } catch { /* ignore */ }
+      notifyPlannedWorkoutUpdated(saved);
       setPlanModal(null);
     } catch (_) {}
   }, [planModal, selectedAthleteId, user?.role]);
@@ -2461,7 +2466,8 @@ const FitAnalysisPage = () => {
       const isCoachLike = ['coach', 'tester', 'testing', 'admin'].includes(role);
       const coachAthleteId = isCoachLike && selectedAthleteId ? selectedAthleteId : null;
       await deletePlannedWorkout(pw._id, coachAthleteId);
-      setPlannedWorkoutsCalendar(prev => prev.filter(p => p._id !== pw._id));
+      setPlannedWorkoutsCalendar(prev => removePlannedWorkoutFromList(prev, pw._id));
+      notifyPlannedWorkoutDeleted(pw._id);
       setPlanModal(null);
     } catch (_) {}
   }, [selectedAthleteId, user?.role]);

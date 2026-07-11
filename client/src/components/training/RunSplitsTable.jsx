@@ -1,29 +1,33 @@
 import React, { useMemo } from 'react';
-import { buildRunKmSplits, formatSplitPace } from '../../utils/runKmSplits';
+import { formatElevation } from '../../utils/unitsConverter';
+import { buildRunSplits, formatSplitPace } from '../../utils/runKmSplits';
 
 /**
- * Strava-style per-km splits table for running activities.
+ * Strava-style per-km or per-mile splits table for running activities.
  * Cadence column appears only when at least one split has cadence data.
  */
 export default function RunSplitsTable({
   laps = [],
   records = [],
   lapTimeSource = 'fit',
+  unitSystem = 'metric',
   className = '',
 }) {
   const splits = useMemo(
-    () => buildRunKmSplits(laps, records, { lapTimeSource }),
-    [laps, records, lapTimeSource]
+    () => buildRunSplits(laps, records, { lapTimeSource, unitSystem }),
+    [laps, records, lapTimeSource, unitSystem],
   );
 
   const hasCadence = useMemo(
     () => splits.some((s) => s.cadence != null && s.cadence > 0),
-    [splits]
+    [splits],
   );
 
   const splitsGrid = hasCadence
     ? 'grid-cols-[22px_44px_minmax(48px,1fr)_36px_40px_40px]'
     : 'grid-cols-[22px_44px_minmax(48px,1fr)_36px_40px]';
+
+  const distColLabel = unitSystem === 'imperial' ? 'Mi' : 'Km';
 
   const barRange = useMemo(() => {
     const paces = splits.map((s) => s.paceSecPerKm).filter((p) => p > 0);
@@ -40,13 +44,19 @@ export default function RunSplitsTable({
     return 8 + ratio * 92;
   };
 
+  const fmtElev = (elevM) => {
+    if (elevM == null) return '—';
+    if (unitSystem === 'imperial') return formatElevation(elevM, unitSystem).formatted;
+    return String(elevM);
+  };
+
   return (
     <div className={`px-4 py-3 border-b border-gray-100 ${className}`}>
       <h3 className="text-sm font-semibold text-gray-900 mb-2">Splits</h3>
 
       <div className="w-full max-w-md">
         <div className={`grid ${splitsGrid} gap-x-2 items-center mb-1`}>
-          <div className="text-[10px] font-medium text-gray-400">Km</div>
+          <div className="text-[10px] font-medium text-gray-400">{distColLabel}</div>
           <div className="text-[10px] font-medium text-gray-400">Pace</div>
           <div />
           <div className="text-[10px] font-medium text-gray-400 text-right">Elev</div>
@@ -64,7 +74,7 @@ export default function RunSplitsTable({
             >
               <div className="text-[13px] font-semibold text-gray-900 tabular-nums">{split.km}</div>
               <div className="text-[13px] font-semibold text-gray-900 tabular-nums whitespace-nowrap">
-                {formatSplitPace(split.paceSecPerKm)}
+                {formatSplitPace(split.paceSecPerKm, unitSystem, 'run')}
               </div>
               <div className="flex items-center h-3.5 min-w-0">
                 <div
@@ -73,7 +83,7 @@ export default function RunSplitsTable({
                 />
               </div>
               <div className="text-[13px] font-medium text-gray-700 tabular-nums text-right">
-                {split.elev != null ? split.elev : '—'}
+                {fmtElev(split.elev)}
               </div>
               <div className="text-[13px] font-medium text-gray-700 tabular-nums text-right">
                 {split.hr != null ? split.hr : '—'}

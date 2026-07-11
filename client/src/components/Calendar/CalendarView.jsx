@@ -23,11 +23,29 @@ import {
   ArrowTopRightOnSquareIcon,
   BeakerIcon,
   HeartIcon,
+  FlagIcon,
 } from '@heroicons/react/24/outline';
 import SportIcon from '../shared/SportIcon';
 import { DurationPickerField, DurationPickerSheet } from '../shared/DurationWheelPicker.jsx';
 import api, { getSimilarActivities, getRaceEvents } from '../../services/api';
-import { formatDistanceForUser } from '../../utils/unitsConverter';
+import {
+  formatDistance,
+  formatDistanceFieldDisplay,
+  formatDistanceForUser,
+  formatDistanceInputFromMetres,
+  formatElevation,
+  distanceInputPlaceholder,
+  distanceInputUnitLabel,
+  formatPaceFromDistanceAndDuration,
+  formatPaceFromSpeedMps,
+  formatPaceMMSS,
+  formatSpeed,
+  getUserUnits,
+  parseDistanceInputToMetres,
+  paceSecondsToDisplaySeconds,
+  paceUnitShort,
+  resolveDistanceUnitSystem,
+} from '../../utils/unitsConverter';
 import { distinctiveTitleTokens, isGenericTitle, titleTokens } from '../../utils/compareSimilarity';
 import {
   buildActivityMatcher,
@@ -50,6 +68,7 @@ import TrainingComments from '../TrainingComments';
 import { MapContainer, TileLayer, Polyline, CircleMarker, Tooltip as LeafletTooltip, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import TrainingChart from '../FitAnalysis/TrainingChart';
+import RaceDetailModal from './RaceDetailModal';
 
 function MapInvalidator() {
   const map = useMap();
@@ -144,6 +163,22 @@ function outlineBorder({ color, leftColor, leftWidth = 2, width = 1, style = 'so
   };
 }
 
+/** Resolve display unit system — prefers auth user / localStorage units over API profile. */
+function userUnitSystem(user) {
+  return resolveDistanceUnitSystem({ units: getUserUnits(user) });
+}
+
+/** Split distance into table { val, unit } for planned/completed rows. */
+function distDisplayParts(meters, unitSystem) {
+  if (!meters || meters <= 0) return { val: null, unit: '' };
+  const { value, unit } = formatDistance(meters, unitSystem);
+  let val;
+  if (unit === 'mi') val = value >= 10 ? value.toFixed(1) : value.toFixed(2);
+  else if (unit === 'km') val = value % 1 === 0 ? String(value) : value.toFixed(1);
+  else val = String(Math.round(value));
+  return { val, unit };
+}
+
 /** Compact completed line: time · distance · avg power/pace · TSS. */
 function activityCompletedStats(activity, profile = null) {
   if (!activity) return null;
@@ -160,20 +195,21 @@ function activityCompletedStats(activity, profile = null) {
   const isRun = s.includes('run') || s.includes('hike') || s.includes('walk') || s.includes('trail');
   const isBike = s.includes('ride') || s.includes('cycle') || s.includes('bike') || s.includes('virtual');
 
+  const unitSystem = userUnitSystem(profile);
   const durStr = dur > 0 ? fmtPlanDuration(dur) : null;
-  const distStr = dist > 0
-    ? (dist >= 1000 ? `${(dist / 1000).toFixed(1)} km` : `${Math.round(dist)} m`)
-    : null;
+  const distStr = dist > 0 ? formatDistance(dist, unitSystem).formatted : null;
 
   let paceOrPower = null;
   if (isBike && power > 0) {
     paceOrPower = `${Math.round(power)} W`;
-  } else if (isSwim && dist > 0 && dur > 0) {
-    const sper100 = dur / (dist / 100);
-    paceOrPower = `${Math.floor(sper100 / 60)}:${String(Math.round(sper100 % 60)).padStart(2, '0')}/100m`;
-  } else if (isRun && dist > 0 && dur > 0) {
-    const sperkm = dur / (dist / 1000);
-    paceOrPower = `${Math.floor(sperkm / 60)}:${String(Math.round(sperkm % 60)).padStart(2, '0')}/km`;
+  } else if (isSwim || isRun) {
+    const avgSpeed = Number(activity.avgSpeed || activity.average_speed || 0);
+    const sport = activity.sport || activity.type || '';
+    if (avgSpeed > 0) {
+      paceOrPower = formatPaceFromSpeedMps(avgSpeed, unitSystem, sport);
+    } else if (dist > 0 && dur > 0) {
+      paceOrPower = formatPaceFromDistanceAndDuration(dist, dur, unitSystem, sport);
+    }
   }
 
   const tssVal = profile
@@ -773,7 +809,7 @@ function WeekActivityCard({ a, isSelected, onSelect, onActivityClick, onAddLacta
 }
 
 // ─── Lap Chart ────────────────────────────────────────────────────────────────
-function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap, chartScrollRef, onScrollCenter, scaleOverride = null, records = null }) {
+function LapChart({ laps, color, isBike, isRun, isSwim, unitSystem = 'metric', selectedLap, onSelectLap, chartScrollRef, onScrollCenter, scaleOverride = null, records = null }) {
   const CHART_H   = 200;
   const Y_AXIS_W  = 38;
   const X_LABEL_H = 16;
@@ -1032,10 +1068,16 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
 
   const fmtTick = (v) => {
     if (isBike) return `${Math.round(v)}`;
-    const m = Math.floor(v / 60), s = Math.round(v % 60);
+    let sec = v;
+    if (isRun && unitSystem === 'imperial') {
+      sec = paceSecondsToDisplaySeconds(v, { sport: 'run', unitSystem: 'imperial' });
+    } else if (isSwim && unitSystem === 'imperial') {
+      sec = paceSecondsToDisplaySeconds(v, { sport: 'swim', unitSystem: 'imperial' });
+    }
+    const m = Math.floor(sec / 60), s = Math.round(sec % 60);
     return m > 0 ? `${m}:${String(s).padStart(2, '0')}` : `${s}s`;
   };
-  const unitLabel = isSwim ? '/100m' : isRun ? '/km' : 'W';
+  const unitLabel = isSwim ? paceUnitShort(unitSystem, 'swim') : isRun ? paceUnitShort(unitSystem, 'run') : 'W';
   // For bike (non-inverted): high value at top → start from chartMax and step DOWN.
   // For run/swim (inverted): fast pace (low seconds) at top → start from chartMin and step UP.
   const yTicks = Array.from({ length: 5 }, (_, i) =>
@@ -1155,7 +1197,7 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
   const selPace   = selEnt?.value ? `${fmtTick(selEnt.value)} ${unitLabel}` : null;
   const selLapNum = sel ? (sel.lapNumber ?? (selectedLap + 1)) : null;
   const selDistStr = selEnt && selEnt.dist > 0
-    ? (selEnt.dist >= 1000 ? `${(selEnt.dist/1000).toFixed(1)} km` : `${Math.round(selEnt.dist)} m`)
+    ? formatDistance(selEnt.dist, unitSystem).formatted
     : null;
   const selDurStr = sel ? (() => {
     const d = Number(sel.elapsed_time || sel.totalElapsedTime || sel.duration || 0);
@@ -1180,7 +1222,7 @@ function LapChart({ laps, color, isBike, isRun, isSwim, selectedLap, onSelectLap
             </>
           ) : (
             <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">
-              {isSwim ? 'Laps · pace /100m' : isRun ? 'Laps · pace /km' : isBike ? 'Laps · power' : 'Laps'}
+              {isSwim ? `Laps · pace ${paceUnitShort(unitSystem, 'swim')}` : isRun ? `Laps · pace ${paceUnitShort(unitSystem, 'run')}` : isBike ? 'Laps · power' : 'Laps'}
             </span>
           )}
         </div>
@@ -1594,7 +1636,7 @@ function detectLapType(lap, index, total) {
   return 'work';
 }
 
-function CompareLapTable({ laps, isBike, isRun, isSwim, workOnly }) {
+function CompareLapTable({ laps, isBike, isRun, isSwim, workOnly, unitSystem = 'metric' }) {
   if (!Array.isArray(laps) || laps.length === 0) return (
     <div className="text-[10px] text-gray-400 italic px-1 py-2">No laps</div>
   );
@@ -1606,7 +1648,7 @@ function CompareLapTable({ laps, isBike, isRun, isSwim, workOnly }) {
   const fmtDistCol = lap => {
     const d = Number(lap.distance || lap.totalDistance || 0);
     if (!d) return '—';
-    return d >= 1000 ? `${(d/1000).toFixed(2)} km` : `${Math.round(d)} m`;
+    return formatDistance(d, unitSystem).formatted;
   };
   const fmtPace = lap => {
     const elapsed = Number(lap.elapsed_time || lap.totalElapsedTime || lap.duration || 0);
@@ -1614,11 +1656,8 @@ function CompareLapTable({ laps, isBike, isRun, isSwim, workOnly }) {
     const dist = Number(lap.distance || lap.totalDistance || 0);
     const pow  = Number(lap.average_watts || lap.avgPower || 0);
     if (isBike) return pow > 0 ? `${Math.round(pow)} W` : '—';
-    if ((isRun || isSwim) && dist > 0 && moving > 0) {
-      const pace = isSwim ? moving / (dist / 100) : moving / (dist / 1000);
-      const m = Math.floor(pace / 60), s = Math.round(pace % 60);
-      return `${m}:${String(s).padStart(2,'0')}${isSwim ? '/100m' : '/km'}`;
-    }
+    if (isRun && dist > 0 && moving > 0) return formatPaceFromDistanceAndDuration(dist, moving, unitSystem, 'run');
+    if (isSwim && dist > 0 && moving > 0) return formatPaceFromDistanceAndDuration(dist, moving, unitSystem, 'swim');
     return '—';
   };
   const total = laps.length;
@@ -1668,7 +1707,7 @@ function CompareLapTable({ laps, isBike, isRun, isSwim, workOnly }) {
   );
 }
 
-function WorkLapCompareTable({ currentLaps, results, isBike, isRun, isSwim }) {
+function WorkLapCompareTable({ currentLaps, results, isBike, isRun, isSwim, unitSystem = 'metric' }) {
   const sessions = [
     { label: 'Tento', laps: currentLaps, isRef: true },
     ...results.map(r => ({
@@ -1688,7 +1727,7 @@ function WorkLapCompareTable({ currentLaps, results, isBike, isRun, isSwim }) {
   const fmtDist = (lap) => {
     const d = Number(lap.distance || lap.totalDistance || 0);
     if (!d) return null;
-    return d >= 1000 ? `${(d / 1000).toFixed(2)} km` : `${Math.round(d)} m`;
+    return formatDistance(d, unitSystem).formatted;
   };
   const fmtPace = (lap) => {
     const moving  = Number(lap.moving_time || lap.movingTime || lap.totalMovingTime || 0);
@@ -1697,11 +1736,8 @@ function WorkLapCompareTable({ currentLaps, results, isBike, isRun, isSwim }) {
     const dist = Number(lap.distance || lap.totalDistance || 0);
     const pow  = Number(lap.average_watts || lap.avgPower || 0);
     if (isBike) return pow > 0 ? `${Math.round(pow)} W` : null;
-    if ((isRun || isSwim) && dist > 0 && dur > 0) {
-      const pace = isSwim ? dur / (dist / 100) : dur / (dist / 1000);
-      const m = Math.floor(pace / 60), s = Math.round(pace % 60);
-      return `${m}:${String(s).padStart(2, '0')}${isSwim ? '/100m' : '/km'}`;
-    }
+    if (isRun && dist > 0 && dur > 0) return formatPaceFromDistanceAndDuration(dist, dur, unitSystem, 'run');
+    if (isSwim && dist > 0 && dur > 0) return formatPaceFromDistanceAndDuration(dist, dur, unitSystem, 'swim');
     return null;
   };
   const fmtHr = lap => { const h = Number(lap.average_heartrate || lap.avgHeartRate || lap.heartRate || 0); return h > 0 ? `${Math.round(h)}` : null; };
@@ -1767,6 +1803,8 @@ function WorkLapCompareTable({ currentLaps, results, isBike, isRun, isSwim }) {
 }
 
 function CompareContent({ merged, athleteId, onOpen }) {
+  const { user: authUser } = useAuth() || {};
+  const unitSystem = userUnitSystem(authUser);
   const hasTitle    = !!(merged?.titleManual || (merged?.title && String(merged.title).trim()));
   const hasCategory = !!(merged?.category);
   const hasLactate  = Number(merged?.lactate) > 0;
@@ -1950,7 +1988,7 @@ function CompareContent({ merged, athleteId, onOpen }) {
     const h = Math.floor(s/3600), m = Math.floor((s%3600)/60), sec = Math.round(s%60);
     return h > 0 ? `${h}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}` : `${m}:${String(sec).padStart(2,'0')}`;
   };
-  const fmtDist = m => (!m || m <= 0) ? '—' : m >= 1000 ? `${(m/1000).toFixed(1)} km` : `${Math.round(m)} m`;
+  const fmtDist = m => (!m || m <= 0) ? '—' : formatDistance(m, unitSystem).formatted;
   const fmtDate = d => { if (!d) return '—'; const dt = new Date(d); return `${dt.getDate()}. ${dt.getMonth()+1}. ${dt.getFullYear()}`; };
 
   const getLapValue = (lap, b, r, s) => {
@@ -2261,6 +2299,7 @@ function CompareContent({ merged, athleteId, onOpen }) {
           currentLaps={currentLaps}
           results={results}
           isBike={isBike} isRun={isRun} isSwim={isSwim}
+          unitSystem={unitSystem}
         />
       )}
 
@@ -2304,11 +2343,11 @@ function CompareContent({ merged, athleteId, onOpen }) {
             {Number(merged?.average_heartrate || merged?.avgHeartRate || 0) > 0 && <span className="text-[10px] font-semibold text-gray-700">{Math.round(merged.average_heartrate || merged.avgHeartRate)} bpm</span>}
             {Number(merged?.lactate) > 0 && <span className="text-[10px] font-bold" style={{ color:'#7c3aed' }}>{Number(merged.lactate).toFixed(1)} mmol</span>}
           </div>
-          <LapChart laps={currentLaps} color={sportColor} isBike={isBike} isRun={isRun} isSwim={isSwim}
+          <LapChart laps={currentLaps} color={sportColor} isBike={isBike} isRun={isRun} isSwim={isSwim} unitSystem={unitSystem}
             selectedLap={null} onSelectLap={() => {}} scaleOverride={sharedScale} />
           {expandedCards['__current'] && (
             <div className="px-3 pb-3 border-t border-gray-50 pt-2">
-              <CompareLapTable laps={currentLaps} isBike={isBike} isRun={isRun} isSwim={isSwim} workOnly={workOnly} />
+              <CompareLapTable laps={currentLaps} isBike={isBike} isRun={isRun} isSwim={isSwim} workOnly={workOnly} unitSystem={unitSystem} />
             </div>
           )}
         </div>
@@ -2380,7 +2419,7 @@ function CompareContent({ merged, athleteId, onOpen }) {
             </div>
             {/* LapChart — shared Y-scale */}
             {compLaps.length > 0 && (
-              <LapChart laps={compLaps} color={actColor} isBike={actIsBike} isRun={actIsRun} isSwim={actIsSwim}
+              <LapChart laps={compLaps} color={actColor} isBike={actIsBike} isRun={actIsRun} isSwim={actIsSwim} unitSystem={unitSystem}
                 selectedLap={null} onSelectLap={() => {}} scaleOverride={sharedScale} />
             )}
             {compLaps.length === 0 && (
@@ -2389,7 +2428,7 @@ function CompareContent({ merged, athleteId, onOpen }) {
             {/* Expandable lap detail table */}
             {isExpanded && compLaps.length > 0 && (
               <div className="px-3 pb-3 border-t border-gray-50 pt-2">
-                <CompareLapTable laps={compLaps} isBike={actIsBike} isRun={actIsRun} isSwim={actIsSwim} workOnly={workOnly} />
+                <CompareLapTable laps={compLaps} isBike={actIsBike} isRun={actIsRun} isSwim={actIsSwim} workOnly={workOnly} unitSystem={unitSystem} />
               </div>
             )}
           </div>
@@ -2397,6 +2436,106 @@ function CompareContent({ merged, athleteId, onOpen }) {
       })}
     </div>
   );
+}
+
+/** Min / avg / max from per-second records. AVG prefers the activity summary
+ *  (Strava/FIT header) so it matches the Completed table above. */
+function mamFromRecords(recs, key, mult = 1, summaryAvg = null) {
+  const vals = recs.map(r => r[key]).filter(v => v != null && v > 0).map(v => v * mult);
+  if (vals.length < 3) return null;
+  const streamAvg = vals.reduce((a, b) => a + b, 0) / vals.length;
+  return {
+    min: Math.min(...vals),
+    avg: summaryAvg != null && summaryAvg > 0 ? summaryAvg : streamAvg,
+    max: Math.max(...vals),
+  };
+}
+
+function mamPaceFromRecords(recs, { isSwim, avgSpeed }) {
+  const speedVals = recs.map(r => r.speed).filter(v => v != null && v > 0);
+  if (speedVals.length < 3) return null;
+  const toPace = (s) => (isSwim ? 100 / s : 1000 / s);
+  const paces = speedVals.map(toPace);
+  const summaryPace = avgSpeed > 0 ? toPace(avgSpeed) : null;
+  const streamAvg = paces.reduce((a, b) => a + b, 0) / paces.length;
+  return {
+    min: Math.min(...paces),
+    avg: summaryPace != null && summaryPace > 0 ? summaryPace : streamAvg,
+    max: Math.max(...paces),
+  };
+}
+
+function buildWorkoutMamRows({ recs, isBike, isRun, isSwim, sport, power, hr, cadence, avgSpeed, includeElevation = false, unitSystem = 'metric' }) {
+  const rows = [];
+  if (isBike) {
+    const speedMult = unitSystem === 'imperial' ? 3.6 * 0.621371 : 3.6;
+    const summarySpeed = avgSpeed > 0 ? avgSpeed * speedMult : null;
+    const d = mamFromRecords(recs, 'speed', speedMult, summarySpeed);
+    if (d) rows.push({ label: 'Speed', unit: unitSystem === 'imperial' ? 'mph' : 'km/h', d, dec: 1 });
+  } else if (isRun || isSwim) {
+    const d = mamPaceFromRecords(recs, { isSwim, avgSpeed });
+    if (d) {
+      const paceSport = isSwim ? 'swim' : 'run';
+      rows.push({
+        label: 'Pace',
+        unit: paceUnitShort(unitSystem, paceSport),
+        d,
+        dec: 0,
+        format: (totalSec) => {
+          const displaySec = paceSecondsToDisplaySeconds(totalSec, {
+            sport: paceSport,
+            unitSystem,
+            testRunPerMileStorage: false,
+          });
+          return formatPaceMMSS(displaySec) || '—';
+        },
+      });
+    }
+  }
+  const hrD = mamFromRecords(recs, 'heartRate', 1, hr > 0 ? hr : null);
+  if (hrD) rows.push({ label: 'Heart Rate', unit: 'bpm', d: hrD, dec: 0 });
+  if (isBike) {
+    const d = mamFromRecords(recs, 'power', 1, power > 0 ? power : null);
+    if (d) rows.push({ label: 'Power', unit: 'W', d, dec: 0 });
+  }
+  const cadD = mamFromRecords(recs, 'cadence', 1, cadence > 0 ? cadence : null);
+  if (cadD) rows.push({ label: 'Cadence', unit: isSwim ? 'spm' : cadenceDisplayUnit(sport), d: cadD, dec: 0 });
+  if (includeElevation) {
+    const d = mamFromRecords(recs, 'altitude', 1, null);
+    if (d) rows.push({ label: 'Elevation', unit: 'm', d, dec: 0 });
+  }
+  return rows;
+}
+
+function formatMamValue(row, value) {
+  if (row.format) return row.format(value);
+  return value.toFixed(row.dec);
+}
+
+function plannedCommentText(pw) {
+  return pw ? String(pw.comment || '').trim() : '';
+}
+
+function plannedDescriptionOnly(pw) {
+  if (!pw) return '';
+  return String(pw.description || pw.coachNotes || pw.notes || '').trim();
+}
+
+function resolveCommentsTarget(activity, plannedWorkout) {
+  if (plannedWorkout?._id) {
+    return { trainingId: String(plannedWorkout._id), trainingType: 'planned' };
+  }
+  const id = String(activity?.id || activity?._id || '');
+  const isStrava = id.startsWith('strava-') || activity?.source === 'strava' || activity?.type === 'strava' || !!activity?.stravaId;
+  const isFit = id.startsWith('fit-') || activity?.source === 'fit' || activity?.type === 'fit';
+  if (isStrava) {
+    const raw = String(activity?.stravaId || id.replace(/^strava-/, ''));
+    return { trainingId: raw, trainingType: 'strava' };
+  }
+  if (isFit) {
+    return { trainingId: String(activity?._id || id.replace(/^fit-/, '')), trainingType: 'fitTraining' };
+  }
+  return { trainingId: id, trainingType: 'training' };
 }
 
 export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWorkout, onClose, onEditPlanned, onAddLactate, onPlannedSaved, onCompletedSaved = null, onOpenFull = null, athleteId = null, onDeleted = null, highlightMetric: highlightMetricProp = null, radarWatts: radarWattsProp = null, profile: profileProp = null }) {
@@ -2453,6 +2592,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
   const isRun  = sport.includes('run') || sport.includes('walk') || sport.includes('hike');
   const isSwim = sport.includes('swim');
   const isBike = sport.includes('ride') || sport.includes('cycle') || sport.includes('bike') || sport === 'cycling';
+  const { user: authUser } = useAuth() || {};
   const [detailLoading, setDetailLoading] = useState(true);
   const [streams, setStreams] = useState(null);
   const [streamsRefreshing, setStreamsRefreshing] = useState(false);
@@ -3067,51 +3207,35 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
     plannedWorkout?.sport || initialPlannedWorkout?.sport || activity?.sport || activity?.type || ''
   ).toLowerCase();
   const isSwimForm = formSport.includes('swim');
-
-  // Smart distance parser: "10", "10 km", "4,5", "4.5 km" → km value.
-  // "500m" → 0.5 km. Comma decimal handled (Czech / European keyboards).
-  const parseDistanceToKm = (raw) => {
-    const s = String(raw).trim().toLowerCase().replace(',', '.');
-    if (!s) return null;
-    if (s.endsWith('km')) return parseFloat(s);
-    if (s.endsWith('m')) return parseFloat(s) / 1000;
-    const n = parseFloat(s);
-    if (isNaN(n)) return null;
-    // Swim: a bare number ≥ 50 is metres (3000 → 3 km, 1500 → 1.5 km, 400 →
-    // 0.4 km); smaller values like "3" stay km (open-water). Bike/run: > 500 m.
-    if (isSwimForm) return n >= 50 ? n / 1000 : n;
-    return n > 500 ? n / 1000 : n;
-  };
-
-  // Server PlannedWorkout.plannedDistance is documented as metres, but old
-  // builds wrote km here, so we normalise on the way out: anything < 100 is
-  // almost certainly the legacy km value, anything ≥ 100 is real metres.
-  const planDistanceMetresToKm = (raw) => {
-    const n = Number(raw);
-    if (!Number.isFinite(n) || n <= 0) return null;
-    return n >= 100 ? n / 1000 : n;
-  };
+  const unitSystem = userUnitSystem(authUser || profileProp);
 
   const initDurMins = initialPlannedWorkout?.plannedDuration
     ? Math.round(initialPlannedWorkout.plannedDuration / 60) : null;
-  // Convert stored value to km for the form (handles legacy km storage too).
-  const initDistKm = planDistanceMetresToKm(initialPlannedWorkout?.plannedDistance);
 
-  const plannedDescriptionText = (pw) => {
-    if (!pw) return '';
-    const desc = String(pw.description || '').trim();
-    const coach = String(pw.coachNotes || pw.notes || pw.comment || '').trim();
-    if (desc && coach && desc !== coach) return `${desc}\n\n${coach}`;
-    return desc || coach;
+  // Smart distance parser → metres (respects imperial / swim).
+  const parsePlanDistanceToMetres = (raw) => parseDistanceInputToMetres(raw, unitSystem, { isSwim: isSwimForm });
+
+  const planDistanceMetresToDisplay = (raw) => {
+    const n = Number(raw);
+    if (!Number.isFinite(n) || n <= 0) return null;
+    const metres = n >= 100 ? n : n * 1000;
+    return formatDistanceFieldDisplay(metres, unitSystem, { isSwim: isSwimForm });
   };
+
+  const initDistMetres = (() => {
+    const n = Number(initialPlannedWorkout?.plannedDistance);
+    if (!Number.isFinite(n) || n <= 0) return null;
+    return n >= 100 ? n : n * 1000;
+  })();
 
   const [planForm, setPlanForm] = useState({
     title: initialPlannedWorkout?.title || '',
-    description: plannedDescriptionText(initialPlannedWorkout),
+    comment: plannedCommentText(initialPlannedWorkout),
+    description: plannedDescriptionOnly(initialPlannedWorkout),
     durationDisplay: initDurMins ? formatMinutes(initDurMins) : '',
     durationMins: initDurMins,
-    distanceDisplay: initDistKm ? String(initDistKm) : '',
-    distanceKm: initDistKm,
+    distanceDisplay: initDistMetres ? formatDistanceFieldDisplay(initDistMetres, unitSystem, { isSwim: isSwimForm }) : '',
+    distanceKm: initDistMetres ? formatDistanceInputFromMetres(initDistMetres, unitSystem, { isSwim: isSwimForm }) : '',
     targetTss: initialPlannedWorkout?.targetTss ? String(initialPlannedWorkout.targetTss) : '',
   });
   const [savingPlan, setSavingPlan] = useState(false);
@@ -3132,7 +3256,6 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
   }, [onClose]);
 
   // ── Activity data (use merged = summary + full detail) ──
-  const { user: authUser } = useAuth() || {};
   const [loadedProfile, setLoadedProfile] = useState(null);
 
   useEffect(() => {
@@ -3252,20 +3375,26 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
   const actDate   = merged.date || merged.timestamp || merged.startDate || merged.start_time;
   const dateStr   = actDate ? new Date(actDate).toLocaleDateString(undefined, { weekday:'long', month:'long', day:'numeric', year:'numeric' }) : '';
   const notes = merged.description || merged.notes || '';
+  const planComment = plannedCommentText(plannedWorkout);
+  const planDescription = plannedDescriptionOnly(plannedWorkout);
+  const commentsTarget = resolveCommentsTarget(merged, plannedWorkout);
 
   const fmtDur = (s) => {
     if (!s) return '—';
     const h = Math.floor(s/3600), m = Math.floor((s%3600)/60), sec = Math.floor(s%60);
     return h > 0 ? `${h}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}` : `${m}:${String(sec).padStart(2,'0')}`;
   };
-  const fmtDist = (d) => d >= 1000 ? `${(d/1000).toFixed(2)} km` : `${Math.round(d)} m`;
+  const fmtDist = (d) => (d > 0 ? formatDistance(d, unitSystem).formatted : '—');
+  const fmtElev = (e) => (e > 0 ? formatElevation(e, unitSystem).formatted : '—');
   let paceStr = null;
   if (isRun && avgSpeed > 0) {
-    const s = 1000/avgSpeed;
-    paceStr = `${Math.floor(s/60)}:${String(Math.round(s%60)).padStart(2,'0')} /km`;
+    paceStr = formatPaceFromSpeedMps(avgSpeed, unitSystem, 'run');
   } else if (isSwim && avgSpeed > 0) {
-    const s = 100/avgSpeed;
-    paceStr = `${Math.floor(s/60)}:${String(Math.round(s%60)).padStart(2,'0')} /100m`;
+    paceStr = formatPaceFromSpeedMps(avgSpeed, unitSystem, 'swim');
+  } else if (isRun && dist > 0 && dur > 0) {
+    paceStr = formatPaceFromDistanceAndDuration(dist, dur, unitSystem, 'run');
+  } else if (isSwim && dist > 0 && dur > 0) {
+    paceStr = formatPaceFromDistanceAndDuration(dist, dur, unitSystem, 'swim');
   }
 
   // Laps
@@ -3300,12 +3429,13 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
       const durMins = planForm.durationMins || parseDurationToMinutes(planForm.durationDisplay);
       // Fall back to re-parsing the display (e.g. user typed "3000" and hit
       // Save before the field blurred) so swim metres still convert to km.
-      const distKmRaw = planForm.distanceKm !== '' && planForm.distanceKm != null
-        ? Number(String(planForm.distanceKm).replace(',', '.'))
-        : parseDistanceToKm(planForm.distanceDisplay);
-      const distKm = Number.isFinite(distKmRaw) && distKmRaw > 0 ? distKmRaw : null;
+      const distMetresRaw = planForm.distanceKm !== '' && planForm.distanceKm != null
+        ? parsePlanDistanceToMetres(String(planForm.distanceKm))
+        : parsePlanDistanceToMetres(planForm.distanceDisplay);
+      const distMetres = Number.isFinite(distMetresRaw) && distMetresRaw > 0 ? distMetresRaw : null;
       const payload = {
         title: planForm.title || title,
+        comment: (planForm.comment || '').trim() || undefined,
         description: planForm.description,
         coachNotes: '',
         sport: sportForPlan,
@@ -3313,7 +3443,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
         plannedDuration: (durSecsFromForm != null && durSecsFromForm > 0)
           ? durSecsFromForm
           : (durMins ? Math.round(durMins * 60) : (plannedWorkoutDurationSecs(plannedWorkout) || undefined)),
-        ...(distKm != null && { plannedDistance: Math.round(distKm * 1000) }),
+        ...(distMetres != null && { plannedDistance: Math.round(distMetres) }),
         ...(planForm.targetTss !== '' && { targetTss: Number(planForm.targetTss) || 0 }),
       };
       // Link this plan to the open completed activity so planner/calendar pairing stays stable.
@@ -3334,14 +3464,20 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
       }
       setPlannedWorkout(saved);
       setEditingPlanned(false);
-      const savedDistKm = planDistanceMetresToKm(saved.plannedDistance);
+      const savedDistDisplay = planDistanceMetresToDisplay(saved.plannedDistance);
+      const savedDistMetres = (() => {
+        const n = Number(saved.plannedDistance);
+        if (!Number.isFinite(n) || n <= 0) return null;
+        return n >= 100 ? n : n * 1000;
+      })();
       setPlanForm({
         title: saved.title || '',
-        description: plannedDescriptionText(saved),
+        comment: plannedCommentText(saved),
+        description: plannedDescriptionOnly(saved),
         durationDisplay: saved.plannedDuration ? fmtDur(saved.plannedDuration) : '',
         durationMins: saved.plannedDuration ? saved.plannedDuration / 60 : null,
-        distanceKm: savedDistKm ?? '',
-        distanceDisplay: savedDistKm ? `${savedDistKm % 1 === 0 ? savedDistKm : savedDistKm.toFixed(2)} km` : '',
+        distanceKm: savedDistMetres ? formatDistanceInputFromMetres(savedDistMetres, unitSystem, { isSwim: isSwimForm }) : '',
+        distanceDisplay: savedDistDisplay || '',
         targetTss: saved.targetTss != null ? String(saved.targetTss) : '',
       });
       if (onPlannedSaved) onPlannedSaved(saved);
@@ -3395,13 +3531,13 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
 
   // ── Seed completed-metadata form when opening a different activity ──
   useEffect(() => {
-    const distKm = dist > 0 ? (dist >= 1000 ? (dist / 1000).toFixed(2) : (dist / 1000).toFixed(3)) : '';
+    const distDisplayVal = dist > 0 ? formatDistanceInputFromMetres(dist, unitSystem, { isSwim: false }) : '';
     const durDisplay = dur > 0 ? fmtDur(dur) : '';
     const formTitle = String(plannedWorkout?.title || '').trim() || title || '';
     setCompletedForm({
       title: formTitle,
       description: notes || '',
-      distanceKm: distKm,
+      distanceKm: distDisplayVal,
       durationDisplay: durDisplay,
       tss: tss > 0 ? String(Math.round(tss)) : '',
       calories: calories > 0 ? String(Math.round(calories)) : '',
@@ -3504,12 +3640,6 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
     return null;
   };
 
-  const parseDistanceKm = (raw) => {
-    if (raw == null || String(raw).trim() === '') return null;
-    const n = Number(String(raw).replace(',', '.').trim());
-    return Number.isFinite(n) && n >= 0 ? n : null;
-  };
-
   const propagateCompletedSave = (eventDetail) => {
     try {
       window.dispatchEvent(new CustomEvent('activityMetricsUpdated', { detail: eventDetail }));
@@ -3546,9 +3676,9 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
         extraFields.duration = secs;
       }
       if (String(completedForm.distanceKm || '').trim()) {
-        const km = parseDistanceKm(completedForm.distanceKm);
-        if (km == null) throw new Error('Invalid distance — use km, e.g. 53.4');
-        extraFields.distance = Math.round(km * 1000);
+        const metres = parseDistanceInputToMetres(completedForm.distanceKm, unitSystem, { isSwim: isSwimForm });
+        if (metres == null) throw new Error(`Invalid distance — use ${distanceInputUnitLabel(unitSystem, isSwimForm)}, e.g. ${unitSystem === 'imperial' ? '26.2' : '42.2'}`);
+        extraFields.distance = Math.round(metres);
       }
 
       const basePayload = { title: completedForm.title, description: completedForm.description };
@@ -3637,7 +3767,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
       if (savedDist != null) {
         setCompletedForm((p) => ({
           ...p,
-          distanceKm: savedDist >= 1000 ? (savedDist / 1000).toFixed(2) : (savedDist / 1000).toFixed(3),
+          distanceKm: formatDistanceInputFromMetres(savedDist, unitSystem, { isSwim: isSwimForm }),
         }));
       }
       if (savedTss != null && Number.isFinite(Number(savedTss)) && Number(savedTss) > 0) {
@@ -3728,7 +3858,12 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
       return '#059669';
     };
     const durColor = ratioColor(durMins(completedForm.durationDisplay), planForm.durationMins || durMins(planForm.durationDisplay));
-    const distColor = ratioColor(num(completedForm.distanceKm), num(planForm.distanceKm) ?? parseDistanceToKm(planForm.distanceDisplay));
+    const distColor = ratioColor(
+      num(completedForm.distanceKm),
+      num(planForm.distanceKm) ?? (parsePlanDistanceToMetres(planForm.distanceDisplay) != null
+        ? formatDistanceInputFromMetres(parsePlanDistanceToMetres(planForm.distanceDisplay), unitSystem, { isSwim: isSwimForm })
+        : null),
+    );
     const tssColor = ratioColor(num(completedForm.tss), num(planForm.targetTss));
     const doneStyle = (c) => (c ? { color: c, fontWeight: 700 } : undefined);
     const labelCol = mobile ? '56px' : '78px';
@@ -3766,11 +3901,12 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
       const baselineDistKm = (() => {
         const n = Number(plannedWorkout?.plannedDistance || 0);
         const metres = n > 0 && n < 100 ? n * 1000 : n;
-        return metres > 0 ? (metres / 1000).toFixed(2) : '';
+        return metres > 0 ? formatDistanceInputFromMetres(metres, unitSystem, { isSwim: isSwimForm }) : '';
       })();
       const planDirty = Boolean(plannedWorkout?._id && (
         (planForm.title || '') !== (plannedWorkout.title || '')
-        || (planForm.description || '') !== plannedDescriptionText(plannedWorkout)
+        || (planForm.comment || '') !== plannedCommentText(plannedWorkout)
+        || (planForm.description || '') !== plannedDescriptionOnly(plannedWorkout)
         || (planForm.durationDisplay || '') !== baselineDur
         || (planForm.distanceKm || '') !== baselineDistKm
         || (planForm.targetTss !== '' && Number(planForm.targetTss) !== Number(plannedWorkout.targetTss || 0))
@@ -3882,10 +4018,16 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                 value={planForm.distanceDisplay}
                 onChange={(e) => setPlanForm((p) => ({ ...p, distanceDisplay: e.target.value, distanceKm: null }))}
                 onBlur={() => {
-                  const km = parseDistanceToKm(planForm.distanceDisplay);
-                  if (km != null && km > 0) setPlanForm((p) => ({ ...p, distanceKm: km, distanceDisplay: `${km % 1 === 0 ? km : km.toFixed(2)} km` }));
+                  const metres = parsePlanDistanceToMetres(planForm.distanceDisplay);
+                  if (metres != null && metres > 0) {
+                    setPlanForm((p) => ({
+                      ...p,
+                      distanceKm: formatDistanceInputFromMetres(metres, unitSystem, { isSwim: isSwimForm }),
+                      distanceDisplay: formatDistanceFieldDisplay(metres, unitSystem, { isSwim: isSwimForm }),
+                    }));
+                  }
                 }}
-                placeholder="10 km"
+                placeholder={distanceInputPlaceholder(unitSystem, isSwimForm)}
                 className={plannedCls}
               />
             )}
@@ -3895,7 +4037,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
               inputMode="decimal"
               value={completedForm.distanceKm}
               onChange={(e) => setCompletedForm((p) => ({ ...p, distanceKm: sanitizeDecimalInput(e.target.value) }))}
-              placeholder="km"
+              placeholder={distanceInputUnitLabel(unitSystem, isSwimForm)}
               className={inputCls}
               style={doneStyle(distColor)}
             />
@@ -3976,6 +4118,16 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
 
         <div className={`grid grid-cols-1 sm:grid-cols-2 ${mobile ? 'gap-2' : 'gap-3'}`}>
           <div>
+            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">Comment · calendar card</div>
+            <textarea
+              value={planForm.comment}
+              onChange={(e) => setPlanForm((p) => ({ ...p, comment: e.target.value }))}
+              rows={mobile ? 2 : 2}
+              placeholder="Short note shown on the calendar…"
+              className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm bg-gray-50 resize-none focus:outline-none focus:ring-2 focus:ring-slate-400"
+            />
+          </div>
+          <div>
             <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">Planned description</div>
             <textarea
               value={planForm.description}
@@ -3985,16 +4137,17 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
               className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm bg-gray-50 resize-none focus:outline-none focus:ring-2 focus:ring-slate-400"
             />
           </div>
-          <div>
-            <div className="text-[10px] font-bold text-blue-500 uppercase tracking-wide mb-1">Completed notes</div>
-            <textarea
-              value={completedForm.description}
-              onChange={(e) => setCompletedForm((p) => ({ ...p, description: e.target.value }))}
-              rows={mobile ? 2 : 3}
-              placeholder="How did it go?"
-              className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm bg-white resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
+        </div>
+
+        <div>
+          <div className="text-[10px] font-bold text-blue-500 uppercase tracking-wide mb-1">Completed notes</div>
+          <textarea
+            value={completedForm.description}
+            onChange={(e) => setCompletedForm((p) => ({ ...p, description: e.target.value }))}
+            rows={mobile ? 2 : 3}
+            placeholder="How did it go?"
+            className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm bg-white resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
         </div>
 
         {!mobile && (
@@ -4024,6 +4177,27 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
             {(savingCompleted || savingPlan) ? 'Saving…' : 'Save changes'}
           </button>
         </div>
+        {stravaIdForDelete && (
+          <div className={`${mobile ? 'mt-4 pt-4' : 'mt-3 pt-3'} border-t border-gray-100`}>
+            <button
+              type="button"
+              onClick={handleDeleteTap}
+              disabled={deleting}
+              className={`w-full flex items-center justify-center gap-2 rounded-xl border text-sm font-semibold transition-colors ${
+                confirmDelete
+                  ? 'border-red-500 bg-red-500 text-white active:bg-red-600'
+                  : 'border-red-200 bg-red-50 text-red-600 active:bg-red-100'
+              } ${deleting ? 'opacity-60 pointer-events-none' : ''}`}
+              style={{ padding: mobile ? '10px 12px' : '8px 12px' }}
+            >
+              <TrashIcon className="w-4 h-4" />
+              {deleting ? 'Deleting…' : confirmDelete ? 'Tap again to confirm delete' : 'Delete activity from LaChart'}
+            </button>
+            <p className={`text-[10px] text-gray-400 mt-1.5 ${mobile ? 'text-center' : ''}`}>
+              Removes this workout from LaChart only — it stays on Strava.
+            </p>
+          </div>
+        )}
         {saveError && (
           <div className={`text-xs text-red-600 font-medium ${mobile ? 'mt-2' : 'mt-1'}`}>
             {saveError}
@@ -4062,19 +4236,25 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
       // overlays even when the higher one has a bigger z-index, which
       // was making Copy/Save/Share buttons unresponsive.
       <div className="fixed inset-0 z-[10001] bg-white flex flex-col" style={{ paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)', pointerEvents: shareOpen ? 'none' : 'auto' }}>
-        {/* Header */}
-        <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-100 flex-shrink-0" style={{ borderLeftWidth: 4, borderLeftColor: color }}>
-          <SportIcon sport={a.sport} className="w-6 h-6 flex-shrink-0" />
-          <div className="flex-1 min-w-0">
-            <div className="font-bold text-gray-900 text-base truncate">{displayTitle}</div>
-            <div className="text-xs text-gray-400">{dateStr}</div>
+        {/* Header — title on its own row so long names aren't truncated */}
+        <div className="px-4 py-3 border-b border-gray-100 flex-shrink-0" style={{ borderLeftWidth: 4, borderLeftColor: color }}>
+          <div className="flex items-start gap-2">
+            <SportIcon sport={a.sport} className="w-6 h-6 flex-shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <div className="font-bold text-gray-900 text-base leading-snug break-words">{displayTitle}</div>
+              <div className="text-xs text-gray-400 mt-0.5">{dateStr}</div>
+            </div>
+            {detailLoading && (
+              <svg className="w-4 h-4 animate-spin text-gray-300 flex-shrink-0 mt-1" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+              </svg>
+            )}
+            <button onClick={onClose} className="p-2 -mr-1 rounded-lg hover:bg-gray-100 text-gray-500 active:bg-gray-200 flex-shrink-0">
+              <XMarkIcon className="w-5 h-5" />
+            </button>
           </div>
-          {detailLoading && (
-            <svg className="w-4 h-4 animate-spin text-gray-300 flex-shrink-0" fill="none" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
-            </svg>
-          )}
+          <div className="flex items-center gap-1.5 mt-2 pl-8 flex-wrap">
           {onAddLactate && hasLaps && (
             <button onClick={() => { onAddLactate(merged); onClose(); }}
               className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border-2 text-xs font-bold flex-shrink-0 active:opacity-70"
@@ -4115,24 +4295,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
               <line x1="12" y1="2" x2="12" y2="15" />
             </svg>
           </button>
-          {stravaIdForDelete && (
-            <button
-              onClick={handleDeleteTap}
-              disabled={deleting}
-              title={confirmDelete ? 'Tap again to confirm' : 'Delete activity from LaChart'}
-              className={`flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-semibold flex-shrink-0 transition-all ${
-                confirmDelete
-                  ? 'bg-red-500 text-white active:bg-red-600'
-                  : 'text-gray-500 hover:bg-red-50 hover:text-red-600 active:bg-red-100'
-              } ${deleting ? 'opacity-60 pointer-events-none' : ''}`}
-            >
-              <TrashIcon className="w-4 h-4" />
-              {confirmDelete && <span>Delete?</span>}
-            </button>
-          )}
-          <button onClick={onClose} className="p-2 rounded-lg hover:bg-gray-100 text-gray-500 active:bg-gray-200">
-            <XMarkIcon className="w-5 h-5" />
-          </button>
+          </div>
         </div>
 
         {/* Tab bar — Summary · Map/Graph · Laps · Peaks (edit via pencil only) */}
@@ -4181,17 +4344,22 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                     }
                   : { co: null, unit: '' };
 
+                const distPl = distDisplayParts(plDist, unitSystem);
+                const distCo = distDisplayParts(dist, unitSystem);
+                const elevCo = elevation > 0 ? formatElevation(elevation, unitSystem) : null;
+                const speedCo = isBike && avgSpeed > 0 ? formatSpeed(avgSpeed, unitSystem) : null;
+
                 const speedRow = isBike
-                  ? { label: 'Avg Speed', co: avgSpeed > 0 ? (avgSpeed * 3.6).toFixed(1) : null, plRaw: null, coRaw: avgSpeed > 0 ? avgSpeed * 3.6 : null, unit: 'km/h' }
+                  ? { label: 'Avg Speed', co: speedCo ? speedCo.value.toFixed(1) : null, plRaw: null, coRaw: speedCo?.value ?? null, unit: speedCo?.unit || '' }
                   : { label: 'Avg Pace', co: paceTable.co, plRaw: null, coRaw: null, unit: paceTable.unit };
 
                 const rows = [
                   { label: 'Duration', pl: plDur > 0 ? fmtDur(plDur) : null, co: dur > 0 ? fmtDur(dur) : null, unit: 'h:m:s', color: rowColor(dur, plDur, true), delta: deltaPct(dur, plDur) },
                   (elapsedTime > 0 && Math.abs(elapsedTime - dur) > 1) ? { label: 'Total Time', pl: null, co: fmtDur(elapsedTime), unit: 'h:m:s' } : null,
-                  { label: 'Distance', pl: plDist > 0 ? (plDist / 1000).toFixed(1) : null, co: dist > 0 ? (dist / 1000).toFixed(1) : null, unit: 'km', color: rowColor(dist, plDist), delta: deltaPct(dist, plDist) },
+                  { label: 'Distance', pl: distPl.val, co: distCo.val, unit: distCo.unit || distPl.unit || '', color: rowColor(dist, plDist), delta: deltaPct(dist, plDist) },
                   speedRow.co ? { label: speedRow.label, pl: null, co: speedRow.co, unit: speedRow.unit } : null,
                   calories > 0 ? { label: 'Calories', pl: null, co: Math.round(calories), unit: 'kcal' } : null,
-                  elevation > 0 ? { label: 'El. Gain', pl: null, co: Math.round(elevation).toLocaleString(), unit: 'm' } : null,
+                  elevCo ? { label: 'El. Gain', pl: null, co: Math.round(elevCo.value).toLocaleString(), unit: elevCo.unit } : null,
                   { label: tssLabel, pl: plTss > 0 ? Math.round(plTss) : null, co: tss > 0 ? Math.round(tss) : null, unit: 'TSS', color: rowColor(tss, plTss), delta: deltaPct(tss, plTss), tssToggle: true },
                   (ifVal > 0 || plIf > 0) ? { label: 'IF', pl: plIf > 0 ? plIf.toFixed(2) : null, co: ifVal > 0 ? ifVal.toFixed(2) : null, unit: '', color: rowColor(ifVal, plIf), delta: deltaPct(ifVal, plIf) } : null,
                   (isBike && np > 0) ? { label: 'N. Power', pl: null, co: Math.round(np), unit: 'W' } : null,
@@ -4201,17 +4369,9 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
 
                 // ── Min / Avg / Max from per-second records ──
                 const recs = chartTraining?.records || [];
-                const mam = (key, mult = 1) => {
-                  const vals = recs.map(r => r[key]).filter(v => v != null && v > 0).map(v => v * mult);
-                  if (vals.length < 3) return null;
-                  return { min: Math.min(...vals), avg: vals.reduce((a, b) => a + b, 0) / vals.length, max: Math.max(...vals) };
-                };
-                const mamRows = [
-                  { label: 'Speed', unit: 'km/h', d: mam('speed', 3.6), dec: 1 },
-                  { label: 'Heart Rate', unit: 'bpm', d: mam('heartRate'), dec: 0 },
-                  isBike ? { label: 'Power', unit: 'W', d: mam('power'), dec: 0 } : null,
-                  { label: 'Cadence', unit: isSwim ? 'spm' : cadenceDisplayUnit(sport), d: mam('cadence'), dec: 0 },
-                ].filter(Boolean).filter(r => r.d);
+                const mamRows = buildWorkoutMamRows({
+                  recs, isBike, isRun, isSwim, sport, power, hr, cadence, avgSpeed, unitSystem,
+                });
 
                 const hasPlanned = rows.some(r => r.pl != null);
                 // Compliance bar marker: 50%→left, 150%→right (100% centred).
@@ -4228,8 +4388,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                         </span>
                       </div>
                       <div className="text-center">
-                        <span className="text-[19px] font-extrabold text-gray-900 tabular-nums">{dist > 0 ? (dist / 1000).toFixed(2) : '—'}</span>
-                        <span className="text-[11px] font-semibold text-gray-400 ml-1">km</span>
+                        <span className="text-[19px] font-extrabold text-gray-900 tabular-nums">{dist > 0 ? fmtDist(dist) : '—'}</span>
                       </div>
                       <div className="text-right">
                         <button
@@ -4345,9 +4504,9 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                           {mamRows.map((r, i) => (
                             <div key={r.label} className={`grid grid-cols-[1fr_52px_52px_52px_30px] items-center px-3 py-1.5 ${i > 0 ? 'border-t border-gray-50' : ''}`}>
                               <div className="text-[12px] font-semibold text-gray-700">{r.label}</div>
-                              <div className="text-[13px] font-medium text-gray-600 tabular-nums text-right">{r.d.min.toFixed(r.dec)}</div>
-                              <div className="text-[13px] font-bold text-gray-800 tabular-nums text-right">{r.d.avg.toFixed(r.dec)}</div>
-                              <div className="text-[13px] font-medium text-gray-600 tabular-nums text-right">{r.d.max.toFixed(r.dec)}</div>
+                              <div className="text-[13px] font-medium text-gray-600 tabular-nums text-right">{formatMamValue(r, r.d.min)}</div>
+                              <div className="text-[13px] font-bold text-gray-800 tabular-nums text-right">{formatMamValue(r, r.d.avg)}</div>
+                              <div className="text-[13px] font-medium text-gray-600 tabular-nums text-right">{formatMamValue(r, r.d.max)}</div>
                               <div className="text-[9px] text-gray-400 font-medium pl-1">{r.unit}</div>
                             </div>
                           ))}
@@ -4386,27 +4545,39 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
             {/* Map · Training Overview · Time-in-zones moved → Map/Graph tab */}
 
             {/* Description / notes */}
-            {(notes || plannedDescriptionText(plannedWorkout)) && (
+            {(notes || planComment || planDescription) && (
               <div className="px-4 py-3 space-y-2 border-b border-gray-50">
-                {notes && (
+                {planComment && (
                   <div>
-                    <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1">Notes</div>
-                    <p className="text-sm text-gray-700 whitespace-pre-line">{notes}</p>
+                    <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1">Comment</div>
+                    <p className="text-sm text-gray-700 whitespace-pre-line">{planComment}</p>
                   </div>
                 )}
-                {plannedDescriptionText(plannedWorkout) && (
+                {planDescription && (
                   <div>
                     <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1">Planned description</div>
-                    <p className="text-sm text-gray-600 whitespace-pre-line">{plannedDescriptionText(plannedWorkout)}</p>
+                    <p className="text-sm text-gray-600 whitespace-pre-line">{planDescription}</p>
+                  </div>
+                )}
+                {notes && (
+                  <div>
+                    <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1">Completed notes</div>
+                    <p className="text-sm text-gray-700 whitespace-pre-line">{notes}</p>
                   </div>
                 )}
               </div>
             )}
 
             {/* Comments */}
+            {commentsTarget.trainingId && (
             <div className="px-4 py-4 border-b border-gray-100">
-              <TrainingComments trainingId={String(a.id || a._id || '')} isMobile={true} />
+              <TrainingComments
+                trainingId={commentsTarget.trainingId}
+                trainingType={commentsTarget.trainingType}
+                isMobile={true}
+              />
             </div>
+            )}
 
             {/* Planned section moved → Edit tab. Quick "Add planned" shortcut
                 when there's no plan yet, so Summary doesn't lose discoverability. */}
@@ -4507,7 +4678,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
               </div>
             ) : laps.length > 0 ? (
               <div className="px-4 py-3 border-b border-gray-50">
-                <LapChart laps={laps} color={color} isBike={isBike} isRun={isRun} isSwim={isSwim} selectedLap={null} onSelectLap={() => {}} chartScrollRef={{ current: null }} onScrollCenter={() => {}} records={chartTraining?.records} />
+                <LapChart laps={laps} color={color} isBike={isBike} isRun={isRun} isSwim={isSwim} unitSystem={unitSystem} selectedLap={null} onSelectLap={() => {}} chartScrollRef={{ current: null }} onScrollCenter={() => {}} records={chartTraining?.records} />
               </div>
             ) : (
               <div className="px-4 py-10 text-center text-sm text-gray-400">No graph data available</div>
@@ -4518,6 +4689,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                 laps={laps}
                 records={chartTraining?.records || []}
                 lapTimeSource={isStravaActivity ? 'strava' : 'fit'}
+                unitSystem={unitSystem}
               />
             )}
 
@@ -4539,23 +4711,14 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                 if (a0 != null && a1 != null) { const d = a1 - a0; if (d > 0) gain += d; else loss -= d; }
               }
               if (gain < 1 && elevation > 0) gain = elevation;
-              const mam = (key, mult = 1) => {
-                const vals = recs.map(r => r[key]).filter(v => v != null && v > 0).map(v => v * mult);
-                if (vals.length < 3) return null;
-                return { min: Math.min(...vals), avg: vals.reduce((a, b) => a + b, 0) / vals.length, max: Math.max(...vals) };
-              };
-              const mamRows = [
-                isBike ? { label: 'Power', unit: 'W', d: mam('power'), dec: 0 } : null,
-                { label: 'Heart Rate', unit: 'bpm', d: mam('heartRate'), dec: 0 },
-                { label: 'Cadence', unit: isSwim ? 'spm' : cadenceDisplayUnit(sport), d: mam('cadence'), dec: 0 },
-                { label: 'Speed', unit: 'km/h', d: mam('speed', 3.6), dec: 1 },
-                { label: 'Elevation', unit: 'm', d: mam('altitude'), dec: 0 },
-              ].filter(Boolean).filter(r => r.d);
+              const mamRows = buildWorkoutMamRows({
+                recs, isBike, isRun, isSwim, sport, power, hr, cadence, avgSpeed, includeElevation: true, unitSystem,
+              });
               const facts = [
                 workKj > 0 ? { k: 'Work', v: `${Math.round(workKj).toLocaleString()} kJ` } : null,
                 ifVal > 0 ? { k: 'IF', v: ifVal.toFixed(2) } : null,
-                gain > 0 ? { k: 'El. Gain', v: `${Math.round(gain).toLocaleString()} m` } : null,
-                loss > 0 ? { k: 'El. Loss', v: `${Math.round(loss).toLocaleString()} m` } : null,
+                gain > 0 ? { k: 'El. Gain', v: formatElevation(gain, unitSystem).formatted } : null,
+                loss > 0 ? { k: 'El. Loss', v: formatElevation(loss, unitSystem).formatted } : null,
               ].filter(Boolean);
               return (
                 <div className="px-4 py-3">
@@ -4582,9 +4745,9 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                       {mamRows.map((r, i) => (
                         <div key={r.label} className={`grid grid-cols-[1fr_52px_52px_52px_30px] items-center px-3 py-1.5 ${i > 0 ? 'border-t border-gray-50' : ''}`}>
                           <div className="text-[12px] font-semibold text-gray-700">{r.label}</div>
-                          <div className="text-[13px] font-medium text-gray-600 tabular-nums text-right">{r.d.min.toFixed(r.dec)}</div>
-                          <div className="text-[13px] font-bold text-gray-800 tabular-nums text-right">{r.d.avg.toFixed(r.dec)}</div>
-                          <div className="text-[13px] font-medium text-gray-600 tabular-nums text-right">{r.d.max.toFixed(r.dec)}</div>
+                          <div className="text-[13px] font-medium text-gray-600 tabular-nums text-right">{formatMamValue(r, r.d.min)}</div>
+                          <div className="text-[13px] font-bold text-gray-800 tabular-nums text-right">{formatMamValue(r, r.d.avg)}</div>
+                          <div className="text-[13px] font-medium text-gray-600 tabular-nums text-right">{formatMamValue(r, r.d.max)}</div>
                           <div className="text-[9px] text-gray-400 font-medium pl-1">{r.unit}</div>
                         </div>
                       ))}
@@ -4714,7 +4877,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
             )}
             {/* LapChart — sticky at top */}
             <div className="flex-shrink-0 border-b border-gray-100">
-              <LapChart laps={autoLaps ?? laps} color={color} isBike={isBike} isRun={isRun} isSwim={isSwim}
+              <LapChart laps={autoLaps ?? laps} color={color} isBike={isBike} isRun={isRun} isSwim={isSwim} unitSystem={unitSystem}
                 selectedLap={selectedLap}
                 chartScrollRef={lapChartScrollRef}
                 records={chartTraining?.records}
@@ -4755,7 +4918,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                   if (hasCadence) colTokens.push('1fr');
                   if (showLactate) colTokens.push('1fr');
                   const cols = colTokens.join(' ');
-                  const paceHeader = isBike ? 'Pwr' : isSwim ? '/100m' : 'Pace';
+                  const paceHeader = isBike ? 'Pwr' : paceUnitShort(unitSystem, isSwim ? 'swim' : 'run');
                   return (
                     <div className="rounded-xl border border-gray-100 overflow-hidden">
                       <div className="grid text-[11px] font-bold text-gray-400 uppercase tracking-wide bg-gray-50 px-3 py-2 border-b border-gray-100"
@@ -4791,12 +4954,11 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                           let paceIsNormal = true;
                           if (isSwim) {
                             const spd = lapSpeed || (lapDist > 0 && lapMoving > 0 ? lapDist / lapMoving : 0);
-                            if (spd > 0) { const s = Math.round(100 / spd); lapPaceStr = s < 60 ? `${s}s` : `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`; }
+                            if (spd > 0) lapPaceStr = formatPaceFromSpeedMps(spd, unitSystem, 'swim');
                           } else if (isRun && lapDist > 0 && lapMoving > 0) {
-                            const spk = lapMoving / (lapDist / 1000);
-                            lapPaceStr = `${Math.floor(spk/60)}:${String(Math.round(spk%60)).padStart(2,'0')}`;
-                            // Show pace for rest/walk laps too, just style it gray
-                            if (isRestLap && spk > 480) paceIsNormal = false;
+                            lapPaceStr = formatPaceFromDistanceAndDuration(lapDist, lapMoving, unitSystem, 'run');
+                            const secPerKm = lapMoving / (lapDist / 1000);
+                            if (isRestLap && secPerKm > 480) paceIsNormal = false;
                           } else if (isBike) {
                             lapPaceStr = lapPower > 0 ? `${Math.round(lapPower)}W` : '—';
                           }
@@ -4821,7 +4983,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                               style={{ gridTemplateColumns: cols, backgroundColor: typeRowBg, borderLeft: `3px solid ${isSelected ? '#2563EB' : typeDot}` }}>
                               <span className="font-bold" style={{ color: isSelected ? '#2563EB' : typeDot }}>{lapNum}</span>
                               <span className="text-right tabular-nums font-semibold text-gray-700">{fmtLapDur(lapDur)}</span>
-                              <span className="text-right tabular-nums text-gray-500">{lapDist > 0 ? (lapDist >= 1000 ? `${(lapDist/1000).toFixed(1)}km` : `${Math.round(lapDist)}m`) : '—'}</span>
+                              <span className="text-right tabular-nums text-gray-500">{lapDist > 0 ? formatDistance(lapDist, unitSystem).formatted : '—'}</span>
                               {(hasPower || hasPace) && <span className="text-right tabular-nums font-semibold" style={{ color: paceColor }}>{lapPaceStr}</span>}
                               <span className="text-right tabular-nums text-gray-500">{lapHr > 0 ? Math.round(lapHr) : '—'}</span>
                               {hasCadence && <span className="text-right tabular-nums text-gray-500">{lapCad > 0 ? Math.round(lapCad) : '—'}</span>}
@@ -4970,8 +5132,8 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
         <div className="flex items-center gap-3 px-5 py-4 border-b border-gray-100 flex-shrink-0" style={{ borderLeftWidth: 4, borderLeftColor: color }}>
           <SportIcon sport={a.sport} className="w-6 h-6 flex-shrink-0" />
           <div className="flex-1 min-w-0">
-            <div className="font-bold text-gray-900 text-base truncate">{displayTitle}</div>
-            <div className="text-xs text-gray-400">{dateStr}</div>
+            <div className="font-bold text-gray-900 text-base leading-snug break-words">{displayTitle}</div>
+            <div className="text-xs text-gray-400 mt-0.5">{dateStr}</div>
           </div>
           {detailLoading && (
             <svg className="w-4 h-4 animate-spin text-gray-300 flex-shrink-0" fill="none" viewBox="0 0 24 24">
@@ -5000,21 +5162,6 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
           {onOpenFull && (
             <button onClick={onOpenFull} title="Open full activity" className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors flex-shrink-0">
               <ArrowTopRightOnSquareIcon className="w-5 h-5" />
-            </button>
-          )}
-          {stravaIdForDelete && (
-            <button
-              onClick={handleDeleteTap}
-              disabled={deleting}
-              title={confirmDelete ? 'Tap again to confirm' : 'Delete activity from LaChart'}
-              className={`flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-semibold flex-shrink-0 transition-all ${
-                confirmDelete
-                  ? 'bg-red-500 text-white hover:bg-red-600'
-                  : 'text-gray-400 hover:bg-red-50 hover:text-red-600'
-              } ${deleting ? 'opacity-60 pointer-events-none' : ''}`}
-            >
-              <TrashIcon className="w-4 h-4" />
-              {confirmDelete && <span>Delete?</span>}
             </button>
           )}
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors flex-shrink-0">
@@ -5076,7 +5223,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
             {isBike && avgSpeed > 0 && (
               <div className="rounded-xl bg-gray-50 px-3 py-2 flex flex-col">
                 <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wide leading-none">Speed</span>
-                <span className="text-sm font-bold text-gray-800 tabular-nums mt-0.5">{(avgSpeed * 3.6).toFixed(1)} km/h</span>
+                <span className="text-sm font-bold text-gray-800 tabular-nums mt-0.5">{formatSpeed(avgSpeed, unitSystem).formatted}</span>
               </div>
             )}
             {/* Power group — avg + NP + max in one pill */}
@@ -5104,7 +5251,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
             {elevation > 0 && (
               <div className="rounded-xl bg-gray-50 px-3 py-2 flex flex-col">
                 <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wide leading-none">Elev</span>
-                <span className="text-sm font-bold text-gray-800 tabular-nums mt-0.5">{Math.round(elevation)}m</span>
+                <span className="text-sm font-bold text-gray-800 tabular-nums mt-0.5">{fmtElev(elevation)}</span>
               </div>
             )}
             {cadence > 0 && (
@@ -5138,27 +5285,38 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
           })}
 
           {/* ── Description + notes ── */}
-          {(notes || plannedDescriptionText(plannedWorkout)) && (
+          {(notes || planComment || planDescription) && (
             <div className="px-5 py-3 border-b border-gray-50 flex flex-wrap gap-4">
-              {notes && (
+              {planComment && (
                 <div className="flex-1 min-w-[200px]">
-                  <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide mb-1">Notes</div>
-                  <p className="text-sm text-gray-700 whitespace-pre-line">{notes}</p>
+                  <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide mb-1">Comment</div>
+                  <p className="text-sm text-gray-700 whitespace-pre-line">{planComment}</p>
                 </div>
               )}
-              {plannedDescriptionText(plannedWorkout) && (
+              {planDescription && (
                 <div className="flex-1 min-w-[200px]">
                   <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide mb-1">Planned description</div>
-                  <p className="text-sm text-gray-600 whitespace-pre-line">{plannedDescriptionText(plannedWorkout)}</p>
+                  <p className="text-sm text-gray-600 whitespace-pre-line">{planDescription}</p>
+                </div>
+              )}
+              {notes && (
+                <div className="flex-1 min-w-[200px]">
+                  <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide mb-1">Completed notes</div>
+                  <p className="text-sm text-gray-700 whitespace-pre-line">{notes}</p>
                 </div>
               )}
             </div>
           )}
 
           {/* ── Comments ── */}
+          {commentsTarget.trainingId && (
           <div className="px-5 py-4 border-b border-gray-100">
-            <TrainingComments trainingId={String(a.id || a._id || '')} />
+            <TrainingComments
+              trainingId={commentsTarget.trainingId}
+              trainingType={commentsTarget.trainingType}
+            />
           </div>
+          )}
 
           {/* ── Route Map ── */}
           {gpsData.length > 0 && (
@@ -5235,6 +5393,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
               laps={laps}
               records={chartTraining?.records || []}
               lapTimeSource={isStravaActivity ? 'strava' : 'fit'}
+              unitSystem={unitSystem}
               className="px-5"
             />
           )}
@@ -5245,7 +5404,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
           {laps.length > 1 && (
             <div className="border-b border-gray-50 md:sticky md:top-0 md:z-10 bg-white">
               <LapChart
-                laps={laps} color={color} isBike={isBike} isRun={isRun} isSwim={isSwim}
+                laps={laps} color={color} isBike={isBike} isRun={isRun} isSwim={isSwim} unitSystem={unitSystem}
                 selectedLap={selectedLap}
                 chartScrollRef={lapChartScrollRef}
                 records={chartTraining?.records}
@@ -5270,7 +5429,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                 const showLactate = hasLactate || !!onAddLactate;
                 const showPace = isBike || isRun || isSwim;
                 const cols = ['1.5rem', '1fr', '1fr', ...(showPace ? ['1fr'] : []), '1fr', ...(showLactate ? ['1fr'] : [])].join(' ');
-                const paceHeader = isBike ? 'Pwr' : isSwim ? '/100m' : 'Pace';
+                const paceHeader = isBike ? 'Pwr' : paceUnitShort(unitSystem, isSwim ? 'swim' : 'run');
                 return (
                   <div className="rounded-xl overflow-hidden border border-gray-100">
                     <div className="grid text-[9px] font-bold text-gray-400 uppercase tracking-wide bg-gray-50 px-3 py-1.5 border-b border-gray-100"
@@ -5303,16 +5462,12 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                         let paceIsNormal = true;
                         if (isSwim) {
                           const spd = lapSpeed || (lapDist > 0 && lapDur > 0 ? lapDist / lapDur : 0);
-                          if (spd > 0) {
-                            const s = Math.round(100 / spd);
-                            lapPaceStr = s < 60 ? `${s}s` : `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;
-                          }
+                          if (spd > 0) lapPaceStr = formatPaceFromSpeedMps(spd, unitSystem, 'swim');
                         } else if (isRun) {
                           if (lapDist > 0 && lapDur > 0) {
-                            const spk = lapDur / (lapDist / 1000);
-                            lapPaceStr = `${Math.floor(spk/60)}:${String(Math.round(spk%60)).padStart(2,'0')}`;
-                            // Show pace for rest/walk laps too, just style it gray
-                            if (isRestLap && spk > 480) paceIsNormal = false;
+                            lapPaceStr = formatPaceFromDistanceAndDuration(lapDist, lapDur, unitSystem, 'run');
+                            const secPerKm = lapDur / (lapDist / 1000);
+                            if (isRestLap && secPerKm > 480) paceIsNormal = false;
                           }
                         } else if (isBike) {
                           lapPaceStr = lapPower > 0 ? `${Math.round(lapPower)}W` : '—';
@@ -5344,7 +5499,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                             }}
                           >
                             <span className="font-bold" style={{ color: isSelected ? '#2563EB' : typeDot }}>{lapNum}</span>
-                            <span className="text-gray-500 text-right tabular-nums">{lapDist > 0 ? (lapDist >= 1000 ? `${(lapDist/1000).toFixed(1)}km` : `${Math.round(lapDist)}m`) : '—'}</span>
+                            <span className="text-gray-500 text-right tabular-nums">{lapDist > 0 ? formatDistance(lapDist, unitSystem).formatted : '—'}</span>
                             <span className="font-semibold text-gray-700 text-right tabular-nums">{fmtLapDur(lapDur)}</span>
                             {showPace && <span className="text-right tabular-nums font-semibold" style={{ color: paceColor }}>{lapPaceStr}</span>}
                             <span className="text-gray-500 text-right tabular-nums">{lapHr > 0 ? Math.round(lapHr) : '—'}</span>
@@ -5429,8 +5584,17 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                     <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Distance</label>
                     <input type="text" value={planForm.distanceDisplay}
                       onChange={e => setPlanForm(p => ({ ...p, distanceDisplay: e.target.value, distanceKm: null }))}
-                      onBlur={() => { const km = parseDistanceToKm(planForm.distanceDisplay); if (km != null && km > 0) setPlanForm(p => ({ ...p, distanceKm: km, distanceDisplay: `${km % 1 === 0 ? km : km.toFixed(2)} km` })); }}
-                      placeholder={dist > 0 ? `${(dist/1000).toFixed(1)} km` : '10 km'}
+                      onBlur={() => {
+                        const metres = parsePlanDistanceToMetres(planForm.distanceDisplay);
+                        if (metres != null && metres > 0) {
+                          setPlanForm(p => ({
+                            ...p,
+                            distanceKm: formatDistanceInputFromMetres(metres, unitSystem, { isSwim: isSwimForm }),
+                            distanceDisplay: formatDistanceFieldDisplay(metres, unitSystem, { isSwim: isSwimForm }),
+                          }));
+                        }
+                      }}
+                      placeholder={dist > 0 ? formatDistance(dist, unitSystem).formatted : distanceInputPlaceholder(unitSystem, isSwimForm)}
                       className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2" />
                   </div>
                 </div>
@@ -5462,10 +5626,10 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                   {(() => {
                     const fmtPaceDD = (distM, durS) => {
                       if (!(distM > 0 && durS > 0)) return '—';
-                      const per = isSwim ? durS / (distM / 100) : durS / (distM / 1000);
-                      return `${Math.floor(per / 60)}:${String(Math.round(per % 60)).padStart(2, '0')}`;
+                      const full = formatPaceFromDistanceAndDuration(distM, durS, unitSystem, isSwim ? 'swim' : 'run');
+                      return full ? full.replace(/\s*\/\s*\S+$/, '').trim() : '—';
                     };
-                    const stripUnit = (s) => (s ? s.replace(' /km', '').replace(' /100m', '') : '—');
+                    const stripUnit = (s) => (s ? s.replace(/\s*\/\s*\S+$/, '').trim() : '—');
                     const rows = [];
                     rows.push(['Duration', plannedDur > 0 ? fmtDur(plannedDur) : '—', dur > 0 ? fmtDur(dur) : '—']);
                     if (plannedDist > 0 || dist > 0) {
@@ -5474,7 +5638,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                     if (isBike) {
                       if (power > 0) rows.push(['Avg Power', '—', `${Math.round(power)} W`]);
                     } else if (isRun || isSwim) {
-                      rows.push([isSwim ? 'Pace /100m' : 'Pace /km', fmtPaceDD(plannedDist, plannedDur), stripUnit(paceStr)]);
+                      rows.push([`Pace ${paceUnitShort(unitSystem, isSwim ? 'swim' : 'run')}`, fmtPaceDD(plannedDist, plannedDur), stripUnit(paceStr)]);
                     }
                     if (plannedTss > 0 || tss > 0) {
                       rows.push(['TSS', plannedTss > 0 ? String(Math.round(plannedTss)) : '—', tss > 0 ? String(Math.round(tss)) : '—']);
@@ -5575,6 +5739,8 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
 
 // ─── Activity Detail Popup ────────────────────────────────────────────────────
 function ActivityDetailPopup({ activity, anchorRect, onClose, onSelectActivity, onAddLactate, plannedWorkout = null, onEditPlanned = null, onOpenFull = null }) {
+  const { user: authUser } = useAuth() || {};
+  const unitSystem = userUnitSystem(authUser);
   const popupRef = useRef(null);
   const a = activity;
   const isMobilePopup = window.innerWidth < 768;
@@ -5647,7 +5813,7 @@ function ActivityDetailPopup({ activity, anchorRect, onClose, onSelectActivity, 
   const durStr = fmtDur(dur);
 
   const dist = Number(a.distance || a.totalDistance || 0);
-  const distStr = dist > 0 ? (dist >= 1000 ? `${(dist/1000).toFixed(2)} km` : `${Math.round(dist)} m`) : '-';
+  const distStr = dist > 0 ? formatDistance(dist, unitSystem).formatted : '-';
 
   const tss  = Number(a.tss || a.trainingLoad || 0);
   const hrTss = Number(a.hrTSS || a.hrTss || 0);
@@ -5661,11 +5827,13 @@ function ActivityDetailPopup({ activity, anchorRect, onClose, onSelectActivity, 
   const avgSpeed = Number(a.avgSpeed || a.average_speed || 0); // m/s
   let paceStr = null;
   if (isRun && avgSpeed > 0) {
-    const secPerKm = 1000 / avgSpeed;
-    paceStr = `${Math.floor(secPerKm/60)}:${String(Math.round(secPerKm%60)).padStart(2,'0')} /km`;
+    paceStr = formatPaceFromSpeedMps(avgSpeed, unitSystem, 'run');
   } else if (isSwim && avgSpeed > 0) {
-    const secPer100 = 100 / avgSpeed;
-    paceStr = `${Math.floor(secPer100/60)}:${String(Math.round(secPer100%60)).padStart(2,'0')} /100m`;
+    paceStr = formatPaceFromSpeedMps(avgSpeed, unitSystem, 'swim');
+  } else if (isRun && dist > 0 && dur > 0) {
+    paceStr = formatPaceFromDistanceAndDuration(dist, dur, unitSystem, 'run');
+  } else if (isSwim && dist > 0 && dur > 0) {
+    paceStr = formatPaceFromDistanceAndDuration(dist, dur, unitSystem, 'swim');
   }
 
   const actDate = a.date || a.timestamp || a.startDate || a.start_time;
@@ -5686,7 +5854,7 @@ function ActivityDetailPopup({ activity, anchorRect, onClose, onSelectActivity, 
     ...(isBike && power > 0 ? [{ label: 'Avg Power', value: `${Math.round(power)} W` }] : []),
     ...(isBike && np > 0 ? [{ label: 'NP', value: `${Math.round(np)} W` }] : []),
     ...(hr > 0   ? [{ label: 'Avg HR',   value: `${Math.round(hr)} bpm` }] : []),
-    ...(elevation > 0 ? [{ label: 'Elevation', value: `${Math.round(elevation)} m` }] : []),
+    ...(elevation > 0 ? [{ label: 'Elevation', value: formatElevation(elevation, unitSystem).formatted }] : []),
     ...(cadence > 0   ? [{ label: isSwim ? 'Strokes/min' : 'Cadence', value: `${Math.round(cadence)}` }] : []),
   ];
 
@@ -5697,9 +5865,11 @@ function ActivityDetailPopup({ activity, anchorRect, onClose, onSelectActivity, 
   };
 
   const complianceRow = hasPlanned && plannedDur < 24 * 3600 && dur > 0 ? getCompliance(plannedDur, dur) : null;
+  const plannedDistFmt = plannedDist > 0 ? distDisplayParts(plannedDist, unitSystem) : { val: null, unit: '' };
+  const completedDistFmt = dist > 0 ? distDisplayParts(dist, unitSystem) : { val: null, unit: '' };
   const compRows = hasPlanned ? [
     { label: 'Duration', planned: fmtDurShort(plannedDur), completed: fmtDurShort(dur), unit: 'h:mm' },
-    ...(plannedDist > 0 || dist > 0 ? [{ label: 'Distance', planned: plannedDist > 0 ? `${(plannedDist/1000).toFixed(1)}` : '—', completed: dist > 0 ? `${(dist/1000).toFixed(2)}` : '—', unit: 'km' }] : []),
+    ...(plannedDist > 0 || dist > 0 ? [{ label: 'Distance', planned: plannedDistFmt.val || '—', completed: completedDistFmt.val || '—', unit: completedDistFmt.unit || plannedDistFmt.unit || '' }] : []),
     ...(plannedTss > 0 || tss > 0 ? [{ label: 'TSS', planned: plannedTss > 0 ? plannedTss : '—', completed: tss > 0 ? Math.round(tss) : '—', unit: '' }] : []),
   ] : [];
 
@@ -5851,7 +6021,8 @@ const SPORT_OPTIONS_COMPLETED = [
   { key: 'other',    label: 'Other',     icon: null,               color: '#9ca3af' },
 ];
 
-function AddCompletedSheet({ date, onClose, onSaved, athleteId, onPlanWorkout, initialStep = null, onAddDayTheme = null, onAddPeriod = null }) {
+function AddCompletedSheet({ date, onClose, onSaved, athleteId, onPlanWorkout, initialStep = null, onAddDayTheme = null, onAddPeriod = null, user = null }) {
+  const sheetUnitSystem = userUnitSystem(user);
   // step: 'menu' (when plan option available) | 'pick' | 'manual' | 'fit' | 'race'
   const [step, setStep]     = useState(initialStep || (onPlanWorkout ? 'menu' : 'pick'));
   const [saving, setSaving] = useState(false);
@@ -5913,7 +6084,7 @@ function AddCompletedSheet({ date, onClose, onSaved, athleteId, onPlanWorkout, i
     try {
       const { addTraining } = await import('../../services/api.js');
       const durSec = parseDuration(form.duration);
-      const dist   = Number(form.distanceKm) * 1000 || 0;
+      const dist = parseDistanceInputToMetres(form.distanceKm, sheetUnitSystem, { isSwim: String(form.sport).includes('swim') }) || 0;
       const payload = {
         date: form.date,
         sport: form.sport,
@@ -6243,7 +6414,9 @@ function AddCompletedSheet({ date, onClose, onSaved, athleteId, onPlanWorkout, i
                   />
                 </div>
                 <div>
-                  <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1 block">Distance (km)</label>
+                  <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1 block">
+                    Distance ({distanceInputUnitLabel(sheetUnitSystem, String(form.sport).includes('swim'))})
+                  </label>
                   <input
                     type="text"
                     inputMode="decimal"
@@ -7222,14 +7395,17 @@ export default function CalendarView({
         {rs.map((r, i) => {
           const color = RACE_PRIORITY_COLOR[r.priority] || '#dc2626';
           return (
-            <div
+            <button
               key={r._id || i}
-              title={`${r.name}${r.priority ? ` (${r.priority} race)` : ''}`}
-              className={`inline-flex items-center gap-1 rounded-md font-extrabold uppercase tracking-wide leading-none text-white truncate max-w-full ${big ? 'px-2 py-1 text-[13px]' : 'px-1.5 py-0.5 text-[11px]'}`}
+              type="button"
+              title={`${r.name}${r.priority ? ` (${r.priority} race)` : ''} — tap for Form chart`}
+              onClick={(e) => { e.stopPropagation(); setSelectedRace(r); }}
+              className={`inline-flex items-center gap-1 rounded-md font-extrabold uppercase tracking-wide leading-none text-white truncate max-w-full cursor-pointer hover:brightness-110 active:scale-[0.98] transition-all text-left ${big ? 'px-2 py-1 text-[13px]' : 'px-1.5 py-0.5 text-[11px]'}`}
               style={{ background: color }}
             >
-              <span aria-hidden>🏁</span><span className="truncate">{r.name}</span>
-            </div>
+              <FlagIcon className={`shrink-0 ${big ? 'w-3.5 h-3.5' : 'w-3 h-3'}`} aria-hidden />
+              <span className="truncate">{r.name}</span>
+            </button>
           );
         })}
       </div>
@@ -7251,6 +7427,7 @@ export default function CalendarView({
   // Add completed workout sheet
   const [addCompletedDate, setAddCompletedDate] = useState(null); // Date | null
   const [addRaceOpen, setAddRaceOpen] = useState(false);          // header "+ Race" → race form
+  const [selectedRace, setSelectedRace] = useState(null);       // click race badge → detail modal
 
   // User profile data for TSS calculation
   const [userProfile, setUserProfile] = useState(null);
@@ -9350,7 +9527,7 @@ export default function CalendarView({
                         const dur = a.duration || a.elapsed_time || a.movingTime || 0;
                         const durStr = dur > 0 ? `${Math.floor(dur/3600)}:${String(Math.floor((dur%3600)/60)).padStart(2,'0')}` : null;
                         const dist = a.distance || a.totalDistance || 0;
-                        const distStr = dist > 0 ? (dist >= 1000 ? `${(dist/1000).toFixed(1)}km` : `${Math.round(dist)}m`) : null;
+                        const distStr = dist > 0 ? formatDistanceForUser(dist, user) : null;
                         const tssVal = Number(a.tss || a.trainingLoad || 0);
 
                         return (
@@ -9591,6 +9768,7 @@ export default function CalendarView({
         <AddCompletedSheet
           date={addCompletedDate}
           athleteId={athleteId}
+          user={user}
           onPlanWorkout={onPlanWorkout}
           onAddDayTheme={onDayPlanSave ? (d) => { setAddCompletedDate(null); setDayPlanEditDate(d); } : null}
           onAddPeriod={onPeriodSave ? (d) => { setAddCompletedDate(null); setPeriodEdit({ defaultDate: d }); } : null}
@@ -9606,6 +9784,7 @@ export default function CalendarView({
         <AddCompletedSheet
           date={new Date()}
           athleteId={athleteId}
+          user={user}
           initialStep="race"
           onClose={() => setAddRaceOpen(false)}
           onSaved={() => {
@@ -9652,6 +9831,17 @@ export default function CalendarView({
             await onPeriodDelete(id);
             setPeriodEdit(null);
           } : null}
+        />
+      )}
+
+      {selectedRace && (
+        <RaceDetailModal
+          race={selectedRace}
+          activities={activities}
+          plannedWorkouts={plannedWorkouts}
+          userProfile={userProfile}
+          user={user}
+          onClose={() => setSelectedRace(null)}
         />
       )}
     </>

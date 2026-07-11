@@ -26,6 +26,12 @@ import { buildActivityMatcher, metricsPatchFromDetail } from '../utils/activityE
 import { addTraining, updateTraining, getStravaActivityDetail, createFieldLactateMeasurement, updateStravaLactateValues, getFieldLactateMeasurements, deleteFieldLactateMeasurement, assignFieldLactateMeasurement } from '../services/api';
 import { useCategories, hexToRgba } from '../context/CategoryContext';
 import { normalizeCategoryKey } from '../utils/trainingCategory';
+import {
+  formatActivityDistance,
+  formatPaceSeconds,
+  paceSecondsToDisplaySeconds,
+  resolveDistanceUnitSystem,
+} from '../utils/unitsConverter';
 import RecordLactateModal from '../components/training/RecordLactateModal';
 import { SearchableSelect } from '../components/SearchableSelect';
 // Lazy-load — keeps the heavy editor/modal chunks out of this page's bundle
@@ -45,10 +51,14 @@ function fmtDuration(secs) {
   return `${h}h ${m}m`;
 }
 
-function fmtDist(meters) {
-  if (!meters) return null;
-  if (meters >= 1000) return `${(meters / 1000).toFixed(1)} km`;
-  return `${Math.round(meters)} m`;
+function fmtDist(meters, user) {
+  return formatActivityDistance(meters, user);
+}
+
+function fmtPace(sec, unitSystem = 'metric', sport = 'run') {
+  if (!sec || !Number.isFinite(sec)) return '—';
+  const displaySec = paceSecondsToDisplaySeconds(sec, { sport, unitSystem, testRunPerMileStorage: false });
+  return formatPaceSeconds(displaySec, unitSystem, sport);
 }
 
 function fmtRelativeDate(date) {
@@ -350,6 +360,56 @@ function getIntervals(t) {
   return [];
 }
 
+// Training History chart: list API often ships lactate-only stub laps. Pull the
+// cached Strava detail laps when available and merge saved lactate/RPE edits.
+function getIntervalsForChart(t, stravaLapsCache = {}) {
+  if (!t) return [];
+
+  let intervals = [];
+  if (isStravaActivityShape(t)) {
+    const rawId = resolveStravaNumericId(t);
+    const cached = rawId ? stravaLapsCache[rawId] : null;
+    if (Array.isArray(cached) && cached.length > 0) {
+      const stubLaps = Array.isArray(t.laps) ? t.laps : [];
+      intervals = mergeLapsPreserveLactate(cached, stubLaps);
+    }
+  }
+
+  if (intervals.length === 0) {
+    if (Array.isArray(t.results) && t.results.length > 0 && resultsHaveContent(t.results)) {
+      intervals = t.results;
+    } else if (Array.isArray(t.laps) && t.laps.length > 0 && hasDetailedLaps(t)) {
+      intervals = t.laps;
+    } else if (Array.isArray(t.results) && t.results.length > 0) {
+      intervals = t.results;
+    } else if (Array.isArray(t.laps) && t.laps.length > 0) {
+      intervals = t.laps;
+    }
+  } else if (Array.isArray(t.results) && t.results.length > 0) {
+    intervals = intervals.map((lap, i) => {
+      const r = t.results[i];
+      if (!r) return lap;
+      const merged = { ...lap };
+      if (r.lactate != null && merged.lactate == null) merged.lactate = r.lactate;
+      if (r.mmol != null && merged.lactate == null) merged.lactate = r.mmol;
+      if (r.RPE != null && merged.RPE == null) merged.RPE = r.RPE;
+      if (r.rpe != null && merged.rpe == null) merged.rpe = r.rpe;
+      if (r.intervalType) merged.intervalType = r.intervalType;
+      return merged;
+    });
+  }
+
+  return intervals;
+}
+
+function needsStravaLapFetch(t, stravaLapsCache = {}) {
+  if (!isStravaActivityShape(t)) return false;
+  if (hasDetailedLaps(t)) return false;
+  const rawId = resolveStravaNumericId(t);
+  if (!rawId) return false;
+  return !(rawId in stravaLapsCache);
+}
+
 // ─── chart palette ────────────────────────────────────────────────────────────
 
 const SERIES_COLORS = ['#5E6590', '#22C55E', '#F97316', '#06B6D4', '#A855F7', '#EAB308', '#EF4444'];
@@ -401,14 +461,6 @@ function lapBarColor({ intervalType, lactate, sessionShade: shade, isSelected = 
 function intervalLactate(item) {
   const v = item?.lactate ?? item?.lactateValue ?? item?.mmol;
   return v != null && Number.isFinite(Number(v)) ? Number(v) : null;
-}
-
-// Format pace (sec/km) → "m:ss/km"
-function fmtPace(secPerKm) {
-  if (!secPerKm || !Number.isFinite(secPerKm)) return '—';
-  const m = Math.floor(secPerKm / 60);
-  const s = Math.round(secPerKm % 60);
-  return `${m}:${String(s).padStart(2, '0')}/km`;
 }
 
 // Compute pace seconds/km from a result interval (run/swim)
@@ -484,7 +536,7 @@ function intervalPaceSec(item, sport) {
 // Bars with a recorded lactate value are highlighted in warm tones.
 // X-axis labels show every Nth session date.
 
-function SessionBarChart({ sessions, metric, sport, highlightId, onSessionTap, onLapEditLactate, hideWarmCool = false }) {
+function SessionBarChart({ sessions, metric, sport, user = null, unitSystem = 'metric', highlightId, onSessionTap, onLapEditLactate, hideWarmCool = false, stravaLapsCache = {} }) {
   const W = 320, H = 230, padX = 30, padTop = 14, padBottom = 28;
   // For run/swim: ALWAYS use pace, regardless of metric tab (it's the natural unit).
   // For bike: use the chosen metric.
@@ -503,7 +555,7 @@ function SessionBarChart({ sessions, metric, sport, highlightId, onSessionTap, o
   // strip can show distance, time, HR, lactate, RPE alongside the active metric.
   const data = useMemo(() => {
     return sessions.map((s, i) => {
-      let intervals = getIntervals(s);
+      let intervals = getIntervalsForChart(s, stravaLapsCache);
       if (hideWarmCool) {
         // Drop warm-up + cool-down (and recovery) intervals from the
         // comparison chart so we only compare the meat of the workout.
@@ -540,7 +592,7 @@ function SessionBarChart({ sessions, metric, sport, highlightId, onSessionTap, o
         meta: s,
       };
     }).filter(s => s.laps.length > 0);
-  }, [sessions, metric, isPace, sport, hideWarmCool]);
+  }, [sessions, metric, isPace, sport, hideWarmCool, stravaLapsCache]);
 
   if (data.length === 0) {
     return (
@@ -593,11 +645,11 @@ function SessionBarChart({ sessions, metric, sport, highlightId, onSessionTap, o
     i === 0 || i === data.length - 1 || i % labelStep === 0
   );
 
-  const fmtY = (v) => isPace ? fmtPace(v) : Math.round(v).toString();
+  const fmtY = (v) => isPace ? fmtPace(v, unitSystem, sport) : Math.round(v).toString();
 
   // Format the tapped value for the tooltip
   const fmtTooltipValue = (v) => {
-    if (isPace) return fmtPace(v);
+    if (isPace) return fmtPace(v, unitSystem, sport);
     const unit = metric === 'power' ? 'W' : metric === 'heartRate' ? 'bpm' : metric === 'lactate' ? 'mmol' : '';
     return `${Math.round(v)}${unit ? ' ' + unit : ''}`;
   };
@@ -613,6 +665,8 @@ function SessionBarChart({ sessions, metric, sport, highlightId, onSessionTap, o
         which lap they tapped without a popup obscuring the bars. */}
     <SelectedLapInfo
       selected={selected}
+      user={user}
+      unitSystem={unitSystem}
       onOpen={() => {
         if (!selected) return;
         const s = selected.session;
@@ -825,7 +879,7 @@ function Metric({ label, value, color }) {
 // Replaces the floating popup so the chart stays unobscured. Always reserves
 // vertical space; shows a hint when nothing is selected.
 
-function SelectedLapInfo({ selected, onOpen, onEditLactate, onClear, formatValue }) {
+function SelectedLapInfo({ selected, onOpen, onEditLactate, onClear, formatValue, user = null, unitSystem = 'metric' }) {
   const empty = !selected;
   return (
     <div
@@ -887,11 +941,7 @@ function SelectedLapInfo({ selected, onOpen, onEditLactate, onClear, formatValue
               fontSize: 10, fontVariantNumeric: 'tabular-nums', color: '#6B7280', marginTop: 2,
             }}>
               {selected.dist > 0 && (
-                <Metric label="DIST" value={
-                  selected.dist >= 1000
-                    ? `${(selected.dist / 1000).toFixed(selected.dist >= 10000 ? 1 : 2)} km`
-                    : `${Math.round(selected.dist)} m`
-                } />
+                <Metric label="DIST" value={formatActivityDistance(selected.dist, user) || '—'} />
               )}
               {selected.durationSec > 0 && (
                 <Metric label="TIME" value={
@@ -901,7 +951,7 @@ function SelectedLapInfo({ selected, onOpen, onEditLactate, onClear, formatValue
                 } />
               )}
               {selected.pace > 0 && selected.sport !== 'bike' && !selected.isPace && (
-                <Metric label="PACE" value={`${Math.floor(selected.pace / 60)}:${String(Math.round(selected.pace % 60)).padStart(2, '0')}/${selected.sport === 'swim' ? '100m' : 'km'}`} />
+                <Metric label="PACE" value={fmtPace(selected.pace, unitSystem, selected.sport || 'run')} />
               )}
               {selected.power > 0 && (
                 <Metric label="PWR" value={`${Math.round(selected.power)} W`} />
@@ -1153,7 +1203,7 @@ function BarGroupChart({ sessions, metric, highlightId, onBarTap }) {
 // ─── multi-line SVG chart ─────────────────────────────────────────────────────
 // Each session is a colored polyline; X = interval index (1..n), Y = metric.
 
-function MultiLineChart({ sessions, metric, sport = 'bike', highlightId, onPointTap, hideWarmCool = false }) {
+function MultiLineChart({ sessions, metric, sport = 'bike', user = null, unitSystem = 'metric', highlightId, onPointTap, hideWarmCool = false, stravaLapsCache = {} }) {
   const W = 320, H = 170, padX = 26, padY = 18;
 
   // For run/swim the 'power' slot stores pace in seconds — same logic as SessionBarChart.
@@ -1162,7 +1212,7 @@ function MultiLineChart({ sessions, metric, sport = 'bike', highlightId, onPoint
   const [selected, setSelected] = useState(null);
   const clearSelection = () => setSelected(null);
   const fmtTooltipValue = (v) => {
-    if (isPace) return fmtPace(v);
+    if (isPace) return fmtPace(v, unitSystem, sport);
     const unit = metric === 'heartRate' ? 'bpm' : metric === 'lactate' ? 'mmol' : metric === 'power' ? 'W' : '';
     return `${Math.round(v)}${unit ? ' ' + unit : ''}`;
   };
@@ -1172,13 +1222,13 @@ function MultiLineChart({ sessions, metric, sport = 'bike', highlightId, onPoint
   const series = useMemo(() => {
     return sessions.map((s, i) => {
       const sportKey = normSport(s.sport);
-      let intervals = getIntervals(s);
+      let intervals = getIntervalsForChart(s, stravaLapsCache);
       if (hideWarmCool) {
         const total = intervals.length;
         intervals = intervals.filter((iv, i) => !isWarmupOrCooldown(iv, i, total));
       }
       const points = intervals.map((iv, idx) => {
-        const v = getIntervalMetric(iv, metric);
+        const v = isPace ? intervalPaceSec(iv, sportKey) : getIntervalMetric(iv, metric);
         if (v == null) return null;
         return {
           x: idx + 1,
@@ -1203,7 +1253,7 @@ function MultiLineChart({ sessions, metric, sport = 'bike', highlightId, onPoint
         meta: s,
       };
     }).filter(s => s.points.length >= 1);
-  }, [sessions, metric, hideWarmCool]);
+  }, [sessions, metric, hideWarmCool, isPace, stravaLapsCache]);
 
   // Domain
   const allXs = series.flatMap(s => s.points.map(p => p.x));
@@ -1244,6 +1294,8 @@ function MultiLineChart({ sessions, metric, sport = 'bike', highlightId, onPoint
     >
     <SelectedLapInfo
       selected={selected}
+      user={user}
+      unitSystem={unitSystem}
       onOpen={() => {
         if (!selected) return;
         const s = selected.session;
@@ -1272,7 +1324,7 @@ function MultiLineChart({ sessions, metric, sport = 'bike', highlightId, onPoint
           <text x={padX - 4} y={py(t)} dy="3"
             textAnchor="end"
             style={{ fontSize: 8.5, fill: '#9CA3AF', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
-            {isPace ? fmtPace(t) : Math.round(t)}
+            {isPace ? fmtPace(t, unitSystem, sport) : Math.round(t)}
           </text>
         </g>
       ))}
@@ -1390,6 +1442,7 @@ export default function NativeTrainingPage({
 }) {
   const navigate = useNavigate();
   useNativeTabScrollToTop('training');
+  const unitSystem = resolveDistanceUnitSystem(user);
   const { categories } = useCategories();
   const [selectedSport, setSelectedSport] = useState('all');
   const [categoryFilterId, setCategoryFilterId] = useState(INTERVAL_CAT_ALL);
@@ -1621,6 +1674,28 @@ export default function NativeTrainingPage({
     // chronological (oldest → newest) so newest line is "on top"
     return g[1].slice().sort((a, b) => getDate(a) - getDate(b));
   }, [grouped, selectedTitle]);
+
+  // Lazy-fetch full Strava laps for Training History — the activities list only
+  // carries lactate stubs, so the bar/line charts would otherwise show "No pace data".
+  useEffect(() => {
+    const needed = intervalTrainingsBase.filter(t => needsStravaLapFetch(t, stravaLapsCache));
+    if (!needed.length) return;
+    let cancelled = false;
+    const isCoachViewing = athleteId && user && String(athleteId) !== String(user._id || user.id || '');
+    const integAthleteId = isCoachViewing ? String(athleteId) : null;
+    needed.forEach(t => {
+      const rawId = resolveStravaNumericId(t);
+      if (!rawId) return;
+      getStravaActivityDetail(rawId, integAthleteId).then(data => {
+        if (cancelled) return;
+        const laps = Array.isArray(data?.laps) ? data.laps : [];
+        setStravaLapsCache(prev => ({ ...prev, [rawId]: laps }));
+      }).catch(() => {
+        if (!cancelled) setStravaLapsCache(prev => ({ ...prev, [rawId]: [] }));
+      });
+    });
+    return () => { cancelled = true; };
+  }, [intervalTrainingsBase, stravaLapsCache, athleteId, user]);
 
   const intervalTrainingsAll = categoryFilteredTrainings;
 
@@ -2119,8 +2194,10 @@ export default function NativeTrainingPage({
 
   // Compute per-session summary for the legend (mean of the metric across intervals)
   function sessionAvg(s, metric) {
-    const ivs = getIntervals(s);
-    const vals = ivs.map(iv => getIntervalMetric(iv, metric)).filter(v => v != null);
+    const sportKey = normSport(s.sport);
+    const isPace = (sportKey === 'run' || sportKey === 'swim') && metric === 'power';
+    const ivs = getIntervalsForChart(s, stravaLapsCache);
+    const vals = ivs.map(iv => (isPace ? intervalPaceSec(iv, sportKey) : getIntervalMetric(iv, metric))).filter(v => v != null);
     if (vals.length === 0) return null;
     return vals.reduce((a, b) => a + b, 0) / vals.length;
   }
@@ -2186,6 +2263,7 @@ export default function NativeTrainingPage({
           <LactateAssignmentSheet
             measurement={assignSheet.measurement}
             trainings={trainings}
+            user={user}
             stravaLapsCache={stravaLapsCache}
             getStravaLaps={async (stravaId) => {
               const key = String(stravaId);
@@ -2612,8 +2690,11 @@ export default function NativeTrainingPage({
                           sessions={visibleSessions}
                           metric={selectedMetric}
                           sport={currentSport}
+                          user={user}
+                          unitSystem={unitSystem}
                           highlightId={safeHighlight}
                           hideWarmCool={hideWarmCool}
+                          stravaLapsCache={stravaLapsCache}
                           onSessionTap={(s) => openActivity(s)}
                           onLapEditLactate={(s) => openTrainingForm(s)}
                         />
@@ -2621,8 +2702,11 @@ export default function NativeTrainingPage({
                           sessions={visibleSessions}
                           metric={selectedMetric}
                           sport={currentSport}
+                          user={user}
+                          unitSystem={unitSystem}
                           highlightId={safeHighlight}
                           hideWarmCool={hideWarmCool}
+                          stravaLapsCache={stravaLapsCache}
                           onPointTap={(s) => openActivity(s)}
                         />;
                   })()}
@@ -2668,14 +2752,14 @@ export default function NativeTrainingPage({
                           const id = activityKey(s);
                           const avg = isPaceMetric
                             ? (() => {
-                                const ivs = getIntervals(s);
+                                const ivs = getIntervalsForChart(s, stravaLapsCache);
                                 const vals = ivs.map(iv => intervalPaceSec(iv, currentSport)).filter(v => v != null);
                                 return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
                               })()
                             : sessionAvg(s, selectedMetric);
                           const baseAvg = isPaceMetric
                             ? (() => {
-                                const ivs = getIntervals(sessions[0]);
+                                const ivs = getIntervalsForChart(sessions[0], stravaLapsCache);
                                 const vals = ivs.map(iv => intervalPaceSec(iv, currentSport)).filter(v => v != null);
                                 return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
                               })()
@@ -2693,7 +2777,7 @@ export default function NativeTrainingPage({
                           const display = avg == null
                             ? '—'
                             : isPaceMetric
-                              ? fmtPace(avg)
+                              ? fmtPace(avg, unitSystem, currentSport)
                               : `${Math.round(avg)} ${metricUnit(selectedMetric)}`.trim();
                           const isHidden = hiddenSessionIds.has(id);
                           return (
@@ -2855,6 +2939,7 @@ export default function NativeTrainingPage({
                       <ActivityRow
                         key={activityKey(t) + '-' + idx}
                         activity={t}
+                        user={user}
                         // Tapping the row OR the "Add" pill jumps straight
                         // to the TrainingForm so the user can record lactate
                         // without going through the read-only preview modal.
@@ -2942,6 +3027,7 @@ export default function NativeTrainingPage({
                         <ExpandableLactateRow
                           key={id + '-' + idx}
                           activity={t}
+                          user={user}
                           delay={idx * 30}
                           expanded={isExpanded}
                           onToggle={() => toggleExpanded(id)}
@@ -3182,7 +3268,7 @@ export default function NativeTrainingPage({
 
 // ─── ActivityRow ──────────────────────────────────────────────────────────────
 
-function ActivityRow({ activity, onTap, onAddLactate, delay = 0, showLactateAction = false, showLactateBadge = false, showLapStrip = false }) {
+function ActivityRow({ activity, user = null, onTap, onAddLactate, delay = 0, showLactateAction = false, showLactateBadge = false, showLapStrip = false }) {
   const t = activity;
   const sport = normSport(t.sport);
   const tint = SPORT_TINT[sport] || SPORT_TINT.other;
@@ -3203,7 +3289,7 @@ function ActivityRow({ activity, onTap, onAddLactate, delay = 0, showLactateActi
   const date = getDate(t);
   const secs = getSecs(t);
   const dist = getDist(t);
-  const distStr = fmtDist(dist);
+  const distStr = fmtDist(dist, user);
   const lapsCount = Array.isArray(t.laps) ? t.laps.length
                   : Array.isArray(t.results) ? t.results.length : 0;
   const title = t.title || t.name || t.titleManual || `${sport.charAt(0).toUpperCase() + sport.slice(1)} workout`;
@@ -3342,14 +3428,15 @@ function ActivityRow({ activity, onTap, onAddLactate, delay = 0, showLactateActi
 // Used in the "Interval trainings" card. Tap header → expands showing per-lap
 // values + lactate. Tap "Open full training" → opens activity modal.
 
-function ExpandableLactateRow({ activity, delay = 0, expanded, onToggle, onOpenFull }) {
+function ExpandableLactateRow({ activity, user = null, delay = 0, expanded, onToggle, onOpenFull }) {
+  const unitSystem = resolveDistanceUnitSystem(user);
   const t = activity;
   const sport = normSport(t.sport);
   const tint = SPORT_TINT[sport] || SPORT_TINT.other;
   const date = getDate(t);
   const secs = getSecs(t);
   const dist = getDist(t);
-  const distStr = fmtDist(dist);
+  const distStr = fmtDist(dist, user);
   const lapsCount = Array.isArray(t.laps) ? t.laps.length
                   : Array.isArray(t.results) ? t.results.length : 0;
   const title = t.title || t.name || t.titleManual || `${sport.charAt(0).toUpperCase() + sport.slice(1)} workout`;
@@ -3533,7 +3620,7 @@ function ExpandableLactateRow({ activity, delay = 0, expanded, onToggle, onOpenF
                   const isWork = l.intervalType === 'work';
                   const isRecovery = l.intervalType === 'recovery';
                   const labelColor = isWork ? '#0A0E1A' : isRecovery ? '#9CA3AF' : '#374151';
-                  const value = isPaceSport && l.pace ? fmtPace(l.pace) : (l.power ? `${Math.round(l.power)}` : '—');
+                  const value = isPaceSport && l.pace ? fmtPace(l.pace, unitSystem, sport) : (l.power ? `${Math.round(l.power)}` : '—');
                   return (
                     <div
                       key={l.idx}
@@ -3557,15 +3644,8 @@ function ExpandableLactateRow({ activity, delay = 0, expanded, onToggle, onOpenF
                         {isWork && <span style={{ marginLeft: 4, fontSize: 9, color: tint, fontWeight: 800 }}>WORK</span>}
                         {isRecovery && <span style={{ marginLeft: 4, fontSize: 9, color: '#9CA3AF', fontWeight: 700 }}>rec</span>}
                       </span>
-                      {/* Distance — formatted compact: ≥1 km shows "2.4km",
-                          <1 km shows raw metres ("400m"). Em-dash when zero
-                          (e.g. erg / indoor cycling laps with no distance). */}
                       <span style={{ textAlign: 'right', color: '#6B7280' }}>
-                        {l.dist > 0
-                          ? (l.dist >= 1000
-                              ? `${(l.dist / 1000).toFixed(l.dist >= 10000 ? 0 : 1)}km`
-                              : `${l.dist}m`)
-                          : '—'}
+                        {l.dist > 0 ? (formatActivityDistance(l.dist, user) || '—') : '—'}
                       </span>
                       <span style={{ textAlign: 'right', fontWeight: 800 }}>{value}</span>
                       <span style={{ textAlign: 'right' }}>{l.hr ? Math.round(l.hr) : '—'}</span>
@@ -3860,7 +3940,7 @@ const styles = {
    any row in the Lactate log. Step 1 — pick a training (recent sessions with
    laps). Step 2 — pick a lap inside that training. The chosen lap is the
    target the server writes the measurement's value into. */
-function LactateAssignmentSheet({ measurement, trainings, getStravaLaps, busy, onClose, onAssign, onOpenInForm }) {
+function LactateAssignmentSheet({ measurement, trainings, user = null, getStravaLaps, busy, onClose, onAssign, onOpenInForm }) {
   const [pickedTraining, setPickedTraining] = useState(null);
   const [pickedLaps, setPickedLaps] = useState([]);
   const [lapsLoading, setLapsLoading] = useState(false);
@@ -3919,7 +3999,7 @@ function LactateAssignmentSheet({ measurement, trainings, getStravaLaps, busy, o
       const m = Math.floor(dur / 60), s = Math.round(dur % 60);
       parts.push(`${m}:${String(s).padStart(2, '0')}`);
     }
-    if (dist > 0) parts.push(dist >= 1000 ? `${(dist / 1000).toFixed(1)} km` : `${Math.round(dist)} m`);
+    if (dist > 0) parts.push(formatActivityDistance(dist, user) || `${Math.round(dist)} m`);
     const t = String(lap.intervalType || '').toLowerCase();
     if (t && t !== 'work') parts.push(t);
     return parts.join(' · ') || `Lap ${idx + 1}`;

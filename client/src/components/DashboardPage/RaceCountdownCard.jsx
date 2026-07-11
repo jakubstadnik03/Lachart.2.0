@@ -4,10 +4,12 @@
  * athlete's current fitness, taper hints, and a list of upcoming races.
  */
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
-import { getRaceEvents, createRaceEvent, deleteRaceEvent, getRaceTaperPreview, applyRaceTaper } from '../../services/api';
+import { XMarkIcon } from '@heroicons/react/24/outline';
+import { getRaceEvents, createRaceEvent, deleteRaceEvent, updateRaceEvent, getRaceTaperPreview, applyRaceTaper } from '../../services/api';
 import { useAuth } from '../../context/AuthProvider';
 import { syncRaceLocalNotifications } from '../../utils/raceLocalNotifications';
 import { daysUntilRace, recommendedTaperTss, sumWeekPlannedTss } from '../../utils/trainingInsights';
+import RaceDetailModal from '../Calendar/RaceDetailModal';
 
 const SPORTS = ['run', 'bike', 'swim', 'triathlon', 'hyrox', 'other'];
 const PRIORITY_COLOR = { A: '#E05347', B: '#F59E0B', C: '#599FD0' };
@@ -26,11 +28,43 @@ function formatForm(tsb) {
   return n >= 0 ? `+${n}` : `${n}`;
 }
 
+function formPillStyle(form) {
+  const n = Number(form);
+  if (Number.isNaN(n)) return { background: '#F3F4F6', color: '#6B7280', border: '1px solid #E5E7EB' };
+  if (n <= -30) return { background: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA' };
+  if (n <= -10) return { background: '#FFF7ED', color: '#EA580C', border: '1px solid #FED7AA' };
+  if (n < 10) return { background: '#F3F4F6', color: '#6B7280', border: '1px solid #E5E7EB' };
+  return { background: '#F0FDF4', color: '#16A34A', border: '1px solid #BBF7D0' };
+}
+
+function FormPill({ form }) {
+  const label = formatForm(form);
+  if (!label) return null;
+  const style = formPillStyle(form);
+  return (
+    <span
+      style={{
+        ...style,
+        fontSize: 10.5,
+        fontWeight: 700,
+        borderRadius: 999,
+        padding: '2px 8px',
+        whiteSpace: 'nowrap',
+        flexShrink: 0,
+      }}
+    >
+      Form {label}
+    </span>
+  );
+}
+
 export default function RaceCountdownCard({
   athleteId,
   currentCTL = null,
   currentForm = null,
   plannedWorkouts = [],
+  activities = [],
+  userProfile = null,
   editable = true,
   onTaperApplied = null,
 }) {
@@ -38,6 +72,7 @@ export default function RaceCountdownCard({
   const [races, setRaces] = useState([]);
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
+  const [selectedRace, setSelectedRace] = useState(null);
   const [form, setForm] = useState({ name: '', date: '', sport: 'run', priority: 'A', targetCTL: '' });
   const [saving, setSaving] = useState(false);
   const [taperPreview, setTaperPreview] = useState(null);
@@ -71,10 +106,6 @@ export default function RaceCountdownCard({
   const hints = useMemo(() => {
     if (!next) return [];
     const out = [];
-    const formStr = formatForm(currentForm);
-    if (formStr) {
-      out.push({ kind: 'form', text: `Form ${formStr}` });
-    }
     if (next.targetCTL != null && currentCTL != null) {
       const gap = Math.round(Number(next.targetCTL) - Number(currentCTL));
       if (gap > 3) out.push({ kind: 'ctl', text: `Do cílového CTL +${gap}` });
@@ -90,7 +121,7 @@ export default function RaceCountdownCard({
       }
     }
     return out;
-  }, [next, currentCTL, currentForm, days, plannedWorkouts]);
+  }, [next, currentCTL, days, plannedWorkouts]);
 
   const showTaperCta = next?.priority === 'A' && days != null && days > 0 && days <= 21;
 
@@ -151,10 +182,28 @@ export default function RaceCountdownCard({
   const remove = async (id) => {
     try {
       await deleteRaceEvent(id);
+      if (String(selectedRace?._id) === String(id)) setSelectedRace(null);
       await load();
     } catch {
       /* ignore */
     }
+  };
+
+  const saveRace = async (payload) => {
+    if (!selectedRace?._id) return;
+    await updateRaceEvent(selectedRace._id, payload);
+    setSelectedRace(null);
+    await load();
+  };
+
+  const raceTapStyle = {
+    width: '100%',
+    textAlign: 'left',
+    background: 'transparent',
+    border: 'none',
+    padding: 0,
+    cursor: 'pointer',
+    WebkitTapHighlightColor: 'transparent',
   };
 
   // Hide the whole card when there are no races (users can add from Calendar).
@@ -289,56 +338,74 @@ export default function RaceCountdownCard({
         </div>
       ) : (
         <>
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 4 }}>
-            <span style={{ fontSize: 30, fontWeight: 800, color: '#0A0E1A', lineHeight: 1 }}>
-              {Math.max(0, days)}
-            </span>
-            <span style={{ fontSize: 12, fontWeight: 700, color: '#6B7280' }}>
-              {days === 0 ? 'race day' : 'days until'}
-            </span>
-            <span
-              style={{
-                marginLeft: 'auto',
-                fontSize: 10,
-                fontWeight: 800,
-                color: '#fff',
-                background: PRIORITY_COLOR[next.priority] || '#767EB5',
-                borderRadius: 6,
-                padding: '2px 7px',
-              }}
-            >
-              {next.priority}
-            </span>
-          </div>
-          <div style={{ fontSize: 15, fontWeight: 800, color: '#0A0E1A' }}>{next.name}</div>
-          <div style={{ fontSize: 11.5, color: '#6B7280', marginTop: 1 }}>
-            {fmtDate(next.date)}
-            {next.sport ? ` · ${next.sport}` : ''}
-            {next.location ? ` · ${next.location}` : ''}
-          </div>
-          {next.targetCTL != null && (
+          <button
+            type="button"
+            onClick={() => setSelectedRace(next)}
+            style={raceTapStyle}
+          >
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 4 }}>
+              <span style={{ fontSize: 30, fontWeight: 800, color: '#0A0E1A', lineHeight: 1 }}>
+                {Math.max(0, days)}
+              </span>
+              <span style={{ fontSize: 12, fontWeight: 700, color: '#6B7280' }}>
+                {days === 0 ? 'race day' : 'days until'}
+              </span>
+              <span
+                style={{
+                  marginLeft: 'auto',
+                  fontSize: 10,
+                  fontWeight: 800,
+                  color: '#fff',
+                  background: PRIORITY_COLOR[next.priority] || '#767EB5',
+                  borderRadius: 6,
+                  padding: '2px 7px',
+                }}
+              >
+                {next.priority}
+              </span>
+            </div>
+            <div style={{ fontSize: 15, fontWeight: 800, color: '#0A0E1A' }}>{next.name}</div>
             <div
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: 6,
-                marginTop: 8,
+                gap: 8,
                 flexWrap: 'wrap',
+                marginTop: 4,
                 minWidth: 0,
-                fontSize: 12,
               }}
             >
-              {currentCTL != null && (
-                <span style={{ color: '#6B7280', whiteSpace: 'nowrap' }}>
-                  Fitness <b style={{ color: '#0A0E1A' }}>{Math.round(currentCTL)}</b>
-                  <span style={{ margin: '0 3px' }}>→</span>
-                </span>
-              )}
-              <span style={{ fontWeight: 700, color: '#767EB5', whiteSpace: 'nowrap' }}>
-                Target {Math.round(next.targetCTL)} CTL
+              <span style={{ fontSize: 11.5, color: '#6B7280' }}>
+                {fmtDate(next.date)}
+                {next.sport ? ` · ${next.sport}` : ''}
+                {next.location ? ` · ${next.location}` : ''}
               </span>
+              <FormPill form={currentForm} />
             </div>
-          )}
+            {next.targetCTL != null && (
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  marginTop: 8,
+                  flexWrap: 'wrap',
+                  minWidth: 0,
+                  fontSize: 12,
+                }}
+              >
+                {currentCTL != null && (
+                  <span style={{ color: '#6B7280', whiteSpace: 'nowrap' }}>
+                    Fitness <b style={{ color: '#0A0E1A' }}>{Math.round(currentCTL)}</b>
+                    <span style={{ margin: '0 3px' }}>→</span>
+                  </span>
+                )}
+                <span style={{ fontWeight: 700, color: '#767EB5', whiteSpace: 'nowrap' }}>
+                  Target {Math.round(next.targetCTL)} CTL
+                </span>
+              </div>
+            )}
+          </button>
           {hints.length > 0 && (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
               {hints.map((h) => (
@@ -463,32 +530,46 @@ export default function RaceCountdownCard({
             >
               {rest.map((r) => (
                 <div key={r._id} style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
-                  <span
+                  <button
+                    type="button"
+                    onClick={() => setSelectedRace(r)}
                     style={{
-                      width: 6,
-                      height: 6,
-                      borderRadius: '50%',
-                      background: PRIORITY_COLOR[r.priority] || '#767EB5',
-                      flexShrink: 0,
-                    }}
-                  />
-                  <span
-                    style={{
-                      fontSize: 12,
-                      fontWeight: 600,
-                      color: '#0A0E1A',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                      minWidth: 0,
+                      ...raceTapStyle,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6,
                       flex: 1,
+                      minWidth: 0,
                     }}
                   >
-                    {r.name}
-                  </span>
-                  <span style={{ fontSize: 11, color: '#9CA3AF', flexShrink: 0, whiteSpace: 'nowrap' }}>
-                    {Math.max(0, daysUntil(r.date))}d
-                  </span>
+                    <span
+                      style={{
+                        width: 6,
+                        height: 6,
+                        borderRadius: '50%',
+                        background: PRIORITY_COLOR[r.priority] || '#767EB5',
+                        flexShrink: 0,
+                      }}
+                    />
+                    <span
+                      style={{
+                        fontSize: 12,
+                        fontWeight: 600,
+                        color: '#0A0E1A',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                        minWidth: 0,
+                        flex: 1,
+                        textAlign: 'left',
+                      }}
+                    >
+                      {r.name}
+                    </span>
+                    <span style={{ fontSize: 11, color: '#9CA3AF', flexShrink: 0, whiteSpace: 'nowrap' }}>
+                      {Math.max(0, daysUntil(r.date))}d
+                    </span>
+                  </button>
                   {editable && (
                     <button
                       onClick={() => remove(r._id)}
@@ -498,11 +579,13 @@ export default function RaceCountdownCard({
                         border: 'none',
                         color: '#D1D5DB',
                         cursor: 'pointer',
-                        fontSize: 13,
                         padding: 2,
+                        flexShrink: 0,
+                        display: 'flex',
+                        alignItems: 'center',
                       }}
                     >
-                      ×
+                      <XMarkIcon style={{ width: 14, height: 14 }} />
                     </button>
                   )}
                 </div>
@@ -510,6 +593,20 @@ export default function RaceCountdownCard({
             </div>
           )}
         </>
+      )}
+
+      {selectedRace && (
+        <RaceDetailModal
+          race={selectedRace}
+          activities={activities}
+          plannedWorkouts={plannedWorkouts}
+          userProfile={userProfile}
+          user={user}
+          editable={editable}
+          onClose={() => setSelectedRace(null)}
+          onSave={saveRace}
+          onDelete={() => remove(selectedRace._id)}
+        />
       )}
     </div>
   );

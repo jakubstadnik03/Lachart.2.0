@@ -9,6 +9,7 @@ const TrainingComment = require('../models/TrainingComment');
 const Notification = require('../models/Notification');
 const Training = require('../models/training');
 const FitTraining = require('../models/fitTraining');
+const PlannedWorkout = require('../models/PlannedWorkout');
 const { createEmailTransporter } = require('../utils/createEmailTransporter');
 const { getClientUrl } = require('../utils/emailTemplate');
 const { sendNotification } = require('../utils/notificationHelper');
@@ -269,6 +270,12 @@ router.post('/training/:trainingId', verifyToken, async (req, res) => {
             trainingDoc = await Training.findById(trainingId)
               .select('sport athleteId title').lean();
           }
+        } else if (trainingType === 'planned') {
+          if (mongoose.Types.ObjectId.isValid(trainingId)) {
+            trainingDoc = await PlannedWorkout.findById(trainingId)
+              .select('sport athleteId title').lean();
+          }
+          resourceType = 'planned';
         }
         const rawSport   = trainingDoc?.sport || null;
         const notifSport = normalizeSportForNotif(rawSport);
@@ -323,12 +330,19 @@ router.post('/training/:trainingId', verifyToken, async (req, res) => {
           fromName: authorName,
           sport: notifSport,
           // commentId lets the app scroll to / highlight the specific comment
-          pushData: {
-            trainingId,
-            trainingType,
-            commentId: String(comment._id),
-            openActivity: `${trainingType === 'strava' ? 'strava' : trainingType === 'fit' ? 'fit' : 'regular'}-${trainingId}`,
-          },
+          pushData: trainingType === 'planned'
+            ? {
+                trainingId,
+                trainingType,
+                commentId: String(comment._id),
+                openPlanned: trainingId,
+              }
+            : {
+                trainingId,
+                trainingType,
+                commentId: String(comment._id),
+                openActivity: `${trainingType === 'strava' ? 'strava' : trainingType === 'fit' || trainingType === 'fitTraining' ? 'fit' : 'regular'}-${trainingId}`,
+              },
         });
 
         // ── Send email notifications ────────────────────────────────────────

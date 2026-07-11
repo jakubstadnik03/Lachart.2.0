@@ -176,19 +176,28 @@ export function buildPlannedTssByDate(plannedWorkouts = [], { fromDate = new Dat
  * Project CTL/ATL/TSB forward from the last actual series point using planned daily TSS.
  * @returns {Array<{ date, dateLabel, Fitness, Form, Fatigue, projected: true, PlannedTSS }>}
  */
-export function computePmcProjection(series, plannedTssByDate, { maxDays = 56 } = {}) {
+export function computePmcProjection(series, plannedTssByDate, { maxDays = 56, endDate = null } = {}) {
   if (!Array.isArray(series) || !series.length) return [];
-  const days = Object.keys(plannedTssByDate || {});
-  if (!days.length) return [];
+  const planned = plannedTssByDate || {};
+  const days = Object.keys(planned);
 
   const last = series[series.length - 1];
   let ctl = Number(last.Fitness || 0);
   let atl = Number(last.Fatigue || 0);
   const lastDate = new Date(`${String(last.date).slice(0, 10)}T12:00:00`);
   lastDate.setHours(0, 0, 0, 0);
-  const maxDay = days.reduce((m, d) => (d > m ? d : m), days[0]);
-  const end = new Date(`${maxDay}T12:00:00`);
-  end.setHours(0, 0, 0, 0);
+
+  let end;
+  if (endDate) {
+    end = new Date(`${String(endDate).slice(0, 10)}T12:00:00`);
+    end.setHours(0, 0, 0, 0);
+  } else if (days.length) {
+    const maxDay = days.reduce((m, d) => (d > m ? d : m), days[0]);
+    end = new Date(`${maxDay}T12:00:00`);
+    end.setHours(0, 0, 0, 0);
+  } else {
+    return [];
+  }
 
   const alphaCTL = 1 / 42;
   const alphaATL = 1 / 7;

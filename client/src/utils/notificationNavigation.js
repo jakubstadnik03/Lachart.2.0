@@ -59,6 +59,9 @@ export function resolveNotificationTarget(input = {}) {
 
   const trainingId = data.trainingId || data.training_id;
   const trainingType = data.trainingType || data.training_type;
+  if (trainingId && trainingType === 'planned') {
+    return { path: `/dashboard?openPlanned=${encodeURIComponent(trainingId)}` };
+  }
   if (trainingId && trainingType) {
     const prefix = trainingType === 'strava' ? 'strava' : trainingType === 'fit' ? 'fit' : 'regular';
     return { path: `/dashboard?openActivity=${encodeURIComponent(`${prefix}-${trainingId}`)}` };

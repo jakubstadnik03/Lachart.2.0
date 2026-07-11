@@ -42,7 +42,7 @@ import WorkoutPlanModal from "../components/WorkoutPlanner/WorkoutPlanModal";
 import { getPlannedWorkouts, createPlannedWorkout, updatePlannedWorkout, deletePlannedWorkout, getDayPlans, setDayPlan as apiSetDayPlan, deleteDayPlan as apiDeleteDayPlan, getPeriods, savePeriod as apiSavePeriod, deletePeriod as apiDeletePeriod } from '../services/workoutPlannerApi';
 import DashboardEmptyWelcome from "../components/DashboardPage/DashboardEmptyWelcome";
 import { Skeleton } from "../components/common/Skeleton";
-import { buildActivityMatcher, metricsPatchFromDetail, patchCalendarCache, upsertPlannedWorkoutList } from '../utils/activityEventPatches';
+import { buildActivityMatcher, metricsPatchFromDetail, patchCalendarCache, upsertPlannedWorkoutList, removePlannedWorkoutFromList, notifyPlannedWorkoutUpdated, notifyPlannedWorkoutDeleted } from '../utils/activityEventPatches';
 import { TSS_DISPLAY_MODE_EVENT, clearFormFitnessCache } from '../utils/uiPrefs';
 import { syncDailyTrainingReminder } from '../utils/dailyTrainingReminder';
 import { plannedDistanceMetres, formatPlannedDistanceMetres } from '../utils/plannedWorkoutDistance';
@@ -621,15 +621,22 @@ export default function DashboardPage() {
       if (!planned?._id) return;
       setPlannedWorkouts(prev => upsertPlannedWorkoutList(prev, planned));
     };
+    const onPlannedDeleted = (e) => {
+      const id = e?.detail?.id;
+      if (!id) return;
+      setPlannedWorkouts(prev => removePlannedWorkoutFromList(prev, id));
+    };
     window.addEventListener('activityTitleUpdated', onTitleUpdated);
     window.addEventListener('activityCategoryUpdated', onCategoryUpdated);
     window.addEventListener('activityMetricsUpdated', onMetricsUpdated);
     window.addEventListener('plannedWorkoutUpdated', onPlannedUpdated);
+    window.addEventListener('plannedWorkoutDeleted', onPlannedDeleted);
     return () => {
       window.removeEventListener('activityTitleUpdated', onTitleUpdated);
       window.removeEventListener('activityCategoryUpdated', onCategoryUpdated);
       window.removeEventListener('activityMetricsUpdated', onMetricsUpdated);
       window.removeEventListener('plannedWorkoutUpdated', onPlannedUpdated);
+      window.removeEventListener('plannedWorkoutDeleted', onPlannedDeleted);
     };
   }, []);
 
@@ -2095,29 +2102,31 @@ export default function DashboardPage() {
   }, [dashboardDataAthleteId, loadTrainings, loadCalendarData, loadFormFitness, recomputeFormFitness, getFitnessProfile]);
 
   const handleDashboardPlanSave = useCallback(async (data) => {
-    try {
-      const role = String(user?.role || '').toLowerCase();
-      const isCoachLike = ['coach', 'tester', 'testing', 'admin'].includes(role);
-      const opts = isCoachLike && selectedAthleteId ? { athleteId: selectedAthleteId } : {};
-      if (planModal?.workout?._id) {
-        const updated = await updatePlannedWorkout(planModal.workout._id, data);
-        setPlannedWorkouts(prev => prev.map(p => p._id === updated._id ? updated : p));
-      } else {
-        const created = await createPlannedWorkout({ ...data, ...opts });
-        setPlannedWorkouts(prev => [...prev, created]);
-      }
-      setPlanModal(null);
-    } catch (_) {}
+    const role = String(user?.role || '').toLowerCase();
+    const isCoachLike = ['coach', 'tester', 'testing', 'admin'].includes(role);
+    const coachAthleteId = isCoachLike && selectedAthleteId ? selectedAthleteId : null;
+    let saved;
+    if (planModal?.workout?._id) {
+      saved = await updatePlannedWorkout(planModal.workout._id, data, coachAthleteId);
+      setPlannedWorkouts(prev => upsertPlannedWorkoutList(prev, saved));
+    } else {
+      saved = await createPlannedWorkout(data, coachAthleteId);
+      setPlannedWorkouts(prev => upsertPlannedWorkoutList(prev, saved));
+    }
+    notifyPlannedWorkoutUpdated(saved);
+    setPlanModal(null);
   }, [planModal, selectedAthleteId, user?.role]);
 
   const handleDashboardPlanDelete = useCallback(async (pw) => {
     if (!window.confirm('Delete this planned workout?')) return;
-    try {
-      await deletePlannedWorkout(pw._id);
-      setPlannedWorkouts(prev => prev.filter(p => p._id !== pw._id));
-      setPlanModal(null);
-    } catch (_) {}
-  }, []);
+    const role = String(user?.role || '').toLowerCase();
+    const isCoachLike = ['coach', 'tester', 'testing', 'admin'].includes(role);
+    const coachAthleteId = isCoachLike && selectedAthleteId ? selectedAthleteId : null;
+    await deletePlannedWorkout(pw._id, coachAthleteId);
+    setPlannedWorkouts(prev => removePlannedWorkoutFromList(prev, pw._id));
+    notifyPlannedWorkoutDeleted(pw._id);
+    setPlanModal(null);
+  }, [selectedAthleteId, user?.role]);
 
   const handleDashboardCopyPlan = useCallback(async (pw, newDateStr) => {
     try {
@@ -2429,9 +2438,11 @@ export default function DashboardPage() {
         athleteId={dashboardDataAthleteId}
         onPlannedWorkoutChanged={({ type, planned, id }) => {
           if (type === 'updated' && planned?._id) {
-            setPlannedWorkouts(prev => prev.map(p => p._id === planned._id ? planned : p));
+            setPlannedWorkouts(prev => upsertPlannedWorkoutList(prev, planned));
+            notifyPlannedWorkoutUpdated(planned);
           } else if (type === 'deleted' && id) {
-            setPlannedWorkouts(prev => prev.filter(p => p._id !== id));
+            setPlannedWorkouts(prev => removePlannedWorkoutFromList(prev, id));
+            notifyPlannedWorkoutDeleted(id);
           }
         }}
         onPlanWorkout={(date) => {
@@ -2457,7 +2468,7 @@ export default function DashboardPage() {
         <WorkoutPlanModal
           date={planModal.date}
           workout={planModal.workout}
-          athleteId={selectedAthleteId}
+          context={selectedAthleteId ? { athleteId: selectedAthleteId } : {}}
           onSave={handleDashboardPlanSave}
           onDelete={handleDashboardPlanDelete}
           onClose={() => setPlanModal(null)}
@@ -2850,6 +2861,8 @@ export default function DashboardPage() {
               currentCTL={todayMetrics?.fitness}
               currentForm={todayMetrics?.form}
               plannedWorkouts={plannedWorkouts}
+              activities={calendarData}
+              userProfile={fitnessProfile}
               onTaperApplied={loadDashboardPlannedWorkouts}
             />
             <PostRaceFeedbackCard
@@ -3099,7 +3112,7 @@ export default function DashboardPage() {
       <WorkoutPlanModal
         date={planModal.date}
         workout={planModal.workout}
-        athleteId={selectedAthleteId}
+        context={selectedAthleteId ? { athleteId: selectedAthleteId } : {}}
         onSave={handleDashboardPlanSave}
         onDelete={handleDashboardPlanDelete}
         onClose={() => setPlanModal(null)}
