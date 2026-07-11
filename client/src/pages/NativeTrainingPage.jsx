@@ -224,6 +224,8 @@ function CategoryFilterChips({ categories, categoryCounts, categoryId, onChange,
 function parseResultDurationSec(r) {
   if (!r) return 0;
   if (r.durationSeconds > 0) return r.durationSeconds;
+  const stravaDur = Number(r.moving_time ?? r.elapsed_time ?? r.totalTimerTime ?? r.totalElapsedTime ?? 0);
+  if (stravaDur > 0) return stravaDur;
   // Distance-type intervals: derive time from distance + pace (power field
   // stores pace as sec/km for run / sec/100m for swim).
   if (r.durationType === 'distance') {
@@ -530,6 +532,78 @@ function intervalPaceSec(item, sport) {
   return null;
 }
 
+/**
+ * Y-domain for pace charts (fast edge = yLo, slow edge = yHi).
+ * Outlier slow laps still render — clamp values to this range when plotting.
+ */
+function computePaceYDomain(laps, sport) {
+  const valOf = (l) => l.value ?? l.y;
+  const allVals = laps.map(valOf).filter(v => v != null && v > 0);
+  if (allVals.length === 0) return { yLo: 180, yHi: 420 };
+
+  const isRun = sport === 'run';
+  const isSwim = sport === 'swim';
+  const absurdSlow = isSwim ? 600 : 900;
+  const maxSlowCap = isSwim ? 360 : 300;
+
+  const scaleVals = laps
+    .map(l => ({
+      v: valOf(l),
+      durationSec: l.durationSec || 0,
+      dist: l.dist || 0,
+      intervalType: l.intervalType,
+    }))
+    .filter(({ v, durationSec, dist, intervalType }) => {
+      if (!v || v <= 0) return false;
+      const lapType = String(intervalType || '').toLowerCase();
+      if (lapType && lapType !== 'work') return false;
+      if (isRun || isSwim) {
+        if (durationSec > 0 && durationSec < 30) return false;
+        if (dist > 0 && dist < 100) return false;
+        if (v > absurdSlow) return false;
+      }
+      return true;
+    })
+    .map(x => x.v);
+
+  let scaleValues = scaleVals.length >= 2 ? scaleVals : allVals.filter(v => v <= absurdSlow);
+  if (scaleValues.length === 0) {
+    const sorted = [...allVals].sort((a, b) => a - b);
+    scaleValues = sorted.slice(0, Math.max(1, Math.ceil(sorted.length * 0.9)));
+  }
+
+  if (scaleValues.length >= 4) {
+    const sorted = [...scaleValues].sort((a, b) => a - b);
+    const q1 = sorted[Math.floor(sorted.length * 0.25)];
+    const q3 = sorted[Math.floor(sorted.length * 0.75)];
+    const iqr = q3 - q1;
+    const lo = q1 - 1.5 * iqr;
+    const hi = q3 + 1.5 * iqr;
+    const filtered = scaleValues.filter(v => v >= lo && v <= hi);
+    if (filtered.length >= 2) scaleValues = filtered;
+  }
+
+  const avg = scaleValues.reduce((a, b) => a + b, 0) / scaleValues.length;
+  const globalSlow = Math.max(...scaleValues);
+
+  const plausibleFast = allVals.filter(v => v <= absurdSlow);
+  const globalFast = plausibleFast.length ? Math.min(...plausibleFast) : Math.min(...scaleValues);
+
+  const fastPad = isSwim ? 3 : 8;
+  const slowPad = isSwim ? 5 : 12;
+
+  // Fast edge (top): only slightly faster than the quickest lap.
+  let yLo = Math.max(isSwim ? 25 : 60, globalFast - fastPad);
+  yLo = Math.floor(yLo / 5) * 5;
+
+  // Slow edge: symmetric around average, capped at a sensible walk/jog ceiling.
+  const halfSpan = Math.max(avg - yLo, globalSlow - avg + slowPad, 20);
+  let yHi = Math.min(maxSlowCap, avg + halfSpan);
+  yHi = Math.max(yHi, yLo + 25);
+
+  return { yLo, yHi };
+}
+
 // ─── session bar chart (the new TrainingPeaks-style view) ────────────────────
 // Each session is a CLUSTER of bars on the X-axis (one bar per lap).
 // Older sessions are on the LEFT, newest on the RIGHT.
@@ -602,20 +676,28 @@ function SessionBarChart({ sessions, metric, sport, user = null, unitSystem = 'm
     );
   }
 
-  // Y-domain
-  const allVals = data.flatMap(s => s.laps.map(l => l.value));
-  const yMin = Math.min(...allVals);
-  const yMax = Math.max(...allVals);
-  const yPad = (yMax - yMin) * 0.1 || (isPace ? 5 : 1);
-  const yLo = Math.max(0, yMin - yPad);
-  const yHi = yMax + yPad;
+  // Y-domain — for pace, ignore absurdly slow laps so one standing segment
+  // doesn't squash every real interval into the top sliver of the chart.
+  const allLaps = data.flatMap(s => s.laps);
+  let yLo;
+  let yHi;
+  if (isPace) {
+    ({ yLo, yHi } = computePaceYDomain(allLaps, sport));
+  } else {
+    const allVals = allLaps.map(l => l.value);
+    const yMin = Math.min(...allVals);
+    const yMax = Math.max(...allVals);
+    const yPad = (yMax - yMin) * 0.1 || 1;
+    yLo = Math.max(0, yMin - yPad);
+    yHi = yMax + yPad;
+  }
 
   // For pace: faster (smaller seconds) at TOP, slower at BOTTOM.
   // For power/HR/lactate/RPE: higher value at TOP.
   const py = (v) => {
     if (isPace) {
-      // Smaller seconds → top of chart
-      return padTop + ((v - yLo) / (yHi - yLo || 1)) * (H - padTop - padBottom);
+      const clamped = Math.max(yLo, Math.min(yHi, v));
+      return padTop + ((clamped - yLo) / (yHi - yLo || 1)) * (H - padTop - padBottom);
     }
     return H - padBottom - ((v - yLo) / (yHi - yLo || 1)) * (H - padTop - padBottom);
   };
@@ -1233,6 +1315,7 @@ function MultiLineChart({ sessions, metric, sport = 'bike', user = null, unitSys
         return {
           x: idx + 1,
           y: v,
+          intervalType: iv?.intervalType || null,
           lactate: intervalLactate(iv),
           durationSec: parseResultDurationSec(iv) || Number(iv.moving_time || iv.elapsed_time) || 0,
           hr: Number(iv.heartRate ?? iv.average_heartrate ?? iv.avgHeartRate) || null,
@@ -1268,17 +1351,31 @@ function MultiLineChart({ sessions, metric, sport = 'bike', user = null, unitSys
 
   const xMin = 1;
   const xMax = Math.max(...allXs, 2);
-  const yMin = Math.min(...allYs);
-  const yMax = Math.max(...allYs);
-  const yPad = (yMax - yMin) * 0.1 || (isPace ? 5 : 1);
-  // For pace: higher value = slower, so invert domain (fast at top, slow at bottom)
-  const yLo = isPace ? yMin - yPad : Math.max(0, yMin - yPad);
-  const yHi = isPace ? yMax + yPad : yMax + yPad;
+  let yLo;
+  let yHi;
+  if (isPace) {
+    const paceLaps = series.flatMap(s => s.points.map(p => ({
+      value: p.y,
+      durationSec: p.durationSec,
+      dist: p.dist,
+      intervalType: p.intervalType,
+    })));
+    ({ yLo, yHi } = computePaceYDomain(paceLaps, sport));
+  } else {
+    const yMin = Math.min(...allYs);
+    const yMax = Math.max(...allYs);
+    const yPad = (yMax - yMin) * 0.1 || 1;
+    yLo = Math.max(0, yMin - yPad);
+    yHi = yMax + yPad;
+  }
 
   const px = (x) => padX + ((x - xMin) / (xMax - xMin || 1)) * (W - padX * 2);
   // For pace: invert Y so faster (lower seconds) = higher on chart, same as SessionBarChart
   const py = isPace
-    ? (y) => padY + ((y - yLo) / (yHi - yLo || 1)) * (H - padY * 2)
+    ? (y) => {
+      const clamped = Math.max(yLo, Math.min(yHi, y));
+      return padY + ((clamped - yLo) / (yHi - yLo || 1)) * (H - padY * 2);
+    }
     : (y) => H - padY - ((y - yLo) / (yHi - yLo || 1)) * (H - padY * 2);
 
   // Y-axis ticks (3)
@@ -2194,6 +2291,7 @@ export default function NativeTrainingPage({
 
   // Compute per-session summary for the legend (mean of the metric across intervals)
   function sessionAvg(s, metric) {
+    if (!s) return null;
     const sportKey = normSport(s.sport);
     const isPace = (sportKey === 'run' || sportKey === 'swim') && metric === 'power';
     const ivs = getIntervalsForChart(s, stravaLapsCache);
@@ -2726,7 +2824,8 @@ export default function NativeTrainingPage({
                   const goNextPage = () => setSessionPage(p => Math.min(totalPages - 1, p + 1));
 
                   // For delta vs first session of the workout
-                  const firstAvg = sessionAvg(sessions[0], selectedMetric);
+                  const baselineSession = sessions[0] || null;
+                  const firstAvg = baselineSession ? sessionAvg(baselineSession, selectedMetric) : null;
                   const isPaceMetric = (currentSport === 'run' || currentSport === 'swim') && selectedMetric === 'power';
 
                   return (
@@ -2759,7 +2858,8 @@ export default function NativeTrainingPage({
                             : sessionAvg(s, selectedMetric);
                           const baseAvg = isPaceMetric
                             ? (() => {
-                                const ivs = getIntervalsForChart(sessions[0], stravaLapsCache);
+                                if (!baselineSession) return null;
+                                const ivs = getIntervalsForChart(baselineSession, stravaLapsCache);
                                 const vals = ivs.map(iv => intervalPaceSec(iv, currentSport)).filter(v => v != null);
                                 return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
                               })()
@@ -3032,6 +3132,7 @@ export default function NativeTrainingPage({
                           expanded={isExpanded}
                           onToggle={() => toggleExpanded(id)}
                           onOpenFull={() => openActivity(t)}
+                          stravaLapsCache={stravaLapsCache}
                         />
                       );
                     })}
@@ -3428,7 +3529,7 @@ function ActivityRow({ activity, user = null, onTap, onAddLactate, delay = 0, sh
 // Used in the "Interval trainings" card. Tap header → expands showing per-lap
 // values + lactate. Tap "Open full training" → opens activity modal.
 
-function ExpandableLactateRow({ activity, user = null, delay = 0, expanded, onToggle, onOpenFull }) {
+function ExpandableLactateRow({ activity, user = null, delay = 0, expanded, onToggle, onOpenFull, stravaLapsCache = {} }) {
   const unitSystem = resolveDistanceUnitSystem(user);
   const t = activity;
   const sport = normSport(t.sport);
@@ -3445,9 +3546,9 @@ function ExpandableLactateRow({ activity, user = null, delay = 0, expanded, onTo
   // Interval trainings often have no totalTime/duration on the activity
   // itself — derive the duration by summing the intervals/laps instead so the
   // card shows the real workout length instead of "0m".
-  const intervalsAll = getIntervals(t);
+  const intervalsAll = getIntervalsForChart(t, stravaLapsCache);
   const summedSecs = intervalsAll.reduce(
-    (a, iv) => a + (parseResultDurationSec(iv) || Number(iv.moving_time || iv.elapsed_time) || 0),
+    (a, iv) => a + parseResultDurationSec(iv),
     0
   );
   const displaySecs = secs > 0 ? secs : summedSecs;
@@ -3468,7 +3569,7 @@ function ExpandableLactateRow({ activity, user = null, delay = 0, expanded, onTo
 
   // Build lap details list for the expanded view
   const lapDetails = (() => {
-    const intervals = getIntervals(t);
+    const intervals = intervalsAll;
     // Preserve original 1-based interval number even after filtering — so the
     // user sees real lap positions (e.g. "4, 6, 8, 12, 14") not a re-numbered
     // "1, 2, 3, 4, 5" sequence that hides the warm-up / rest context.
@@ -3476,7 +3577,7 @@ function ExpandableLactateRow({ activity, user = null, delay = 0, expanded, onTo
       const power = Number(iv.power || iv.average_watts || iv.avgPower) || null;
       const hr    = Number(iv.heartRate || iv.average_heartrate || iv.avgHeartRate) || null;
       const lac   = intervalLactate(iv);
-      const dur   = parseResultDurationSec(iv) || Number(iv.moving_time || iv.elapsed_time) || 0;
+      const dur   = parseResultDurationSec(iv);
       const pace  = isPaceSport ? intervalPaceSec(iv, sport) : null;
       const intervalType = iv.intervalType || null;
       // Distance in metres — supports both Strava (distance) and FIT
@@ -3570,7 +3671,7 @@ function ExpandableLactateRow({ activity, user = null, delay = 0, expanded, onTo
               {lactateValue.toFixed(1)} mmol
             </span>
           )}
-          <LapStrip activity={activity} sport={sport} width={120} height={34} />
+          <LapStrip activity={activity} sport={sport} width={120} height={34} stravaLapsCache={stravaLapsCache} />
         </div>
 
         {/* Chevron — rotates 90° when expanded */}
@@ -3594,7 +3695,7 @@ function ExpandableLactateRow({ activity, user = null, delay = 0, expanded, onTo
           padding: '0 11px 11px',
           animation: 'ndFadeIn .25s cubic-bezier(.22,1,.36,1) both',
         }}>
-          {lapDetails.length > 0 && (
+          {lapDetails.length > 0 ? (
             <>
               {/* Header row */}
               <div style={{
@@ -3661,7 +3762,11 @@ function ExpandableLactateRow({ activity, user = null, delay = 0, expanded, onTo
                 })}
               </div>
             </>
-          )}
+          ) : needsStravaLapFetch(t, stravaLapsCache) ? (
+            <p style={{ fontSize: 11, color: '#9CA3AF', margin: '8px 0 0', padding: '6px 4px 0' }}>
+              Loading lap data…
+            </p>
+          ) : null}
 
           {/* Open full training CTA */}
           <button
@@ -3700,8 +3805,8 @@ function ExpandableLactateRow({ activity, user = null, delay = 0, expanded, onTo
 // Bars colored by relative intensity (low=blue, mid=green/yellow, high=orange/red),
 // with a small lactate badge floating above any lap that has a measured value.
 
-function LapStrip({ activity, sport, height = 38, width = 130 }) {
-  const intervals = getIntervals(activity);
+function LapStrip({ activity, sport, height = 38, width = 130, stravaLapsCache = {} }) {
+  const intervals = getIntervalsForChart(activity, stravaLapsCache);
   if (intervals.length < 2) return null;
 
   const sportIsPace = sport === 'run' || sport === 'swim';
@@ -3718,7 +3823,7 @@ function LapStrip({ activity, sport, height = 38, width = 130 }) {
     return {
       v: intensityValue,
       lac: intervalLactate(iv),
-      durationSec: parseResultDurationSec(iv) || Number(iv.moving_time || iv.elapsed_time) || 0,
+      durationSec: parseResultDurationSec(iv),
     };
   }).filter(l => l.v != null && l.v > 0);
 

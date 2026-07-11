@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { XMarkIcon, SparklesIcon, CheckIcon } from '@heroicons/react/24/outline';
 import { isCapacitorNative } from '../utils/isNativeApp';
 import { createCheckoutSession } from '../services/api';
+import { ATHLETE_PLAN_PRICE_LABEL, COACH_PLAN_PRICE_LABEL } from '../constants/planPricing';
 
 /**
  * WelcomePaywallModal
@@ -20,8 +21,8 @@ import { createCheckoutSession } from '../services/api';
 const PLANS = [
   {
     id: 'pro',
-    name: 'Pro',
-    price: '€9.99',
+    name: 'Athlete',
+    price: ATHLETE_PLAN_PRICE_LABEL,
     tagline: 'For serious athletes',
     accent: 'from-primary to-primary/80',
     border: 'border-primary',
@@ -39,7 +40,7 @@ const PLANS = [
   {
     id: 'coach',
     name: 'Coach',
-    price: '€19.99',
+    price: COACH_PLAN_PRICE_LABEL,
     tagline: 'For coaches & teams',
     accent: 'from-purple-600 to-purple-500',
     border: 'border-purple-500',
@@ -49,7 +50,7 @@ const PLANS = [
       'Unlimited PDF report generation',
       'PDF branding — logo, title & address',
       'Coach dashboard & overview',
-      'Everything in Pro',
+      'Everything in Athlete',
     ],
   },
 ];
@@ -116,7 +117,7 @@ export default function WelcomePaywallModal({ open, onClose, userName }) {
             Welcome to LaChart{userName ? `, ${userName}` : ''}!
           </h2>
           <p className="mt-2 text-sm text-gray-600 max-w-lg mx-auto">
-            Pick a plan to get started. Try Pro or Coach <strong>free for 2 months</strong> — no charge today, cancel anytime.
+            Pick a plan to get started. Try Athlete or Coach <strong>free for 2 months</strong> — no charge today, cancel anytime.
           </p>
         </div>
 

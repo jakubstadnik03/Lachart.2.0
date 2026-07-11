@@ -2,13 +2,17 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { XMarkIcon, LockClosedIcon, SparklesIcon } from '@heroicons/react/24/outline';
 import { isCapacitorNative } from '../utils/isNativeApp';
+import {
+  ATHLETE_PLAN_PRICE_LABEL,
+  COACH_PLAN_PRICE_LABEL,
+} from '../constants/planPricing';
 import { createCheckoutSession } from '../services/api';
 import { useAuth } from '../context/AuthProvider';
 
 const PLAN_DETAILS = {
   pro: {
-    name: 'Pro',
-    price: '€9.99',
+    name: 'Athlete',
+    price: ATHLETE_PLAN_PRICE_LABEL,
     color: 'from-primary to-primary/80',
     features: [
       'Unlimited lactate tests',
@@ -22,7 +26,7 @@ const PLAN_DETAILS = {
   },
   coach: {
     name: 'Coach',
-    price: '€19.99',
+    price: COACH_PLAN_PRICE_LABEL,
     color: 'from-purple-600 to-purple-500',
     features: [
       'Unlimited athletes',
@@ -30,7 +34,7 @@ const PLAN_DETAILS = {
       'Unlimited PDF report generation',
       'PDF branding — your logo, title & address',
       'Coach dashboard & overview',
-      'Everything in Pro',
+      'Everything in Athlete',
     ],
   },
 };

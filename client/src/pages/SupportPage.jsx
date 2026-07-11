@@ -7,6 +7,7 @@ import {
   QuestionMarkCircleIcon, CheckCircleIcon,
 } from '@heroicons/react/24/outline';
 import { isCapacitorNative } from '../utils/isNativeApp';
+import { ATHLETE_PLAN_PRICE_LABEL, COACH_PLAN_PRICE_LABEL } from '../constants/planPricing';
 
 /* ── FAQ accordion item ─────────────────────────────────────────────────────── */
 const FAQItem = ({ question, answer, isOpen, onClick }) => (
@@ -70,7 +71,7 @@ const SupportPage = () => {
    * has subscription tiers, but the iOS shell intentionally hides every
    * paid surface (UpgradeModal returns null on native, the Settings
    * Subscription tab is excluded). The "Plans & Pricing" FAQ category
-   * below mentioned €9.99 / €19.99 / 30-day trial which an iOS reviewer
+   * below mentioned €6.99 / €14.99 / 30-day trial which an iOS reviewer
    * could navigate to — that's what caused submission 6d7103fa rejection.
    * Skipping the whole category (including the FAQ items it contained)
    * when running inside Capacitor keeps the iOS build paid-content-free.
@@ -119,7 +120,7 @@ const SupportPage = () => {
         },
         {
           question: "Can I use LaChart without a subscription?",
-          answer: "Yes — the Free plan gives you access to core lactate testing and curve generation, limited to 5 tests per month. You can also use the public Lactate Calculator without any account at all. Upgrading to Pro unlocks unlimited tests, PDF export, advanced analytics, and priority support.",
+          answer: "Yes — the Free plan gives you access to core lactate testing and curve generation, limited to 5 tests per month. You can also use the public Lactate Calculator without any account at all. Upgrading to Athlete unlocks unlimited tests, PDF export, advanced analytics, and priority support.",
         },
       ],
     },
@@ -266,8 +267,8 @@ const SupportPage = () => {
             <div className="space-y-3">
               {[
                 { name: "Free", price: "€0", features: ["Up to 5 lactate tests/month", "Basic training log", "Strava sync (manual)", "Public lactate calculator"] },
-                { name: "Pro", price: "€9.99/mo", features: ["Unlimited lactate tests", "PDF export", "Advanced analytics", "FIT file upload", "Auto-sync (Strava & Garmin)", "Priority support"] },
-                { name: "Coach", price: "€19.99/mo", features: ["Everything in Pro", "Coach dashboard", "Up to 10 athletes", "Athlete progress tracking"] },
+                { name: "Athlete", price: `${ATHLETE_PLAN_PRICE_LABEL}/mo`, features: ["Unlimited lactate tests", "PDF export", "Advanced analytics", "FIT file upload", "Auto-sync (Strava & Garmin)", "Priority support"] },
+                { name: "Coach", price: `${COACH_PLAN_PRICE_LABEL}/mo`, features: ["Everything in Athlete", "Coach dashboard", "Up to 10 athletes", "Athlete progress tracking"] },
               ].map(plan => (
                 <div key={plan.name} className="p-3 rounded-lg bg-gray-50 border border-gray-100">
                   <div className="flex items-baseline gap-2 mb-1.5">

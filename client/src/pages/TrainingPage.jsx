@@ -12,6 +12,7 @@ import { maybeNotifyStravaActivitiesImported } from '../utils/stravaImportLocalN
 import { useNotification } from '../context/NotificationContext';
 import { useParams, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { isCapacitorNative } from '../utils/isNativeApp';
+import { SPORT_ICON_COLORS, resolveSportKey } from '../components/shared/SportIcon';
 import { buildActivityMatcher, metricsPatchFromDetail, patchCalendarCache } from '../utils/activityEventPatches';
 import NativeTrainingPage from './NativeTrainingPage';
 import FieldLactateTrainingPanel from '../components/training/FieldLactateTrainingPanel';
@@ -122,16 +123,23 @@ export default function TrainingPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [categoryDropdownOpen, setCategoryDropdownOpen] = useState(false);
+  const [sportDropdownOpen, setSportDropdownOpen] = useState(false);
   const categoryDropdownRef = useRef(null);
+  const sportDropdownRef = useRef(null);
   const { categories, getCategoryStyle } = useCategories();
 
-  // Close category dropdown on Escape
+  // Close header dropdowns on Escape
   useEffect(() => {
-    if (!categoryDropdownOpen) return;
-    const onKey = (e) => { if (e.key === 'Escape') setCategoryDropdownOpen(false); };
+    if (!categoryDropdownOpen && !sportDropdownOpen) return;
+    const onKey = (e) => {
+      if (e.key === 'Escape') {
+        setCategoryDropdownOpen(false);
+        setSportDropdownOpen(false);
+      }
+    };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [categoryDropdownOpen]);
+  }, [categoryDropdownOpen, sportDropdownOpen]);
   const [fieldLactatePanelKey, setFieldLactatePanelKey] = useState(0);
   const [lactateActivityLoadingId, setLactateActivityLoadingId] = useState(null);
   const [stravaLactateFormError, setStravaLactateFormError] = useState(null);
@@ -780,20 +788,25 @@ export default function TrainingPage() {
   }, [selectedAthleteId, user, loadTrainings, handleAddTraining]);
 
   // Apply sport & category filters for all visual components.
-  // Excludes raw external activities (Strava `source==='strava'`, FIT `source==='fit'`,
-  // ids prefixed with strava-/fit-) — Training History/Graph should only show
-  // records that actually live in the Training collection (i.e. were exported
-  // via Add lactate). The Field Lactate panel still receives the full Strava
-  // list separately so users can add lactate to fresh activities.
-  const filteredTrainings = useMemo(() => {
-    let data = (trainings || []).filter(t => {
-      if (!t) return false;
-      if (t.source === 'strava' || t.source === 'fit') return false;
-      const idStr = String(t.id || '');
-      if (idStr.startsWith('strava-') || idStr.startsWith('fit-')) return false;
-      // Keep entries that have a Mongo _id (Training collection records)
-      return !!t._id || !t.source;
+  const logEligibleTrainings = useMemo(() => (trainings || []).filter(t => {
+    if (!t) return false;
+    if (t.source === 'strava' || t.source === 'fit') return false;
+    const idStr = String(t.id || '');
+    if (idStr.startsWith('strava-') || idStr.startsWith('fit-')) return false;
+    return !!t._id || !t.source;
+  }), [trainings]);
+
+  const sportOptions = useMemo(() => {
+    const counts = new Map();
+    logEligibleTrainings.forEach(t => {
+      const s = t.sport;
+      if (s) counts.set(s, (counts.get(s) || 0) + 1);
     });
+    return [...counts.entries()].sort((a, b) => b[1] - a[1]);
+  }, [logEligibleTrainings]);
+
+  const filteredTrainings = useMemo(() => {
+    let data = logEligibleTrainings;
     if (selectedSport !== 'all') {
       data = data.filter(t => t.sport === selectedSport);
     }
@@ -805,7 +818,7 @@ export default function TrainingPage() {
       }
     }
     return data;
-  }, [trainings, selectedSport, selectedCategory]);
+  }, [logEligibleTrainings, selectedSport, selectedCategory]);
 
   // ── Locked feature overlay wrapper ───────────────────────────────────────
   const LockedFeatureOverlay = useCallback(({ feature, children, minHeight = 220 }) => (
@@ -829,7 +842,7 @@ export default function TrainingPage() {
           </div>
           <div>
             <p className="text-sm font-bold text-gray-900">{feature}</p>
-            <p className="text-xs text-gray-500 mt-0.5">Available on Pro plan</p>
+            <p className="text-xs text-gray-500 mt-0.5">Available on Athlete plan</p>
           </div>
           <button
             className="flex items-center gap-1.5 px-4 py-2 bg-primary text-white text-xs font-semibold rounded-xl hover:bg-primary/90 transition-colors shadow-sm"
@@ -899,6 +912,78 @@ export default function TrainingPage() {
 
         {/* Controls — single row, compact */}
         <div className="flex items-center gap-1.5 flex-shrink-0">
+          {/* Sport filter */}
+          {sportOptions.length > 0 && (
+            <div className="relative" ref={sportDropdownRef}>
+              {(() => {
+                const activeSport = selectedSport !== 'all' ? selectedSport : null;
+                const sportColor = activeSport
+                  ? (SPORT_ICON_COLORS[resolveSportKey(activeSport)] || SPORT_ICON_COLORS.other)
+                  : null;
+                return (
+                  <button
+                    onClick={() => {
+                      setSportDropdownOpen(v => !v);
+                      setCategoryDropdownOpen(false);
+                    }}
+                    className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg border text-xs font-semibold whitespace-nowrap transition-all"
+                    style={activeSport
+                      ? { backgroundColor: `${sportColor}18`, borderColor: `${sportColor}55`, color: sportColor }
+                      : { backgroundColor: '#fff', borderColor: '#e5e7eb', color: '#4b5563' }
+                    }
+                  >
+                    {activeSport && (
+                      <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: sportColor }} />
+                    )}
+                    {activeSport
+                      ? activeSport.charAt(0).toUpperCase() + activeSport.slice(1)
+                      : 'Sport'}
+                    <ChevronDownIcon className={`w-3 h-3 transition-transform ${sportDropdownOpen ? 'rotate-180' : ''}`} />
+                  </button>
+                );
+              })()}
+              {sportDropdownOpen && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setSportDropdownOpen(false)} />
+                  <div className="absolute right-0 top-full mt-1 z-20 bg-white rounded-xl border border-gray-200 shadow-lg py-1 min-w-[180px] max-h-[60vh] overflow-y-auto">
+                    <button
+                      onClick={() => { setSelectedSport('all'); setSportDropdownOpen(false); }}
+                      className="w-full text-left flex items-center justify-between gap-2 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 transition-colors"
+                    >
+                      <span>All sports</span>
+                      <span className="flex items-center gap-2">
+                        <span className="text-[10px] font-medium text-gray-400 tabular-nums">{logEligibleTrainings.length}</span>
+                        {selectedSport === 'all' && <CheckIcon className="w-3.5 h-3.5 text-primary flex-shrink-0" />}
+                      </span>
+                    </button>
+                    <div className="h-px bg-gray-100 mx-2 my-1" />
+                    {sportOptions.map(([sport, count]) => {
+                      const isActive = selectedSport === sport;
+                      const color = SPORT_ICON_COLORS[resolveSportKey(sport)] || SPORT_ICON_COLORS.other;
+                      return (
+                        <button
+                          key={sport}
+                          onClick={() => { setSelectedSport(isActive ? 'all' : sport); setSportDropdownOpen(false); }}
+                          className="w-full text-left flex items-center justify-between gap-2 px-3 py-2 text-xs font-semibold hover:bg-gray-50 transition-colors"
+                          style={{ color }}
+                        >
+                          <span className="flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: color }} />
+                            {sport.charAt(0).toUpperCase() + sport.slice(1)}
+                          </span>
+                          <span className="flex items-center gap-2">
+                            <span className="text-[10px] font-medium text-gray-400 tabular-nums">{count}</span>
+                            {isActive && <CheckIcon className="w-3.5 h-3.5 flex-shrink-0" style={{ color }} />}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
           {/* Category filter */}
           <div className="relative" ref={categoryDropdownRef}>
             {(() => {
@@ -909,7 +994,10 @@ export default function TrainingPage() {
               const isUncat = selectedCategory === 'uncategorized';
               return (
                 <button
-                  onClick={() => setCategoryDropdownOpen(v => !v)}
+                  onClick={() => {
+                    setCategoryDropdownOpen(v => !v);
+                    setSportDropdownOpen(false);
+                  }}
                   className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg border text-xs font-semibold whitespace-nowrap transition-all"
                   style={activeCat
                     ? { backgroundColor: activeStyle.backgroundColor, borderColor: activeStyle.borderColor, color: activeStyle.color }
@@ -928,14 +1016,9 @@ export default function TrainingPage() {
               // Count trainings per category over the sport-filtered set so the
               // dropdown surfaces what's actually available — empty categories
               // sit at the bottom (disabled) instead of looking selectable.
-              const sportScoped = (trainings || []).filter(t => {
-                if (!t) return false;
-                if (t.source === 'strava' || t.source === 'fit') return false;
-                const idStr = String(t.id || '');
-                if (idStr.startsWith('strava-') || idStr.startsWith('fit-')) return false;
-                if (!t._id && t.source) return false;
-                return selectedSport === 'all' || t.sport === selectedSport;
-              });
+              const sportScoped = logEligibleTrainings.filter(t =>
+                selectedSport === 'all' || t.sport === selectedSport
+              );
               const counts = new Map();
               let uncatCount = 0;
               sportScoped.forEach(t => {

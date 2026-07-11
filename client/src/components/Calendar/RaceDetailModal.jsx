@@ -45,9 +45,11 @@ function formStatus(form) {
 function RaceDayChartLabel({ viewBox, fill = '#dc2626' }) {
   if (!viewBox) return null;
   const x = viewBox.x ?? 0;
-  const y = (viewBox.y ?? 0) - 4;
+  // Clamp so the label never renders above the chart's top edge (where it would
+  // get clipped and become unreadable).
+  const y = Math.max(2, (viewBox.y ?? 0) - 16);
   return (
-    <foreignObject x={x - 54} y={y - 12} width={58} height={16}>
+    <foreignObject x={x - 54} y={y} width={58} height={16}>
       <div
         xmlns="http://www.w3.org/1999/xhtml"
         className="flex items-center justify-end gap-1 text-[10px] font-bold leading-none"
@@ -363,7 +365,7 @@ export default function RaceDetailModal({
               </p>
               <div className="h-[280px] w-full">
                 <ResponsiveContainer width="100%" height="100%">
-                  <ComposedChart data={chartData} margin={{ top: 8, right: 12, left: 0, bottom: 4 }}>
+                  <ComposedChart data={chartData} margin={{ top: 24, right: 14, left: 0, bottom: 4 }}>
                     <defs>
                       <linearGradient id="raceFormGrad" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="5%" stopColor={PMC_COLORS.form} stopOpacity={0.25} />

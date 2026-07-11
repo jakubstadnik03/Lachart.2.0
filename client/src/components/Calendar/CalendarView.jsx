@@ -917,50 +917,55 @@ function LapChart({ laps, color, isBike, isRun, isSwim, unitSystem = 'metric', s
 
   const isInverted = isRun || isSwim; // lower pace value = faster = taller bar
 
-  // ── Build the y-axis range from "real" laps only ──
-  // Short rests / standing pauses inflate the slowest pace into nonsense
-  // (e.g. a 28-metre walking transition = 48:19 /km) and squeeze every real
-  // running lap into the top sliver of the chart so the bars all look the
-  // same height. Drop laps that are too short OR clearly tagged as
-  // warmup/recovery/cooldown when picking min/max; bars for those laps
-  // still render — they just clamp to the chart's edge instead of dictating
-  // the scale.
-  const scaleEntries = entries.filter((e, i) => {
+  // ── Build the y-axis range ──
+  // Fast (top) edge: work laps only — keeps the quickest intervals readable.
+  // Slow (bottom) edge: all plausible laps incl. warmup/recovery/rest so an
+  // easy jog at 8–10 min/km still fits; only drop GPS junk (short segments or
+  // >20 min/km standing still).
+  const isPaceEligible = (e) => {
     if (e.isPause || !e.value || e.value <= 0) return false;
-    const lap = laps[i];
-    const lapType = lap?.intervalType;
-    if (lapType && lapType !== 'work') return false;
-    // Pace-based heuristic: drop laps shorter than ~30 s or under 100 m for
-    // run/swim. For bike (power), short laps are usually fine — keep them.
     if (isRun || isSwim) {
       if ((e.dur || 0) < 30) return false;
       if ((e.dist || 0) < 100) return false;
-      // GPS glitches / standing still → 20–30 min/km and wreck the Y-axis.
-      if (isRun && e.value > 900) return false;   // > 15:00/km
-      if (isSwim && e.value > 600) return false;  // > 10:00/100m
+      if (isRun && e.value > 1200) return false;  // > 20:00/km — GPS glitch only
+      if (isSwim && e.value > 900) return false;
     }
+    return true;
+  };
+
+  const scaleEntries = entries.filter((e, i) => {
+    if (!isPaceEligible(e)) return false;
+    const lapType = laps[i]?.intervalType;
+    if (lapType && lapType !== 'work') return false;
     return true;
   }).map(e => e.value);
 
+  const slowScaleEntries = entries.filter(isPaceEligible).map(e => e.value);
+
   // IQR-based outlier clamp: removes recovery/cooldown laps whose pace
   // would collapse the scale (e.g. 2:00/100m when all intervals are 1:14–1:46).
-  let scaleValues = scaleEntries.length > 0 ? scaleEntries : nonZero;
+  let scaleValues = scaleEntries.length > 0 ? scaleEntries : slowScaleEntries;
   if (scaleValues.length >= 4) {
     const sorted = [...scaleValues].sort((a, b) => a - b);
     const q1 = sorted[Math.floor(sorted.length * 0.25)];
     const q3 = sorted[Math.floor(sorted.length * 0.75)];
     const iqr = q3 - q1;
-    // Tighter Tukey fence (2026-05): standard is 1.5× IQR but for swim
-    // step-test data and run tempo intervals that's too permissive — odd
-    // sprint laps and wall-touches sit just inside the fence, then drag
-    // the chart range out so the typical data cluster only occupies the
-    // middle 50 % of the chart. 1.0× IQR rejects them more aggressively,
-    // and the chart range below picks up the slack so they still appear
-    // (clamped to the chart edge).
     const lo = q1 - 1.5 * iqr;
     const hi = q3 + 1.5 * iqr;
     const filtered = scaleValues.filter(v => v >= lo && v <= hi);
     if (filtered.length >= 2) scaleValues = filtered;
+  }
+
+  let slowScaleValues = slowScaleEntries.length > 0 ? slowScaleEntries : scaleValues;
+  if (slowScaleValues.length >= 4) {
+    const sorted = [...slowScaleValues].sort((a, b) => a - b);
+    const q1 = sorted[Math.floor(sorted.length * 0.25)];
+    const q3 = sorted[Math.floor(sorted.length * 0.75)];
+    const iqr = q3 - q1;
+    const lo = q1 - 2 * iqr;
+    const hi = q3 + 2 * iqr;
+    const filtered = slowScaleValues.filter(v => v >= lo && v <= hi);
+    if (filtered.length >= 2) slowScaleValues = filtered;
   }
 
   const maxVal   = Math.max(...scaleValues);
@@ -989,52 +994,39 @@ function LapChart({ laps, color, isBike, isRun, isSwim, unitSystem = 'metric', s
     ? valuedEntries.reduce((a, e) => a + e.value * (e.weight || 0), 0) / weightTot
     : scaleValues.reduce((a, b) => a + b, 0) / (scaleValues.length || 1);
 
+  const avgForScale = scaleValues.length
+    ? scaleValues.reduce((a, b) => a + b, 0) / scaleValues.length
+    : avgValue;
+
   let chartMin, chartMax;
   if (scaleOverride) {
     chartMin = scaleOverride.min;
     chartMax = scaleOverride.max;
   } else {
-    // Centre the axis on the session average (the dashed line) AND keep every
-    // real lap on-chart — including slow warm-up / recovery laps. We size a
-    // SYMMETRIC range around the average just big enough to cover the farthest
-    // lap from it, so: the average sits in the middle, no lap (fast OR slow)
-    // clamps off the bottom/top, and a small padding keeps bars off the edges.
     // Size the Y-axis from work laps (scaleValues), not every raw segment.
     // Outlier / pause laps still render — getBarH clamps them to the edge.
-    let rangeVals = scaleValues.length >= 2 ? scaleValues.slice() : nonZero.slice();
-    if (rangeVals.length >= 6) {
-      const s = [...rangeVals].sort((a, b) => a - b);
-      const q1 = s[Math.floor(s.length * 0.1)];
-      const q3 = s[Math.floor(s.length * 0.9)];
-      const iqr = q3 - q1;
-      const f = rangeVals.filter(v => v >= q1 - 2.5 * iqr && v <= q3 + 2.5 * iqr);
-      if (f.length >= 3) rangeVals = f;
-    }
-    const maxDev = Math.max(...rangeVals.map(v => Math.abs(v - avgValue)), avgValue * 0.03);
-    const spread = maxDev * 1.1; // 10 % headroom so the most extreme bar isn't glued to the edge
-    // Every real lap pace for the FAST edge (include 80 m sprints); exclude only
-    // pauses and absurd GPS-slow paces — not the <30 s filter used for scaleValues.
-    const allPaceBounds = entries
-      .filter((e) => {
-        if (e.isPause || !e.value || e.value <= 0) return false;
-        if (isRun && e.value > 900) return false;
-        if (isSwim && e.value > 600) return false;
-        return true;
-      })
-      .map((e) => e.value);
+    // Work laps → top edge; all plausible laps (incl. rest) → bottom edge.
+    const maxSlowCap = isSwim ? 600 : 720;
+
     if (isInverted) {
-      const sorted = [...rangeVals].sort((a, b) => a - b);
-      const p90 = sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.9))] ?? avgValue;
-      const slowPad = Math.max(20, p90 * 0.1);
-      const globalFast = allPaceBounds.length
-        ? Math.min(...allPaceBounds)
-        : (sorted[0] ?? avgValue);
-      chartMin = Math.max(60, globalFast * 0.92);
-      chartMax = Math.min(avgValue + spread, p90 + slowPad);
+      const globalFast = Math.min(...scaleValues);
+      const globalSlow = Math.max(...slowScaleValues);
+      const fastPad = isSwim ? 3 : 8;
+      const slowPad = isSwim ? 5 : 15;
+
+      // Top edge: just a few seconds faster than the quickest work lap.
+      chartMin = Math.max(isSwim ? 25 : 60, globalFast - fastPad);
+      chartMin = Math.floor(chartMin / 5) * 5;
+
+      // Bottom edge: follows the slowest real lap in this session (rest/jog OK).
+      chartMax = Math.min(maxSlowCap, globalSlow + slowPad);
+      chartMax = Math.ceil(chartMax / 5) * 5;
       chartMax = Math.max(chartMax, chartMin + 30);
     } else {
-      chartMin = Math.max(0, avgValue - spread);
-      chartMax = avgValue + spread;
+      const maxDev = Math.max(...scaleValues.map(v => Math.abs(v - avgForScale)), avgForScale * 0.03);
+      const spread = maxDev * 1.1;
+      chartMin = Math.max(0, avgForScale - spread);
+      chartMax = avgForScale + spread;
     }
   }
   const range    = chartMax - chartMin || 1;
@@ -4236,65 +4228,64 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
       // overlays even when the higher one has a bigger z-index, which
       // was making Copy/Save/Share buttons unresponsive.
       <div className="fixed inset-0 z-[10001] bg-white flex flex-col" style={{ paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)', pointerEvents: shareOpen ? 'none' : 'auto' }}>
-        {/* Header — title on its own row so long names aren't truncated */}
+        {/* Header — title + actions kept together on one top row */}
         <div className="px-4 py-3 border-b border-gray-100 flex-shrink-0" style={{ borderLeftWidth: 4, borderLeftColor: color }}>
-          <div className="flex items-start gap-2">
-            <SportIcon sport={a.sport} className="w-6 h-6 flex-shrink-0 mt-0.5" />
+          <div className="flex items-center gap-2">
+            <SportIcon sport={a.sport} className="w-6 h-6 flex-shrink-0" />
             <div className="flex-1 min-w-0">
-              <div className="font-bold text-gray-900 text-base leading-snug break-words">{displayTitle}</div>
-              <div className="text-xs text-gray-400 mt-0.5">{dateStr}</div>
+              <div className="font-bold text-gray-900 text-base leading-snug truncate">{displayTitle}</div>
+              <div className="text-xs text-gray-400 mt-0.5 truncate">{dateStr}</div>
             </div>
             {detailLoading && (
-              <svg className="w-4 h-4 animate-spin text-gray-300 flex-shrink-0 mt-1" fill="none" viewBox="0 0 24 24">
+              <svg className="w-4 h-4 animate-spin text-gray-300 flex-shrink-0" fill="none" viewBox="0 0 24 24">
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
               </svg>
             )}
+            {onAddLactate && hasLaps && (
+              <button onClick={() => { onAddLactate(merged); onClose(); }}
+                title="Add lactate"
+                className="flex items-center gap-1 px-2 py-1.5 rounded-lg border-2 text-xs font-bold flex-shrink-0 active:opacity-70"
+                style={{ borderColor: '#7c3aed', color: '#7c3aed', backgroundColor: '#f5f3ff' }}>
+                <BeakerIcon className="w-4 h-4" />
+                <span>Lactate</span>
+              </button>
+            )}
+            {/* Edit — opens the Planned | Completed editor (Edit tab; not on tab bar) */}
+            <button
+              type="button"
+              onClick={() => {
+                if (mobileView === 'edit') {
+                  setDurationPickerField(null);
+                  setMobileView('summary');
+                  setEditingPlanned(false);
+                } else {
+                  setEditingPlanned(true);
+                  setMobileView('edit');
+                }
+              }}
+              title="Edit activity"
+              className={`p-2 rounded-lg active:bg-gray-200 flex-shrink-0 hover:bg-gray-100 touch-manipulation ${
+                mobileView === 'edit' ? 'bg-blue-50 text-blue-700' : 'text-gray-500'
+              }`}
+              style={{ WebkitTapHighlightColor: 'transparent' }}
+            >
+              <PencilIcon className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => setShareOpen(true)}
+              title="Share activity"
+              className="p-2 rounded-lg hover:bg-gray-100 text-gray-500 active:bg-gray-200 flex-shrink-0"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+                <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" />
+                <polyline points="16 6 12 2 8 6" />
+                <line x1="12" y1="2" x2="12" y2="15" />
+              </svg>
+            </button>
             <button onClick={onClose} className="p-2 -mr-1 rounded-lg hover:bg-gray-100 text-gray-500 active:bg-gray-200 flex-shrink-0">
               <XMarkIcon className="w-5 h-5" />
             </button>
-          </div>
-          <div className="flex items-center gap-1.5 mt-2 pl-8 flex-wrap">
-          {onAddLactate && hasLaps && (
-            <button onClick={() => { onAddLactate(merged); onClose(); }}
-              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border-2 text-xs font-bold flex-shrink-0 active:opacity-70"
-              style={{ borderColor: '#7c3aed', color: '#7c3aed', backgroundColor: '#f5f3ff' }}>
-              <BeakerIcon className="w-4 h-4" />
-              <span>Lactate</span>
-            </button>
-          )}
-          {/* Edit — opens the Planned | Completed editor (Edit tab; not on tab bar) */}
-          <button
-            type="button"
-            onClick={() => {
-              if (mobileView === 'edit') {
-                setDurationPickerField(null);
-                setMobileView('summary');
-                setEditingPlanned(false);
-              } else {
-                setEditingPlanned(true);
-                setMobileView('edit');
-              }
-            }}
-            title="Edit activity"
-            className={`p-2 rounded-lg active:bg-gray-200 flex-shrink-0 hover:bg-gray-100 touch-manipulation ${
-              mobileView === 'edit' ? 'bg-blue-50 text-blue-700' : 'text-gray-500'
-            }`}
-            style={{ WebkitTapHighlightColor: 'transparent' }}
-          >
-            <PencilIcon className="w-4 h-4" />
-          </button>
-          <button
-            onClick={() => setShareOpen(true)}
-            title="Share activity"
-            className="p-2 rounded-lg hover:bg-gray-100 text-gray-500 active:bg-gray-200"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
-              <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" />
-              <polyline points="16 6 12 2 8 6" />
-              <line x1="12" y1="2" x2="12" y2="15" />
-            </svg>
-          </button>
           </div>
         </div>
 
@@ -4376,34 +4367,43 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                 const hasPlanned = rows.some(r => r.pl != null);
                 // Compliance bar marker: 50%→left, 150%→right (100% centred).
                 const markerLeft = compliancePct != null ? Math.max(2, Math.min(98, (compliancePct - 50) / 100 * 100)) : null;
+                // Show Normalized Power as a 4th KPI on the top strip (bikes only).
+                const showNp = isBike && np > 0;
+                const kpiNum = showNp ? 'text-[17px]' : 'text-[19px]';
 
                 return (
                   <>
-                    {/* Top KPI strip: Duration (green when on plan) · Distance · hrTSS */}
-                    <div className="grid grid-cols-3 items-start gap-2 pt-1">
+                    {/* Top KPI strip: Duration (green when on plan) · Distance · hrTSS · NP */}
+                    <div className={`grid ${showNp ? 'grid-cols-4' : 'grid-cols-3'} items-start gap-2 pt-1`}>
                       <div>
                         <span className="inline-flex items-baseline gap-1 px-2 py-0.5 rounded-lg tabular-nums"
                           style={durCompliant ? { backgroundColor: '#dcfce7', border: '1px solid #86efac' } : {}}>
-                          <span className="text-[19px] font-extrabold" style={{ color: durCompliant ? '#15803d' : '#1f2937' }}>{fmtDur(dur)}</span>
+                          <span className={`${kpiNum} font-extrabold`} style={{ color: durCompliant ? '#15803d' : '#1f2937' }}>{fmtDur(dur)}</span>
                         </span>
                       </div>
                       <div className="text-center">
-                        <span className="text-[19px] font-extrabold text-gray-900 tabular-nums">{dist > 0 ? fmtDist(dist) : '—'}</span>
+                        <span className={`${kpiNum} font-extrabold text-gray-900 tabular-nums`}>{dist > 0 ? fmtDist(dist) : '—'}</span>
                       </div>
-                      <div className="text-right">
+                      <div className={showNp ? 'text-center' : 'text-right'}>
                         <button
                           type="button"
                           onClick={flipTssMode}
                           disabled={!tssToggleable}
-                          className={`text-right ${tssToggleable ? 'cursor-pointer active:opacity-70' : 'cursor-default'}`}
+                          className={`${showNp ? 'text-center' : 'text-right'} ${tssToggleable ? 'cursor-pointer active:opacity-70' : 'cursor-default'}`}
                           title={tssToggleHint || undefined}
                         >
-                          <span className="text-[19px] font-extrabold text-gray-900 tabular-nums">{tss > 0 ? Math.round(tss) : '—'}</span>
+                          <span className={`${kpiNum} font-extrabold text-gray-900 tabular-nums`}>{tss > 0 ? Math.round(tss) : '—'}</span>
                           <span className={`text-[11px] font-semibold ml-1 ${tssToggleable ? 'text-blue-600' : 'text-gray-400'}`}>
                             {tssLabel}{tssToggleable ? ' ⇄' : ''}
                           </span>
                         </button>
                       </div>
+                      {showNp && (
+                        <div className="text-right">
+                          <span className={`${kpiNum} font-extrabold text-gray-900 tabular-nums`}>{Math.round(np)}</span>
+                          <span className="text-[11px] font-semibold ml-1 text-gray-400">NP</span>
+                        </div>
+                      )}
                     </div>
                     {!tssToggleable && tssToggleHint && (
                       <p className="text-[10px] text-gray-400 text-right leading-snug">{tssToggleHint}</p>

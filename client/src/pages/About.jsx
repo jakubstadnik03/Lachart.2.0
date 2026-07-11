@@ -20,8 +20,7 @@
 //   17. What's new (changelog)
 //   5b. Workspaces tabs (Athlete / Coach / Tester) — moved up
 //   19. App download (App Store + Play badges)
-//   20. Pricing — Free / Pro / Coach (kept verbatim from prior About so
-//       any IAP-sensitive copy stays unchanged for the web)
+//   20. Pricing — Free / Athlete / Coach
 //   21. FAQ accordion (reuses prior faqItems data)
 //   22. CTA card
 //   23. Footer
@@ -33,6 +32,7 @@ import { useAuth } from '../context/AuthProvider';
 import { isCapacitorNative } from '../utils/isNativeApp';
 import { trackEvent } from '../utils/analytics';
 import { createCheckoutSession } from '../services/api';
+import { ATHLETE_PLAN_PRICE_LABEL, COACH_PLAN_PRICE_LABEL } from '../constants/planPricing';
 
 const AboutGallerySection = React.lazy(() => import('../components/About/AboutGallerySection'));
 const IOSGalleryCarousel = React.lazy(() => import('../components/About/IOSGalleryCarousel'));
@@ -2014,17 +2014,14 @@ export default function About() {
               <div style={{ flex: 1, minWidth: 240 }}>
                 <p style={{ fontWeight: 700, color: LC.ink, margin: 0 }}>🎁 All features included — no card needed</p>
                 <p style={{ fontSize: 13, color: LC.muted, margin: '4px 0 0', lineHeight: 1.5 }}>
-                  Free, Pro and Coach features are all unlocked during the launch period. Sign up with an email and you're in — no payment screen.
+                  Free, Athlete and Coach features are all unlocked during the launch period. Sign up with an email and you're in — no payment screen.
                 </p>
               </div>
               <Link to="/signup" onClick={() => track('pricing_signup_banner')} className="lc-btn-primary" style={{ flexShrink: 0 }}>Start free →</Link>
             </div>
             <div className="lc-price-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 18 }}>
-              {/* IMPORTANT: keep this feature list in sync with PLANS_UI in
-                  client/src/pages/SettingsPage.jsx and PLAN_DETAILS in
-                  client/src/components/UpgradeModal.jsx. Visitors compare
-                  what's pitched here against what they see after sign-up —
-                  drift between the two screens reads as bait-and-switch. */}
+              {/* Keep feature lists in sync with PLANS_UI in SettingsPage.jsx,
+                  PLAN_DETAILS in UpgradeModal.jsx, and planPricing.js. */}
               <PriceCard
                 planId="free"
                 name="Free"
@@ -2042,8 +2039,8 @@ export default function About() {
               />
               <PriceCard
                 planId="pro"
-                name="Pro"
-                price="€9.99"
+                name="Athlete"
+                price={ATHLETE_PLAN_PRICE_LABEL}
                 highlighted
                 features={[
                   'Unlimited lactate tests',
@@ -2063,14 +2060,14 @@ export default function About() {
               <PriceCard
                 planId="coach"
                 name="Coach"
-                price="€19.99"
+                price={COACH_PLAN_PRICE_LABEL}
                 features={[
                   'Unlimited athletes',
                   'Plan workouts for your athletes',
                   'Unlimited PDF report generation',
                   'PDF branding — your logo, title & address',
                   'Coach dashboard & overview',
-                  'Everything in Pro',
+                  'Everything in Athlete',
                 ]}
                 ctaLabel="Start 2-month free trial"
                 ctaTo="/signup"

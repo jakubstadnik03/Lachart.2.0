@@ -18,6 +18,17 @@ function trainingKey(t) {
   return String(t._id || t.id || t.stravaId || `${t.title || "training"}-${t.date || t.timestamp || ""}`);
 }
 
+function trainingTitleNorm(t) {
+  return String(t?.title || t?.titleManual || t?.name || "").trim().toLowerCase();
+}
+
+function keysWithSameTitle(trainings, key) {
+  const clicked = trainings.find(t => trainingKey(t) === key);
+  const norm = trainingTitleNorm(clicked);
+  if (!norm) return [key];
+  return trainings.filter(t => trainingTitleNorm(t) === norm).map(trainingKey);
+}
+
 function formatTrainingPickerDate(t) {
   const d = t?.date || t?.startDate || t?.timestamp;
   if (!d) return "—";
@@ -58,6 +69,67 @@ function parsePaceSecs(v) {
     if (!isNaN(n)) return n;
   }
   return null;
+}
+function isPlausiblePaceSec(sec, sport) {
+  if (!Number.isFinite(sec) || sec <= 0) return false;
+  if (sport === "swim") return sec >= 25 && sec <= 600;
+  if (sport === "run") return sec >= 100 && sec <= 900;
+  return sec >= 60 && sec <= 1200;
+}
+function lapPaceSecs(r, sport) {
+  const parsed = parsePaceSecs(r?.power);
+  if (parsed && isPlausiblePaceSec(parsed, sport)) return parsed;
+  const dur = parseDurationSecs(r);
+  const dist = parseDistMeters(r?.distance || (r?.durationType === "distance" ? r?.duration : null));
+  if (dur >= 30 && dist >= 100) {
+    const pace = sport === "swim" ? (dur / dist) * 100 : (dur / dist) * 1000;
+    if (isPlausiblePaceSec(pace, sport)) return Math.round(pace);
+  }
+  return null;
+}
+function computePaceAxisFromPaces(paces, sport) {
+  const isSwim = sport === "swim";
+  const absurdSlow = isSwim ? 600 : 900;
+  const maxSlowCap = isSwim ? 360 : 300;
+
+  let scalePaces = paces.filter(p => p <= absurdSlow);
+  if (scalePaces.length < 2) {
+    const sorted = [...paces].sort((a, b) => a - b);
+    scalePaces = sorted.slice(0, Math.max(2, Math.ceil(sorted.length * 0.9)));
+  }
+
+  if (scalePaces.length >= 4) {
+    const sorted = [...scalePaces].sort((a, b) => a - b);
+    const q1 = sorted[Math.floor(sorted.length * 0.25)];
+    const q3 = sorted[Math.floor(sorted.length * 0.75)];
+    const iqr = q3 - q1;
+    const lo = q1 - 1.5 * iqr;
+    const hi = q3 + 1.5 * iqr;
+    const filtered = scalePaces.filter(p => p >= lo && p <= hi);
+    if (filtered.length >= 2) scalePaces = filtered;
+  }
+
+  const avg = scalePaces.reduce((a, b) => a + b, 0) / scalePaces.length;
+  const globalFast = Math.min(...scalePaces);
+  const globalSlow = Math.max(...scalePaces);
+  const fastPad = isSwim ? 3 : 8;
+  const slowPad = isSwim ? 5 : 12;
+
+  // Fast edge (top of chart): only slightly faster than the quickest lap.
+  let minP = Math.max(isSwim ? 25 : 100, globalFast - fastPad);
+  minP = Math.floor(minP / 5) * 5;
+
+  // Slow edge: symmetric around average, but never below the slowest real lap.
+  const halfSpan = Math.max(avg - minP, globalSlow - avg + slowPad, 20);
+  let maxP = Math.min(maxSlowCap, avg + halfSpan);
+  maxP = Math.max(maxP, minP + 20);
+  maxP = Math.ceil(maxP / 15) * 15;
+
+  return {
+    minPace: minP,
+    maxPace: maxP,
+    paceValues: Array.from({ length: 6 }, (_, i) => Math.round(minP + (i * (maxP - minP)) / 5)),
+  };
 }
 function parseDistMeters(d) {
   if (!d) return 0;
@@ -290,7 +362,7 @@ function VerticalBar({ heightPercent, colorIdx, intervalType, power, pace, dista
           data-bar-fill
           className="absolute bottom-0 w-full rounded-t-sm"
           style={{
-            height: `${Math.max(heightPercent, 0.8)}%`,
+            height: heightPercent > 0 ? `${Math.max(heightPercent, 0.8)}%` : "0%",
             backgroundColor: bg,
             opacity: hoverOpacity,
             transition: "opacity 0.15s",
@@ -481,15 +553,18 @@ function TrainingHistoryPicker({
   }, [trainings, query]);
 
   const selectedSet = useMemo(() => new Set(selectedKeys), [selectedKeys]);
-  const allVisibleSelected = pickerTrainings.length > 0
-    && pickerTrainings.every(t => selectedSet.has(trainingKey(t)));
   const someSelected = selectedKeys.length > 0;
 
   const toggleKey = (key) => {
-    if (selectedSet.has(key)) {
-      onSelectionChange(selectedKeys.filter(k => k !== key));
+    const titleKeys = keysWithSameTitle(trainings, key);
+    const titleKeySet = new Set(titleKeys);
+    const anySelected = titleKeys.some(k => selectedSet.has(k));
+    if (anySelected) {
+      onSelectionChange(selectedKeys.filter(k => !titleKeySet.has(k)));
     } else {
-      onSelectionChange([...selectedKeys, key]);
+      const merged = new Set(selectedKeys);
+      titleKeys.forEach(k => merged.add(k));
+      onSelectionChange([...merged]);
     }
   };
 
@@ -593,7 +668,7 @@ function TrainingHistoryPicker({
             type="button"
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => {
-              if (!allVisibleSelected) selectAllVisible();
+              if (!someSelected) selectAllVisible();
               setOpen(false);
             }}
             className="px-3 py-1.5 text-xs font-semibold text-white bg-violet-600 hover:bg-violet-700 rounded-lg transition-colors"
@@ -800,7 +875,7 @@ export function TrainingStats({
     setSelectedTrainingKeys(keys);
     setVisibleTrainingIndex(0);
     setProgressIndex(0);
-    if (keys.length === 1) {
+    if (keys.length >= 1) {
       const t = categoryPool.find(x => trainingKey(x) === keys[0]);
       if (t?.title) {
         setCurrentSelectedTitle(t.title);
@@ -954,17 +1029,23 @@ export function TrainingStats({
     if (!filteredTrainings.length) return { powerValues:[], paceValues:[], minPower:0, maxPower:100, minPace:0, maxPace:600 };
 
     if (isPaceSport) {
-      const allPaces = filteredTrainings.flatMap(t =>
-        getResults(t).map(r => parsePaceSecs(r.power))
-      ).filter(p => p != null && p > 0);
-      const rawMin = allPaces.length ? Math.min(...allPaces) : 180;
-      const rawMax = allPaces.length ? Math.max(...allPaces) : 600;
-      const minP = Math.floor(rawMin / 30) * 30;
-      const maxP = Math.ceil((rawMax + 30) / 30) * 30;
+      const paceSport = isSwim ? "swim" : "run";
+      const allPaces = filteredTrainings.flatMap(t => {
+        const sport = resolveTrainingSport(t) || paceSport;
+        return getWorkResults(t).map(r => lapPaceSecs(r, sport)).filter(Boolean);
+      });
+      if (!allPaces.length) {
+        return {
+          powerValues: [],
+          paceValues: [180, 210, 240, 270, 300, 330],
+          minPower: 0, maxPower: 100, minPace: 180, maxPace: 330,
+        };
+      }
+      const { minPace, maxPace, paceValues } = computePaceAxisFromPaces(allPaces, paceSport);
       return {
         powerValues: [],
-        paceValues: Array.from({ length: 6 }, (_, i) => Math.round(minP + (i * (maxP - minP)) / 5)),
-        minPower: 0, maxPower: 100, minPace: minP, maxPace: maxP,
+        paceValues,
+        minPower: 0, maxPower: 100, minPace, maxPace,
       };
     } else {
       const allPowers = filteredTrainings.flatMap(t =>
@@ -980,7 +1061,7 @@ export function TrainingStats({
         minPower: minP, maxPower: maxP, minPace: 0, maxPace: 600,
       };
     }
-  }, [filteredTrainings, isPaceSport, getResults]);
+  }, [filteredTrainings, isPaceSport, isSwim, getWorkResults, getResults]);
 
   /* per-column width in px */
   const colCount         = Math.max(visibleTrainings.length, 1);
@@ -1142,10 +1223,11 @@ export function TrainingStats({
               });
 
               /* color ranking: highest power/pace = darkest */
-              const powerPaceVals = results.map((r, i) => ({
-                val: isPaceSport ? parsePaceSecs(r.power) : Number(r.power),
-                i,
-              })).filter(x => x.val != null && x.val > 0);
+              const powerPaceVals = results.map((r, i) => {
+                const sportKey = resolveTrainingSport(training) || normalizeSport(currentSelectedSport) || "bike";
+                const val = isPaceSport ? lapPaceSecs(r, sportKey) : Number(r.power);
+                return { val: val != null && val > 0 && !isNaN(val) ? val : null, i };
+              }).filter(x => x.val != null && x.val > 0);
               if (isPaceSport) powerPaceVals.sort((a,b) => a.val - b.val); // lowest pace = fastest = darkest
               else             powerPaceVals.sort((a,b) => b.val - a.val); // highest power = darkest
               const colorMap = new Map(powerPaceVals.map((x, rank) => [x.i, rank]));
@@ -1159,10 +1241,14 @@ export function TrainingStats({
                     {results.map((r, rIdx) => {
                       let heightPercent = 0;
                       const denom = isPaceSport ? (maxPace - minPace) : (maxPower - minPower);
+                      const sportKey = resolveTrainingSport(training) || normalizeSport(currentSelectedSport) || "bike";
                       if (denom > 0) {
                         if (isPaceSport) {
-                          const pace = parsePaceSecs(r.power);
-                          if (pace && pace > 0) heightPercent = ((maxPace - pace) / denom) * 100;
+                          const pace = lapPaceSecs(r, sportKey);
+                          if (pace && pace > 0) {
+                            const clamped = Math.min(maxPace, Math.max(minPace, pace));
+                            heightPercent = ((maxPace - clamped) / denom) * 100;
+                          }
                         } else {
                           const pow = Number(r.power);
                           if (!isNaN(pow) && pow > 0) heightPercent = ((pow - minPower) / denom) * 100;

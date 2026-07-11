@@ -17,6 +17,12 @@ import CategoryManager from '../components/Settings/CategoryManager';
 import { getIntegrationStatus, invalidateCache, listExternalActivities, uploadFitFile, getStravaAuthUrl, startGarminAuth, syncStravaActivities, backfillStravaHistory, autoSyncStravaActivities, updateAvatarFromStrava, syncGarminActivities, syncGarminHistory, autoSyncGarminActivities, fetchGdprExportJson, getCurrentSubscription, createCheckoutSession, getSubscriptionPortalUrl, cancelSubscription, reactivateSubscription, resetStravaBudget, updateUserProfile, syncSubscriptionFromStripe, fetchUserProfile, fetchStravaStatus } from '../services/api';
 import { saveUserToStorage } from '../utils/userStorage';
 import { isCapacitorNative } from '../utils/isNativeApp';
+import {
+  ATHLETE_PLAN_PRICE_EUR,
+  ATHLETE_PLAN_PRICE_LABEL,
+  COACH_PLAN_PRICE_EUR,
+  COACH_PLAN_PRICE_LABEL,
+} from '../constants/planPricing';
 import { maybeNotifyStravaActivitiesImported } from '../utils/stravaImportLocalNotification';
 import { IntroSlides, INTRO_SEEN_KEY } from '../components/Onboarding/OnboardingFlow';
 import { cancelScheduledLactateTestNotifications } from '../utils/lactateTestLocalNotifications';
@@ -975,7 +981,7 @@ const SettingsPage = () => {
   const handleUpload = async () => {
     if (files.length === 0) return;
 
-    // ── Premium gate: FIT upload requires Pro plan ──────────────────────────
+    // ── Premium gate: FIT upload requires Athlete plan ──────────────────────
     if (!gate('FIT Training Upload', 'pro')) return;
     // ────────────────────────────────────────────────────────────────────────
 
@@ -2982,9 +2988,9 @@ const SettingsPage = () => {
           },
           {
             id: 'pro',
-            name: 'Pro',
-            price: 9.99,
-            priceLabel: '€9.99',
+            name: 'Athlete',
+            price: ATHLETE_PLAN_PRICE_EUR,
+            priceLabel: ATHLETE_PLAN_PRICE_LABEL,
             period: '/ month',
             highlight: true,
             badge: 'Most popular',
@@ -3004,8 +3010,8 @@ const SettingsPage = () => {
           {
             id: 'coach',
             name: 'Coach',
-            price: 19.99,
-            priceLabel: '€19.99',
+            price: COACH_PLAN_PRICE_EUR,
+            priceLabel: COACH_PLAN_PRICE_LABEL,
             period: '/ month',
             highlight: false,
             trial: true,
@@ -3015,7 +3021,7 @@ const SettingsPage = () => {
               'Unlimited PDF report generation',
               'PDF branding — your logo, title & address',
               'Coach dashboard & overview',
-              'Everything in Pro',
+              'Everything in Athlete',
             ],
           },
         ];
