@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import TestingForm from '../components/Testing-page/TestingForm';
@@ -17,6 +17,8 @@ import { GoogleLogin } from '@react-oauth/google';
 import { API_BASE_URL } from '../config/api.config';
 import { logUserRegistration, logTestCreated } from '../utils/eventLogger';
 import { isCapacitorNative } from '../utils/isNativeApp';
+import { computeLactateThresholds } from '../components/Testing-page/lactateThresholdSegmented';
+import { formatPaceMMSS } from '../utils/unitsConverter';
 import {
   BeakerIcon,
   BoltIcon,
@@ -683,6 +685,26 @@ const TestingWithoutLogin = () => {
     };
   };
 
+  // Free teaser: compute LT2 only (LT1, OBLA, D-max & zones stay gated behind signup)
+  const lt2Teaser = useMemo(() => {
+    if (!hasValidData) return null;
+    try {
+      const td = prepareCalculatorData();
+      const isPace = td.sport === 'run' || td.sport === 'swim';
+      const points = (td.results || [])
+        .map(r => ({ power: r.power, lactate: r.lactate }))
+        .filter(p => p.power > 0 && p.lactate > 0);
+      if (points.length < 3) return null;
+      const res = computeLactateThresholds(points, { isPace, baseLactate: td.baseLactate || null });
+      if (!res || res.LT2 == null || !Number.isFinite(res.LT2)) return null;
+      if (td.sport === 'bike') return `${Math.round(res.LT2)} W`;
+      return `${formatPaceMMSS(res.LT2)}${td.sport === 'swim' ? ' /100m' : ' /km'}`;
+    } catch {
+      return null;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [testData, hasValidData]);
+
   const handleTestDataChange = (newData) => {
     if (newData.field && newData.value !== undefined) { setTestData(p=>({...p,[newData.field]:newData.value})); return; }
     setTestData({ ...newData, weight:typeof newData.weight==='string'?newData.weight:String(newData.weight||''), baseLa:typeof newData.baseLa==='string'?newData.baseLa:String(newData.baseLa||''), baseLactate:typeof newData.baseLa==='string'?newData.baseLa:String(newData.baseLa||''), results:(newData.results||[]).map(r=>({...r,power:String(r.power??''),heartRate:String(r.heartRate??''),lactate:String(r.lactate??''),glucose:String(r.glucose??''),RPE:String(r.RPE??'')})) });
@@ -877,22 +899,36 @@ const TestingWithoutLogin = () => {
                   />
 
                   {hasValidData && (
-                    <div className="mt-6 space-y-6">
-                      {/* Lactate curve — blurred with lock overlay */}
-                      <div className="relative rounded-2xl overflow-hidden">
-                        <div className="blur-sm pointer-events-none select-none opacity-50">
-                          <LactateCurve testData={prepareCalculatorData()} isDemo={true} />
-                        </div>
-                        <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/85 backdrop-blur-md rounded-2xl p-6 text-center">
-                          <div className="w-14 h-14 rounded-2xl bg-primary/10 flex items-center justify-center mb-3">
-                            <BeakerIcon className="w-7 h-7 text-primary" />
+                    <div className="mt-6 space-y-5">
+                      {/* Free: the real lactate curve — the proof the tool works */}
+                      <div className="rounded-2xl overflow-hidden border border-gray-100">
+                        <LactateCurve mockData={prepareCalculatorData()} demoMode />
+                      </div>
+
+                      {/* Free teaser: LT2 value */}
+                      {lt2Teaser && (
+                        <div className="flex items-center justify-between rounded-2xl bg-gradient-to-br from-primary/5 to-violet-50 border border-primary/10 px-5 py-4">
+                          <div>
+                            <p className="text-[11px] font-semibold uppercase tracking-wide text-primary/70">Anaerobic threshold (LT2)</p>
+                            <p className="text-2xl font-extrabold text-gray-900">{lt2Teaser}</p>
                           </div>
-                          <p className="text-lg font-bold text-gray-900 mb-1">Your lactate curve is ready</p>
-                          <p className="text-xs text-gray-500 mb-4 max-w-xs">Create a free account to see LT1, LT2, OBLA thresholds and full training zones</p>
-                          <button onClick={()=>setShowRegister(true)} className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-primary to-violet-500 text-white text-sm font-semibold shadow hover:opacity-90 transition">
-                            Unlock results for free →
-                          </button>
+                          <span className="text-[11px] text-gray-400 max-w-[130px] text-right leading-snug">Free preview — see the full breakdown below</span>
                         </div>
+                      )}
+
+                      {/* Gated: everything else behind a free account */}
+                      <div className="rounded-2xl bg-gradient-to-r from-primary to-violet-500 p-6 text-center text-white">
+                        <div className="w-12 h-12 rounded-2xl bg-white/15 flex items-center justify-center mb-3 mx-auto">
+                          <BeakerIcon className="w-6 h-6 text-white" />
+                        </div>
+                        <p className="text-lg font-bold mb-1">See your full analysis</p>
+                        <p className="text-sm text-white/85 mb-4 max-w-md mx-auto">Create a free account to unlock <strong>LT1, OBLA &amp; D-max</strong> thresholds, your complete <strong>power / heart-rate / pace training zones</strong>, and save this test to track your progress over time.</p>
+                        <button
+                          onClick={() => { trackEvent('calc_unlock_click', { calc: 'lactate' }); setShowRegister(true); }}
+                          className="px-6 py-2.5 rounded-xl bg-white text-primary text-sm font-bold shadow hover:bg-white/90 transition"
+                        >
+                          Unlock full results for free →
+                        </button>
                       </div>
                     </div>
                   )}
