@@ -111,7 +111,9 @@ const SignUpPage = () => {
   const handleGoogleSuccess = async (response) => {
     try {
       setError(null);
-      setGoogleModalAcceptedTerms(false);
+      // Inherit the terms checkbox from the main form so users who already
+      // accepted don't have to tick it again in the modal.
+      setGoogleModalAcceptedTerms(acceptedTerms);
       setPendingGoogleCredential(response.credential);
       setGoogleRoleChoice(formData.role || 'athlete');
       setShowGoogleRoleModal(true);
@@ -209,13 +211,13 @@ const SignUpPage = () => {
   };
 
   const finalizeGoogleSignup = async () => {
-    try {
-      if (!pendingGoogleCredential) return;
-      if (!googleModalAcceptedTerms) {
-        addNotification('Please accept the Terms & Conditions and Privacy Policy to continue.', 'error');
-        return;
-      }
+    if (!pendingGoogleCredential) return;
+    if (!googleModalAcceptedTerms) {
+      addNotification('Please accept the Terms & Conditions and Privacy Policy to continue.', 'error');
+      return;
+    }
 
+    try {
       const res = await fetch(`${API_ENDPOINTS.AUTH}/google-auth`, {
         method: 'POST',
         headers: {
@@ -227,8 +229,8 @@ const SignUpPage = () => {
         }),
       });
 
-      const data = await res.json();
-      if (data.token) {
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.token) {
         trackUserRegistration('google', googleRoleChoice);
         trackConversionFunnel('signup_complete', { method: 'google', role: googleRoleChoice });
 
@@ -245,11 +247,19 @@ const SignUpPage = () => {
         return;
       }
 
-      addNotification('Google authentication failed', 'error');
-      trackEvent('register_error', { method: 'google', error: 'Authentication failed' });
+      // Surface the real server error (and its code) instead of a generic
+      // message — both so the user knows what to do and so analytics can
+      // finally tell us WHY Google sign-ups fail.
+      const message = data.error || 'Google sign-up failed. Please try again.';
+      addNotification(message, 'error');
+      setError(message);
+      trackEvent('register_error', { method: 'google', error: data.code || message });
     } catch (error) {
       console.error('Google finalize error:', error);
-      addNotification('Google authentication failed', 'error');
+      const message = 'Network error during Google sign-up. Please check your connection and try again.';
+      addNotification(message, 'error');
+      setError(message);
+      trackEvent('register_error', { method: 'google', error: 'network_error' });
     }
   };
 
