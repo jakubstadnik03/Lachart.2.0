@@ -9,6 +9,7 @@ const AppleHealthActivity = require('../models/AppleHealthActivity');
 const AppleHealthWellness = require('../models/AppleHealthWellness');
 const StravaStream = require('../models/StravaStream');
 const GarminActivity = require('../models/GarminActivity');
+const GarminStream = require('../models/GarminStream');
 const User = require('../models/UserModel');
 const Training = require('../models/training');
 const TrainingAbl = require('../abl/trainingAbl');
@@ -474,6 +475,8 @@ async function processGarminWebhookPayload(payload) {
   let imported = 0;
   let updated = 0;
 
+  const isDetailsType = (t) => t === 'activityDetails' || t === 'activityDetailFiles';
+
   for (const [summaryType, items] of Object.entries(payload)) {
     if (!Array.isArray(items) || items.length === 0) continue;
 
@@ -481,6 +484,14 @@ async function processGarminWebhookPayload(payload) {
       const healthUserId = entry.userId || entry.userID || null;
       const user = await findUserByGarminHealthId(healthUserId, entry.userAccessToken);
       if (!user) continue;
+
+      // Activity Details push — carries samples[] + lap markers → laps + streams
+      if (isDetailsType(summaryType) && (Array.isArray(entry.samples) || entry.summary) && !entry.callbackURL) {
+        const r = await upsertGarminActivityDetails(user, entry);
+        imported += r.imported;
+        updated += r.updated;
+        continue;
+      }
 
       // Push payload — summary fields inline
       if (summaryType === 'activities' && (entry.summaryId || entry.activityType || entry.startTimeInSeconds)) {
@@ -498,10 +509,24 @@ async function processGarminWebhookPayload(payload) {
             headers: { Authorization: `${tokenData.tokenType} ${tokenData.accessToken}` },
             timeout: 30000,
           });
-          const acts = normalizeGarminActivityBatch(resp.data);
-          const r = await upsertGarminActivities(user, acts);
-          imported += r.imported;
-          updated += r.updated;
+          // Details callback returns activityDetails records with samples;
+          // activities callback returns plain summaries.
+          const body = resp.data;
+          const detailRecords = isDetailsType(summaryType)
+            ? (Array.isArray(body) ? body : (Array.isArray(body?.activityDetails) ? body.activityDetails : [body]))
+            : null;
+          if (detailRecords && detailRecords.some((d) => Array.isArray(d?.samples) || d?.summary)) {
+            for (const d of detailRecords) {
+              const r = await upsertGarminActivityDetails(user, d);
+              imported += r.imported;
+              updated += r.updated;
+            }
+          } else {
+            const acts = normalizeGarminActivityBatch(body);
+            const r = await upsertGarminActivities(user, acts);
+            imported += r.imported;
+            updated += r.updated;
+          }
         } catch (e) {
           console.warn('Garmin ping callback fetch failed:', e?.response?.data || e.message);
         }
@@ -2849,6 +2874,15 @@ async function upsertGarminActivities(user, activities = []) {
 
   for (const a of activities) {
     try {
+      // Activity Details record (carries per-sample data) → parse laps + streams
+      if (a && (Array.isArray(a.samples) || Array.isArray(a?.summary?.samples))) {
+        const r = await upsertGarminActivityDetails(user, a);
+        imported += r.imported;
+        updated += r.updated;
+        total += 1;
+        continue;
+      }
+
       const doc = mapGarminActivityToDoc(user, a);
       const resUp = await GarminActivity.updateOne(
         { userId: user._id, garminId: doc.garminId },
@@ -2871,6 +2905,173 @@ async function upsertGarminActivities(user, activities = []) {
   }
 
   return { imported, updated, total };
+}
+
+// ── Garmin Activity Details → laps + streams ────────────────────────────────
+// Garmin's Activity Details payload carries a per-sample `samples[]` array
+// (HR / power / cadence / speed / altitude / distance / GPS) and a `laps[]`
+// array of START MARKERS only (`{ startTimeInSeconds }`). We turn the samples
+// into Strava-shaped streams ({ key: { data: [...] } }) and compute per-lap
+// aggregates from the samples between consecutive lap markers, so the existing
+// (Strava-compatible) frontend renders Garmin activities with no FE changes.
+
+const _num = (v) => {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+};
+const _avg = (arr) => {
+  const xs = arr.filter((v) => Number.isFinite(v));
+  return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
+};
+const _max = (arr) => {
+  const xs = arr.filter((v) => Number.isFinite(v));
+  return xs.length ? Math.max(...xs) : null;
+};
+
+function buildGarminStreamsFromSamples(samples, activityStartSec) {
+  if (!Array.isArray(samples) || samples.length === 0) return {};
+
+  const time = [], heartrate = [], watts = [], cadence = [];
+  const velocity_smooth = [], altitude = [], distance = [], latlng = [];
+  let hasHr = false, hasWatts = false, hasCad = false, hasSpeed = false;
+  let hasAlt = false, hasDist = false, hasLatlng = false;
+
+  samples.forEach((s, i) => {
+    const startSec = _num(s.startTimeInSeconds);
+    const t = _num(s.timerDurationInSeconds);
+    time.push(t != null ? t : (startSec != null && activityStartSec != null ? startSec - activityStartSec : i));
+
+    const hr = _num(s.heartRate ?? s.heartRateInBeatsPerMinute);
+    heartrate.push(hr); if (hr != null) hasHr = true;
+
+    const w = _num(s.powerInWatts ?? s.power);
+    watts.push(w); if (w != null) hasWatts = true;
+
+    const cad = _num(s.bikeCadenceInRPM ?? s.directRunCadence ?? s.stepsPerMinute ?? s.runCadence);
+    cadence.push(cad); if (cad != null) hasCad = true;
+
+    const spd = _num(s.speedMetersPerSecond ?? s.speed);
+    velocity_smooth.push(spd); if (spd != null) hasSpeed = true;
+
+    const alt = _num(s.elevationInMeters ?? s.altitude);
+    altitude.push(alt); if (alt != null) hasAlt = true;
+
+    const dist = _num(s.totalDistanceInMeters ?? s.distanceInMeters);
+    distance.push(dist); if (dist != null) hasDist = true;
+
+    const lat = _num(s.latitudeInDegree ?? s.latitude);
+    const lng = _num(s.longitudeInDegree ?? s.longitude);
+    if (lat != null && lng != null) { latlng.push([lat, lng]); hasLatlng = true; }
+    else latlng.push(null);
+  });
+
+  const streams = { time: { data: time } };
+  if (hasHr) streams.heartrate = { data: heartrate };
+  if (hasWatts) streams.watts = { data: watts };
+  if (hasCad) streams.cadence = { data: cadence };
+  if (hasSpeed) streams.velocity_smooth = { data: velocity_smooth };
+  if (hasAlt) streams.altitude = { data: altitude };
+  if (hasDist) streams.distance = { data: distance };
+  if (hasLatlng) streams.latlng = { data: latlng };
+  return streams;
+}
+
+function computeGarminLapsFromSamples(samples, lapMarkers, activityStartSec, activityEndSec) {
+  if (!Array.isArray(lapMarkers) || lapMarkers.length === 0) return [];
+  if (!Array.isArray(samples)) samples = [];
+
+  const starts = lapMarkers
+    .map((l) => _num(l?.startTimeInSeconds ?? l))
+    .filter((v) => v != null)
+    .sort((a, b) => a - b);
+  if (starts.length === 0) return [];
+
+  return starts.map((start, i) => {
+    const end = i + 1 < starts.length ? starts[i + 1] : (activityEndSec ?? Infinity);
+    const inLap = samples.filter((s) => {
+      const t = _num(s.startTimeInSeconds);
+      return t != null && t >= start && t < end;
+    });
+
+    const hr = inLap.map((s) => _num(s.heartRate ?? s.heartRateInBeatsPerMinute));
+    const pw = inLap.map((s) => _num(s.powerInWatts ?? s.power));
+    const cd = inLap.map((s) => _num(s.bikeCadenceInRPM ?? s.directRunCadence ?? s.stepsPerMinute ?? s.runCadence));
+    const sp = inLap.map((s) => _num(s.speedMetersPerSecond ?? s.speed));
+    const dists = inLap.map((s) => _num(s.totalDistanceInMeters ?? s.distanceInMeters)).filter((v) => v != null);
+    const lapDistance = dists.length >= 2 ? dists[dists.length - 1] - dists[0] : (dists.length === 1 ? dists[0] : null);
+    const elapsed = Number.isFinite(end) ? Math.round(end - start) : null;
+
+    return {
+      lapNumber: i + 1,
+      startTime: activityStartSec != null || start != null ? new Date(start * 1000) : null,
+      elapsed_time: elapsed,
+      moving_time: elapsed,
+      distance: lapDistance,
+      average_speed: _avg(sp),
+      max_speed: _max(sp),
+      average_heartrate: _avg(hr) != null ? Math.round(_avg(hr)) : null,
+      max_heartrate: _max(hr),
+      average_watts: _avg(pw) != null ? Math.round(_avg(pw)) : null,
+      max_watts: _max(pw),
+      average_cadence: _avg(cd) != null ? Math.round(_avg(cd)) : null,
+      max_cadence: _max(cd),
+      lactate: null,
+    };
+  });
+}
+
+// Normalise one Garmin Activity Details record (webhook item or pull result)
+// into { garminId, summary, streams, laps }.
+function parseGarminActivityDetails(detail) {
+  if (!detail || typeof detail !== 'object') return null;
+  const summary = detail.summary || detail;
+  const rawId = detail.activityId || detail.summaryId || summary.activityId || summary.summaryId;
+  if (!rawId) return null;
+  const garminId = String(rawId).replace(/-detail$/, '');
+
+  const activityStartSec = _num(summary.startTimeInSeconds);
+  const durationSec = _num(summary.durationInSeconds);
+  const activityEndSec = activityStartSec != null && durationSec != null ? activityStartSec + durationSec : null;
+
+  const samples = Array.isArray(detail.samples) ? detail.samples : [];
+  const streams = buildGarminStreamsFromSamples(samples, activityStartSec);
+  const laps = computeGarminLapsFromSamples(samples, detail.laps, activityStartSec, activityEndSec);
+
+  return { garminId, summary, streams, laps };
+}
+
+// Store parsed details: merge laps + summary onto the GarminActivity (keyed by
+// garminId, so it updates the existing summary doc) and upsert the streams.
+async function upsertGarminActivityDetails(user, detail) {
+  const parsed = parseGarminActivityDetails(detail);
+  if (!parsed) return { imported: 0, updated: 0 };
+  const { garminId, summary, streams, laps } = parsed;
+
+  // Reuse the summary mapper so a details-only webhook still creates a full doc
+  // if the summary push hasn't arrived yet; then attach the computed laps.
+  const doc = mapGarminActivityToDoc(user, { ...summary, activityId: garminId });
+  if (laps.length) doc.laps = laps;
+
+  const resUp = await GarminActivity.updateOne(
+    { userId: user._id, garminId },
+    { $set: doc },
+    { upsert: true }
+  );
+
+  const streamKeys = Object.keys(streams).filter((k) => k !== 'time');
+  if (streamKeys.length > 0) {
+    await GarminStream.updateOne(
+      { userId: user._id, garminId },
+      { $set: { streams, fetchedAt: new Date() } },
+      { upsert: true }
+    );
+  }
+
+  console.log(`Garmin details stored for ${garminId}: ${laps.length} laps, streams [${streamKeys.join(', ')}]`);
+  return {
+    imported: resUp.upsertedCount > 0 ? 1 : 0,
+    updated: resUp.modifiedCount > 0 ? 1 : 0,
+  };
 }
 
 // POST /api/integrations/garmin/sync
@@ -4819,6 +5020,72 @@ router.put('/strava/activities/:id', verifyToken, async (req, res) => {
 });
 
 // Update Garmin activity metadata (title, duration, distance, etc.)
+// GET /api/integrations/garmin/activities/:id — full detail + streams + laps
+// Mirrors GET /strava/activities/:id so the training-detail chart renders the
+// HR/power/cadence curves and per-lap table for Garmin activities.
+router.get('/garmin/activities/:id', verifyToken, async (req, res) => {
+  try {
+    const requester = await User.findById(req.user.userId);
+    if (!requester) return res.status(404).json({ error: 'User not found' });
+    const role = String(requester.role || '').toLowerCase();
+    const isCoachLike = ['coach', 'tester', 'testing', 'admin'].includes(role) ||
+      (requester.admin === true && role !== 'athlete');
+
+    const garminId = String(req.params.id || '').replace(/^garmin-/, '').trim();
+    if (!garminId) return res.status(400).json({ error: 'Invalid Garmin activity ID' });
+
+    let targetUserId = requester._id;
+    const athleteIdParam = req.query.athleteId;
+    if (athleteIdParam && isCoachLike && String(athleteIdParam) !== String(requester._id)) {
+      const athlete = await User.findById(athleteIdParam).select('coaches').lean();
+      if (!athlete) return res.status(404).json({ error: 'Athlete not found' });
+      const isLinkedCoach = Array.isArray(athlete.coaches) &&
+        athlete.coaches.some((c) => String(c) === String(requester._id));
+      if (!isLinkedCoach && role !== 'admin') {
+        return res.status(403).json({ error: 'Not authorised to view this athlete' });
+      }
+      targetUserId = athlete._id;
+    } else if (athleteIdParam && !isCoachLike && String(athleteIdParam) !== String(requester._id)) {
+      return res.status(403).json({ error: 'You are not authorized to view this activity' });
+    }
+
+    const activity = await GarminActivity.findOne({ userId: targetUserId, garminId }).lean();
+    if (!activity) return res.status(404).json({ error: 'Garmin activity not found' });
+
+    const streamDoc = await GarminStream.findOne({ userId: targetUserId, garminId }).lean();
+
+    res.json({
+      detail: {
+        id: garminId,
+        name: activity.titleManual || activity.name,
+        sport: activity.sport,
+        start_date: activity.startDate,
+        distance: activity.distance,
+        moving_time: activity.movingTime ?? activity.elapsedTime,
+        movingTime: activity.movingTime ?? activity.elapsedTime,
+        elapsed_time: activity.elapsedTime,
+        average_heartrate: activity.averageHeartRate,
+        average_watts: activity.averagePower,
+        average_speed: activity.averageSpeed,
+      },
+      streams: streamDoc?.streams || {},
+      laps: Array.isArray(activity.laps) ? activity.laps : [],
+      titleManual: activity.titleManual || null,
+      description: activity.description || null,
+      category: activity.category || null,
+      movingTime: activity.movingTime ?? null,
+      elapsedTime: activity.elapsedTime ?? null,
+      distance: activity.distance ?? null,
+      manualTss: activity.manualTss ?? null,
+      tssDisplayMode: activity.tssDisplayMode ?? null,
+      lactate: activity.lactate ?? null,
+    });
+  } catch (e) {
+    console.error('Garmin activity detail error:', e.message);
+    res.status(500).json({ error: 'activity_detail_failed' });
+  }
+});
+
 router.put('/garmin/activities/:id', verifyToken, async (req, res) => {
   try {
     const requester = await User.findById(req.user.userId);
@@ -6598,3 +6865,5 @@ module.exports.resumeShallowStravaBackfills = resumeShallowStravaBackfills;
 // Exported so other ingest paths (FIT upload, Garmin sync, …) can reuse
 // the same title-keyword detection without duplicating the regex table.
 module.exports._acCategorizeByTitle = _acCategorizeByTitle;
+// Exported for unit testing the Garmin Activity Details → laps/streams parser.
+module.exports.parseGarminActivityDetails = parseGarminActivityDetails;

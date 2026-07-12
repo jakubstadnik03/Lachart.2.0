@@ -1781,6 +1781,13 @@ export const deleteStravaActivity = async (stravaId, athleteId = null) => {
   return data; // { ok: true, deleted: { activity, streams } }
 };
 
+export const getGarminActivityDetail = async (garminId, athleteId = null) => {
+  const params = athleteId ? { athleteId } : {};
+  const id = String(garminId).replace(/^garmin-/, '');
+  const { data } = await api.get(`/api/integrations/garmin/activities/${encodeURIComponent(id)}`, { params });
+  return data; // { detail, streams, laps, titleManual, description, ... }
+};
+
 export const updateGarminActivity = async (garminId, payload = {}, athleteId = null) => {
   try {
     const params = athleteId ? { athleteId } : {};

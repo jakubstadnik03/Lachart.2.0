@@ -2643,6 +2643,26 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
               .catch(e => console.warn('auto-fetch streams failed:', e))
               .finally(() => { if (!cancelled) setStreamsRefreshing(false); });
           }
+        } else if (id.startsWith('garmin-')) {
+          const { getGarminActivityDetail } = await import('../../services/api.js');
+          const raw = await getGarminActivityDetail(id.replace('garmin-', ''), athleteId || null);
+          data = {
+            ...raw.detail,
+            laps: raw.laps || [],
+            description: raw.description,
+            titleManual: raw.titleManual,
+            category: raw.category,
+            movingTime: raw.movingTime ?? raw.detail?.moving_time ?? raw.detail?.movingTime,
+            moving_time: raw.movingTime ?? raw.detail?.moving_time ?? raw.detail?.movingTime,
+            distance: raw.distance ?? raw.detail?.distance,
+            manualTss: raw.manualTss ?? raw.detail?.manualTss,
+            tssDisplayMode: raw.tssDisplayMode ?? raw.detail?.tssDisplayMode,
+            tss: raw.manualTss ?? raw.tss ?? raw.detail?.manualTss,
+            lactate: raw.lactate ?? null,
+          };
+          if (!cancelled && raw.streams && Object.keys(raw.streams).length > 0) {
+            setStreams(raw.streams);
+          }
         } else if (id.startsWith('fit-')) {
           const { getFitTraining } = await import('../../services/api.js');
           data = await getFitTraining(id.replace('fit-', ''));
