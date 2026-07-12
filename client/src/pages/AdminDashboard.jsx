@@ -80,6 +80,13 @@ const AdminDashboard = () => {
   const [appDownloadEmailLoadingUserId, setAppDownloadEmailLoadingUserId] = useState(null);
   const [sendingToAll, setSendingToAll] = useState(false);
   const [usersLimit, setUsersLimit] = useState(20);
+  // Sortable user table — key + direction. Default: most recent login first.
+  const [userSort, setUserSort] = useState({ key: 'lastLogin', dir: 'desc' });
+  const toggleUserSort = (key) => setUserSort((prev) =>
+    prev.key === key
+      ? { key, dir: prev.dir === 'desc' ? 'asc' : 'desc' }
+      : { key, dir: 'desc' }
+  );
   const [chartTimeRange, setChartTimeRange] = useState(30); // days
   const [chartGroupBy, setChartGroupBy] = useState('day'); // 'day' or 'week'
   const [marketingEmailType, setMarketingEmailType] = useState('thankYou'); // 'thankYou', 'reactivation', or 'featureAnnouncement'
@@ -621,17 +628,34 @@ const AdminDashboard = () => {
       filtered = filtered.filter((u) => !u.hasMobileApp);
     }
 
-    // Sort by last login (most recent first)
+    // Sort by the selected column. Missing values always sort to the bottom.
+    const dir = userSort.dir === 'asc' ? 1 : -1;
+    const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : null);
+    const getVal = (u) => {
+      switch (userSort.key) {
+        case 'trainings': return num(u.trainingCount);
+        case 'tests':     return num(u.testCount);
+        case 'logins':    return num(u.loginCount);
+        case 'lastLogin': return u.lastLogin ? new Date(u.lastLogin).getTime() : null;
+        case 'name':      return `${u.name || ''} ${u.surname || ''}`.trim().toLowerCase() || null;
+        case 'role':      return (u.role || '').toLowerCase() || null;
+        case 'sport':     return (u.sport || '').toLowerCase() || null;
+        default:          return u.lastLogin ? new Date(u.lastLogin).getTime() : null;
+      }
+    };
     filtered = filtered.sort((a, b) => {
-      if (!a.lastLogin && !b.lastLogin) return 0;
-      if (!a.lastLogin) return 1;
-      if (!b.lastLogin) return -1;
-      return new Date(b.lastLogin) - new Date(a.lastLogin);
+      const av = getVal(a);
+      const bv = getVal(b);
+      if (av == null && bv == null) return 0;
+      if (av == null) return 1;   // missing → bottom regardless of dir
+      if (bv == null) return -1;
+      if (typeof av === 'string') return av.localeCompare(bv) * dir;
+      return (av - bv) * dir;
     });
 
     // Apply limit
     return filtered.slice(0, usersLimit);
-  }, [users, searchQuery, premiumFilter, stravaFilter, mobileAppFilter, usersLimit]);
+  }, [users, searchQuery, premiumFilter, stravaFilter, mobileAppFilter, usersLimit, userSort]);
 
   /**
    * Counts of users in each premium bucket — drives the filter chip labels.
@@ -2374,13 +2398,29 @@ const AdminDashboard = () => {
                   <table className="min-w-full divide-y divide-gray-200">
                     <thead className="bg-gray-50">
                       <tr>
-                        <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">User</th>
-                        <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Role</th>
-                        <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Sport</th>
-                        <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Trainings</th>
-                        <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tests</th>
-                        <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Logins</th>
-                        <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Last Login</th>
+                        {[
+                          { key: 'name', label: 'User' },
+                          { key: 'role', label: 'Role' },
+                          { key: 'sport', label: 'Sport' },
+                          { key: 'trainings', label: 'Trainings' },
+                          { key: 'tests', label: 'Tests' },
+                          { key: 'logins', label: 'Logins' },
+                          { key: 'lastLogin', label: 'Last Login' },
+                        ].map(({ key, label }) => (
+                          <th
+                            key={key}
+                            onClick={() => toggleUserSort(key)}
+                            title={`Sort by ${label}`}
+                            className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer select-none hover:text-gray-700 hover:bg-gray-100 transition-colors"
+                          >
+                            <span className="inline-flex items-center gap-1">
+                              {label}
+                              <span className={`text-[10px] ${userSort.key === key ? 'text-primary' : 'text-gray-300'}`}>
+                                {userSort.key === key ? (userSort.dir === 'desc' ? '▼' : '▲') : '▾'}
+                              </span>
+                            </span>
+                          </th>
+                        ))}
                         <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Location</th>
                         <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Strava</th>
                         <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Mobile App</th>
