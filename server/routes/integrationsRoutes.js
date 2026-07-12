@@ -3089,6 +3089,23 @@ router.post('/garmin/sync', verifyToken, async (req, res) => {
       syncResult = await fetchGarminActivitiesForSync(user, since);
     } catch (apiErr) {
       console.error('Garmin API error during sync:', apiErr.message);
+      // A pull-token error is EXPECTED with Garmin OAuth — Garmin doesn't
+      // support synchronous pulls; activities are delivered asynchronously via
+      // the Push/Ping webhook. Surface it as a normal "pending" state, not a
+      // 502 that reads like a server crash.
+      if (apiErr.backfillPending || isGarminPullTokenError(apiErr.message)) {
+        return res.json({
+          imported: 0,
+          updated: 0,
+          totalFetched: 0,
+          status: 'webhook_pending',
+          backfillPending: true,
+          backfillChunks: apiErr.backfillChunks || 0,
+          message: apiErr.backfillPending
+            ? apiErr.message
+            : 'Garmin delivers activities to LaChart automatically via webhook, not by direct sync. New activities appear within a few minutes; use Import History for past workouts.',
+        });
+      }
       return res.status(502).json({
         error: 'Garmin API error',
         message: apiErr.message
