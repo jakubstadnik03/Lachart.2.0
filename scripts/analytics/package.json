@@ -1,0 +1,13 @@
+{
+  "name": "lachart-ga4-analytics",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "GA4 marketing reporting scripts for LaChart",
+  "scripts": {
+    "report": "node ga4-report.mjs"
+  },
+  "dependencies": {
+    "@google-analytics/data": "^4.7.0"
+  }
+}

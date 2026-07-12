@@ -8,6 +8,8 @@
 *.pfx
 secrets/
 credentials.json
+scripts/analytics/secrets/
+ga4-service-account*.json
 
 # ── Dependencies ─────────────────────────────────────────────────────────────
 node_modules/
