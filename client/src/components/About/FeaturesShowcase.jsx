@@ -98,11 +98,6 @@ export default function FeaturesShowcase({ revealRef, pushRef }) {
           ))}
         </div>
 
-        <p style={{ textAlign: 'center', fontSize: 13, color: LC.muted, margin: '0 0 20px' }}>
-          Showing <strong style={{ color: LC.ink }}>{filtered.length}</strong>
-          {featCat !== 'All' ? ` in ${featCat}` : ' features'}
-        </p>
-
         <div
           ref={pushRef}
           className="lc-reveal d2 lc-feat-grid"
