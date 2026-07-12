@@ -1167,7 +1167,10 @@ const SettingsPage = () => {
         body: JSON.stringify({ username: garminLoginForm.username, password: garminLoginForm.password })
       });
       const data = await resp.json();
-      if (!resp.ok) throw new Error(data.error || data.message || 'Login failed');
+      if (!resp.ok) {
+        const base = data.error || data.message || 'Login failed';
+        throw new Error(data.detail ? `${base} (Garmin: ${data.detail})` : base);
+      }
       addNotification('Garmin connected via credentials!', 'success');
       setGarminConnected(true);
       setShowGarminLoginForm(false);

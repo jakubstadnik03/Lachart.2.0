@@ -2603,8 +2603,31 @@ router.post('/garmin/login', verifyToken, async (req, res) => {
       });
       await testClient.login(); // Verify credentials work
     } catch (loginError) {
-      console.error('Garmin login verification failed:', loginError);
-      return res.status(400).json({ error: 'Invalid Garmin credentials. Please check your username and password.' });
+      console.error('Garmin login verification failed:', loginError?.response?.data || loginError);
+      // Surface the real reason — the garmin-connect library login can fail for
+      // reasons other than a wrong password (2FA/MFA on the account, Garmin
+      // challenging the login from a datacenter IP, an outdated library, …).
+      const detail =
+        (typeof loginError?.response?.data === 'string' ? loginError.response.data : null) ||
+        loginError?.response?.data?.error ||
+        loginError?.response?.data?.message ||
+        loginError?.message ||
+        String(loginError);
+      const status = loginError?.response?.status;
+      const lc = String(detail).toLowerCase();
+      let hint = '';
+      if (lc.includes('mfa') || lc.includes('2fa') || lc.includes('multi-factor') || lc.includes('verification code')) {
+        hint = ' Your Garmin account has two-factor authentication enabled, which credential login cannot pass — disable 2FA on Garmin, or use OAuth Connect.';
+      } else if (lc.includes('captcha') || lc.includes('challenge') || lc.includes('403') || status === 403) {
+        hint = ' Garmin is challenging the login (likely bot/CAPTCHA protection on server logins). This is a Garmin-side block, not a wrong password.';
+      } else if (status === 401 || lc.includes('401') || lc.includes('invalid') || lc.includes('password') || lc.includes('credential')) {
+        hint = ' Double-check the email and password are exactly what you use on connect.garmin.com.';
+      }
+      return res.status(400).json({
+        error: 'Garmin login failed.' + hint,
+        detail: String(detail).slice(0, 400),
+        status: status || null,
+      });
     }
     
     // Store credentials (base64 encoded)
