@@ -19,6 +19,7 @@ import {
   isPaceLactateSport,
 } from '../utils/extractLactateThresholds';
 import { formatActivityDistance } from '../utils/unitsConverter';
+import { formatProfileFullName } from '../utils/profileName';
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -37,7 +38,7 @@ function fmtDuration(secs) {
 
 // ─── component ────────────────────────────────────────────────────────────────
 
-export default function NativeProfilePage({ user, userInfo, calendarData = [] }) {
+export default function NativeProfilePage({ user, userInfo, calendarData = [], onProfileUpdated }) {
   const navigate = useNavigate();
   const { addNotification } = useNotification();
   // Inline profile-edit modal — previously the Edit button navigated to
@@ -45,12 +46,14 @@ export default function NativeProfilePage({ user, userInfo, calendarData = [] })
   const [isEditOpen, setIsEditOpen] = useState(false);
   const handleProfileUpdate = async (updatedData) => {
     try {
-      await updateUserProfile(updatedData);
+      await updateUserProfile({
+        ...updatedData,
+        name: updatedData.name?.trim() || '',
+        surname: updatedData.surname?.trim() || '',
+      });
       addNotification('Profile updated', 'success');
       setIsEditOpen(false);
-      // Trigger a soft reload so the displayed values reflect the save.
-      // Parent (the auth/user provider) typically refetches on focus, but
-      // here we just dispatch a custom event the layout listens for.
+      onProfileUpdated?.();
       window.dispatchEvent(new CustomEvent('lachart-user-updated'));
     } catch (err) {
       addNotification(
@@ -169,7 +172,7 @@ export default function NativeProfilePage({ user, userInfo, calendarData = [] })
   const snap = { scrollSnapAlign: 'start', scrollSnapStop: 'normal' };
 
   // ── Display values ─────────────────────────────────────────────────────────
-  const fullName  = `${u.name || u.firstName || ''}${u.surname ? ' ' + u.surname : ''}`.trim() || 'Athlete';
+  const fullName  = formatProfileFullName(u);
   const initials  = fullName.split(' ').map(s => s.charAt(0).toUpperCase()).slice(0, 2).join('') || 'A';
   const avatarUrl = u.profilePicture || u.avatar || null;
   const role      = u.role || 'Athlete';

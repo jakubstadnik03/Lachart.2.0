@@ -130,12 +130,39 @@ function parseIntervalDurSec(r) {
   if (!r) return 0;
   const ds = Number(r.durationSeconds);
   if (ds > 0) return ds;
+  if (r.durationType === 'distance') return 0;
   if (!r.duration) return 0;
-  if (typeof r.duration === 'number') return r.duration;
+  if (typeof r.duration === 'number') {
+    // Legacy rows: whole minutes without durationType / durationSeconds.
+    if (!r.durationType && ds <= 0 && r.duration < 60) return Math.round(r.duration * 60);
+    return r.duration;
+  }
   const parts = String(r.duration).split(':');
   if (parts.length === 2) return (parseInt(parts[0], 10) || 0) * 60 + (parseFloat(parts[1]) || 0);
   if (parts.length === 3) return (parseInt(parts[0], 10) || 0) * 3600 + (parseInt(parts[1], 10) || 0) * 60 + (parseFloat(parts[2]) || 0);
-  return parseFloat(String(r.duration)) || 0;
+  const n = parseFloat(String(r.duration)) || 0;
+  if (n > 0 && !r.durationType && n < 60) return Math.round(n * 60);
+  return n;
+}
+
+/** Strava/FIT laps can have both distance and elapsed time — keep duration editable. */
+function resolveIntervalDurationType(r) {
+  const hasTime = parseIntervalDurSec(r) > 0;
+  const hasDist = Number(r?.distanceMeters) > 0 || r?.durationType === 'distance';
+  if (hasTime && hasDist) return 'time';
+  if (r?.durationType === 'distance' && !hasTime) return 'distance';
+  return r?.durationType || 'time';
+}
+
+/** MM:SS for the duration input — falls back to durationSeconds when duration is empty. */
+function formatIntervalDurationForForm(r) {
+  if (!r) return '';
+  const secs = parseIntervalDurSec(r);
+  if (secs <= 0) return '';
+  if (typeof r.duration === 'string' && r.duration.includes(':')) {
+    return formatSecondsToMMSS(r.duration);
+  }
+  return formatSecondsToMMSS(secs);
 }
 
 /**
@@ -761,22 +788,8 @@ const TrainingForm = ({
           }
         }
 
-        const durType = result.durationType || "time";
-        let durationValue = result.duration;
-        if (
-          durType === "time" &&
-          result.duration !== undefined &&
-          result.duration !== null &&
-          result.duration !== ""
-        ) {
-          if (typeof result.duration === "string" && result.duration.includes(":")) {
-            durationValue = formatSecondsToMMSS(result.duration);
-          } else {
-            const seconds =
-              typeof result.duration === "string" ? parseFloat(result.duration) : result.duration;
-            durationValue = formatSecondsToMMSS(seconds);
-          }
-        }
+        const durType = resolveIntervalDurationType(result);
+        const durationValue = durType === 'time' ? formatIntervalDurationForForm(result) : '';
 
         const rawElev =
           result.elevation ?? result.total_elevation_gain ?? result.elevation_gain;
@@ -1782,11 +1795,11 @@ const TrainingForm = ({
                           <span className="text-[9px] text-gray-400 uppercase leading-none shrink-0">dur</span>
                           <input
                             type="text" inputMode="decimal" placeholder="MM:SS"
-                            value={interval.durationType === 'distance' && interval.distanceMeters
+                            value={interval.durationType === 'distance' && parseIntervalDurSec(interval) <= 0 && interval.distanceMeters
                               ? (interval.distanceMeters >= 1000
                                   ? `${(interval.distanceMeters/1000)}km`
                                   : `${interval.distanceMeters}m`)
-                              : (interval.duration || '')}
+                              : (formatIntervalDurationForForm(interval) || interval.duration || '')}
                             onChange={(e) => {
                               const r=[...formData.results];
                               const raw = e.target.value;
@@ -1925,7 +1938,9 @@ const TrainingForm = ({
                           <div className="bg-white px-3 py-2.5">
                             <label className={labelBase}>Duration</label>
                             <input type="text" inputMode="decimal" placeholder="MM:SS"
-                              value={interval.durationType === 'distance' ? '' : (interval.duration || '')}
+                              value={interval.durationType === 'distance' && parseIntervalDurSec(interval) <= 0
+                                ? ''
+                                : (formatIntervalDurationForForm(interval) || interval.duration || '')}
                               onChange={(e) => {
                                 const r=[...formData.results];
                                 const raw = e.target.value;

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import Modal from '../Modal';
 import { heightLabel, weightLabel, resolveDistanceUnitSystem } from '../../utils/unitsConverter';
 import { getEditProfileZonesPrefs, setEditProfileZonesPrefs } from '../../utils/uiPrefs';
+import { splitProfileNameFields } from '../../utils/profileName';
 
 const EditProfileModal = ({ isOpen, onClose, onSubmit, userData, zonesOnly = false }) => {
   const [formData, setFormData] = useState({});
@@ -112,8 +113,10 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData, zonesOnly = fal
         const cyclingHrZones = userData.heartRateZones?.cycling || {};
         const runningHrZones = userData.heartRateZones?.running || {};
         const swimmingHrZones = userData.heartRateZones?.swimming || {};
+        const { name: profileName, surname: profileSurname } = splitProfileNameFields(userData);
         const initialFormData = {
-          name: userData.name || '',
+          name: profileName,
+          surname: profileSurname,
           dateOfBirth: formatDateForInput(userData.dateOfBirth),
           address: userData.address || '',
           phone: userData.phone || '',
@@ -233,7 +236,8 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData, zonesOnly = fal
       } catch (error) {
         console.error('Error setting form data:', error);
         setFormData({
-          name: userData.name || '',
+          name: splitProfileNameFields(userData).name,
+          surname: splitProfileNameFields(userData).surname,
           dateOfBirth: '',
           address: userData.address || '',
           phone: userData.phone || '',
@@ -277,10 +281,16 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData, zonesOnly = fal
       setError('Name is required');
       return;
     }
+    if (!zonesOnly && !formData.surname?.trim()) {
+      setError('Surname is required');
+      return;
+    }
 
     // Převedení data zpět do ISO formátu před odesláním
     const dataToSubmit = {
       ...formData,
+      name: formData.name?.trim() || '',
+      surname: formData.surname?.trim() || '',
       dateOfBirth: parseDateForSubmit(formData.dateOfBirth),
       units: formData.units || { distance: 'metric', weight: 'kg', temperature: 'celsius' },
       // Převést power zones na správný formát (čísla místo stringů)
@@ -654,6 +664,30 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData, zonesOnly = fal
         )}
 
         {!zonesOnly && <div className="grid grid-cols-1 gap-3 min-w-0 sm:grid-cols-2 sm:gap-6">
+          <div className="space-y-2">
+            <label className="block text-sm font-semibold text-gray-700">Name</label>
+            <input
+              type="text"
+              value={formData.name || ''}
+              onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+              className="min-w-0 w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm transition-all focus:border-transparent focus:outline-none focus:ring-2 focus:ring-primary sm:px-4 sm:py-3"
+              placeholder="First name"
+              autoComplete="given-name"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label className="block text-sm font-semibold text-gray-700">Surname</label>
+            <input
+              type="text"
+              value={formData.surname || ''}
+              onChange={(e) => setFormData(prev => ({ ...prev, surname: e.target.value }))}
+              className="min-w-0 w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm transition-all focus:border-transparent focus:outline-none focus:ring-2 focus:ring-primary sm:px-4 sm:py-3"
+              placeholder="Last name"
+              autoComplete="family-name"
+            />
+          </div>
+
           <div className="space-y-2">
             <label className="block text-sm font-semibold text-gray-700">Date of Birth</label>
             <input

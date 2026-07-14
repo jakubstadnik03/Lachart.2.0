@@ -99,6 +99,8 @@ const normalizeLaps = (laps, sport) => {
 
     const duration = lap.totalElapsedTime ?? lap.totalTimerTime
                   ?? lap.elapsed_time ?? lap.moving_time ?? null;
+    const distRaw = lap.distance ?? lap.totalDistance ?? lap.distanceMeters ?? null;
+    const distanceMeters = distRaw != null && Number(distRaw) > 0 ? Math.round(Number(distRaw)) : undefined;
 
     return {
       interval: i + 1,
@@ -106,8 +108,11 @@ const normalizeLaps = (laps, sport) => {
       heartRate,
       lactate: lap.lactate ?? null,
       duration,
+      durationSeconds: typeof duration === 'number' && duration > 0 ? duration : undefined,
       durationType: 'time',
+      distanceMeters,
       RPE: null,
+      intervalType: lap.intervalType ?? null,
       _fromLaps: true,
     };
   }).filter(r => r.power != null || r.heartRate != null); // keep if has any data
@@ -132,17 +137,25 @@ const toPowerNum = (val, sport) => {
   return 0;
 };
 
-const fmtDuration = (dur, type) => {
-  if (!dur && dur !== 0) return '';
-  const s = String(dur);
-  if (type === 'time') {
-    if (!s.includes(':')) {
-      const secs = parseInt(dur, 10);
-      if (!isNaN(secs)) return `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
-    }
-    return s;
-  }
-  return `${s} m`;
+/** Format lap duration as mm:ss (or h:mm:ss for long intervals). */
+const fmtIntervalDurationSec = (sec) => {
+  if (!sec || sec <= 0) return null;
+  const s = Math.round(sec);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const ss = s % 60;
+  if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(ss).padStart(2, '0')}`;
+  return `${String(m).padStart(2, '0')}:${String(ss).padStart(2, '0')}`;
+};
+
+const fmtIntervalDuration = (r) => {
+  const sec = parseLapDurationSec(r);
+  return sec > 0 ? fmtIntervalDurationSec(sec) : '—';
+};
+
+const fmtIntervalDistance = (r, unitSystem = 'metric') => {
+  const meters = parseLapDistanceMeters(r);
+  return meters > 0 ? fmtDistanceM(meters, unitSystem) : '—';
 };
 
 const fmtPower = (val, sport, unitSystem = 'metric') => {
@@ -183,7 +196,12 @@ const parseLapDurationSec = (r) => {
   if (Number.isFinite(direct) && direct > 0) return direct;
   const raw = r?.duration ?? r?.moving_time ?? r?.elapsed_time;
   if (raw == null) return 0;
-  if (typeof raw === 'number' && Number.isFinite(raw) && raw > 0) return raw;
+  if (r?.durationType === 'distance') return 0;
+  if (typeof raw === 'number' && Number.isFinite(raw) && raw > 0) {
+    if (r?.durationType === 'time') return raw;
+    if (raw < 60) return Math.round(raw * 60);
+    return raw;
+  }
   const s = String(raw).trim();
   if (!s) return 0;
   // "HH:MM:SS" / "MM:SS" — both interpreted as time.
@@ -195,11 +213,12 @@ const parseLapDurationSec = (r) => {
     }
     return 0;
   }
-  // Plain numeric string → seconds, unless durationType is 'distance' (skip
-  // because then this number is metres / km, not time).
-  if (r?.durationType === 'distance') return 0;
+  // Plain numeric string → seconds, unless durationType is 'distance' (handled above).
   const n = Number(s);
-  return Number.isFinite(n) && n > 0 ? n : 0;
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  if (r?.durationType === 'time') return n;
+  if (n < 60) return Math.round(n * 60);
+  return n;
 };
 
 const parseLapDistanceMeters = (r) => {
@@ -361,6 +380,7 @@ function IntervalTable({ results, sport, startIndex = 0, globalMax = null, unitS
   const isRun  = String(sport || '').toLowerCase().includes('run');
   const isSwim = String(sport || '').toLowerCase().includes('swim');
   const paceUnit = isSwim ? paceUnitShort(unitSystem, 'swim') : paceUnitShort(unitSystem, 'run');
+  const showDistance = results.some(r => parseLapDistanceMeters(r) > 0);
 
   // Use provided globalMax so zone colours are consistent across pages
   const maxV = globalMax ?? Math.max(...results.map(x => toPowerNum(x.power, sport)), 0.001);
@@ -375,6 +395,7 @@ function IntervalTable({ results, sport, startIndex = 0, globalMax = null, unitS
             <th className="py-2 text-center">HR</th>
             <th className="py-2 text-center">RPE</th>
             <th className="py-2 text-center">Lactate</th>
+            {showDistance && <th className="py-2 text-right">Distance</th>}
             <th className="py-2 text-right">Duration</th>
           </tr>
         </thead>
@@ -413,8 +434,13 @@ function IntervalTable({ results, sport, startIndex = 0, globalMax = null, unitS
                     </span>
                   ) : '—'}
                 </td>
+                {showDistance && (
+                  <td className="py-1.5 text-right text-gray-500">
+                    {fmtIntervalDistance(r, unitSystem)}
+                  </td>
+                )}
                 <td className="py-1.5 text-right text-gray-500">
-                  {fmtDuration(r.duration, r.durationType)}
+                  {fmtIntervalDuration(r)}
                 </td>
               </tr>
             );

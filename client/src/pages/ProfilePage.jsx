@@ -31,6 +31,7 @@ import api, { getFitTrainings, listExternalActivities, addTraining } from '../se
 import { motion, AnimatePresence } from 'framer-motion';
 import { isCapacitorNative } from '../utils/isNativeApp';
 import NativeProfilePage from './NativeProfilePage';
+import { formatProfileFullName } from '../utils/profileName';
 
 const MAX_PROFILE_CALENDAR_ACTIVITIES = 2000;
 
@@ -529,7 +530,8 @@ const [selectedTitle, setSelectedTitle] = useState(null);
       const avatar = getAvatarBySportAndGender(profileData);
 
       setUserInfo({
-        name: `${profileData.name} ${profileData.surname}`,
+        name: profileData.name || '',
+        surname: profileData.surname || '',
         email: profileData.email,
         phone: profileData.phone || 'Not set',
         weight: profileData.weight || 'Not set',
@@ -625,23 +627,20 @@ const [selectedTitle, setSelectedTitle] = useState(null);
 
   const handleProfileUpdate = async (updatedData) => {
     try {
-      const { name, ...restData } = updatedData;
-      const hasName = typeof name === 'string' && name.trim().length > 0;
-      const [firstName = '', ...lastNameParts] = hasName ? name.split(' ') : [];
-      const surname = lastNameParts.join(' ');
-
       const dataToSend = {
-        ...restData,
-        ...(hasName ? { name: firstName, surname } : {}),
-        height: restData.height ? Number(restData.height) : undefined,
-        weight: restData.weight ? Number(restData.weight) : undefined,
+        ...updatedData,
+        name: updatedData.name?.trim() || '',
+        surname: updatedData.surname?.trim() || '',
+        height: updatedData.height ? Number(updatedData.height) : undefined,
+        weight: updatedData.weight ? Number(updatedData.weight) : undefined,
       };
 
       const response = await updateUserProfile(dataToSend);
       const updatedUser = response.data;
 
       setUserInfo({
-        name: `${updatedUser.name} ${updatedUser.surname}`,
+        name: updatedUser.name || '',
+        surname: updatedUser.surname || '',
         email: updatedUser.email,
         phone: updatedUser.phone || '',
         weight: updatedUser.weight || '',
@@ -704,7 +703,13 @@ const [selectedTitle, setSelectedTitle] = useState(null);
 
   // Native app gets a mobile-optimised view that reuses the dashboard's design language
   if (isCapacitorNative()) {
-    return <NativeProfilePage userInfo={userInfo} calendarData={calendarData} />;
+    return (
+      <NativeProfilePage
+        userInfo={userInfo}
+        calendarData={calendarData}
+        onProfileUpdated={loadProfileData}
+      />
+    );
   }
 
   return (
@@ -748,7 +753,9 @@ const [selectedTitle, setSelectedTitle] = useState(null);
               <img src={userInfo.avatar} alt="Profile" className="w-full h-full object-cover" />
             </div>
             <div className="min-w-0">
-              <h1 className="text-lg sm:text-xl font-bold text-gray-900 leading-tight">{userInfo.name}</h1>
+              <h1 className="text-lg sm:text-xl font-bold text-gray-900 leading-tight">
+                {formatProfileFullName(userInfo, 'N/A')}
+              </h1>
               <p className="text-sm text-gray-500">{userInfo.title !== 'Not set' ? userInfo.title : userInfo.sport}</p>
             </div>
           </div>
