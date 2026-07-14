@@ -56,7 +56,7 @@ export async function syncDailyTrainingReminder(plannedWorkouts = [], userNotifi
     return;
   }
 
-  const title = plannedToday.length === 1 ? plannedToday[0].title : `${plannedToday.length} tréninky`;
+  const title = plannedToday.length === 1 ? plannedToday[0].title : `${plannedToday.length} workouts`;
   const at = nextFireAt(8, 0);
 
   await withLocalNotificationsPermission(async (LocalNotifications) => {
@@ -68,8 +68,8 @@ export async function syncDailyTrainingReminder(plannedWorkouts = [], userNotifi
       notifications: [
         {
           id: REMINDER_ID,
-          title: 'Dnešní trénink',
-          body: `Na plánu: ${title}. Otevři LaChart.`,
+          title: "Today's training",
+          body: `On your plan: ${title}. Open LaChart.`,
           schedule: { at, allowWhileIdle: true },
           extra: { type: 'daily_training_reminder' },
         },

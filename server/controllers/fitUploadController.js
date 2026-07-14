@@ -6,6 +6,7 @@ const FitParser = require('fit-file-parser').default;
 const TrainingAbl = require('../abl/trainingAbl');
 const { notifyCoachesOfAthlete, notifyAthlete } = require('../utils/notificationHelper');
 const { invalidateFitCacheForUser } = require('../utils/fitRouteCache');
+const { sanitizeSavedAutoLaps } = require('../utils/sanitizeSavedAutoLaps');
 const { normalizeSportForNotif } = require('../utils/sportNotif');
 const {
   resolveAnalysisSportKey,
@@ -658,7 +659,7 @@ async function updateFitTraining(req, res) {
   try {
     const userId = req.user?.userId;
     const trainingId = req.params.id;
-    const { title, description, category, selectedLapIndices, movingTime, duration, elapsedTime, distance, calories, lactate, rpe, tss, tssDisplayMode } = req.body;
+    const { title, description, category, selectedLapIndices, movingTime, duration, elapsedTime, distance, calories, lactate, rpe, tss, tssDisplayMode, savedAutoLaps } = req.body;
 
     const training = await FitTraining.findOne({
       _id: trainingId,
@@ -720,6 +721,10 @@ async function updateFitTraining(req, res) {
     if (lactate !== undefined && lactate !== null && lactate !== '') {
       const lac = Number(lactate);
       if (Number.isFinite(lac)) training.lactate = lac;
+    }
+    // Saved "Smart detect" laps: array to save, empty array / null to clear.
+    if (savedAutoLaps !== undefined) {
+      training.savedAutoLaps = sanitizeSavedAutoLaps(savedAutoLaps);
     }
 
     await training.save();

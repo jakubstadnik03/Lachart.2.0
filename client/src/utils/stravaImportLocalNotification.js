@@ -42,8 +42,8 @@ export async function maybeNotifyStravaActivitiesImported(importedCount, userNot
     const id = Math.floor((now % 2147483000) + Math.random() * 1000);
     const base =
       n === 1
-        ? 'Nová aktivita ze Stravy.'
-        : `${n} nových aktivit ze Stravy.`;
+        ? '1 new activity imported from Strava.'
+        : `${n} new activities imported from Strava.`;
     const body = `${base}${lactateHint}`;
     await LocalNotifications.schedule({
       notifications: [

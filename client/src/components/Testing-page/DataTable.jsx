@@ -434,16 +434,26 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
     return false;
   };
 
+  /** Krok s následným výrazným poklesem La — typicky špatný odběr / šum (např. 3.5 → 1.8). */
+  const isSpikeThenDropOutlier = (pts, i) => {
+    if (!pts || i < 0 || i >= pts.length - 1) return false;
+    const la = Number(pts[i].lactate);
+    const laNext = Number(pts[i + 1].lactate);
+    if (!Number.isFinite(la) || !Number.isFinite(laNext)) return false;
+    return la - laNext >= 0.5;
+  };
+
   /** První významný nárůst laktátu v profilu je „falešný start“ (po něm ještě klesne pod patu). */
   const firstSignificantLactateRiseIsFalseStart = (pts) => {
     if (!pts || pts.length < 2) return false;
-    const searchMaxLa = Math.max(MAX_LTP1_LACTATE, 3.25);
     for (let i = 1; i < pts.length; i++) {
       const inc = Number(pts[i].lactate) - Number(pts[i - 1].lactate);
       if (inc <= 0.3) continue;
       const la = Number(pts[i].lactate);
-      if (!Number.isFinite(la) || la < 1.0 || la > searchMaxLa) continue;
-      return isLtp1FalseStartRise(pts, i);
+      if (!Number.isFinite(la) || la < 1.0) continue;
+      // Check false-start even when La > LT1 cap (e.g. 3.5 mmol/L spike then drop).
+      if (isLtp1FalseStartRise(pts, i) || isSpikeThenDropOutlier(pts, i)) return true;
+      return false;
     }
     return false;
   };
@@ -460,8 +470,9 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
       const curr = pts[i];
       const inc = Number(curr.lactate) - Number(prev.lactate);
       if (inc <= 0.3) continue;
-      if (Number(curr.lactate) < effectiveBaseLactate * 0.8 || Number(curr.lactate) > searchMaxLa) continue;
-      if (isLtp1FalseStartRise(pts, i)) continue;
+      if (Number(curr.lactate) < effectiveBaseLactate * 0.8) continue;
+      if (isLtp1FalseStartRise(pts, i) || isSpikeThenDropOutlier(pts, i)) continue;
+      if (Number(curr.lactate) > searchMaxLa) continue;
       const la0 = Number(prev.lactate);
       const la1 = Number(curr.lactate);
       const p0 = Number(prev.power);
@@ -494,6 +505,7 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
     for (let i = 0; i < sorted.length; i++) {
       const la = Number(sorted[i].lactate);
       if (!Number.isFinite(la) || la < minLactateMm - 1e-9) continue;
+      if (isSpikeThenDropOutlier(sorted, i)) continue;
       const curr = sorted[i];
       const pCurr = Number(curr.power);
       if (la <= cap) {
@@ -575,7 +587,7 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
           (inc + Math.max(0, nextInc)) >= COMBINED_RISE_MIN
         );
       if (!sustainedRise) continue;
-      if (isLtp1FalseStartRise(sorted, j)) continue;
+      if (isLtp1FalseStartRise(sorted, j) || isSpikeThenDropOutlier(sorted, j)) continue;
 
       // If the rise is a single large jump from a dip (e.g. trough 1.50 → 2.10 in one step),
       // don't snap LT1 to the full la1 — interpolate near the onset of the rise instead.
@@ -2804,6 +2816,18 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
         const current = sortedByPower[i];
         const currentLactate = Number(current.lactate?.toString().replace(',', '.'));
         
+        // Bad sample: lactate spikes then drops on the very next step (e.g. 3.7 → 1.8 mmol/L).
+        // Applies to all sports once rows are sorted slow→fast (pace) or easy→hard (bike).
+        if (i < sortedByPower.length - 1) {
+          const nextLactate = Number(sortedByPower[i + 1].lactate?.toString().replace(',', '.'));
+          if (Number.isFinite(nextLactate) && currentLactate - nextLactate >= 0.8) {
+            console.warn(
+              `[DataTable] Filtering spike-then-drop lactate outlier: ${currentLactate} mmol/L at power=${current.power} (next ${nextLactate})`
+            );
+            continue;
+          }
+        }
+
         // Check if this is an unrealistic spike (> 10 mmol/L)
         if (currentLactate > 10) {
           // Check if next value is significantly lower (drop of more than 3 mmol/L)
@@ -3687,6 +3711,66 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
         note:
           'U běhu/plavání se LTP2 tempo po ensemblu ještě přemapuje na polynom při stejném La — proto dřívější log mohl mít jiné ltp2 než finální řádek.',
       });
+    }
+
+    // ── Pace/run final guard: LT1 must not sit on a spike that drops on the next step,
+    // nor above the aerobic band, when a faster step has clearly lower lactate.
+    if ((sport === 'run' || sport === 'swim')
+      && Number.isFinite(Number(thresholds['LTP1']))
+      && Number.isFinite(Number(thresholds.lactates?.['LTP1']))) {
+      const sortedDesc = [...sortedResults].sort((a, b) => Number(b.power) - Number(a.power));
+      const lt1P = Number(thresholds['LTP1']);
+      const lt1La = Number(thresholds.lactates['LTP1']);
+      const lt1Idx = sortedDesc.findIndex((r) => Math.abs(Number(r.power) - lt1P) <= 6);
+      const onSpike = lt1Idx >= 0 && isSpikeThenDropOutlier(sortedDesc, lt1Idx);
+      const hasFasterLowerLa = sortedDesc.some(
+        (r) => Number(r.power) < lt1P - 1e-9 && Number(r.lactate) < lt1La - 0.25
+      );
+      const laTooHigh = lt1La > MAX_LTP1_LACTATE_PACE + 0.05;
+
+      if (onSpike || hasFasterLowerLa || laTooHigh) {
+        const repaired =
+          pickLt1PaceFirstRiseAfterMin(sortedResults)
+          || pickLt1FromMeasuredStepsForPace(sortedResults, effectiveBaseLactate, 1.75)
+          || pickLtp1PointSkippingFalseStarts(sortedDesc, effectiveBaseLactate, MAX_LTP1_LACTATE_PACE);
+
+        if (repaired && Number.isFinite(Number(repaired.power))) {
+          const interpHRAtPace = (x) => {
+            for (let i = 0; i < sortedResults.length - 1; i++) {
+              const a = Number(sortedResults[i].power);
+              const b = Number(sortedResults[i + 1].power);
+              if (x >= Math.min(a, b) && x <= Math.max(a, b) && a !== b) {
+                const ha = sortedResults[i].heartRate;
+                const hb = sortedResults[i + 1].heartRate;
+                if (ha != null && hb != null) return ha + (hb - ha) * (x - a) / (b - a);
+                return ha ?? hb;
+              }
+            }
+            const nearest = sortedResults.reduce((best, r) =>
+              Math.abs(Number(r.power) - x) < Math.abs(Number(best.power) - x) ? r : best
+            );
+            return nearest.heartRate != null ? Number(nearest.heartRate) : null;
+          };
+
+          let p1 = Number(repaired.power);
+          let la1 = Math.min(Math.max(Number(repaired.lactate), MIN_LTP1_LACTATE), MAX_LTP1_LACTATE_PACE);
+          const lt2P = Number(thresholds['LTP2']);
+          if (Number.isFinite(lt2P) && p1 - lt2P < MIN_LT2_LT1_GAP_PACE_SEC) {
+            const relaxed = relaxPaceLt1IfSqueezedAgainstLt2(sortedResults, p1, la1, lt2P);
+            if (relaxed) {
+              p1 = Number(relaxed.power);
+              la1 = Number(relaxed.lactate);
+            }
+          }
+
+          thresholds['LTP1'] = p1;
+          thresholds.lactates['LTP1'] = la1;
+          const hr1 = repaired.heartRate != null && Number.isFinite(Number(repaired.heartRate))
+            ? Number(repaired.heartRate)
+            : interpHRAtPace(p1);
+          if (hr1 != null && Number.isFinite(hr1)) thresholds.heartRates['LTP1'] = hr1;
+        }
+      }
     }
 
     // ── Manual override: if coach/athlete pinned LT1 or LT2, apply now ──────────

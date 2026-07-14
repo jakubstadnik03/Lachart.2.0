@@ -132,6 +132,22 @@ const trainingSchema = new mongoose.Schema({
         distance:    Number,   // metres covered in this lap
     }],
 
+    // User-saved "Smart detect" laps (client-computed interval split), kept
+    // separate from `laps` so the original stays intact. When present, the
+    // activity detail view opens showing these instead of the device laps.
+    savedAutoLaps: {
+        type: [{
+            lapNumber:          Number,
+            elapsed_time:       Number,
+            moving_time:        Number,
+            distance:           Number,
+            average_watts:      Number,
+            average_heartrate:  Number,
+            average_speed:      Number,
+        }],
+        default: undefined,
+    },
+
     // ── Advanced sensor time-series (Apple Watch BLE: CORE + Stryd) ───
     // Sampled ~every 5 s during the run. Each point is `t` seconds since
     // workout start. Empty array when the matching sensor isn't paired.

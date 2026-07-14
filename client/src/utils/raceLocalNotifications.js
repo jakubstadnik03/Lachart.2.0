@@ -75,8 +75,8 @@ export async function syncRaceLocalNotifications(races, userNotifications) {
         if (eve.getTime() > now) {
           notifications.push({
             id: stableRaceNotifId(raceId, 1),
-            title: 'Zítra závod — checklist',
-            body: `${race.name}: spánek, hydratace, lehký shake-out, nepřidávat TSS.`,
+            title: 'Race tomorrow — checklist',
+            body: `${race.name}: sleep, hydration, light shake-out, no extra TSS.`,
             schedule: { at: eve, allowWhileIdle: true },
             extra: { type: 'race_checklist', raceId: String(raceId) },
           });
@@ -89,8 +89,8 @@ export async function syncRaceLocalNotifications(races, userNotifications) {
         if (morning.getTime() > now) {
           notifications.push({
             id: stableRaceNotifId(raceId, 2),
-            title: 'Race day — štěstí!',
-            body: `${race.name} — otevři plán dne v LaChart.`,
+            title: 'Race day — good luck!',
+            body: `${race.name} — open today's plan in LaChart.`,
             schedule: { at: morning, allowWhileIdle: true },
             extra: { type: 'race_day', raceId: String(raceId) },
           });

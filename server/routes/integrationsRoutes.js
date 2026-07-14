@@ -18,6 +18,7 @@ const { notifyCoachesOfAthlete, notifyAthlete, sendNotification } = require('../
 const { recordStravaSyncLogSafe } = require('../services/stravaSyncLogService');
 const { notifyStravaImportedPush } = require('../utils/stravaImportNotifications');
 const { stravaHalfCadenceToSpm } = require('../utils/cadenceDisplay');
+const { sanitizeSavedAutoLaps } = require('../utils/sanitizeSavedAutoLaps');
 const router = express.Router();
 
 // Process-wide token bucket so no single hot path can drain Strava's quota.
@@ -4894,6 +4895,7 @@ router.get('/strava/activities/:id', verifyToken, async (req, res) => {
       calories: savedActivity?.calories ?? null,
       rpe: savedActivity?.rpe ?? null,
       lactate: savedActivity?.lactate ?? null,
+      savedAutoLaps: savedActivity?.savedAutoLaps || [],
     });
   } catch (e) {
     console.error('Strava activity detail error', e.response?.data || e.message);
@@ -4934,7 +4936,7 @@ router.put('/strava/activities/:id', verifyToken, async (req, res) => {
       return res.status(403).json({ error: 'You are not authorized to update this activity' });
     }
     
-    const { title, description, category, movingTime, duration, elapsedTime, distance, calories, tss, rpe, lactate, tssDisplayMode } = req.body;
+    const { title, description, category, movingTime, duration, elapsedTime, distance, calories, tss, rpe, lactate, tssDisplayMode, savedAutoLaps } = req.body;
 
     const activity = await StravaActivity.findOne({
       userId: targetUserId,
@@ -5021,6 +5023,10 @@ router.put('/strava/activities/:id', verifyToken, async (req, res) => {
       } else if (['manual', 'power', 'hr'].includes(String(tssDisplayMode))) {
         activity.tssDisplayMode = String(tssDisplayMode);
       }
+    }
+    // Saved "Smart detect" laps: array to save, empty array / null to clear.
+    if (savedAutoLaps !== undefined) {
+      activity.savedAutoLaps = sanitizeSavedAutoLaps(savedAutoLaps);
     }
 
     await activity.save();

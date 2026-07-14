@@ -69,7 +69,12 @@ function normSport(s) {
 const fmtDistValue = (m, user) => {
   if (!m) return '0';
   const unitSystem = resolveDistanceUnitSystem(user);
-  const { formatted } = formatDistance(m, unitSystem);
+  const { value, unit, formatted } = formatDistance(m, unitSystem);
+  if (unit !== 'km' && unit !== 'mi') return formatted; // m / ft — already whole
+  // Shed decimals as the number grows so long distances (e.g. 120.58 km) stay
+  // on one line in the narrow by-sport columns; small values keep their detail.
+  if (value >= 100) return `${Math.round(value)} ${unit}`;
+  if (value >= 10) return `${Number(value.toFixed(1))} ${unit}`;
   return formatted;
 };
 const fmtDistDelta = (meters, user) => {

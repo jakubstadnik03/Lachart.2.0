@@ -43,7 +43,9 @@ export function plannedWorkoutDurationSecs(pw, completedSecs = 0) {
 export function getCompliance(plannedSecs, actualSecs) {
   if (!plannedSecs || !actualSecs) return null;
   const r = actualSecs / plannedSecs;
-  if (r >= 0.9) return { color: '#22c55e', bg: '#f0fdf4', label: 'On target', ring: '#22c55e' };
+  // Green from 0.85 so it matches the compliance gauge's green band (which
+  // starts at ~86%): if the marker sits in green, rows and calendar dots agree.
+  if (r >= 0.85) return { color: '#22c55e', bg: '#f0fdf4', label: 'On target', ring: '#22c55e' };
   if (r >= 0.75) return { color: '#eab308', bg: '#fefce8', label: 'Good', ring: '#eab308' };
   if (r >= 0.55) return { color: '#f97316', bg: '#fff7ed', label: 'Short', ring: '#f97316' };
   return { color: '#ef4444', bg: '#fef2f2', label: 'Missed', ring: '#ef4444' };

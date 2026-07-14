@@ -25,6 +25,21 @@ const fitLapSchema = new mongoose.Schema({
   endPositionLong: Number,
 });
 
+/**
+ * User-saved "Smart detect" laps (client-computed interval split). Stored
+ * separately from device `laps` so a re-parse never overwrites them. When
+ * present, the activity detail view opens showing these instead of device laps.
+ */
+const savedAutoLapSchema = new mongoose.Schema({
+  lapNumber: Number,
+  elapsed_time: Number,
+  moving_time: Number,
+  distance: Number,
+  average_watts: Number,
+  average_heartrate: Number,
+  average_speed: Number,
+}, { _id: false });
+
 const fitRecordSchema = new mongoose.Schema({
   timestamp: Date,
   positionLat: Number,
@@ -90,6 +105,8 @@ const fitTrainingSchema = new mongoose.Schema({
   records: [fitRecordSchema],
   // Laps
   laps: [fitLapSchema],
+  // Smart-detect laps saved by the user (see savedAutoLapSchema)
+  savedAutoLaps: { type: [savedAutoLapSchema], default: undefined },
   // Metadata
   manufacturer: String,
   product: String,

@@ -15,14 +15,21 @@ import {
   formatPeakDuration,
   recordPower,
   recordHr,
+  recordSpeed,
 } from '../../utils/activityPeaks';
+import { formatPaceMMSS } from '../../utils/unitsConverter';
 
 const POWER_COLOR = '#7c3aed';
 const HR_COLOR = '#ef4444';
+const PACE_COLOR = '#2563eb';
 
 function sportIsBike(sport) {
   const s = String(sport || '').toLowerCase();
   return s.includes('ride') || s.includes('bike') || s.includes('cycle') || s.includes('virtual');
+}
+
+function sportIsSwim(sport) {
+  return String(sport || '').toLowerCase().includes('swim');
 }
 
 function ZonesSection({
@@ -105,7 +112,7 @@ function ZonesSection({
 
 function PeakSegmentChart({ records, startIndex, endIndex, metric, color }) {
   if (!records?.length || startIndex == null || endIndex == null) return null;
-  const getter = metric === 'power' ? recordPower : recordHr;
+  const getter = metric === 'power' ? recordPower : metric === 'pace' ? recordSpeed : recordHr;
   const vals = records.map(getter).map((v) => v || 0);
   const maxV = Math.max(...vals.filter((v) => v > 0), 1);
 
@@ -147,12 +154,15 @@ function PeakSegmentChart({ records, startIndex, endIndex, metric, color }) {
   );
 }
 
-function PeakSelectionSummary({ peak, metric, unit, color, records, onOpenGraph }) {
+function PeakSelectionSummary({ peak, metric, unit, color, records, onOpenGraph, isSwim }) {
   const d = peak?.[metric];
   const stats = d?.startIndex != null ? computeSegmentAverages(records, d.startIndex, peak.s) : null;
   if (!d || !stats) return null;
 
   const avgSpeedKmh = stats.avgSpeedMps > 0 ? stats.avgSpeedMps * 3.6 : null;
+  const paceSec = metric === 'pace' ? d.value : (stats.avgSpeedMps > 0
+    ? (isSwim ? 100 : 1000) / stats.avgSpeedMps
+    : null);
 
   return (
     <div className="mb-3 rounded-xl border px-3 py-2.5" style={{ borderColor: `${color}40`, background: `${color}0d` }}>
@@ -175,9 +185,21 @@ function PeakSelectionSummary({ peak, metric, unit, color, records, onOpenGraph 
         )}
       </div>
       <div className="flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-gray-700">
-        <span>
-          Peak avg: <strong className="tabular-nums">{Math.round(d.value)}</strong> {unit}
-        </span>
+        {metric === 'pace' && paceSec != null && (
+          <span>
+            Peak pace: <strong className="tabular-nums">{formatPaceMMSS(Math.round(paceSec))}</strong> {unit}
+          </span>
+        )}
+        {metric === 'power' && (
+          <span>
+            Peak avg: <strong className="tabular-nums">{Math.round(d.value)}</strong> {unit}
+          </span>
+        )}
+        {metric === 'hr' && (
+          <span>
+            Peak avg: <strong className="tabular-nums">{Math.round(d.value)}</strong> {unit}
+          </span>
+        )}
         {stats.avgPower > 0 && metric === 'power' && (
           <span>Avg power: <strong className="tabular-nums">{Math.round(stats.avgPower)} W</strong></span>
         )}
@@ -187,7 +209,7 @@ function PeakSelectionSummary({ peak, metric, unit, color, records, onOpenGraph 
         {stats.avgCadence > 0 && (
           <span>Cadence: <strong className="tabular-nums">{Math.round(stats.avgCadence)} rpm</strong></span>
         )}
-        {avgSpeedKmh > 0 && (
+        {avgSpeedKmh > 0 && metric !== 'pace' && (
           <span>Speed: <strong className="tabular-nums">{avgSpeedKmh.toFixed(1)} km/h</strong></span>
         )}
       </div>
@@ -206,6 +228,7 @@ function PeakSelectionSummary({ peak, metric, unit, color, records, onOpenGraph 
 
 function PeakCurveSection({
   title, yLabel, color, peaks, metric, unit, selectedSec, records, onSelectPeak, onOpenGraph,
+  invertY = false, formatValue, isSwim = false,
 }) {
   const rows = peaks.filter((p) => p[metric]?.value > 0);
   if (rows.length === 0) return null;
@@ -221,6 +244,13 @@ function PeakCurveSection({
   const innerW = W - pad.l - pad.r;
   const innerH = H - pad.t - pad.b;
 
+  const valueToY = (val) => {
+    const f = (val - minVal) / range;
+    return invertY
+      ? pad.t + f * innerH
+      : pad.t + innerH - f * innerH;
+  };
+
   const logT = (s) => Math.log10(Math.max(1, s));
   const tMin = logT(rows[0].s);
   const tMax = logT(rows[rows.length - 1].s);
@@ -228,7 +258,7 @@ function PeakCurveSection({
 
   const points = rows.map((p) => {
     const x = pad.l + ((logT(p.s) - tMin) / tSpan) * innerW;
-    const y = pad.t + innerH - ((p[metric].value - minVal) / range) * innerH;
+    const y = valueToY(p[metric].value);
     return { x, y, p };
   });
 
@@ -240,9 +270,12 @@ function PeakCurveSection({
   ].join(' ');
 
   const yTicks = [0, 0.25, 0.5, 0.75, 1].map((f) => ({
-    y: pad.t + innerH - f * innerH,
-    val: Math.round(minVal + range * f),
+    y: invertY ? pad.t + f * innerH : pad.t + innerH - f * innerH,
+    val: invertY ? Math.round(maxVal - range * f) : Math.round(minVal + range * f),
   }));
+
+  const formatTick = (val) => (formatValue ? formatValue(val) : val);
+  const formatCell = (val) => (formatValue ? formatValue(val) : Math.round(val));
 
   const xTickLabels = [
     { s: rows[0].s, label: rows[0].label },
@@ -269,6 +302,7 @@ function PeakCurveSection({
           color={color}
           records={records}
           onOpenGraph={onOpenGraph}
+          isSwim={isSwim}
         />
       )}
 
@@ -279,7 +313,7 @@ function PeakCurveSection({
             <g key={i}>
               <line x1={pad.l} y1={t.y} x2={W - pad.r} y2={t.y} stroke="#f1f5f9" strokeWidth="1" />
               <text x={pad.l - 4} y={t.y + 4} textAnchor="end" fontSize="9" fill="#94a3b8" fontFamily="system-ui">
-                {t.val}
+                {formatTick(t.val)}
               </text>
             </g>
           ))}
@@ -350,7 +384,7 @@ function PeakCurveSection({
                 >
                   <span className="text-[12px] text-gray-600">{p.label}</span>
                   <span className="text-[12px] font-bold text-gray-900 tabular-nums">
-                    {Math.round(d.value)} <span className="text-[10px] font-medium text-gray-400">{unit}</span>
+                    {formatCell(d.value)} <span className="text-[10px] font-medium text-gray-400">{unit}</span>
                   </span>
                 </button>
               );
@@ -372,6 +406,8 @@ export default function ActivityPeaksTab({
 }) {
   const [selected, setSelected] = useState(null);
   const isBike = sportIsBike(sport);
+  const isSwim = sportIsSwim(sport);
+  const formatPaceVal = (sec) => formatPaceMMSS(Math.round(sec));
 
   const powerZones = useMemo(
     () => (isBike ? computeZonesBreakdown(records, sport, authUser, 'power') : null),
@@ -382,11 +418,12 @@ export default function ActivityPeaksTab({
     [records, sport, authUser],
   );
   const peaks = useMemo(
-    () => computePeakEfforts(records, durationSec),
-    [records, durationSec],
+    () => computePeakEfforts(records, durationSec, sport),
+    [records, durationSec, sport],
   );
 
-  const hasPower = peaks.some((p) => p.power?.value > 0);
+  const hasPower = isBike && peaks.some((p) => p.power?.value > 0);
+  const hasPace = !isBike && peaks.some((p) => p.pace?.value > 0);
   const hasHr = peaks.some((p) => p.hr?.value > 0);
 
   const buildPeakSelection = (p, metric) => {
@@ -425,10 +462,10 @@ export default function ActivityPeaksTab({
     onNavigateToGraph?.(sel);
   };
 
-  if (!hasPower && !hasHr && !powerZones && !hrZones) {
+  if (!hasPower && !hasPace && !hasHr && !powerZones && !hrZones) {
     return (
       <div className="py-12 text-center text-sm text-gray-400 px-4">
-        No power or heart-rate data for peaks analysis.
+        No pace, power or heart-rate data for peaks analysis.
       </div>
     );
   }
@@ -485,6 +522,24 @@ export default function ActivityPeaksTab({
           selectedSec={selected?.type === 'peak' && selected.metric === 'power' ? selected.seconds : null}
           onSelectPeak={(p) => handlePeakSelect(p, 'power')}
           onOpenGraph={onNavigateToGraph ? (p) => handleOpenGraph(p, 'power') : null}
+        />
+      )}
+
+      {hasPace && (
+        <PeakCurveSection
+          title="Peak Pace"
+          yLabel={isSwim ? 'SEC/100M' : 'MIN/KM'}
+          color={PACE_COLOR}
+          peaks={peaks}
+          metric="pace"
+          unit={isSwim ? '/100m' : '/km'}
+          records={records}
+          invertY
+          formatValue={formatPaceVal}
+          isSwim={isSwim}
+          selectedSec={selected?.type === 'peak' && selected.metric === 'pace' ? selected.seconds : null}
+          onSelectPeak={(p) => handlePeakSelect(p, 'pace')}
+          onOpenGraph={onNavigateToGraph ? (p) => handleOpenGraph(p, 'pace') : null}
         />
       )}
 

@@ -397,7 +397,9 @@ function sportColor(sport) {
 function getCompliance(plannedSecs, actualSecs) {
   if (!plannedSecs || !actualSecs) return null;
   const r = actualSecs / plannedSecs;
-  if (r >= 0.9)  return { color: '#22c55e', bg: '#f0fdf4', label: 'On target',  ring: '#22c55e' };
+  // Green from 0.85 so it matches the compliance gauge's green band (~86%+):
+  // when the marker is green, the rows and calendar read green too.
+  if (r >= 0.85) return { color: '#22c55e', bg: '#f0fdf4', label: 'On target',  ring: '#22c55e' };
   if (r >= 0.75) return { color: '#eab308', bg: '#fefce8', label: 'Good',        ring: '#eab308' };
   if (r >= 0.55) return { color: '#f97316', bg: '#fff7ed', label: 'Short',       ring: '#f97316' };
   return           { color: '#ef4444', bg: '#fef2f2', label: 'Missed',       ring: '#ef4444' };
@@ -406,7 +408,7 @@ function getCompliance(plannedSecs, actualSecs) {
 /** Table cell colour — aligned with the duration compliance gauge (rounded %). */
 function getMetricComparisonColor(planned, actual, { durationCompliancePct = null, isDuration = false } = {}) {
   if (!(planned > 0) || !(actual > 0)) return null;
-  if (isDuration && durationCompliancePct != null && durationCompliancePct >= 90) {
+  if (isDuration && durationCompliancePct != null && durationCompliancePct >= 85) {
     return '#059669';
   }
   const tier = getCompliance(planned, actual);
@@ -418,7 +420,7 @@ function getMetricComparisonColor(planned, actual, { durationCompliancePct = nul
     '#ef4444': '#dc2626',
   };
   // Gauge shows rounded duration % — when it's in the green band, don't flag rows red.
-  if (durationCompliancePct != null && durationCompliancePct >= 90) {
+  if (durationCompliancePct != null && durationCompliancePct >= 85) {
     if (tier.color === '#ef4444' || tier.color === '#f97316') return '#6b7280';
     return TIER_TEXT[tier.color] || tier.color;
   }
@@ -2619,6 +2621,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
             kilojoules: raw.detail?.kilojoules ?? null,
             rpe: raw.rpe ?? null,
             lactate: raw.lactate ?? null,
+            savedAutoLaps: raw.savedAutoLaps || [],
           };
           // Helper: any array regardless of whether it's {data:[...]} or a flat array
           const arrLen = a => Array.isArray(a?.data) ? a.data.length : Array.isArray(a) ? a.length : 0;
@@ -2988,6 +2991,57 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
   const [autoLapLactates, setAutoLapLactates] = useState({}); // { [lapIndex]: mmol/L }
   const [autoLapLaInput, setAutoLapLaInput] = useState(null); // index of open inline input
   const [savingAutoLaps, setSavingAutoLaps] = useState(false);
+  // Smart-detect laps the user has persisted (so the activity reopens with them).
+  const [persistedAutoLaps, setPersistedAutoLaps] = useState([]);
+  const [savingLapsSet, setSavingLapsSet] = useState(false);
+  const didInitAutoLaps = useRef(false);
+
+  // One-shot: when the detail loads, adopt any saved Smart-detect laps so the
+  // Laps tab opens showing them. Fresh mount per activity → runs once.
+  useEffect(() => {
+    if (didInitAutoLaps.current || !detail) return;
+    didInitAutoLaps.current = true;
+    const saved = Array.isArray(detail.savedAutoLaps) ? detail.savedAutoLaps : [];
+    setPersistedAutoLaps(saved);
+    if (saved.length >= 2) setAutoLaps(saved);
+  }, [detail]);
+
+  // Compact signature so we can tell "current laps differ from what's saved".
+  const lapsSig = useCallback((laps) => (Array.isArray(laps) && laps.length
+    ? laps.map(l => `${Math.round(l.elapsed_time || 0)}:${Math.round(l.distance || 0)}`).join('|')
+    : ''), []);
+  const autoLapsUnsaved = !!autoLaps && autoLaps.length >= 2 && lapsSig(autoLaps) !== lapsSig(persistedAutoLaps);
+
+  // Persist / clear the current Smart-detect laps on the right source model.
+  const saveAutoLapsSet = useCallback(async (laps) => {
+    const id = String(merged?.id || merged?._id || '');
+    const payloadLaps = Array.isArray(laps) ? laps.map(l => ({
+      lapNumber: l.lapNumber, elapsed_time: l.elapsed_time, moving_time: l.moving_time,
+      distance: l.distance, average_watts: l.average_watts,
+      average_heartrate: l.average_heartrate, average_speed: l.average_speed,
+    })) : [];
+    const isStrava = id.startsWith('strava-') || merged?.source === 'strava' || merged?.type === 'strava' || !!merged?.stravaId;
+    const isFit = id.startsWith('fit-') || merged?.source === 'fit' || merged?.type === 'fit';
+    const isGarmin = id.startsWith('garmin-') || merged?.source === 'garmin' || merged?.type === 'garmin';
+    if (isGarmin) throw new Error('Saving laps is not supported for Garmin activities yet.');
+    setSavingLapsSet(true);
+    try {
+      if (isStrava) {
+        const { updateStravaActivity } = await import('../../services/api.js');
+        const stravaId = String(merged?.stravaId || id.replace(/^strava-/, ''));
+        await updateStravaActivity(stravaId, { savedAutoLaps: payloadLaps }, athleteId || null);
+      } else if (isFit) {
+        const { updateFitTraining } = await import('../../services/api.js');
+        await updateFitTraining(String(merged?._id || id.replace(/^fit-/, '')), { savedAutoLaps: payloadLaps });
+      } else {
+        const { updateTraining } = await import('../../services/api.js');
+        await updateTraining(String(merged?._id || id.replace(/^regular-/, '')), { savedAutoLaps: payloadLaps });
+      }
+      setPersistedAutoLaps(payloadLaps);
+    } finally {
+      setSavingLapsSet(false);
+    }
+  }, [merged, athleteId]);
 
   const computeAutoLaps = useCallback((records, splitMinutes = null) => {
     if (!Array.isArray(records) || records.length < 30) return;
@@ -4345,7 +4399,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
 
                 const deltaPct = (c, p) => (c > 0 && p > 0) ? Math.round((c / p - 1) * 100) : null;
                 const compliancePct = (plDur > 0 && dur > 0) ? Math.round(dur / plDur * 100) : null;
-                const durCompliant = compliancePct != null && compliancePct >= 90;
+                const durCompliant = compliancePct != null && compliancePct >= 85;
                 const rowColor = (c, p, isDuration = false) => getMetricComparisonColor(p, c, { durationCompliancePct: compliancePct, isDuration });
 
                 const paceTable = paceStr
@@ -4360,15 +4414,25 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                 const elevCo = elevation > 0 ? formatElevation(elevation, unitSystem) : null;
                 const speedCo = isBike && avgSpeed > 0 ? formatSpeed(avgSpeed, unitSystem) : null;
 
+                // Planned pace = planned distance ÷ planned duration (run/swim
+                // only, mirroring the completed-pace logic above), so the
+                // Planned column shows a real target instead of a bare "—".
+                const plPaceSport = isRun ? 'run' : isSwim ? 'swim' : null;
+                const plPaceFull = (plPaceSport && plDist > 0 && plDur > 0)
+                  ? formatPaceFromDistanceAndDuration(plDist, plDur, unitSystem, plPaceSport)
+                  : null;
+                const plPaceVal = plPaceFull ? plPaceFull.replace(/\s*\/\s*\S+$/, '').trim() : null;
+                const plPaceUnit = plPaceFull ? ((plPaceFull.match(/(\/\S+)\s*$/) || [])[1] || '') : '';
+
                 const speedRow = isBike
-                  ? { label: 'Avg Speed', co: speedCo ? speedCo.value.toFixed(1) : null, plRaw: null, coRaw: speedCo?.value ?? null, unit: speedCo?.unit || '' }
-                  : { label: 'Avg Pace', co: paceTable.co, plRaw: null, coRaw: null, unit: paceTable.unit };
+                  ? { label: 'Avg Speed', pl: null, co: speedCo ? speedCo.value.toFixed(1) : null, unit: speedCo?.unit || '' }
+                  : { label: 'Avg Pace', pl: plPaceVal, co: paceTable.co, unit: paceTable.unit || plPaceUnit };
 
                 const rows = [
                   { label: 'Duration', pl: plDur > 0 ? fmtDur(plDur) : null, co: dur > 0 ? fmtDur(dur) : null, unit: 'h:m:s', color: rowColor(dur, plDur, true), delta: deltaPct(dur, plDur) },
                   (elapsedTime > 0 && Math.abs(elapsedTime - dur) > 1) ? { label: 'Total Time', pl: null, co: fmtDur(elapsedTime), unit: 'h:m:s' } : null,
                   { label: 'Distance', pl: distPl.val, co: distCo.val, unit: distCo.unit || distPl.unit || '', color: rowColor(dist, plDist), delta: deltaPct(dist, plDist) },
-                  speedRow.co ? { label: speedRow.label, pl: null, co: speedRow.co, unit: speedRow.unit } : null,
+                  (speedRow.co || speedRow.pl) ? { label: speedRow.label, pl: speedRow.pl, co: speedRow.co, unit: speedRow.unit } : null,
                   calories > 0 ? { label: 'Calories', pl: null, co: Math.round(calories), unit: 'kcal' } : null,
                   elevCo ? { label: 'El. Gain', pl: null, co: Math.round(elevCo.value).toLocaleString(), unit: elevCo.unit } : null,
                   { label: tssLabel, pl: plTss > 0 ? Math.round(plTss) : null, co: tss > 0 ? Math.round(tss) : null, unit: 'TSS', color: rowColor(tss, plTss), delta: deltaPct(tss, plTss), tssToggle: true },
@@ -4827,6 +4891,24 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                         className="px-2 py-0.5 rounded-full text-[10px] font-bold border border-primary/40 bg-primary/5 text-primary active:bg-primary/10 flex items-center gap-1">
                         <BoltIcon className="w-3 h-3" />Smart
                       </button>
+                      {autoLapsUnsaved ? (
+                        <button
+                          disabled={savingLapsSet}
+                          onClick={async () => {
+                            try { await saveAutoLapsSet(autoLaps); }
+                            catch (e) {
+                              console.error('Save auto-lap set failed:', e);
+                              // eslint-disable-next-line no-alert
+                              window.alert(e?.response?.data?.error || e?.message || 'Could not save laps.');
+                            }
+                          }}
+                          className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-600 text-white active:bg-emerald-700 disabled:opacity-50 touch-manipulation flex items-center gap-1"
+                          style={{ WebkitTapHighlightColor: 'transparent' }}>
+                          {savingLapsSet ? 'Saving…' : 'Save laps'}
+                        </button>
+                      ) : (persistedAutoLaps.length >= 2 && (
+                        <span className="text-[10px] font-bold text-emerald-600 flex items-center gap-0.5">✓ Saved</span>
+                      ))}
                       {Object.keys(autoLapLactates).length > 0 && (
                         <button
                           disabled={savingAutoLaps}
@@ -4876,8 +4958,17 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                         </button>
                       )}
                       <button
-                        onClick={() => { setAutoLaps(null); setSelectedLap(null); setAutoLapLactates({}); setAutoLapLaInput(null); }}
-                        className="px-2 py-0.5 rounded-full text-[10px] font-bold border border-gray-200 bg-white text-gray-400 active:bg-gray-100 flex items-center gap-0.5">
+                        disabled={savingLapsSet}
+                        onClick={async () => {
+                          setAutoLaps(null); setSelectedLap(null); setAutoLapLactates({}); setAutoLapLaInput(null);
+                          // If a saved set exists, clear it too so the activity
+                          // reverts to its device laps on the next open.
+                          if (persistedAutoLaps.length) {
+                            try { await saveAutoLapsSet([]); }
+                            catch (e) { console.error('Clear saved laps failed:', e); }
+                          }
+                        }}
+                        className="px-2 py-0.5 rounded-full text-[10px] font-bold border border-gray-200 bg-white text-gray-400 active:bg-gray-100 disabled:opacity-50 flex items-center gap-0.5">
                         <XMarkIcon className="w-3 h-3" />Reset
                       </button>
                     </div>

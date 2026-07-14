@@ -20,6 +20,22 @@ const stravaLapSchema = new mongoose.Schema({
   lactate: { type: Number, default: null } // manually added lactate value
 }, { _id: false });
 
+/**
+ * User-saved "Smart detect" laps (client-computed interval split). Stored
+ * separately from device `laps` so a re-sync never overwrites them and the
+ * original device laps stay intact. When present, the activity detail view
+ * opens showing these instead of the device laps.
+ */
+const savedAutoLapSchema = new mongoose.Schema({
+  lapNumber: Number,
+  elapsed_time: Number,
+  moving_time: Number,
+  distance: Number,
+  average_watts: Number,
+  average_heartrate: Number,
+  average_speed: Number,
+}, { _id: false });
+
 const stravaActivitySchema = new mongoose.Schema({
   userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', index: true, required: true },
   stravaId: { type: Number, index: true, required: true },
@@ -53,6 +69,7 @@ const stravaActivitySchema = new mongoose.Schema({
   /** When true, Strava sync must not overwrite movingTime/distance/elapsedTime. */
   metricsManualized: { type: Boolean, default: false },
   laps: [stravaLapSchema], // Store laps with lactate values
+  savedAutoLaps: { type: [savedAutoLapSchema], default: undefined }, // Smart-detect laps saved by the user
   raw: Object
 }, { timestamps: true });
 

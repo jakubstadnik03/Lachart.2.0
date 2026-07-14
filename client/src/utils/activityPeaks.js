@@ -44,6 +44,7 @@ function pickValue(rec, keys) {
 
 export function recordPower(r) { return pickValue(r, ['power', 'watts']); }
 export function recordHr(r) { return pickValue(r, ['heartRate', 'heart_rate', 'hr']); }
+export function recordSpeed(r) { return pickValue(r, ['speed', 'enhanced_speed', 'velocity_smooth']); }
 
 function recordSec(r, prev) {
   if (!r) return 1;
@@ -192,14 +193,52 @@ export function bestRolling(records, field, windowSec) {
   return { value: best, startIndex: bestStart, focusTimeSec };
 }
 
-export function computePeakEfforts(records, activityDurationSec) {
-  const hasPower = records.some((r) => recordPower(r) != null);
+/** Best rolling average speed → pace (sec per km or sec per 100 m for swim). */
+export function bestRollingPace(records, windowSec, sportKind = 'running') {
+  const dtSec = estimateDtSec(records);
+  const w = Math.max(1, Math.round(windowSec / dtSec));
+  const vals = records.map(recordSpeed).map((v) => v || 0);
+  if (vals.length < w) return null;
+  let sum = 0;
+  for (let i = 0; i < w; i++) sum += vals[i];
+  let bestSpeed = sum / w;
+  let bestStart = 0;
+  for (let i = w; i < vals.length; i++) {
+    sum += vals[i] - vals[i - w];
+    const avg = sum / w;
+    if (avg > bestSpeed) {
+      bestSpeed = avg;
+      bestStart = i - w + 1;
+    }
+  }
+  if (bestSpeed <= 0) return null;
+  const unitM = sportKind === 'swimming' ? 100 : 1000;
+  const rec = records[bestStart];
+  let focusTimeSec = bestStart;
+  if (rec?.timestamp) {
+    const t0 = new Date(records[0].timestamp).getTime();
+    focusTimeSec = (new Date(rec.timestamp).getTime() - t0) / 1000;
+  }
+  return {
+    value: unitM / bestSpeed,
+    speedMps: bestSpeed,
+    startIndex: bestStart,
+    focusTimeSec,
+  };
+}
+
+export function computePeakEfforts(records, activityDurationSec, sport = '') {
+  const sk = sportKey(sport);
+  const isBike = sk === 'cycling';
+  const hasPower = isBike && records.some((r) => recordPower(r) != null);
+  const hasPace = !isBike && records.some((r) => recordSpeed(r) != null);
   const hasHr = records.some((r) => recordHr(r) != null);
   const dur = activityDurationSec || 0;
   const windows = PEAK_WINDOWS.filter((w) => dur >= w.s * 0.55);
   return windows.map((w) => ({
     ...w,
     power: hasPower ? bestRolling(records, 'power', w.s) : null,
+    pace: hasPace ? bestRollingPace(records, w.s, sk) : null,
     hr: hasHr ? bestRolling(records, 'hr', w.s) : null,
   }));
 }

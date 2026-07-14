@@ -1,5 +1,5 @@
 const User = require('../models/UserModel');
-const { getLastWeekRangeUTC, buildWeeklyReportSummary } = require('./weeklyReportService');
+const { buildWeeklyReportSummary } = require('./weeklyReportService');
 const { sendNotification } = require('../utils/notificationHelper');
 const { createEmailTransporter } = require('../utils/createEmailTransporter');
 const { generateEmailTemplate, getClientUrl } = require('../utils/emailTemplate');
@@ -71,7 +71,13 @@ function startWeeklyDigestScheduler() {
     const hour = now.getUTCHours();
     if (hour < sendHourUtc || hour > sendHourUtc + 1) return;
 
-    const { weekStart, weekEnd } = getLastWeekRangeUTC(now);
+    // Sunday-evening digest summarizes the week that is ending TODAY (the
+    // current Mon–Sun ISO week), so the numbers line up with the calendar and
+    // the "This week load" widget. getLastWeekRangeUTC would return the *prior*
+    // week here, which is what the Monday report scheduler wants — not this one.
+    const weekStart = getIsoWeekStartUTC(now);
+    const weekEnd = new Date(weekStart);
+    weekEnd.setUTCDate(weekEnd.getUTCDate() + 7);
     const weekKey = weekStart.toISOString().slice(0, 10);
 
     const users = await User.find({
@@ -81,7 +87,7 @@ function startWeeklyDigestScheduler() {
         { 'notifications.weeklyDigestEmail': { $ne: false }, email: { $ne: null } },
       ],
     })
-      .select('_id name email ftp powerZones heartRateZones restingHr maxHr weight trainingPreferences notifications weeklyDigestPushLastWeekStart weeklyDigestEmailLastWeekStart expoPushTokens')
+      .select('_id name email ftp powerZones heartRateZones restingHr maxHr weight trainingPreferences notifications weeklyDigestPushLastWeekStart weeklyDigestEmailLastWeekStart expoPushTokens strava garmin appleHealth')
       .limit(2000)
       .lean();
 
@@ -89,7 +95,22 @@ function startWeeklyDigestScheduler() {
     let sentEmail = 0;
     for (const user of users) {
       try {
+        // Don't nag users who have nothing to summarize: skip unless they've
+        // connected a data source (Strava / Garmin / Apple Health) or actually
+        // logged something this week (covers FIT-upload / manual-only users).
+        const hasConnectedSource = Boolean(
+          user.strava?.athleteId || user.strava?.accessToken ||
+          user.garmin?.athleteId || user.garmin?.accessToken ||
+          user.appleHealth?.connectedAt
+        );
+
         const summary = await buildWeeklyReportSummary(user, weekStart, weekEnd);
+
+        const hasDataThisWeek =
+          (summary?.totals?.totalSeconds || 0) > 0 ||
+          (summary?.activities?.length || 0) > 0;
+        if (!hasConnectedSource && !hasDataThisWeek) continue;
+
         const tss = Math.round(summary?.totals?.totalTSS || 0);
         const form = summary?.formValue != null ? Math.round(summary.formValue) : null;
         const status = summary?.trainingStatus?.statusText || '—';

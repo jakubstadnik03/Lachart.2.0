@@ -15,6 +15,7 @@ import RaceCountdownCard from '../components/DashboardPage/RaceCountdownCard';
 import PostRaceFeedbackCard from '../components/DashboardPage/PostRaceFeedbackCard';
 import PlannedWorkoutEditor from '../components/NativeDashboard/PlannedWorkoutEditor';
 import StravaConnectModal from '../components/NativeDashboard/StravaConnectModal';
+import PremiumLock from '../components/PremiumLock';
 import { NATIVE_DASHBOARD_KEYFRAMES, cardEntry } from '../components/NativeDashboard/animations';
 import TrainingForm from '../components/TrainingForm';
 import { getStravaActivityDetail, addTraining, updateTraining, updateStravaLactateValues } from '../services/api';
@@ -1128,16 +1129,18 @@ export default function NativeDashboardPage({
 
           {/* 0 · Weekly summary carousel (swipeable) */}
           <div style={{ ...cardEntry(0), ...snapStyle }}>
-            <WeeklySummaryCarousel
-              activities={activities}
-              plannedWorkouts={plannedWorkouts}
-              sparklineData={sparklineData}
-              tests={tests}
-              todayMetrics={todayMetrics}
-              loading={metricsLoading}
-              userProfile={fitnessProfile}
-              kpis={{ fitness: todayMetrics?.fitness, form: todayMetrics?.form, fatigue: todayMetrics?.fatigue }}
-            />
+            <PremiumLock feature="Performance Insights" plan="pro" minHeight={180}>
+              <WeeklySummaryCarousel
+                activities={activities}
+                plannedWorkouts={plannedWorkouts}
+                sparklineData={sparklineData}
+                tests={tests}
+                todayMetrics={todayMetrics}
+                loading={metricsLoading}
+                userProfile={fitnessProfile}
+                kpis={{ fitness: todayMetrics?.fitness, form: todayMetrics?.form, fatigue: todayMetrics?.fatigue }}
+              />
+            </PremiumLock>
           </div>
 
           {/* 0b · Daily training insight */}
@@ -1197,26 +1200,30 @@ export default function NativeDashboardPage({
 
           {/* 3 · Status hero */}
           <div ref={statusHeroRef} style={{ ...cardEntry(3), ...snapStyle }}>
-            <StatusHeroCard
-              activities={activities}
-              userProfile={fitnessProfile}
-              todayMetrics={todayMetrics}
-              sparklineData={sparklineData}
-              loading={metricsLoading}
-            />
+            <PremiumLock feature="Form & Fitness (Status)" plan="pro" minHeight={180}>
+              <StatusHeroCard
+                activities={activities}
+                userProfile={fitnessProfile}
+                todayMetrics={todayMetrics}
+                sparklineData={sparklineData}
+                loading={metricsLoading}
+              />
+            </PremiumLock>
           </div>
 
           {/* 3b · Race countdown */}
           <div style={{ ...cardEntry(3), ...snapStyle }}>
-            <RaceCountdownCard
-              athleteId={athleteId || user?._id || user?.id}
-              currentCTL={todayMetrics?.fitness}
-              currentForm={todayMetrics?.form}
-              plannedWorkouts={plannedWorkouts}
-              activities={activities}
-              userProfile={fitnessProfile}
-              onTaperApplied={onTaperApplied}
-            />
+            <PremiumLock feature="Upcoming Races" plan="pro" minHeight={120}>
+              <RaceCountdownCard
+                athleteId={athleteId || user?._id || user?.id}
+                currentCTL={todayMetrics?.fitness}
+                currentForm={todayMetrics?.form}
+                plannedWorkouts={plannedWorkouts}
+                activities={activities}
+                userProfile={fitnessProfile}
+                onTaperApplied={onTaperApplied}
+              />
+            </PremiumLock>
           </div>
 
           {/* 3c · Post-race feedback */}
@@ -1236,13 +1243,15 @@ export default function NativeDashboardPage({
 
           {/* 5 · Weekly summary */}
           <div style={{ ...cardEntry(5), ...snapStyle }}>
-            <WeeklySummaryCard
-              activities={activities}
-              plannedWorkouts={plannedWorkouts}
-              sparklineData={sparklineData}
-              tests={tests}
-              userProfile={fitnessProfile}
-            />
+            <PremiumLock feature="This Week & Daily TSS" plan="pro" minHeight={180}>
+              <WeeklySummaryCard
+                activities={activities}
+                plannedWorkouts={plannedWorkouts}
+                sparklineData={sparklineData}
+                tests={tests}
+                userProfile={fitnessProfile}
+              />
+            </PremiumLock>
           </div>
 
           {/* 6 · Zone distribution */}
