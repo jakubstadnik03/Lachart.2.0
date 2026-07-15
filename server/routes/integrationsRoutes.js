@@ -461,16 +461,32 @@ function triggerGarminBackfillQueued(user, startSec, endSec) {
             // (evaluation keys ≈ 1 month): HTTP 400 "start … before min start
             // time of <ISO>". Requesting anything older is pointless — parse
             // the minimum and jump the queue straight to the allowed window.
+            //
+            // The minimum is MOVING (computed as now-31d at request time), so
+            // jumping exactly onto it loses the race forever: 2s later the
+            // minimum is 2s further and the request 400s again, in a loop.
+            // Jump PAST it with a healthy margin (losing 10 min of the oldest
+            // data in a month-wide window is irrelevant), and cap the number
+            // of skips as a belt-and-braces guard against any future loop.
+            const MIN_START_MARGIN_SEC = 600;
+            const MAX_MIN_START_SKIPS = 5;
             const minStart = status === 400
               ? bodyStr.match(/min start time of (\d{4}-\d{2}-\d{2}T[0-9:.]+Z)/)?.[1]
               : null;
             if (minStart) {
               const minSec = Math.floor(new Date(minStart).getTime() / 1000);
-              if (Number.isFinite(minSec) && minSec > cursor) {
-                job.skippedBeforeMin = (job.skippedBeforeMin || 0) + 1;
+              const skips = (job.skippedBeforeMin || 0) + 1;
+              if (Number.isFinite(minSec) && minSec > cursor && skips <= MAX_MIN_START_SKIPS) {
+                job.skippedBeforeMin = skips;
                 job.minBackfillStart = minStart;
-                console.warn(`[Garmin backfill] ${rangeLabel} is older than this key's minimum (${minStart}) — skipping ahead to the allowed window`);
-                nextCursor = minSec;
+                console.warn(`[Garmin backfill] ${rangeLabel} is older than this key's minimum (${minStart}) — skipping ahead to the allowed window (+${MIN_START_MARGIN_SEC}s margin)`);
+                nextCursor = minSec + MIN_START_MARGIN_SEC;
+                break;
+              }
+              if (skips > MAX_MIN_START_SKIPS) {
+                job.failed += 1;
+                job.lastError = { status, body: `min-start skip limit reached (${bodyStr.slice(0, 200)})`, range: rangeLabel };
+                console.error(`[Garmin backfill] ${rangeLabel}: hit the min-start skip limit — giving up on this chunk to avoid a request loop`);
                 break;
               }
             }
