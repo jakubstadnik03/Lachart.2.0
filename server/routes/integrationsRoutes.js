@@ -436,6 +436,7 @@ function triggerGarminBackfillQueued(user, startSec, endSec) {
       while (cursor < endSec) {
         const chunkEnd = Math.min(cursor + MAX_CHUNK, endSec);
         const rangeLabel = `${new Date(cursor * 1000).toISOString().slice(0, 10)} → ${new Date(chunkEnd * 1000).toISOString().slice(0, 10)}`;
+        let nextCursor = chunkEnd;
         let attempt = 0;
         for (;;) {
           try {
@@ -455,20 +456,37 @@ function triggerGarminBackfillQueued(user, startSec, endSec) {
           } catch (e) {
             const status = e?.response?.status;
             const body = e?.response?.data;
+            const bodyStr = typeof body === 'object' ? JSON.stringify(body) : String(body || e.message || '');
+            // Garmin caps how far back this consumer key may backfill
+            // (evaluation keys ≈ 1 month): HTTP 400 "start … before min start
+            // time of <ISO>". Requesting anything older is pointless — parse
+            // the minimum and jump the queue straight to the allowed window.
+            const minStart = status === 400
+              ? bodyStr.match(/min start time of (\d{4}-\d{2}-\d{2}T[0-9:.]+Z)/)?.[1]
+              : null;
+            if (minStart) {
+              const minSec = Math.floor(new Date(minStart).getTime() / 1000);
+              if (Number.isFinite(minSec) && minSec > cursor) {
+                job.skippedBeforeMin = (job.skippedBeforeMin || 0) + 1;
+                job.minBackfillStart = minStart;
+                console.warn(`[Garmin backfill] ${rangeLabel} is older than this key's minimum (${minStart}) — skipping ahead to the allowed window`);
+                nextCursor = minSec;
+                break;
+              }
+            }
             if (status === 429 && attempt < 3) {
               attempt += 1;
               console.warn(`[Garmin backfill] HTTP 429 rate-limited on ${rangeLabel} — waiting ${RATE_LIMIT_WAIT_MS / 1000}s, retry ${attempt}/3`);
               await new Promise((r) => setTimeout(r, RATE_LIMIT_WAIT_MS));
               continue;
             }
-            const bodyStr = typeof body === 'object' ? JSON.stringify(body) : String(body || e.message || '');
             job.failed += 1;
             job.lastError = { status: status || null, body: bodyStr.slice(0, 300), range: rangeLabel };
             console.error(`[Garmin backfill] chunk ${rangeLabel} failed permanently (HTTP ${status || '?'}):`, body || e.message);
             break;
           }
         }
-        cursor = chunkEnd;
+        cursor = nextCursor;
         if (cursor < endSec) await new Promise((r) => setTimeout(r, SPACING_MS));
       }
     } catch (e) {
@@ -478,6 +496,7 @@ function triggerGarminBackfillQueued(user, startSec, endSec) {
       job.running = false;
       job.finishedAt = new Date();
       console.log(`[Garmin backfill] finished for user ${key}: ${job.requested}/${job.total} chunks requested, ${job.failed} failed` +
+        (job.skippedBeforeMin ? `, ${job.skippedBeforeMin} skipped (older than this key's min backfill start ${job.minBackfillStart})` : '') +
         (job.lastError ? ` (last error HTTP ${job.lastError.status}: ${job.lastError.body})` : ''));
     }
   })();
