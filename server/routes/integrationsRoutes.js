@@ -577,6 +577,10 @@ async function processGarminWebhookPayload(payload) {
   let imported = 0;
   let updated = 0;
   let dropped = 0;
+  // Users whose activities changed — their cached /activities feed must be
+  // dropped, otherwise the calendar keeps serving the stale (empty) snapshot
+  // and freshly delivered activities look like they never arrived.
+  const touchedUserIds = new Set();
 
   const isDetailsType = (t) => t === 'activityDetails' || t === 'activityDetailFiles';
 
@@ -609,6 +613,7 @@ async function processGarminWebhookPayload(payload) {
         const r = await upsertGarminActivityDetails(user, entry);
         imported += r.imported;
         updated += r.updated;
+        if (r.imported || r.updated) touchedUserIds.add(String(user._id));
         continue;
       }
 
@@ -617,6 +622,7 @@ async function processGarminWebhookPayload(payload) {
         const r = await upsertGarminActivities(user, normalizeGarminActivityBatch([entry]));
         imported += r.imported;
         updated += r.updated;
+        if (r.imported || r.updated) touchedUserIds.add(String(user._id));
         continue;
       }
 
@@ -639,18 +645,26 @@ async function processGarminWebhookPayload(payload) {
               const r = await upsertGarminActivityDetails(user, d);
               imported += r.imported;
               updated += r.updated;
+              if (r.imported || r.updated) touchedUserIds.add(String(user._id));
             }
           } else {
             const acts = normalizeGarminActivityBatch(body);
             const r = await upsertGarminActivities(user, acts);
             imported += r.imported;
             updated += r.updated;
+            if (r.imported || r.updated) touchedUserIds.add(String(user._id));
           }
         } catch (e) {
           console.warn('Garmin ping callback fetch failed:', e?.response?.data || e.message);
         }
       }
     }
+  }
+
+  // Drop stale cached /activities responses so the new data is visible on the
+  // next calendar/dashboard load instead of after the cache TTL runs out.
+  for (const uid of touchedUserIds) {
+    try { invalidateActivitiesCacheForUser(uid); } catch { /* cache only */ }
   }
 
   return { imported, updated, dropped };
