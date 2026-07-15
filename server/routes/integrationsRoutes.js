@@ -392,40 +392,97 @@ async function fetchGarminWellnessActivitiesByDay(user, tokenData, path, startSe
   return allActivities;
 }
 
-async function triggerGarminBackfillRange(user, startSec, endSec) {
-  const tokenData = await getValidGarminToken(user);
-  const url = `${getGarminWellnessApiBaseUrl()}/rest/backfill/activities`;
-  const MAX_CHUNK = 90 * 24 * 3600;
-  let cursor = startSec;
-  let chunks = 0;
-  let lastError = null;
+/**
+ * Background backfill queue. Garmin's API is rate-limited (100 req/min shared
+ * across the whole consumer key) and a 2-year history is ~9 chunks — firing
+ * them back-to-back, possibly twice (sync-history + the pull-failure fallback
+ * both used to trigger), ate the quota and most chunks died with HTTP 429, so
+ * the history never arrived. This queue:
+ *   - dedupes: one running job per user (a second trigger returns the job),
+ *   - spaces chunk requests apart,
+ *   - retries 429s after the rate-limit window instead of dropping the chunk.
+ * Keyed by userId; exposed in /garmin/status for debugging.
+ */
+const garminBackfillJobs = new Map();
 
-  while (cursor < endSec) {
-    const chunkEnd = Math.min(cursor + MAX_CHUNK, endSec);
-    try {
-      const resp = await axios.get(url, {
-        headers: { Authorization: `${tokenData.tokenType} ${tokenData.accessToken}` },
-        params: {
-          summaryStartTimeInSeconds: cursor,
-          summaryEndTimeInSeconds: chunkEnd,
-        },
-        timeout: 30000,
-        validateStatus: (s) => s === 202 || s === 200 || s === 409,
-      });
-      // 409 = Garmin already has a backfill request queued for this window —
-      // that's success from our side (data will still be delivered).
-      console.log(`Garmin backfill requested ${new Date(cursor * 1000).toISOString().slice(0, 10)} → ${new Date(chunkEnd * 1000).toISOString().slice(0, 10)} (HTTP ${resp.status})`);
-      chunks += 1;
-    } catch (e) {
-      const status = e?.response?.status;
-      const body = e?.response?.data;
-      const bodyStr = typeof body === 'object' ? JSON.stringify(body) : String(body || e.message || '');
-      lastError = { status: status || null, body: bodyStr.slice(0, 300), url };
-      console.warn(`Garmin backfill chunk failed (HTTP ${status || '?'}) at ${url}:`, body || e.message);
-    }
-    cursor = chunkEnd;
+function triggerGarminBackfillQueued(user, startSec, endSec) {
+  const key = String(user._id);
+  const existing = garminBackfillJobs.get(key);
+  if (existing?.running) {
+    console.log(`[Garmin backfill] job already running for user ${key} (${existing.requested}/${existing.total}) — not starting a duplicate`);
+    return existing;
   }
-  return { chunks, lastError };
+
+  const MAX_CHUNK = 90 * 24 * 3600;
+  const total = Math.max(1, Math.ceil((endSec - startSec) / MAX_CHUNK));
+  const job = {
+    running: true,
+    total,
+    requested: 0,
+    failed: 0,
+    lastError: null,
+    startedAt: new Date(),
+    finishedAt: null,
+  };
+  garminBackfillJobs.set(key, job);
+
+  (async () => {
+    const url = `${getGarminWellnessApiBaseUrl()}/rest/backfill/activities`;
+    const SPACING_MS = 2000;      // gentle pacing between chunk requests
+    const RATE_LIMIT_WAIT_MS = 65_000; // Garmin limit window is 1 minute
+    try {
+      const tokenData = await getValidGarminToken(user);
+      let cursor = startSec;
+      while (cursor < endSec) {
+        const chunkEnd = Math.min(cursor + MAX_CHUNK, endSec);
+        const rangeLabel = `${new Date(cursor * 1000).toISOString().slice(0, 10)} → ${new Date(chunkEnd * 1000).toISOString().slice(0, 10)}`;
+        let attempt = 0;
+        for (;;) {
+          try {
+            const resp = await axios.get(url, {
+              headers: { Authorization: `${tokenData.tokenType} ${tokenData.accessToken}` },
+              params: {
+                summaryStartTimeInSeconds: cursor,
+                summaryEndTimeInSeconds: chunkEnd,
+              },
+              timeout: 30000,
+              // 409 = Garmin already has this window queued — success for us.
+              validateStatus: (s) => s === 202 || s === 200 || s === 409,
+            });
+            console.log(`[Garmin backfill] requested ${rangeLabel} (HTTP ${resp.status}, chunk ${job.requested + 1}/${job.total})`);
+            job.requested += 1;
+            break;
+          } catch (e) {
+            const status = e?.response?.status;
+            const body = e?.response?.data;
+            if (status === 429 && attempt < 3) {
+              attempt += 1;
+              console.warn(`[Garmin backfill] HTTP 429 rate-limited on ${rangeLabel} — waiting ${RATE_LIMIT_WAIT_MS / 1000}s, retry ${attempt}/3`);
+              await new Promise((r) => setTimeout(r, RATE_LIMIT_WAIT_MS));
+              continue;
+            }
+            const bodyStr = typeof body === 'object' ? JSON.stringify(body) : String(body || e.message || '');
+            job.failed += 1;
+            job.lastError = { status: status || null, body: bodyStr.slice(0, 300), range: rangeLabel };
+            console.error(`[Garmin backfill] chunk ${rangeLabel} failed permanently (HTTP ${status || '?'}):`, body || e.message);
+            break;
+          }
+        }
+        cursor = chunkEnd;
+        if (cursor < endSec) await new Promise((r) => setTimeout(r, SPACING_MS));
+      }
+    } catch (e) {
+      job.lastError = { status: null, body: String(e?.message || e).slice(0, 300) };
+      console.error('[Garmin backfill] job crashed:', e?.message || e);
+    } finally {
+      job.running = false;
+      job.finishedAt = new Date();
+      console.log(`[Garmin backfill] finished for user ${key}: ${job.requested}/${job.total} chunks requested, ${job.failed} failed` +
+        (job.lastError ? ` (last error HTTP ${job.lastError.status}: ${job.lastError.body})` : ''));
+    }
+  })();
+
+  return job;
 }
 
 /**
@@ -450,16 +507,16 @@ async function fetchGarminActivitiesForSync(user, since = null) {
       }
     }
 
-    const { chunks, lastError } = await triggerGarminBackfillRange(user, startSec, nowSec);
+    const job = triggerGarminBackfillQueued(user, startSec, nowSec);
     return {
       activities: [],
       backfillPending: true,
-      backfillChunks: chunks,
-      backfillError: lastError,
+      backfillChunks: job.total,
+      backfillError: job.lastError,
       message:
         'Garmin cannot pull activities directly (missing pull permission). ' +
-        `Requested historical backfill in ${chunks} chunk(s) — data usually arrives within a few minutes via Garmin Push/Ping. ` +
-        (lastError ? `Backfill request was rejected by Garmin (HTTP ${lastError.status}): ${lastError.body}. ` : '') +
+        `Queued a backfill of ${job.total} chunk(s) in the background (rate-limit aware) — ` +
+        'data arrives via Garmin Push/Ping within minutes. ' +
         'Ensure Push or Ping is configured in the Garmin developer portal to ' +
         'https://lachart.onrender.com/api/integrations/garmin/webhook — or use Connect with credentials in Settings.',
     };
@@ -2569,10 +2626,9 @@ router.get('/garmin/callback', async (req, res) => {
           if (!freshUser?.garmin?.accessToken || !freshUser?.garmin?.refreshToken) return null;
           const nowSec = Math.floor(Date.now() / 1000);
           const twoYearsAgo = nowSec - 2 * 365 * 24 * 3600;
-          const { chunks, lastError } = await triggerGarminBackfillRange(freshUser, twoYearsAgo, nowSec);
-          console.log(`[Garmin callback] backfill requested: ${chunks} chunk(s)` +
-            (lastError ? ` (last error HTTP ${lastError.status}: ${lastError.body})` : ''));
-          return { chunks };
+          const job = triggerGarminBackfillQueued(freshUser, twoYearsAgo, nowSec);
+          console.log(`[Garmin callback] backfill queued: ${job.total} chunk(s)`);
+          return { chunks: job.total };
         })
         .catch((e) => console.warn('[Garmin callback] backfill failed:', e?.message || e));
     }, 5000);
@@ -2694,6 +2750,18 @@ async function handleGarminWebhook(req, res) {
 router.post('/garmin/webhook', handleGarminWebhook);
 router.post('/garmin/ping', handleGarminWebhook);
 
+// Browser/health-check friendly: Garmin delivers via POST, but a GET should
+// confirm the endpoint is alive instead of a confusing "Cannot GET" 404.
+const garminWebhookGetInfo = (req, res) => {
+  res.json({
+    ok: true,
+    endpoint: 'garmin-webhook',
+    note: 'Alive. Garmin delivers data via POST to this URL — configure it in the Garmin Endpoint Configuration tool.',
+  });
+};
+router.get('/garmin/webhook', garminWebhookGetInfo);
+router.get('/garmin/ping', garminWebhookGetInfo);
+
 // POST /api/integrations/garmin/disconnect - remove Garmin credentials & disable auto-sync
 router.post('/garmin/disconnect', verifyToken, async (req, res) => {
   try {
@@ -2776,17 +2844,17 @@ async function getGarminActivities(user, since = null) {
       console.warn('Garmin /activityDetails pull failed, requesting backfill:', detailsErr.message);
     }
 
-    const { chunks, lastError } = await triggerGarminBackfillRange(user, startSec, nowSec);
+    const job = triggerGarminBackfillQueued(user, startSec, nowSec);
     const err = new Error(
       'Garmin cannot pull activities directly (missing pull permission). ' +
-      `Requested historical backfill in ${chunks} chunk(s) — data usually arrives within a few minutes via Garmin Push/Ping. ` +
-      (lastError ? `Backfill request was rejected by Garmin (HTTP ${lastError.status}): ${lastError.body}. ` : '') +
+      `Queued a backfill of ${job.total} chunk(s) in the background (rate-limit aware) — ` +
+      'data arrives via Garmin Push/Ping within minutes. ' +
       'Ensure Push or Ping is configured in the Garmin developer portal to ' +
       'https://lachart.onrender.com/api/integrations/garmin/webhook — or use Connect with credentials in Settings.'
     );
     err.backfillPending = true;
-    err.backfillChunks = chunks;
-    err.backfillError = lastError;
+    err.backfillChunks = job.total;
+    err.backfillError = job.lastError;
     throw err;
   }
 
@@ -3254,44 +3322,27 @@ router.post('/garmin/sync-history', verifyToken, async (req, res) => {
 
     const twoYearsAgo = new Date(Date.now() - 2 * 365 * 24 * 3600 * 1000);
 
-    // OAuth path — backfill is the reliable way to get historical data
+    // OAuth path — backfill is the reliable way to get historical data.
+    // Deliberately NO immediate pull here: a 2-year day-by-day pull is ~730
+    // API calls (blows Garmin's 100/min limit), it can't succeed without pull
+    // permission anyway, and its failure path used to trigger a DUPLICATE
+    // 2-year backfill — the combination is what caused the HTTP 429 storm.
     if (user.garmin.refreshToken) {
       const nowSec = Math.floor(Date.now() / 1000);
       const startSec = Math.floor(twoYearsAgo.getTime() / 1000);
-      const { chunks, lastError } = await triggerGarminBackfillRange(user, startSec, nowSec);
+      const job = triggerGarminBackfillQueued(user, startSec, nowSec);
 
-      let imported = 0;
-      let updated = 0;
-      let backfillPending = true;
-      let message =
-        `Garmin is importing your activity history (${chunks} backfill chunk(s) requested). ` +
-        (lastError ? `Garmin rejected the backfill request (HTTP ${lastError.status}): ${lastError.body}. ` : '') +
-        'Activities usually arrive within a few minutes. Make sure Push/Ping webhook is configured ' +
-        'in the Garmin developer portal.';
-
-      try {
-        const syncResult = await fetchGarminActivitiesForSync(user, twoYearsAgo);
-        const r = await upsertGarminActivities(user, syncResult.activities);
-        imported = r.imported;
-        updated = r.updated;
-        if (syncResult.backfillPending) {
-          message = syncResult.message || message;
-        } else if (imported > 0 || updated > 0) {
-          backfillPending = false;
-          await User.findByIdAndUpdate(user._id, { 'garmin.lastSyncDate': new Date() });
-        }
-      } catch (apiErr) {
-        console.warn('Garmin history immediate pull failed (backfill still running):', apiErr.message);
-      }
-
-      console.log(`Garmin history backfill: ${chunks} chunks, ${imported} imported, ${updated} updated`);
+      console.log(`Garmin history backfill: queued ${job.total} chunk(s) (running=${job.running}, already requested=${job.requested})`);
       return res.json({
-        imported,
-        updated,
-        backfillChunks: chunks,
-        backfillPending,
-        status: backfillPending ? 'backfill_started' : 'ok',
-        message,
+        imported: 0,
+        updated: 0,
+        backfillChunks: job.total,
+        backfillPending: true,
+        status: 'backfill_started',
+        message:
+          `Garmin is importing your activity history (${job.total} backfill chunk(s) queued, rate-limit aware). ` +
+          'Activities arrive via webhook over the next several minutes. ' +
+          'Progress is visible in GET /api/integrations/garmin/status → backfillJob.',
       });
     }
 
@@ -3416,6 +3467,8 @@ router.get('/garmin/status', verifyToken, async (req, res) => {
       // pending backfill = webhook not configured or deliveries don't match
       // this user (check server logs for "[Garmin webhook] DROPPED").
       webhookLastEventAt: g.webhookLastEventAt || null,
+      // Live state of the background backfill queue (chunks requested/failed).
+      backfillJob: garminBackfillJobs.get(String(req.user.userId)) || null,
     });
   } catch (error) {
     console.error('Garmin status error:', error);
