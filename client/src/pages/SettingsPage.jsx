@@ -1215,6 +1215,7 @@ const SettingsPage = () => {
     try {
       setIsSyncingGarmin(true);
       res = await syncGarminActivities();
+      console.log('[Garmin] sync response:', res);
       // The server may return { error, message } with HTTP 200 in auto-sync, or 502/500 (which throws)
       if (res?.error) {
         const msg = res.message || res.error;
@@ -1233,7 +1234,8 @@ const SettingsPage = () => {
       await handleSyncComplete();
       window.dispatchEvent(new CustomEvent('garminSyncComplete', { detail: res }));
     } catch (e) {
-      console.error('Garmin sync error:', e);
+      // Full server body → console, not just the axios "status code" message.
+      console.error('[Garmin] sync failed:', e?.response?.status, e?.response?.data || e);
       const msg = garminSyncErrorMessage(e, res);
       addNotification(msg, 'error');
       setGarminSyncError(msg);
@@ -1252,6 +1254,7 @@ const SettingsPage = () => {
     try {
       setIsSyncingGarminHistory(true);
       res = await syncGarminHistory(); // dedicated endpoint with 90-day chunk pagination
+      console.log('[Garmin] history import response:', res);
       if (res?.error) {
         const msg = res.message || res.error;
         addNotification(`Garmin import error: ${msg}`, 'error');
@@ -1269,7 +1272,7 @@ const SettingsPage = () => {
       await handleSyncComplete();
       window.dispatchEvent(new CustomEvent('garminSyncComplete', { detail: res }));
     } catch (e) {
-      console.error('Garmin history sync error:', e);
+      console.error('[Garmin] history import failed:', e?.response?.status, e?.response?.data || e);
       const msg = garminSyncErrorMessage(e, res);
       addNotification(msg, 'error');
       setGarminSyncError(msg);

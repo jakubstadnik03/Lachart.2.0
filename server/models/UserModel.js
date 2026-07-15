@@ -166,7 +166,11 @@ const userSchema = new mongoose.Schema({
     refreshToken: { type: String, default: null },
     expiresAt: { type: Number, default: null },
     autoSync: { type: Boolean, default: false }, // Enable automatic sync
-    lastSyncDate: { type: Date, default: null } // Last successful sync date
+    lastSyncDate: { type: Date, default: null }, // Last successful sync date
+    // Set every time a Garmin Push/Ping webhook delivers data for this user.
+    // Mirrors strava.webhookLastEventAt — lets the UI show whether Garmin's
+    // async delivery works at all, or whether backfill data silently never arrives.
+    webhookLastEventAt: { type: Date, default: null }
   },
   appleHealth: {
     connectedAt: { type: Date, default: null },

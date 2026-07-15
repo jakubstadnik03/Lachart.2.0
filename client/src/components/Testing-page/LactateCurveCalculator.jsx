@@ -677,14 +677,17 @@ const lactateZoneLtpOverlayPlugin = {
         const topMargin = mobileMode ? 4 : 6;
         const accentStripH = mobileMode ? 2 : 3;
 
-        const drawTooltip = (labelData, boxTop) => {
-          const isLt1 = labelData.label === 'LT1';
-          const line1 = labelData.isHRView
-            ? `${labelData.label}: ${labelData.lactateText}`
-            : labelData.valueText;
+        const ltTitleFor = (label) =>
+          label === 'LT1'
+            ? 'LT1 · Aerobic threshold'
+            : 'LT2 · Anaerobic threshold';
+
+        const drawTooltip = (labelData, bx, by) => {
+          const line1 = ltTitleFor(labelData.label);
           const line2 = labelData.isHRView
-            ? labelData.valueText
-            : labelData.lactateText;
+            ? `${labelData.lactateText} · ${labelData.valueText}`
+            : labelData.valueText;
+          const line3 = labelData.isHRView ? null : labelData.lactateText;
 
           const accent =
             labelData.label === 'LT1'
@@ -695,25 +698,21 @@ const lactateZoneLtpOverlayPlugin = {
           const w1 = ctx.measureText(line1).width;
           ctx.font = fontSecondary;
           const w2 = ctx.measureText(line2).width;
-          const boxW = Math.ceil(Math.max(w1, w2) + padXBox * 2 + 4);
+          const w3 = line3 ? ctx.measureText(line3).width : 0;
+          const boxW = Math.ceil(Math.max(w1, w2, w3) + padXBox * 2 + 4);
           const line1H = 13;
           const line2H = 12;
+          const line3H = line3 ? 12 : 0;
           const contentH =
-            accentStripH + padYBox + line1H + lineGap + line2H + padYBox;
+            accentStripH +
+            padYBox +
+            line1H +
+            lineGap +
+            line2H +
+            (line3 ? lineGap + line3H : 0) +
+            padYBox;
 
-          const margin = 4;
-          const gapFromLine = 10;
-          let bx;
-          if (isLt1) {
-            bx = labelData.xPixel - gapFromLine - boxW;
-          } else {
-            bx = labelData.xPixel + gapFromLine;
-          }
-          bx = Math.max(
-            chartArea.left + margin,
-            Math.min(bx, chartArea.right - boxW - margin)
-          );
-          const by = boxTop;
+          const gapFromLine = 8;
           const lineX = labelData.xPixel;
           const r = 8;
 
@@ -744,10 +743,10 @@ const lactateZoneLtpOverlayPlugin = {
           ctx.fillStyle = accent;
           ctx.fillRect(bx + r * 0.35, by + 0.5, boxW - r * 0.7, accentStripH);
 
-          const textX = isLt1 ? bx + boxW - padXBox : bx + padXBox;
+          const textX = bx + boxW / 2;
           let ty = by + accentStripH + padYBox + line1H - 2;
           ctx.textBaseline = 'alphabetic';
-          ctx.textAlign = isLt1 ? 'right' : 'left';
+          ctx.textAlign = 'center';
           ctx.font = fontPrimary;
           ctx.fillStyle = 'rgba(15, 23, 42, 0.95)';
           ctx.fillText(line1, textX, ty);
@@ -755,43 +754,59 @@ const lactateZoneLtpOverlayPlugin = {
           ctx.font = fontSecondary;
           ctx.fillStyle = 'rgba(71, 85, 105, 0.95)';
           ctx.fillText(line2, textX, ty);
+          if (line3) {
+            ty += lineGap + line3H;
+            ctx.fillText(line3, textX, ty);
+          }
 
-          // Boční šipka k svislé čáře: LT1 box vlevo → šipka z pravého okraje k čáře; LT2 box vpravo → z levého okraje k čáře
-          const midY = by + contentH / 2;
+          const boxBottom = by + contentH;
           const halfBase = 6;
           ctx.fillStyle = 'rgba(255, 255, 255, 0.96)';
           ctx.strokeStyle = 'rgba(15, 23, 42, 0.12)';
           ctx.lineWidth = 1;
-          if (isLt1) {
-            const baseX = bx + boxW;
-            const tipX = lineX - 3;
-            if (tipX > baseX) {
-              ctx.beginPath();
-              ctx.moveTo(baseX, midY - halfBase);
-              ctx.lineTo(baseX, midY + halfBase);
-              ctx.lineTo(tipX, midY);
-              ctx.closePath();
-              ctx.fill();
-              ctx.stroke();
-            }
-          } else {
-            const baseX = bx;
-            const tipX = lineX + 3;
-            if (tipX < baseX) {
-              ctx.beginPath();
-              ctx.moveTo(baseX, midY - halfBase);
-              ctx.lineTo(baseX, midY + halfBase);
-              ctx.lineTo(tipX, midY);
-              ctx.closePath();
-              ctx.fill();
-              ctx.stroke();
-            }
-          }
+          ctx.beginPath();
+          ctx.moveTo(lineX - halfBase, boxBottom);
+          ctx.lineTo(lineX + halfBase, boxBottom);
+          ctx.lineTo(lineX, boxBottom + gapFromLine);
+          ctx.closePath();
+          ctx.fill();
+          ctx.stroke();
         };
 
-        const boxTop = chartArea.top + topMargin;
+        const baseTop = chartArea.top + topMargin;
+        const placedBoxes = [];
         labels.forEach((labelData) => {
-          drawTooltip(labelData, boxTop);
+          const title = ltTitleFor(labelData.label);
+          ctx.font = fontPrimary;
+          const w1 = ctx.measureText(title).width;
+          ctx.font = fontSecondary;
+          const w2 = ctx.measureText(labelData.valueText).width;
+          const w3 = labelData.isHRView ? 0 : ctx.measureText(labelData.lactateText).width;
+          const boxW = Math.ceil(Math.max(w1, w2, w3) + padXBox * 2 + 4);
+          const line1H = 13;
+          const line2H = 12;
+          const line3H = labelData.isHRView ? 0 : 12;
+          const contentH =
+            accentStripH +
+            padYBox +
+            line1H +
+            lineGap +
+            line2H +
+            (line3H ? lineGap + line3H : 0) +
+            padYBox;
+
+          let bx = labelData.xPixel - boxW / 2;
+          bx = Math.max(4 + chartArea.left, Math.min(bx, chartArea.right - boxW - 4));
+          let by = baseTop;
+          for (const prev of placedBoxes) {
+            const overlapX = bx < prev.bx + prev.boxW && bx + boxW > prev.bx;
+            const overlapY = by < prev.by + prev.contentH && by + contentH > prev.by;
+            if (overlapX && overlapY) {
+              by = prev.by + prev.contentH + 4;
+            }
+          }
+          placedBoxes.push({ bx, by, boxW, contentH });
+          drawTooltip(labelData, bx, by);
         });
 
         ctx.restore();
@@ -1556,9 +1571,12 @@ const LactateCurveCalculator = ({ mockData, athleteId: athleteIdProp = null, dem
   // Generate polynomial curve using the same method as TestComparison.jsx
   // Use filtered validResults for polynomial regression (excludes unrealistic spikes).
   // If regression fails (e.g. singular matrix with few/collinear points), use [] so chart still renders.
+  const regressionInput = baseLactatePoint
+    ? [{ power: baseLactatePoint.x, lactate: baseLactatePoint.y }, ...validResults]
+    : validResults;
   let polyPointsRaw = [];
   try {
-    polyPointsRaw = calculatePolynomialRegression(validResults) || [];
+    polyPointsRaw = calculatePolynomialRegression(regressionInput) || [];
   } catch (e) {
     console.warn('[LactateCurveCalculator] Polynomial regression failed:', e?.message);
   }

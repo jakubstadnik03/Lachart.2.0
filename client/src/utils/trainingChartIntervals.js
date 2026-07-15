@@ -58,19 +58,20 @@ export function isStravaActivityShape(act) {
 
 export function mergeLapsPreserveLactate(freshLaps, stubLaps) {
   if (!Array.isArray(stubLaps) || stubLaps.length === 0) return freshLaps;
+  const copyIntervalType = stubLaps.length === freshLaps.length;
   return freshLaps.map((lap, i) => {
     const stub = stubLaps[i];
     const lac = lap.lactate ?? stub?.lactate ?? stub?.lactateValue;
     const merged = lac != null && lap.lactate == null ? { ...lap, lactate: lac } : { ...lap };
-    if (stub?.intervalType && !merged.intervalType) merged.intervalType = stub.intervalType;
+    if (copyIntervalType && stub?.intervalType && !merged.intervalType) merged.intervalType = stub.intervalType;
     return merged;
   });
 }
 
-function mergeResultRow(lap, r) {
+function mergeResultRow(lap, r, { copyIntervalType = true } = {}) {
   if (!r) return lap;
   const merged = { ...lap };
-  if (r.intervalType) merged.intervalType = r.intervalType;
+  if (copyIntervalType && r.intervalType) merged.intervalType = r.intervalType;
   if (r.lactate != null && merged.lactate == null) merged.lactate = r.lactate;
   if (r.mmol != null && merged.lactate == null) merged.lactate = r.mmol;
   if (r.isRecovery != null) merged.isRecovery = r.isRecovery;
@@ -85,7 +86,8 @@ function mergeResultMetadata(intervals, results) {
   if (!Array.isArray(results) || results.length === 0) return intervals;
   if (!Array.isArray(intervals) || intervals.length === 0) return results;
   if (results.length > intervals.length) return results;
-  return intervals.map((lap, i) => mergeResultRow(lap, results[i]));
+  const copyIntervalType = results.length === intervals.length;
+  return intervals.map((lap, i) => mergeResultRow(lap, results[i], { copyIntervalType }));
 }
 
 /** Normalize FIT / Strava `laps[]` into chart `results[]` rows (keeps every lap). */

@@ -2,7 +2,7 @@ import React, { useMemo, useState, useEffect, useRef, useCallback } from "react"
 import ReactDOM from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { EllipsisVerticalIcon } from "@heroicons/react/24/outline";
-import { resolveDistanceUnitSystem, formatDistance, formatPaceMMSS, paceSecondsToDisplaySeconds, paceUnitShort } from "../../utils/unitsConverter";
+import { resolveDistanceUnitSystem, formatDistance, formatPaceMMSS, paceSecondsToDisplaySeconds, paceUnitShort, parseLapDistanceToMeters } from "../../utils/unitsConverter";
 import { getStravaActivityDetail } from "../../services/api";
 import { useCategories } from "../../context/CategoryContext";
 import { filterWorkResults, getWorkLapMetricValue } from "../../utils/workLapFilter";
@@ -124,7 +124,8 @@ function computePaceAxisFromPaces(workPaces, slowPaces, sport) {
   return {
     minPace: minP,
     maxPace: maxP,
-    paceValues: Array.from({ length: 6 }, (_, i) => Math.round(minP + (i * (maxP - minP)) / 5)),
+    // Slow pace (higher sec) at top, fast at bottom — matches bar height (faster = taller).
+    paceValues: Array.from({ length: 6 }, (_, i) => Math.round(maxP - (i * (maxP - minP)) / 5)),
   };
 }
 
@@ -146,19 +147,12 @@ function computePaceAxisFromResults(rows, sport) {
   }
   const fastSet = workPaces.length >= 2 ? workPaces : allPaces;
   if (!fastSet.length) {
-    return { minPace: 180, maxPace: 330, paceValues: [180, 210, 240, 270, 300, 330] };
+    return { minPace: 180, maxPace: 330, paceValues: [330, 300, 270, 240, 210, 180] };
   }
   return computePaceAxisFromPaces(fastSet, allPaces.length ? allPaces : fastSet, sport);
 }
 function parseDistMeters(d) {
-  if (!d) return 0;
-  if (typeof d === "number") return d > 100 ? d : d * 1000;
-  const s = String(d).trim().toLowerCase();
-  const km = s.match(/^([\d.]+)\s*km$/); if (km) return parseFloat(km[1]) * 1000;
-  const m  = s.match(/^([\d.]+)\s*m$/);  if (m)  return parseFloat(m[1]);
-  const n = parseFloat(s);
-  if (!isNaN(n)) return n > 100 && n % 1 === 0 && !s.includes(".") ? n : n * 1000;
-  return 0;
+  return parseLapDistanceToMeters(d);
 }
 /** Normalize sport string → 'run' | 'bike' | 'swim' | original lowercase | '' */
 function normalizeSport(sport) {
@@ -1044,7 +1038,7 @@ export function TrainingStats({
       if (!allRows.length) {
         return {
           powerValues: [],
-          paceValues: [180, 210, 240, 270, 300, 330],
+          paceValues: [330, 300, 270, 240, 210, 180],
           minPower: 0, maxPower: 100, minPace: 180, maxPace: 330,
         };
       }
@@ -1227,6 +1221,11 @@ export function TrainingStats({
                 ? results.length * CHART_MIN_BAR_PX + Math.max(0, results.length - 1) * gapPx
                 : null;
 
+              const storedResults = trainingResultsOf(training);
+              const intervalTypesAlign = storedResults.length > 0
+                && storedResults.length === results.length
+                && storedResults.some((row) => row?.intervalType);
+
               /* color ranking: highest power/pace = darkest */
               const powerPaceVals = results.map((r, i) => {
                 const val = isPaceSport ? lapPaceSecs(r, sportKey) : Number(r.power);
@@ -1279,7 +1278,7 @@ export function TrainingStats({
                           key={`${training._id||tIdx}-${rIdx}`}
                           heightPercent={heightPercent}
                           colorIdx={colorMap.get(rIdx) ?? rIdx}
-                          intervalType={r.intervalType || null}
+                          intervalType={intervalTypesAlign ? (r.intervalType || null) : null}
                           power={r.power}
                           pace={isPaceSport ? r.power : r.pace}
                           distance={r.distance || r.distanceMeters || (r.durationType === "distance" ? r.duration : null)}

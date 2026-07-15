@@ -350,12 +350,12 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
       try {
         const result = await autoSyncGarminActivities();
         localStorage.setItem(syncKey, now.toString());
+        console.log('[Garmin] auto-sync response:', result);
         if (result.imported > 0 || result.updated > 0) {
-          console.log(`Garmin auto-sync completed: ${result.imported} imported, ${result.updated} updated`);
           window.dispatchEvent(new CustomEvent('garminSyncComplete', { detail: result }));
         }
       } catch (error) {
-        console.log('Garmin auto-sync failed:', error);
+        console.error('[Garmin] auto-sync failed:', error?.response?.status, error?.response?.data || error);
       }
     };
 

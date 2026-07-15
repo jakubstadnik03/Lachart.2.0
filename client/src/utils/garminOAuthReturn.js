@@ -63,7 +63,8 @@ export async function handleGarminOAuthReturn({ onNotify } = {}) {
       }
       window.dispatchEvent(new CustomEvent('garminSyncComplete', { detail: syncResult }));
     } catch (e) {
-      console.warn('[Garmin OAuth return] client auto-sync failed (server sync continues):', e?.message || e);
+      console.error('[Garmin OAuth return] client auto-sync failed (server sync continues):',
+        e?.response?.status, e?.response?.data || e?.message || e);
     }
 
     onNotify?.('Importing your Garmin history in the background', 'info');

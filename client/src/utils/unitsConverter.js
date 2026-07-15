@@ -87,6 +87,33 @@ export const formatDistance = (meters, unitSystem = 'metric') => {
 };
 
 /**
+ * Interpret a lap/interval distance value as metres.
+ * Strava/FIT use metres; manual entries may store km (1.88, 3.39).
+ * Decimals in tens/low hundreds (e.g. 72.68) are short GPS segments in metres.
+ */
+function numericLapDistanceToMeters(n) {
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  if (n >= 500) return n;
+  if (Number.isInteger(n) && n >= 50) return n;
+  if (!Number.isInteger(n) && n >= 10 && n < 500) return n;
+  return n * 1000;
+}
+
+export const parseLapDistanceToMeters = (raw) => {
+  if (raw == null || raw === '') return 0;
+  if (typeof raw === 'number') return numericLapDistanceToMeters(raw);
+  const s = String(raw).trim().toLowerCase();
+  if (!s) return 0;
+  const km = s.match(/^([\d.]+)\s*km$/);
+  if (km) return parseFloat(km[1]) * 1000;
+  const m = s.match(/^([\d.]+)\s*m$/);
+  if (m) return parseFloat(m[1]);
+  const n = parseFloat(s.replace(',', '.'));
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  return numericLapDistanceToMeters(n);
+};
+
+/**
  * Convert distance from user's preferred unit to meters
  * @param {Number} value - Distance value
  * @param {String} unit - 'km', 'm', 'mi', 'ft'

@@ -12,6 +12,7 @@ import {
   formatPaceMMSS,
   paceSecondsToDisplaySeconds,
   paceUnitShort,
+  parseLapDistanceToMeters,
 } from '../../utils/unitsConverter';
 
 const INTERVALS_PER_PAGE = 10;
@@ -228,10 +229,10 @@ const parseLapDistanceMeters = (r) => {
   const dm = Number(r?.distanceMeters);
   if (Number.isFinite(dm) && dm > 0) return dm;
   const d = Number(r?.distance);
-  if (Number.isFinite(d) && d > 0) return d > 100 ? d : d * 1000;
+  if (Number.isFinite(d) && d > 0) return parseLapDistanceToMeters(d);
   if (r?.durationType === 'distance') {
     const raw = Number(r?.duration);
-    if (Number.isFinite(raw) && raw > 0) return raw > 100 ? raw : raw * 1000;
+    if (Number.isFinite(raw) && raw > 0) return parseLapDistanceToMeters(raw);
   }
   return 0;
 };
@@ -325,7 +326,7 @@ function SkylineChart({ results, sport, width = 180, height = 52 }) {
 }
 
 /* ─── SVG Mini sparkline (for Power / HR / Pace columns) ───────────────────── */
-function MiniSparkline({ values, color = '#767EB5', width = 80, height = 36 }) {
+function MiniSparkline({ values, color = '#767EB5', width = 80, height = 36, invert = false }) {
   const nums = values.map(Number).filter(v => !isNaN(v) && v > 0);
   if (nums.length === 0) return <div style={{ width, height }} />;
 
@@ -340,7 +341,8 @@ function MiniSparkline({ values, color = '#767EB5', width = 80, height = 36 }) {
   return (
     <svg width={width} height={height}>
       {nums.map((v, i) => {
-        const h = Math.max(2, ((v - min) / range) * (USABLE - 2) + 2);
+        const norm = invert ? (max - v) : (v - min);
+        const h = Math.max(2, (norm / range) * (USABLE - 2) + 2);
         const x = i * (barW + gap);
         return (
           <rect key={i} x={x} y={height - h} width={barW} height={h} fill={color} rx={1} opacity={0.65} />
@@ -351,7 +353,7 @@ function MiniSparkline({ values, color = '#767EB5', width = 80, height = 36 }) {
 }
 
 /* ─── Metric column ─────────────────────────────────────────────────────────── */
-function MetricCol({ label, values, avgValues, color, formatVal, unit }) {
+function MetricCol({ label, values, avgValues, color, formatVal, unit, invertSparkline = false }) {
   const nums = values.filter(v => v != null && v !== '' && !isNaN(Number(v)) && Number(v) > 0);
   if (nums.length === 0) return (
     <div className="flex flex-col items-center gap-1">
@@ -367,7 +369,7 @@ function MetricCol({ label, values, avgValues, color, formatVal, unit }) {
 
   return (
     <div className="flex flex-col items-center gap-0.5">
-      <MiniSparkline values={nums.map(Number)} color={color} />
+      <MiniSparkline values={nums.map(Number)} color={color} invert={invertSparkline} />
       <span className="text-[11px] font-medium text-gray-500">
         Ø {formatVal ? formatVal(avg) : Math.round(avg)}{unit}
       </span>
@@ -861,6 +863,7 @@ const TrainingItem = ({ training, isExpanded, onToggleExpand, prevTraining = nul
                 avgValues={workPowerVals.map(mapPowerVal)}
                 color={accentColor}
                 unit={isBike ? ' W' : ''}
+                invertSparkline={!isBike}
                 formatVal={isBike ? (v => Math.round(v)) : (v => fmtPaceSec(v, unitSystem, sport))}
               />
             ) : (() => {

@@ -4530,14 +4530,15 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
   };
   
   const calculatePolynomialRegression = (results) => {
-    if (!results || !Array.isArray(results) || results.length < 4) return [];
+    if (!results || !Array.isArray(results) || results.length < 3) return [];
     const xVals = results.map(r => Number(String(r.power ?? '').replace(',', '.')));
     const yVals = results.map(r => Number(String(r.lactate ?? '').replace(',', '.')));
     if (xVals.some(v => isNaN(v)) || yVals.some(v => isNaN(v))) return [];
     const distinctX = new Set(xVals).size;
-    if (distinctX < 4) return []; // cubic needs at least 4 distinct x values
+    if (distinctX < 3) return [];
+    const order = Math.min(3, distinctX - 1);
 
-    // Log-linear transform: fit cubic polynomial on log(lactate) for better accuracy.
+    // Log-linear transform: fit polynomial on log(lactate) for better accuracy.
     // Lactate curves are exponential in nature — log-space fit avoids overshoot artefacts.
     const allPositive = yVals.every(v => v > 0);
     const fitYVals = allPositive ? yVals.map(v => Math.log(v)) : yVals;
@@ -4548,27 +4549,37 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
       const X = [];
       const Y = [];
       for (let i = 0; i < n; i++) {
-        X.push([1, xVals[i], Math.pow(xVals[i], 2), Math.pow(xVals[i], 3)]);
+        const row = [1];
+        for (let p = 1; p <= order; p++) {
+          row.push(Math.pow(xVals[i], p));
+        }
+        X.push(row);
         Y.push(fitYVals[i]);
       }
       const XT = math.transpose(X);
       const XTX = math.multiply(XT, X);
       const XTY = math.multiply(XT, Y);
       const coefficients = math.lusolve(XTX, XTY).flat();
-      const rawFn = (x) =>
-        coefficients[0] +
-        coefficients[1] * x +
-        coefficients[2] * Math.pow(x, 2) +
-        coefficients[3] * Math.pow(x, 3);
+      const rawFn = (x) => {
+        let value = coefficients[0];
+        for (let p = 1; p <= order; p++) {
+          value += coefficients[p] * Math.pow(x, p);
+        }
+        return value;
+      };
       // Back-transform from log space if we fitted on log(lactate)
       return allPositive ? (x) => Math.exp(rawFn(x)) : rawFn;
     })();
 
     const minPower = Math.min(...xVals);
     const maxPower = Math.max(...xVals);
-      const step = Math.max((maxPower - minPower) / 100, 1e-6);
+    const range = maxPower - minPower;
+    const pad = range > 0 ? Math.max(range * 0.08, 1) : 5;
+    const startX = minPower - pad;
+    const endX = maxPower + pad;
+    const step = Math.max(range / 100, 1e-6);
     const polyPoints = [];
-    for (let x = minPower; x <= maxPower; x += step) {
+    for (let x = startX; x <= endX; x += step) {
         const y = polyRegression(x);
         if (isNaN(y) || !isFinite(y)) continue;
         polyPoints.push({ x, y: Math.max(0, y) });

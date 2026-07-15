@@ -480,10 +480,11 @@ async function findUserByGarminHealthId(healthUserId, userAccessToken = null) {
 }
 
 async function processGarminWebhookPayload(payload) {
-  if (!payload || typeof payload !== 'object') return { imported: 0, updated: 0 };
+  if (!payload || typeof payload !== 'object') return { imported: 0, updated: 0, dropped: 0 };
 
   let imported = 0;
   let updated = 0;
+  let dropped = 0;
 
   const isDetailsType = (t) => t === 'activityDetails' || t === 'activityDetailFiles';
 
@@ -493,7 +494,23 @@ async function processGarminWebhookPayload(payload) {
     for (const entry of items) {
       const healthUserId = entry.userId || entry.userID || null;
       const user = await findUserByGarminHealthId(healthUserId, entry.userAccessToken);
-      if (!user) continue;
+      if (!user) {
+        // This is THE silent failure mode of Garmin delivery: backfill/push
+        // arrives but no LaChart user matches (garmin.athleteId was never
+        // stored, or the access token rotated). Without this log the server
+        // just reports "0 imported" with no explanation.
+        dropped += 1;
+        console.warn(
+          `[Garmin webhook] DROPPED ${summaryType} entry — no user matches ` +
+          `garminUserId=${healthUserId || '(none)'} ` +
+          `tokenPrefix=${entry.userAccessToken ? String(entry.userAccessToken).slice(0, 8) + '…' : '(none)'}. ` +
+          'Fix: reconnect Garmin, or run a manual sync (it heals the stored athleteId).'
+        );
+        continue;
+      }
+      // Delivery diagnostic — surfaced in /garmin/status as webhookLastEventAt.
+      User.updateOne({ _id: user._id }, { $set: { 'garmin.webhookLastEventAt': new Date() } })
+        .catch(() => {});
 
       // Activity Details push — carries samples[] + lap markers → laps + streams
       if (isDetailsType(summaryType) && (Array.isArray(entry.samples) || entry.summary) && !entry.callbackURL) {
@@ -544,7 +561,7 @@ async function processGarminWebhookPayload(payload) {
     }
   }
 
-  return { imported, updated };
+  return { imported, updated, dropped };
 }
 
 // Apple Health is LAST so when the same workout exists in Strava/Garmin (very
@@ -2652,10 +2669,25 @@ router.post('/garmin/login', verifyToken, async (req, res) => {
 async function handleGarminWebhook(req, res) {
   res.status(200).json({ ok: true });
   const payload = req.body;
+  // Log what Garmin actually delivered — summary types, counts, and which
+  // Garmin user ids are present — so an empty import is debuggable from logs.
+  try {
+    const summary = Object.entries(payload || {})
+      .filter(([, v]) => Array.isArray(v))
+      .map(([k, v]) => {
+        const ids = [...new Set(v.map((e) => e?.userId || e?.userID).filter(Boolean))];
+        return `${k}×${v.length}${ids.length ? ` (garminUserIds: ${ids.join(', ')})` : ''}`;
+      })
+      .join('; ');
+    console.log(`[Garmin webhook] received: ${summary || JSON.stringify(payload).slice(0, 300)}`);
+  } catch { /* logging only */ }
   setImmediate(() => {
     processGarminWebhookPayload(payload)
-      .then((r) => console.log(`[Garmin webhook] processed: ${r.imported} imported, ${r.updated} updated`))
-      .catch((e) => console.warn('[Garmin webhook] processing failed:', e?.message || e));
+      .then((r) => {
+        const drop = r.dropped ? `, ${r.dropped} DROPPED (no matching user — see warnings above)` : '';
+        console.log(`[Garmin webhook] processed: ${r.imported} imported, ${r.updated} updated${drop}`);
+      })
+      .catch((e) => console.error('[Garmin webhook] processing failed:', e?.response?.data || e?.message || e));
   });
 }
 
@@ -2699,6 +2731,27 @@ async function getGarminActivities(user, since = null) {
       console.log(`Garmin permissions for user ${user._id}:`, JSON.stringify(permissions));
       user.garmin = { ...user.garmin, permissions, permissionsCheckedAt: new Date() };
       await user.save().catch(() => {});
+    }
+
+    // Self-heal a missing athleteId (the OAuth callback's /rest/user/id lookup
+    // can fail, leaving it null). Without it, webhook deliveries can't be
+    // matched to this user and every backfill import silently drops to zero.
+    if (!user.garmin?.athleteId) {
+      try {
+        const idResp = await axios.get(`${getGarminWellnessApiBaseUrl()}/rest/user/id`, {
+          headers: { Authorization: `${tokenData.tokenType} ${tokenData.accessToken}` },
+          timeout: 15000,
+        });
+        const healedId = String(idResp.data?.userId || idResp.data?.id || '');
+        if (healedId) {
+          user.garmin = { ...user.garmin, athleteId: healedId };
+          await user.save();
+          console.log(`Garmin: healed missing athleteId for user ${user._id} → ${healedId}`);
+        }
+      } catch (idErr) {
+        console.error('Garmin: athleteId self-heal failed (webhook matching may not work):',
+          idErr?.response?.status, idErr?.response?.data || idErr.message);
+      }
     }
 
     try {
@@ -3359,6 +3412,10 @@ router.get('/garmin/status', verifyToken, async (req, res) => {
       athleteId: g.athleteId || null,
       method: g.refreshToken ? 'oauth' : (g.accessToken ? 'credentials' : null),
       permissions: g.permissions || null,
+      // When Garmin last delivered data for this user via Push/Ping. null +
+      // pending backfill = webhook not configured or deliveries don't match
+      // this user (check server logs for "[Garmin webhook] DROPPED").
+      webhookLastEventAt: g.webhookLastEventAt || null,
     });
   } catch (error) {
     console.error('Garmin status error:', error);
