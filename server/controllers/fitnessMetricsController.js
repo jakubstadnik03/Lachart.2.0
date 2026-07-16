@@ -75,6 +75,9 @@ function mapFitToLoad(t, userProfile) {
       tssDisplayMode: t.tssDisplayMode,
     }, userProfile),
     sport: t.sport || 'generic',
+    // Duration lets dedupeActivitiesForLoad tell a cross-source duplicate
+    // (same length) from two genuine same-day sessions (different lengths).
+    movingTime: t.totalElapsedTime,
   };
 }
 
@@ -95,6 +98,7 @@ function mapStravaToLoad(a, userProfile) {
       tssDisplayMode: a.tssDisplayMode,
     }, userProfile),
     sport: a.sport || 'generic',
+    movingTime: a.movingTime || a.elapsedTime,
   };
 }
 
@@ -114,6 +118,7 @@ function mapGarminToLoad(a, userProfile) {
       tssDisplayMode: a.tssDisplayMode,
     }, userProfile),
     sport: a.sport || 'generic',
+    movingTime: a.movingTime || a.elapsedTime,
   };
 }
 
@@ -128,6 +133,7 @@ function mapAppleHealthToLoad(a, userProfile) {
       avgHeartRate: a.avgHeartRate,
     }, userProfile),
     sport: a.sport || a.type || 'generic',
+    movingTime: a.durationSeconds,
   };
 }
 

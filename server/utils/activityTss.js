@@ -233,7 +233,10 @@ function buildUserProfile(user) {
 
 function normalizeSportBucket(sport) {
   const s = String(sport || '').toLowerCase();
-  if (s.includes('ride') || s.includes('bike') || s.includes('cycle')) return 'bike';
+  // 'cycl' (not 'cycle') so Garmin's 'cycling' lands in the bike bucket too —
+  // 'cycling'.includes('cycle') is false, which made Strava-vs-Garmin dedup
+  // miss the same ride and double-count its TSS.
+  if (s.includes('ride') || s.includes('bike') || s.includes('cycl')) return 'bike';
   if (s.includes('run')) return 'run';
   if (s.includes('swim')) return 'swim';
   if (s.includes('walk') || s.includes('hike')) return 'walk';
