@@ -4322,6 +4322,10 @@ router.get('/activities', verifyToken, activitiesCacheMiddleware, async (req, re
       })),
       ...garminActs.map(a => ({
         ...a,
+        // Re-map sport at read time: docs imported by older builds can hold a
+        // raw Garmin typeKey (e.g. VIRTUAL_RIDE) that neither the client icon
+        // helpers nor the dedup below understand. Idempotent for good values.
+        sport: mapGarminSportType(a.sport),
         averageHeartRate: a.averageHeartRate ?? a.averageHR ?? null,
         source: 'garmin',
         sourceId: a.garminId
@@ -4355,10 +4359,11 @@ router.get('/activities', verifyToken, activitiesCacheMiddleware, async (req, re
     for (const act of allActs) {
       const key = createDedupKey(act, act.source);
       const [actDatePart, actSport, actDuration, actDistance] = key.split('_');
-      // Bucket by DAY + core sport (not exact minute): Strava and Garmin
+      // Bucket by DAY only (not exact minute, not sport): Strava and Garmin
       // timestamps for the same workout can differ by seconds crossing a
-      // minute boundary — the fuzzy pass below applies the real ±5 min check.
-      const bucketKey = `${actDatePart.slice(0, 10)}_${actSport}`;
+      // minute boundary, and legacy Garmin docs can carry junk sport values —
+      // the fuzzy pass below applies the real ±5 min + sport checks.
+      const bucketKey = actDatePart.slice(0, 10);
 
       // Exact-key match — only collapse if it came from another provider.
       if (dedupMap.has(key) && isCrossSource(dedupMap.get(key), act)) {
@@ -4379,6 +4384,7 @@ router.get('/activities', verifyToken, activitiesCacheMiddleware, async (req, re
       let isDuplicate = false;
       const bucket = similarBuckets.get(bucketKey) || [];
       const actStartMs = new Date(act.startDate).getTime();
+      const isConfidentSport = (s) => s === 'run' || s === 'bike' || s === 'swim';
       for (const candidate of bucket) {
         // Never fuzzy-merge two activities from the same provider.
         if (!isCrossSource(candidate.activity, act)) continue;
@@ -4386,7 +4392,11 @@ router.get('/activities', verifyToken, activitiesCacheMiddleware, async (req, re
         const candStartMs = new Date(candidate.activity.startDate).getTime();
         if (!Number.isFinite(actStartMs) || !Number.isFinite(candStartMs)
           || Math.abs(actStartMs - candStartMs) > 5 * 60 * 1000) continue;
-        const [,, duration, distance] = candidate.key.split('_');
+        const [, candSport, duration, distance] = candidate.key.split('_');
+        // Sports must agree when BOTH are confidently classified; an unknown/
+        // junk sport on either side acts as a wildcard — start within 5 min +
+        // matching duration + distance is a strong enough fingerprint.
+        if (isConfidentSport(actSport) && isConfidentSport(candSport) && actSport !== candSport) continue;
         const durationDiff = Math.abs(parseInt(duration) - parseInt(actDuration)) / Math.max(parseInt(duration), parseInt(actDuration), 1);
         const distanceDiff = Math.abs(parseInt(distance) - parseInt(actDistance)) / Math.max(parseInt(distance), parseInt(actDistance), 1);
 
