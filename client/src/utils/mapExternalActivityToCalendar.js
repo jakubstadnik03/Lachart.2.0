@@ -15,6 +15,23 @@ function hrFrom(o) {
     ?? null;
 }
 
+/**
+ * Garmin docs store sport as 'cycling' / 'running' / 'swimming', but most of
+ * the app's sport checks are tuned to Strava vocabulary ('Ride' / 'Run' /
+ * 'Swim') — e.g. `includes('cycle')` does NOT match 'cycling', so Garmin
+ * activities rendered with the generic bolt icon. Normalize at this single
+ * mapping point instead of patching every icon/color helper.
+ */
+const GARMIN_SPORT_TO_CALENDAR = {
+  cycling: 'Ride',
+  running: 'Run',
+  swimming: 'Swim',
+};
+function normalizeGarminSport(sportRaw) {
+  const key = String(sportRaw || '').toLowerCase();
+  return GARMIN_SPORT_TO_CALENDAR[key] || sportRaw || null;
+}
+
 /** Map one external activity (Strava / Garmin / Apple Health) to calendar row shape. */
 export function mapExternalActivityToCalendar(a, trainingByStravaId = new Map()) {
   const source = inferExternalSource(a);
@@ -45,7 +62,9 @@ export function mapExternalActivityToCalendar(a, trainingByStravaId = new Map())
     date: a.startDate || a.date,
     title: linkedTraining?.title || a.titleManual || a.name || a.title || 'Untitled Activity',
     linkedTrainingTitle: linkedTraining?.title || null,
-    sport: a.sport || a.sport_type || a.sportType || null,
+    sport: source === 'garmin'
+      ? normalizeGarminSport(a.sport || a.sport_type || a.sportType)
+      : (a.sport || a.sport_type || a.sportType || null),
     category: a.category || linkedTraining?.category || null,
     avgPower: a.averagePower || a.average_watts || a.avgPower,
     weightedAveragePower: a.weightedAveragePower ?? a.weighted_average_watts ?? null,

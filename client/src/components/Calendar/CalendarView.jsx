@@ -2547,13 +2547,17 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
   // after 4 s if the user moves on.
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const stravaIdForDelete = (() => {
+  // Deletable imported activities: Strava and Garmin (both keep the source
+  // account untouched — we only remove LaChart's local copy).
+  const deletableActivity = (() => {
     const raw = String(a?.id || a?._id || '');
-    if (raw.startsWith('strava-')) return raw.replace('strava-', '');
-    return null; // delete only supported for Strava in this initial cut
+    if (raw.startsWith('strava-')) return { type: 'strava', id: raw.replace('strava-', '') };
+    if (raw.startsWith('garmin-')) return { type: 'garmin', id: raw.replace('garmin-', '') };
+    return null;
   })();
+  const stravaIdForDelete = deletableActivity ? deletableActivity.id : null;
   const handleDeleteTap = async () => {
-    if (deleting || !stravaIdForDelete) return;
+    if (deleting || !deletableActivity) return;
     if (!confirmDelete) {
       setConfirmDelete(true);
       setTimeout(() => setConfirmDelete(false), 4000);
@@ -2561,12 +2565,17 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
     }
     setDeleting(true);
     try {
-      const { deleteStravaActivity } = await import('../../services/api.js');
-      await deleteStravaActivity(stravaIdForDelete, athleteId);
-      if (onDeleted) onDeleted({ type: 'strava', id: stravaIdForDelete });
+      if (deletableActivity.type === 'garmin') {
+        const { deleteGarminActivity } = await import('../../services/api.js');
+        await deleteGarminActivity(deletableActivity.id, athleteId);
+      } else {
+        const { deleteStravaActivity } = await import('../../services/api.js');
+        await deleteStravaActivity(deletableActivity.id, athleteId);
+      }
+      if (onDeleted) onDeleted({ type: deletableActivity.type, id: deletableActivity.id });
       onClose();
     } catch (e) {
-      console.error('Strava activity delete failed:', e);
+      console.error('Activity delete failed:', e);
       // Reset confirm state on failure so user can retry.
       setConfirmDelete(false);
       // eslint-disable-next-line no-alert

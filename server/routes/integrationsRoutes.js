@@ -3038,15 +3038,37 @@ function mapGarminSportType(rawSport) {
     biking: 'cycling',
     road_biking: 'cycling',
     mountain_biking: 'cycling',
+    gravel_cycling: 'cycling',
+    gravel_biking: 'cycling',
+    cyclocross: 'cycling',
+    track_cycling: 'cycling',
+    virtual_ride: 'cycling',
+    indoor_cycling: 'cycling',
+    e_bike_fitness: 'cycling',
+    e_bike_mountain: 'cycling',
     swimming: 'swimming',
     pool_swimming: 'swimming',
+    lap_swimming: 'swimming',
     open_water_swimming: 'swimming',
     triathlon: 'triathlon',
     walking: 'running',
     hiking: 'running',
-    trail_running: 'running'
+    trail_running: 'running',
+    treadmill_running: 'running',
+    street_running: 'running',
+    track_running: 'running',
+    virtual_run: 'running',
+    indoor_running: 'running',
+    ultra_run: 'running'
   };
-  return sportMap[sportType] || 'running';
+  if (sportMap[sportType]) return sportMap[sportType];
+  // Keyword fallback so unmapped Garmin typeKeys (they have dozens) land in
+  // the right bucket instead of everything defaulting to "running" — a wrong
+  // sport breaks the calendar icon AND the Strava-vs-Garmin dedup.
+  if (/swim/.test(sportType)) return 'swimming';
+  if (/rid|bik|cycl/.test(sportType)) return 'cycling';
+  if (/run|walk|hik/.test(sportType)) return 'running';
+  return 'other';
 }
 
 function mapGarminActivityToDoc(user, a) {
@@ -4239,6 +4261,17 @@ router.get('/activities', verifyToken, activitiesCacheMiddleware, async (req, re
     
     const deduplicatedActs = [];
     
+    // Sport vocabularies differ per provider (Strava "Ride" vs Garmin
+    // "cycling" vs Apple "Cycling") — dedup MUST compare normalized buckets,
+    // otherwise the same ride from two providers never matches and shows twice.
+    const coreSportForDedup = (sportRaw) => {
+      const s = String(sportRaw || '').toLowerCase();
+      if (/swim/.test(s)) return 'swim';
+      if (/rid|bik|cycl/.test(s)) return 'bike';
+      if (/run|walk|hik/.test(s)) return 'run';
+      return s || 'unknown';
+    };
+
     // Helper function to create a deduplication key
     const createDedupKey = (activity, source) => {
       const startDate = new Date(activity.startDate);
@@ -4247,8 +4280,8 @@ router.get('/activities', verifyToken, activitiesCacheMiddleware, async (req, re
       // endpoint — so fall back to a stable epoch key instead of crashing.
       const dateKey = Number.isNaN(startDate.getTime())
         ? 'invalid-date'
-        : startDate.toISOString().slice(0, 16); // YYYY-MM-DDTHH:mm (5 minute precision)
-      const sport = (activity.sport || 'unknown').toLowerCase();
+        : startDate.toISOString().slice(0, 16); // YYYY-MM-DDTHH:mm (minute precision)
+      const sport = coreSportForDedup(activity.sport);
       const duration = Math.round((activity.elapsedTime || activity.movingTime || 0) / 60); // minutes
       const distance = Math.round((activity.distance || 0) / 100); // 100m precision
       return `${dateKey}_${sport}_${duration}_${distance}`;
@@ -4322,7 +4355,10 @@ router.get('/activities', verifyToken, activitiesCacheMiddleware, async (req, re
     for (const act of allActs) {
       const key = createDedupKey(act, act.source);
       const [actDatePart, actSport, actDuration, actDistance] = key.split('_');
-      const bucketKey = `${actDatePart}_${actSport}`;
+      // Bucket by DAY + core sport (not exact minute): Strava and Garmin
+      // timestamps for the same workout can differ by seconds crossing a
+      // minute boundary — the fuzzy pass below applies the real ±5 min check.
+      const bucketKey = `${actDatePart.slice(0, 10)}_${actSport}`;
 
       // Exact-key match — only collapse if it came from another provider.
       if (dedupMap.has(key) && isCrossSource(dedupMap.get(key), act)) {
@@ -4339,12 +4375,17 @@ router.get('/activities', verifyToken, activitiesCacheMiddleware, async (req, re
         continue;
       }
 
-      // Check only same-minute/same-sport candidates, not the full activity set.
+      // Check only same-day/same-sport candidates, not the full activity set.
       let isDuplicate = false;
       const bucket = similarBuckets.get(bucketKey) || [];
+      const actStartMs = new Date(act.startDate).getTime();
       for (const candidate of bucket) {
         // Never fuzzy-merge two activities from the same provider.
         if (!isCrossSource(candidate.activity, act)) continue;
+        // Same workout recorded by two providers starts within minutes.
+        const candStartMs = new Date(candidate.activity.startDate).getTime();
+        if (!Number.isFinite(actStartMs) || !Number.isFinite(candStartMs)
+          || Math.abs(actStartMs - candStartMs) > 5 * 60 * 1000) continue;
         const [,, duration, distance] = candidate.key.split('_');
         const durationDiff = Math.abs(parseInt(duration) - parseInt(actDuration)) / Math.max(parseInt(duration), parseInt(actDuration), 1);
         const distanceDiff = Math.abs(parseInt(distance) - parseInt(actDistance)) / Math.max(parseInt(distance), parseInt(actDistance), 1);
@@ -4488,6 +4529,57 @@ router.delete('/strava/activities/:id', verifyToken, async (req, res) => {
     res.json({ ok: true, deleted: { activity: actDel.deletedCount, streams: streamDel.deletedCount } });
   } catch (err) {
     console.error('[Strava delete] error:', err?.message || err);
+    res.status(500).json({ error: err?.message || 'Failed to delete activity' });
+  }
+});
+
+/**
+ * Delete an imported Garmin activity from LaChart (mirror of the Strava
+ * delete above). Removes the local GarminActivity + cached streams; does not
+ * touch the activity on the user's Garmin account. A later webhook/backfill
+ * re-delivery can re-import it.
+ */
+router.delete('/garmin/activities/:id', verifyToken, async (req, res) => {
+  try {
+    const requester = await User.findById(req.user.userId);
+    if (!requester) return res.status(404).json({ error: 'User not found' });
+    const role = String(requester.role || '').toLowerCase();
+    const isCoachLike = ['coach', 'tester', 'testing', 'admin'].includes(role) ||
+      (requester.admin === true && role !== 'athlete');
+
+    let id = req.params.id;
+    if (typeof id === 'string') id = id.replace(/^garmin-/i, '');
+    if (!id) return res.status(400).json({ error: 'Invalid Garmin activity id' });
+
+    // Determine target user — same logic as the Strava delete handler.
+    let targetUserId = requester._id;
+    const athleteIdParam = req.query.athleteId;
+    if (athleteIdParam && isCoachLike) {
+      const athlete = await User.findById(athleteIdParam).select('coaches').lean();
+      if (!athlete) return res.status(404).json({ error: 'Athlete not found' });
+      const isLinkedCoach = Array.isArray(athlete.coaches) &&
+        athlete.coaches.some((c) => String(c) === String(requester._id));
+      if (!isLinkedCoach && role !== 'admin') {
+        return res.status(403).json({ error: 'Not authorised to manage this athlete' });
+      }
+      targetUserId = athlete._id;
+    }
+
+    const [actDel, streamDel] = await Promise.all([
+      GarminActivity.deleteOne({ userId: targetUserId.toString(), garminId: String(id) }),
+      GarminStream.deleteOne({ userId: targetUserId, garminId: String(id) }).catch(() => ({ deletedCount: 0 })),
+    ]);
+
+    if (actDel.deletedCount === 0) {
+      return res.status(404).json({ error: 'Activity not found' });
+    }
+
+    invalidateActivitiesCacheForUser(targetUserId);
+
+    console.log(`[Garmin] user ${requester._id} deleted activity ${id} for user ${targetUserId} (activity=${actDel.deletedCount}, streams=${streamDel.deletedCount})`);
+    res.json({ ok: true, deleted: { activity: actDel.deletedCount, streams: streamDel.deletedCount } });
+  } catch (err) {
+    console.error('[Garmin delete] error:', err?.message || err);
     res.status(500).json({ error: err?.message || 'Failed to delete activity' });
   }
 });

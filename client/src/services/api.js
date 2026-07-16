@@ -1781,6 +1781,21 @@ export const deleteStravaActivity = async (stravaId, athleteId = null) => {
   return data; // { ok: true, deleted: { activity, streams } }
 };
 
+/**
+ * Delete an imported Garmin activity from LaChart (local copy only — the
+ * activity on the user's Garmin account is untouched; a webhook re-delivery
+ * can re-import it).
+ */
+export const deleteGarminActivity = async (garminId, athleteId = null) => {
+  const params = athleteId ? { athleteId } : {};
+  const id = String(garminId).replace(/^garmin-/, '');
+  const { data } = await api.delete(
+    `/api/integrations/garmin/activities/${encodeURIComponent(id)}`,
+    { params },
+  );
+  return data; // { ok: true, deleted: { activity, streams } }
+};
+
 export const getGarminActivityDetail = async (garminId, athleteId = null) => {
   const params = athleteId ? { athleteId } : {};
   const id = String(garminId).replace(/^garmin-/, '');
