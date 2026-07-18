@@ -21,6 +21,7 @@ import {
   AdjustmentsHorizontalIcon,
   UsersIcon,
   DevicePhoneMobileIcon,
+  FlagIcon,
 } from '@heroicons/react/24/outline';
 
 export const RELEASE_TAG = '2026-06';
@@ -46,6 +47,7 @@ export const WHATS_NEW_VIDEOS_READY = {
   '12-pdf-branding': false,
   '13-coach-squad': false,
   '14-ios-app': false,
+  '15-race-planning': false,
 };
 
 export function whatsNewVideoUrl(videoId) {
@@ -180,6 +182,24 @@ const RAW_SLIDES = [
     cta: 'Open the planner',
     href: '/workout-planner',
     accent: '#8b5cf6',
+  },
+  {
+    id: 'race-planning',
+    icon: FlagIcon,
+    label: 'Races',
+    title: 'Plan races and arrive fresh',
+    body: 'Add your A/B/C races to the calendar and LaChart counts down with your projected Form on race day — apply a one-tap taper so you start rested, then log how it went.',
+    bullets: [
+      'Race countdown with projected Form (TSB)',
+      'One-tap taper plan for the final weeks',
+      'Post-race feedback feeds future planning',
+    ],
+    videoId: '15-race-planning',
+    image: '/images/training-calendar-960.webp',
+    mediaCaption: 'Race countdown with Form projection on the dashboard',
+    cta: 'Add a race',
+    href: '/dashboard',
+    accent: '#f97316',
   },
   {
     id: 'live-workout',

@@ -10,7 +10,7 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { usePremium } from '../hooks/usePremium';
 import UpgradeModal from '../components/UpgradeModal';
 import WelcomePaywallModal from '../components/WelcomePaywallModal';
-import WhatsNewModal, { whatsNewSeenKey } from '../components/WhatsNewModal';
+import WhatsNewModal, { whatsNewSeenKey, featureTourSeenKey } from '../components/WhatsNewModal';
 import IOSLaunchModal, { iosLaunchSeenKey } from '../components/IOSLaunchModal';
 import EmptyStateCTA from '../components/common/EmptyStateCTA';
 import { LockClosedIcon } from '@heroicons/react/24/outline';
@@ -408,18 +408,38 @@ export default function DashboardPage() {
   // Build & schedule the queue once when the user is known.
   useEffect(() => {
     if (!isAuthenticated || !user?._id) return;
-    if (isCapacitorNative()) return;
 
     const uid = user._id;
     const queue = [];
+
+    // 0. Feature tour — fresh signups (web AND native), once per user. Same
+    //    slide deck as What's New but framed as "everything LaChart can do":
+    //    calendar planning, Form/Fitness, races, lactate testing, branded PDFs…
+    //    Few users discover these on their own — show them up front.
+    const isFreshSignup = user?.onboarding?.walkthroughDone === false;
+    const tourQueued = isFreshSignup && !localStorage.getItem(featureTourSeenKey(uid));
+    if (tourQueued) queue.push('featureTour');
+
+    // Native app: only the feature tour — paywall/what's-new/iOS-launch are
+    // web-only (App Store rules & relevance).
+    if (isCapacitorNative()) {
+      if (!queue.length) return;
+      modalQueueRef.current = queue;
+      const tNative = setTimeout(() => {
+        const next = modalQueueRef.current.shift();
+        if (next) setActiveModal(next);
+      }, MODAL_FIRST_DELAY);
+      return () => clearTimeout(tNative);
+    }
 
     // 1. Welcome paywall — free users, first time only
     if (!isPremium && !localStorage.getItem(`welcomePaywall_seen_${uid}`)) {
       queue.push('welcomePaywall');
     }
 
-    // 2. What's new — web only, once per release tag
-    if (!localStorage.getItem(whatsNewSeenKey(uid))) {
+    // 2. What's new — web only, once per release tag. Skipped when the tour
+    //    is queued this session (identical deck — never show it twice).
+    if (!tourQueued && !localStorage.getItem(whatsNewSeenKey(uid))) {
       queue.push('whatsNew');
     }
 
@@ -457,6 +477,16 @@ export default function DashboardPage() {
   const showWelcomePaywall = activeModal === 'welcomePaywall';
   const showWhatsNew       = activeModal === 'whatsNew';
   const showIOSLaunch      = activeModal === 'iosLaunch';
+  const showFeatureTour    = activeModal === 'featureTour';
+
+  const dismissFeatureTour = useCallback(() => {
+    if (user?._id) {
+      localStorage.setItem(featureTourSeenKey(user._id), '1');
+      // The tour IS the What's New deck — don't show the same slides again.
+      localStorage.setItem(whatsNewSeenKey(user._id), '1');
+    }
+    advanceModalQueue();
+  }, [user?._id, advanceModalQueue]);
 
   const dismissWelcomePaywall = useCallback(() => {
     if (user?._id) localStorage.setItem(`welcomePaywall_seen_${user._id}`, '1');
@@ -2432,6 +2462,13 @@ export default function DashboardPage() {
   // ── Mobile/Native: render the redesigned native dashboard ──────────────────
   if (isCapacitorNative()) return (
     <>
+      {/* One-time feature tour for fresh signups — same deck as the web */}
+      <WhatsNewModal
+        open={showFeatureTour}
+        onClose={dismissFeatureTour}
+        userName={user?.name}
+        mode="tour"
+      />
       <NativeDashboardPage
         activities={calendarData}
         plannedWorkouts={plannedWorkouts}
@@ -2543,6 +2580,12 @@ export default function DashboardPage() {
       open={showWhatsNew}
       onClose={dismissWhatsNew}
       userName={user?.name}
+    />
+    <WhatsNewModal
+      open={showFeatureTour}
+      onClose={dismissFeatureTour}
+      userName={user?.name}
+      mode="tour"
     />
     <IOSLaunchModal
       open={showIOSLaunch}

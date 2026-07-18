@@ -100,7 +100,13 @@ function SlideMedia({ item }) {
   );
 }
 
-export default function WhatsNewModal({ open, onClose, userName }) {
+/**
+ * mode:
+ *   'whatsnew' — release-notes framing, shown once per RELEASE_TAG.
+ *   'tour'     — same deck framed as a full feature tour for fresh signups
+ *                ("here is everything LaChart can do"), shown once per user.
+ */
+export default function WhatsNewModal({ open, onClose, userName, mode = 'whatsnew' }) {
   const navigate = useNavigate();
   const { user } = useAuth();
   const isCoach = ['coach', 'tester', 'testing'].includes(user?.role);
@@ -200,7 +206,9 @@ export default function WhatsNewModal({ open, onClose, userName }) {
               <div className="mb-1 flex items-center gap-2">
                 <SparklesIcon className="h-4 w-4 flex-shrink-0" style={{ color: current.accent }} />
                 <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">
-                  What's new{userName ? ` · ${userName}` : ''}
+                  {mode === 'tour'
+                    ? `Welcome${userName ? `, ${userName}` : ''} — what LaChart can do`
+                    : `What's new${userName ? ` · ${userName}` : ''}`}
                 </p>
               </div>
               <p className="text-xs text-gray-400">{step + 1} of {total}</p>
@@ -318,6 +326,11 @@ export default function WhatsNewModal({ open, onClose, userName }) {
       `}</style>
     </div>
   );
+}
+
+/** One-time full feature tour for fresh signups — per user, not per release. */
+export function featureTourSeenKey(userId) {
+  return `featureTour_seen_v1_${userId || 'anon'}`;
 }
 
 export function whatsNewSeenKey(userId) {
