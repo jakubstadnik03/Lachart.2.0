@@ -958,18 +958,6 @@ function LapChart({ laps, color, isBike, isRun, isSwim, unitSystem = 'metric', s
     if (filtered.length >= 2) scaleValues = filtered;
   }
 
-  let slowScaleValues = slowScaleEntries.length > 0 ? slowScaleEntries : scaleValues;
-  if (slowScaleValues.length >= 4) {
-    const sorted = [...slowScaleValues].sort((a, b) => a - b);
-    const q1 = sorted[Math.floor(sorted.length * 0.25)];
-    const q3 = sorted[Math.floor(sorted.length * 0.75)];
-    const iqr = q3 - q1;
-    const lo = q1 - 2 * iqr;
-    const hi = q3 + 2 * iqr;
-    const filtered = slowScaleValues.filter(v => v >= lo && v <= hi);
-    if (filtered.length >= 2) slowScaleValues = filtered;
-  }
-
   const maxVal   = Math.max(...scaleValues);
   const minVal   = Math.min(...scaleValues);
   // Y-axis range — centre the chart around the AVERAGE of the filtered
@@ -1012,7 +1000,7 @@ function LapChart({ laps, color, isBike, isRun, isSwim, unitSystem = 'metric', s
 
     if (isInverted) {
       const globalFast = Math.min(...scaleValues);
-      const globalSlow = Math.max(...slowScaleValues);
+      const workSlow   = Math.max(...scaleValues);
       const fastPad = isSwim ? 3 : 8;
       const slowPad = isSwim ? 5 : 15;
 
@@ -1020,8 +1008,13 @@ function LapChart({ laps, color, isBike, isRun, isSwim, unitSystem = 'metric', s
       chartMin = Math.max(isSwim ? 25 : 60, globalFast - fastPad);
       chartMin = Math.floor(chartMin / 5) * 5;
 
-      // Bottom edge: follows the slowest real lap in this session (rest/jog OK).
-      chartMax = Math.min(maxSlowCap, globalSlow + slowPad);
+      // Bottom edge: sized from WORK laps only, positioned so the session
+      // average sits near the middle of the chart. Standing/recovery laps
+      // (12–15 min/km) used to drag this edge down and squash every work bar
+      // into the top quarter — they no longer define the scale; getBarH clamps
+      // them to a stub at the bottom edge instead.
+      chartMax = Math.max(workSlow + slowPad, 2 * avgForScale - chartMin);
+      chartMax = Math.min(maxSlowCap, chartMax);
       chartMax = Math.ceil(chartMax / 5) * 5;
       chartMax = Math.max(chartMax, chartMin + 30);
     } else {
