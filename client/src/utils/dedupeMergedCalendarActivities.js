@@ -68,9 +68,27 @@ export function dedupeMergedCalendarActivities(list) {
     for (const cand of bucket) {
       if (cand.src === src) continue; // same provider → never fuzzy-merge
       if (sport && cand.sport && sport !== cand.sport) continue;
-      if (!Number.isFinite(ms) || !Number.isFinite(cand.ms) || Math.abs(ms - cand.ms) > 5 * 60 * 1000) continue;
-      if (sec && cand.sec && Math.abs(sec - cand.sec) > Math.max(180, 0.1 * Math.max(sec, cand.sec))) continue;
-      if (dist && cand.dist && Math.abs(dist - cand.dist) > 0.05 * Math.max(dist, cand.dist)) continue;
+
+      // Tier 1 — timestamps agree: start within ±5 min, loose dur/dist checks.
+      const closeStart = Number.isFinite(ms) && Number.isFinite(cand.ms)
+        && Math.abs(ms - cand.ms) <= 5 * 60 * 1000;
+      const durLoose = !(sec && cand.sec)
+        || Math.abs(sec - cand.sec) <= Math.max(180, 0.1 * Math.max(sec, cand.sec));
+      const distLoose = !(dist && cand.dist)
+        || Math.abs(dist - cand.dist) <= 0.05 * Math.max(dist, cand.dist);
+      const tier1 = closeStart && durLoose && distLoose;
+
+      // Tier 2 — timestamps can't be trusted (FIT files often carry device
+      // local time vs Strava's UTC, hours apart): same day + duration within
+      // 3 min/5% + distance within 1% is essentially a unique fingerprint,
+      // and the same-provider guard above already excludes commute-style
+      // repeats recorded by one source.
+      const tier2 = sec > 0 && cand.sec > 0
+        && Math.abs(sec - cand.sec) <= Math.max(180, 0.05 * Math.max(sec, cand.sec))
+        && dist > 0 && cand.dist > 0
+        && Math.abs(dist - cand.dist) <= 0.01 * Math.max(dist, cand.dist);
+
+      if (!tier1 && !tier2) continue;
       dup = cand;
       break;
     }
