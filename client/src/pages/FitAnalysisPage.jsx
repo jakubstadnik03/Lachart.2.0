@@ -13,6 +13,7 @@ import { buildActivityMatcher, metricsPatchFromDetail, upsertPlannedWorkoutList,
 import IntervalChart from '../components/FitAnalysis/IntervalChart';
 import { getIntegrationStatus } from '../services/api';
 import { listExternalActivities } from '../services/api';
+import { dedupeMergedCalendarActivities } from '../utils/dedupeMergedCalendarActivities';
 import { getStravaActivityDetail, updateStravaActivity, getAllTitles, createStravaLap, deleteStravaLap, getTrainingById, addTraining, updateTraining } from '../services/api';
 import api from '../services/api';
 import { getPlannedWorkouts, createPlannedWorkout, updatePlannedWorkout, deletePlannedWorkout, reorderPlannedWorkouts, getWorkoutTemplates, getDayPlans, setDayPlan as apiSetDayPlan, deleteDayPlan as apiDeleteDayPlan, getPeriods, savePeriod as apiSavePeriod, deletePeriod as apiDeletePeriod } from '../services/workoutPlannerApi';
@@ -3507,7 +3508,7 @@ const FitAnalysisPage = () => {
       o?.average_heartrate ??
       o?.averageHeartrate ??
       null;
-    return [
+    const merged = [
       ...trainings.map((t) => ({
         id: `fit-${t._id}`,
         // Some older FIT imports may have missing `timestamp`; fall back to uploadDate/date
@@ -3592,6 +3593,9 @@ const FitAnalysisPage = () => {
         };
       }),
     ];
+    // The same workout can exist as a FIT upload AND a Strava/Garmin sync —
+    // collapse cross-source duplicates so the calendar shows it once.
+    return dedupeMergedCalendarActivities(merged);
   }, [trainings, regularTrainings, externalActivities]);
 
   const handleCloseTrainingDetail = useCallback(() => {
@@ -4196,7 +4200,7 @@ const FitAnalysisPage = () => {
   // Open TrainingForm for lightweight editing (title + session lactate/RPE) from calendar modal
   const handleCalendarEditActivity = useCallback((activity) => {
     const rawSport = (activity.sport || activity.type || 'bike').toLowerCase().replace(/^strava$/, 'bike');
-    const sport = rawSport.includes('run') ? 'run' : rawSport.includes('swim') ? 'swim' : rawSport.includes('ride') || rawSport.includes('cycle') || rawSport.includes('bike') || rawSport.includes('virtual') ? 'bike' : rawSport;
+    const sport = rawSport.includes('run') ? 'run' : rawSport.includes('swim') ? 'swim' : rawSport.includes('ride') || rawSport.includes('cycl') || rawSport.includes('bike') || rawSport.includes('virtual') ? 'bike' : rawSport;
     const rawId = String(activity.id || activity._id || '');
     const isStrava = rawId.startsWith('strava-');
     const dbId = !isStrava && rawId && !rawId.startsWith('strava-') ? rawId : (activity._id || undefined);

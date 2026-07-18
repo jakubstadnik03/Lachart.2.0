@@ -193,7 +193,7 @@ function activityCompletedStats(activity, profile = null) {
   const s = String(activity.sport || activity.type || '').toLowerCase();
   const isSwim = s.includes('swim');
   const isRun = s.includes('run') || s.includes('hike') || s.includes('walk') || s.includes('trail');
-  const isBike = s.includes('ride') || s.includes('cycle') || s.includes('bike') || s.includes('virtual');
+  const isBike = s.includes('ride') || s.includes('cycl') || s.includes('bike') || s.includes('virtual');
 
   const unitSystem = userUnitSystem(profile);
   const durStr = dur > 0 ? fmtPlanDuration(dur) : null;
@@ -387,7 +387,7 @@ function getLocalDateString(date) {
 function sportColor(sport) {
   const s = String(sport || '').toLowerCase();
   if (s.includes('run')) return '#f97316';
-  if (s.includes('ride') || s.includes('cycle') || s.includes('bike')) return '#3b82f6';
+  if (s.includes('ride') || s.includes('cycl') || s.includes('bike')) return '#3b82f6';
   if (s.includes('swim')) return '#06b6d4';
   if (s.includes('elliptical') || s.includes('cross-trainer') || s.includes('crosstrainer')) return '#a855f7';
   return '#8b5cf6';
@@ -2594,7 +2594,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
   const color = sportColor(sport);
   const isRun  = sport.includes('run') || sport.includes('walk') || sport.includes('hike');
   const isSwim = sport.includes('swim');
-  const isBike = sport.includes('ride') || sport.includes('cycle') || sport.includes('bike') || sport === 'cycling';
+  const isBike = sport.includes('ride') || sport.includes('cycl') || sport.includes('bike') || sport === 'cycling';
   const { user: authUser } = useAuth() || {};
   const [detailLoading, setDetailLoading] = useState(true);
   const [streams, setStreams] = useState(null);
@@ -5925,7 +5925,7 @@ function ActivityDetailPopup({ activity, anchorRect, onClose, onSelectActivity, 
   const sport = String(a.sport || '').toLowerCase();
   const isRun = sport.includes('run') || sport.includes('walk') || sport.includes('hike');
   const isSwim = sport.includes('swim');
-  const isBike = sport.includes('ride') || sport.includes('cycle') || sport.includes('bike');
+  const isBike = sport.includes('ride') || sport.includes('cycl') || sport.includes('bike');
 
   const fmtDur = (s) => s > 0
     ? `${Math.floor(s/3600)}:${String(Math.floor((s%3600)/60)).padStart(2,'0')}:${String(Math.floor(s%60)).padStart(2,'0')}`
@@ -8103,7 +8103,7 @@ export default function CalendarView({
           const dots = [...new Set(acts.map((a) => {
             const s = (a.sport || '').toLowerCase();
             if (s.includes('run') || s.includes('walk')) return 'run';
-            if (s.includes('ride') || s.includes('bike') || s.includes('cycle') || s.includes('virtual')) return 'bike';
+            if (s.includes('ride') || s.includes('bike') || s.includes('cycl') || s.includes('virtual')) return 'bike';
             if (s.includes('swim')) return 'swim';
             if (s.includes('elliptical') || s.includes('cross-trainer') || s.includes('crosstrainer')) return 'elliptical';
             return 'other';
@@ -8494,7 +8494,7 @@ export default function CalendarView({
           entry.tssSwim += tssVal;
           entry.totalTSS += tssVal;
         }
-      } else if (sport.includes('ride') || sport.includes('cycle') || sport.includes('bike')) {
+      } else if (sport.includes('ride') || sport.includes('cycl') || sport.includes('bike')) {
         entry.bikeSeconds += duration;
         entry.distanceBike += distance;
         if (!isNaN(tssVal) && tssVal > 0) {

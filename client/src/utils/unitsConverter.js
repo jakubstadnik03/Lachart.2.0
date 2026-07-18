@@ -509,7 +509,7 @@ export const activityPaceOrPowerDisplay = (act, user) => {
   const s = String(sport).toLowerCase();
   const isSwim = s.includes('swim');
   const isRun = s.includes('run') || s.includes('hike') || s.includes('walk') || s.includes('trail');
-  const isBike = s.includes('ride') || s.includes('cycle') || s.includes('bike') || s.includes('virtual');
+  const isBike = s.includes('ride') || s.includes('cycl') || s.includes('bike') || s.includes('virtual');
 
   if (isBike && power > 0) return `${Math.round(power)} W`;
   if (isSwim || isRun) {

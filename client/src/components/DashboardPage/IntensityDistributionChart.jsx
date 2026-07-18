@@ -109,7 +109,7 @@ function isCyclingPowerSport(sport) {
 function isRunPaceSport(sport) {
   const s = String(sport || '').toLowerCase();
   if (!s) return false;
-  if (s.includes('ride') || s.includes('bike') || s.includes('cycle') || s.includes('swim')) return false;
+  if (s.includes('ride') || s.includes('bike') || s.includes('cycl') || s.includes('swim')) return false;
   return (
     s.includes('run') ||
     s.includes('walk') ||

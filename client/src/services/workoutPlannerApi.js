@@ -13,7 +13,7 @@ export function normalizePlannedSportForApi(sport) {
   if (['run', 'bike', 'swim', 'strength', 'walk', 'brick', 'crosstrain', 'mtbike', 'rowing', 'lactate', 'other'].includes(s)) {
     return s;
   }
-  if (s.includes('bike') || s.includes('ride') || s.includes('cycle') || s.includes('virtual')) return 'bike';
+  if (s.includes('bike') || s.includes('ride') || s.includes('cycl') || s.includes('virtual')) return 'bike';
   if (s.includes('run') || s.includes('trail')) return 'run';
   if (s.includes('swim')) return 'swim';
   if (s.includes('walk') || s.includes('hike')) return 'walk';

@@ -18,7 +18,7 @@ function hrFrom(o) {
 /**
  * Garmin docs store sport as 'cycling' / 'running' / 'swimming', but most of
  * the app's sport checks are tuned to Strava vocabulary ('Ride' / 'Run' /
- * 'Swim') — e.g. `includes('cycle')` does NOT match 'cycling', so Garmin
+ * 'Swim') — e.g. the old `includes('cycle')` check did NOT match 'cycling', so Garmin
  * activities rendered with the generic bolt icon. Normalize at this single
  * mapping point instead of patching every icon/color helper.
  */

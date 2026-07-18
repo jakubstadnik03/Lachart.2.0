@@ -31,6 +31,7 @@ import { PMC_MAX_VIEW_DAYS } from '../utils/pmcChartAxes';
 import { mergeProfileZones } from '../utils/inferThresholdsFromActivities';
 import { maybePromptTrainingZonesSetup } from '../utils/trainingZonesSetup';
 import api, { getFitTrainings, listExternalActivities, autoSyncStravaActivities, getIntegrationStatus, getStravaAuthUrl, addTraining, updateTraining, getStravaActivityDetail, getFormFitnessData, getTodayMetrics } from '../services/api';
+import { dedupeMergedCalendarActivities } from '../utils/dedupeMergedCalendarActivities';
 import { notifyCalendarDataUpdated } from '../utils/calendarActivitiesForPmc';
 import { maybeNotifyStravaActivitiesImported } from '../utils/stravaImportLocalNotification';
 import { startStravaHistoryCatchUpPoll } from '../utils/stravaHistoryCatchUp';
@@ -84,7 +85,7 @@ function normaliseSportForWidget(raw) {
   if (s.includes('strength') || s.includes('gym') || s.includes('weight')
       || s.includes('workout') || s.includes('crossfit') || s.includes('fitness')
       || s.includes('elliptical') || s.includes('rower') || s.includes('rowing')) return 'strength';
-  if (s.includes('bike') || s.includes('ride') || s.includes('cycle') || s.includes('virtual') || s.includes('mtb')) return 'bike';
+  if (s.includes('bike') || s.includes('ride') || s.includes('cycl') || s.includes('virtual') || s.includes('mtb')) return 'bike';
   // Truly unknown → 'other' (the widget shows a neutral icon, not a bike).
   return 'other';
 }
@@ -904,7 +905,7 @@ export default function DashboardPage() {
           // Normalize sport from FIT values to short form
           sport: (() => {
             const s = String(t.sport || '').toLowerCase();
-            if (s === 'cycling' || s.includes('cycle') || s.includes('bike') || s.includes('ride')) return 'bike';
+            if (s === 'cycling' || s.includes('cycl') || s.includes('bike') || s.includes('ride')) return 'bike';
             if (s === 'running' || s.includes('run')) return 'run';
             if (s === 'swimming' || s.includes('swim')) return 'swim';
             return t.sport || null;
@@ -1201,7 +1202,8 @@ export default function DashboardPage() {
           : [],
       ];
 
-      return finalizeCalendar(combined, externalActivitiesError);
+      // Same workout as FIT upload AND Strava/Garmin sync → show/count once.
+      return finalizeCalendar(dedupeMergedCalendarActivities(combined), externalActivitiesError);
       })();
 
       calendarRequestRef.current.set(targetId, request);

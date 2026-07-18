@@ -119,7 +119,7 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highligh
 
   // Get zones from user profile based on sport type
   const sportType = training?.sport?.toLowerCase() || 'cycling';
-  const isCycling = sportType.includes('ride') || sportType.includes('cycle') || sportType.includes('bike');
+  const isCycling = sportType.includes('ride') || sportType.includes('cycl') || sportType.includes('bike');
   const isRunning = isRunLikeSport(sportType);
   const isSwimming = sportType.includes('swim');
   const cadenceUnit = cadenceDisplayUnit(sportType);

@@ -7,7 +7,7 @@ export function resolveLapSport(sport) {
   const v = String(sport || '').toLowerCase();
   const isRun = v.includes('run') || v === 'walk' || v.includes('hike');
   const isSwim = v.includes('swim');
-  const isBike = !isRun && !isSwim && (v.includes('ride') || v.includes('bike') || v.includes('cycle') || v.includes('virtual'));
+  const isBike = !isRun && !isSwim && (v.includes('ride') || v.includes('bike') || v.includes('cycl') || v.includes('virtual'));
   return { isRun, isSwim, isBike, key: isSwim ? 'swim' : isBike ? 'bike' : isRun ? 'run' : 'other' };
 }
 

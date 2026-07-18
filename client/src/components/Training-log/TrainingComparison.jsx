@@ -339,8 +339,8 @@ const TrainingComparison = ({ trainings: rawTrainings }) => {
         const lastAvg = lastValues.reduce((a, b) => a + b, 0) / lastValues.length;
         const firstSport = (firstTraining?.sport || '').toLowerCase();
         const lastSport = (lastTraining?.sport || '').toLowerCase();
-        const firstIsBike = firstSport.includes('bike') || firstSport.includes('cycle') || firstSport.includes('ride') || firstSport.includes('cycling');
-        const lastIsBike = lastSport.includes('bike') || lastSport.includes('cycle') || lastSport.includes('ride') || lastSport.includes('cycling');
+        const firstIsBike = firstSport.includes('bike') || firstSport.includes('cycl') || firstSport.includes('ride') || firstSport.includes('cycling');
+        const lastIsBike = lastSport.includes('bike') || lastSport.includes('cycl') || lastSport.includes('ride') || lastSport.includes('cycling');
         const isPace = metric === 'power' && !(firstIsBike && lastIsBike);
         stats[metric].first = firstAvg;
         stats[metric].last = lastAvg;
@@ -359,7 +359,7 @@ const TrainingComparison = ({ trainings: rawTrainings }) => {
   // ── Format helpers ──────────────────────────────────────────────────────────
   const isBikeSport = (sportValue) => {
     const sport = (sportValue || '').toLowerCase();
-    return sport.includes('bike') || sport.includes('cycle') || sport.includes('ride') || sport.includes('cycling');
+    return sport.includes('bike') || sport.includes('cycl') || sport.includes('ride') || sport.includes('cycling');
   };
   const isPaceSport = (sportValue) => {
     const s = (sportValue || '').toLowerCase();

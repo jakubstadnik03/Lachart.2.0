@@ -64,7 +64,7 @@ function normalizeSportToCore(sportRaw) {
   if (!s) return 'other';
   if (s.includes('swim') || s === 'swimming') return 'swim';
   if (s.includes('run') || s.includes('walk') || s.includes('hike') || s === 'running') return 'run';
-  if (s.includes('ride') || s.includes('cycle') || s.includes('bike') || s === 'cycling') return 'bike';
+  if (s.includes('ride') || s.includes('cycl') || s.includes('bike') || s === 'cycling') return 'bike';
   // FitTraining uses 'running'/'cycling'/'swimming' already; Training model uses 'run'/'bike'/'swim'
   if (s === 'run') return 'run';
   if (s === 'bike') return 'bike';

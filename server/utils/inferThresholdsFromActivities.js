@@ -16,7 +16,7 @@ function actSport(a) {
 }
 
 function isBike(s) {
-  return s.includes('ride') || s.includes('cycle') || s.includes('bike') || s === 'cycling';
+  return s.includes('ride') || s.includes('cycl') || s.includes('bike') || s === 'cycling';
 }
 
 function isRun(s) {

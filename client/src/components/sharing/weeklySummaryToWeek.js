@@ -91,7 +91,7 @@ function extractGpsPoints(a) {
 
 function normalizeSportKey(s) {
   const v = String(s || '').toLowerCase();
-  if (v.includes('ride') || v.includes('cycle') || v.includes('bike') || v.includes('virtual')) return 'bike';
+  if (v.includes('ride') || v.includes('cycl') || v.includes('bike') || v.includes('virtual')) return 'bike';
   if (v.includes('run') || v.includes('walk') || v.includes('hike')) return 'run';
   if (v.includes('swim')) return 'swim';
   return null;

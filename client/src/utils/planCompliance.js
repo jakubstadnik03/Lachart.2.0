@@ -68,7 +68,7 @@ export function planSportColor(sport) {
   const s = String(sport || '').toLowerCase();
   if (s.includes('run') || s.includes('walk') || s.includes('hike')) return SPORT_PLAN_COLORS.run;
   if (s.includes('swim')) return SPORT_PLAN_COLORS.swim;
-  if (s.includes('ride') || s.includes('cycle') || s.includes('bike')) return SPORT_PLAN_COLORS.bike;
+  if (s.includes('ride') || s.includes('cycl') || s.includes('bike')) return SPORT_PLAN_COLORS.bike;
   return SPORT_PLAN_COLORS.bike;
 }
 

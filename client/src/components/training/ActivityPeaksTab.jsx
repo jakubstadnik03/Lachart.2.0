@@ -25,7 +25,7 @@ const PACE_COLOR = '#2563eb';
 
 function sportIsBike(sport) {
   const s = String(sport || '').toLowerCase();
-  return s.includes('ride') || s.includes('bike') || s.includes('cycle') || s.includes('virtual');
+  return s.includes('ride') || s.includes('bike') || s.includes('cycl') || s.includes('virtual');
 }
 
 function sportIsSwim(sport) {

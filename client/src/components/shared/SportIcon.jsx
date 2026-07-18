@@ -37,7 +37,7 @@ export const EllipticalSvg = ({ className = '', style }) => (
 /** Canonical sport keys used across dashboard, calendar, and native tiles. */
 export function resolveSportKey(sport) {
   const s = String(sport || '').toLowerCase();
-  if (s.includes('bike') || s.includes('ride') || s.includes('cycle') || s.includes('virtual')) return 'bike';
+  if (s.includes('bike') || s.includes('ride') || s.includes('cycl') || s.includes('virtual')) return 'bike';
   if (s.includes('swim')) return 'swim';
   if (s.includes('elliptical') || s.includes('cross-trainer') || s.includes('crosstrainer')) return 'elliptical';
   if (

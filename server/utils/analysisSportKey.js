@@ -4,7 +4,7 @@
 
 function resolveAnalysisSportKey(sport) {
   const s = String(sport || '').toLowerCase();
-  if (s.includes('bike') || s.includes('ride') || s.includes('cycle') || s.includes('virtual')) return 'bike';
+  if (s.includes('bike') || s.includes('ride') || s.includes('cycl') || s.includes('virtual')) return 'bike';
   if (s.includes('swim')) return 'swim';
   if (
     s.includes('nordic') ||

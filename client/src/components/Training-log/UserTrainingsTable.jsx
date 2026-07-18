@@ -121,7 +121,7 @@ function looksLikeLactateWorkout(training) {
   const sport = (training.sport || training.sport_type || training.type || '').toLowerCase();
   const isRelevantSport =
     sport.includes('run') ||
-    sport.includes('ride') || sport.includes('cycle') || sport.includes('bike') ||
+    sport.includes('ride') || sport.includes('cycl') || sport.includes('bike') ||
     sport.includes('swim');
   if (!isRelevantSport) return false;
 
@@ -292,7 +292,7 @@ const UserTrainingsTable = ({ trainings = [], onTrainingUpdate }) => {
       if (!s) return;
       // Normalise to top-level bucket
       if (s.includes('run'))    set.add('run');
-      else if (s.includes('ride') || s.includes('cycle') || s.includes('bike')) set.add('bike');
+      else if (s.includes('ride') || s.includes('cycl') || s.includes('bike')) set.add('bike');
       else if (s.includes('swim')) set.add('swim');
       else set.add(s);
     });
@@ -359,7 +359,7 @@ const UserTrainingsTable = ({ trainings = [], onTrainingUpdate }) => {
       if (filterSport !== 'all') {
         const s = (training.sport || training.sport_type || training.type || '').toLowerCase();
         if (filterSport === 'run'  && !s.includes('run'))  return false;
-        if (filterSport === 'bike' && !s.includes('ride') && !s.includes('cycle') && !s.includes('bike')) return false;
+        if (filterSport === 'bike' && !s.includes('ride') && !s.includes('cycl') && !s.includes('bike')) return false;
         if (filterSport === 'swim' && !s.includes('swim')) return false;
         if (!['run','bike','swim'].includes(filterSport) && !s.includes(filterSport)) return false;
       }

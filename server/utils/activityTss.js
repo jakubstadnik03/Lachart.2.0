@@ -88,7 +88,7 @@ function computePowerTss(activity, profile) {
   const thresholdPace = thresholdPaceFromProfile(profile);
   const thresholdSwimPace = thresholdSwimPaceFromProfile(profile);
 
-  if (sport.includes('ride') || sport.includes('cycle') || sport.includes('bike') || sport === 'cycling') {
+  if (sport.includes('ride') || sport.includes('cycl') || sport.includes('bike') || sport === 'cycling') {
     const np = Number(activity.normalizedPower || activity.weightedAveragePower || activity.weighted_average_watts || 0);
     const avg = Number(activity.averagePower || activity.avgPower || activity.average_watts || 0);
     const watts = np > 0 ? np : avg;
@@ -186,7 +186,7 @@ function preferredTssModeForSport(profile, sport) {
   let key = null;
   if (s.includes('swim')) key = 'swimming';
   else if (s.includes('run') || s.includes('walk') || s.includes('hike')) key = 'running';
-  else if (s.includes('ride') || s.includes('bike') || s.includes('cycle')) key = 'cycling';
+  else if (s.includes('ride') || s.includes('bike') || s.includes('cycl')) key = 'cycling';
   if (key && profile?.tssDisplayModeBySport?.[key]) {
     const mode = profile.tssDisplayModeBySport[key];
     if (mode === 'power' || mode === 'hr') return mode;
@@ -234,8 +234,8 @@ function buildUserProfile(user) {
 function normalizeSportBucket(sport) {
   const s = String(sport || '').toLowerCase();
   // 'cycl' (not 'cycle') so Garmin's 'cycling' lands in the bike bucket too —
-  // 'cycling'.includes('cycle') is false, which made Strava-vs-Garmin dedup
-  // miss the same ride and double-count its TSS.
+  // the old 'cycle' substring never matched 'cycling', which made
+  // Strava-vs-Garmin dedup miss the same ride and double-count its TSS.
   if (s.includes('ride') || s.includes('bike') || s.includes('cycl')) return 'bike';
   if (s.includes('run')) return 'run';
   if (s.includes('swim')) return 'swim';
@@ -323,7 +323,7 @@ function resolveActivityTss(activity, profile) {
   if (profile?._thresholdsInferredFromActivities) {
     const sport = activitySport(activity);
     const dur = activityDuration(activity);
-    const endurance = sport.includes('ride') || sport.includes('cycle') || sport.includes('bike')
+    const endurance = sport.includes('ride') || sport.includes('cycl') || sport.includes('bike')
       || sport.includes('run') || sport.includes('walk') || sport.includes('hike')
       || sport.includes('swim');
     if (endurance && dur >= 1200) {

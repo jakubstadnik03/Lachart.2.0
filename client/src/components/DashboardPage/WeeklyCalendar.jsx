@@ -213,7 +213,7 @@ function formatDecimalHours(totalSec) {
 function normalizeSport(sport) {
   const s = String(sport || '').toLowerCase().trim();
   if (s.includes('run') || s.includes('walk') || s.includes('hike') || s.includes('trail')) return 'Running';
-  if (s.includes('ride') || s.includes('cycle') || s.includes('bike') || s.includes('virtual')) return 'Cycling';
+  if (s.includes('ride') || s.includes('cycl') || s.includes('bike') || s.includes('virtual')) return 'Cycling';
   if (s.includes('swim')) return 'Swimming';
   if (s.includes('gym') || s.includes('weight') || s.includes('strength') || s.includes('workout')) return 'Strength';
   if (!s) return 'Other';
@@ -225,7 +225,7 @@ const SPORT_COLORS_SUMMARY = { bike: '#767EB5', run: '#f97316', swim: '#599FD0',
 
 function sportColorForSummary(sport) {
   const s = String(sport || '').toLowerCase();
-  if (s.includes('ride') || s.includes('cycle') || s.includes('bike') || s.includes('virtual')) return SPORT_COLORS_SUMMARY.bike;
+  if (s.includes('ride') || s.includes('cycl') || s.includes('bike') || s.includes('virtual')) return SPORT_COLORS_SUMMARY.bike;
   if (s.includes('run') || s.includes('walk') || s.includes('hike')) return SPORT_COLORS_SUMMARY.run;
   if (s.includes('swim')) return SPORT_COLORS_SUMMARY.swim;
   return SPORT_COLORS_SUMMARY.other;
@@ -453,7 +453,7 @@ function planSportMatchesActivity(pwSport, actSport) {
   const a = String(actSport || '').toLowerCase();
   if (!p || !a) return false;
   if (p === 'run'  && (a.includes('run') || a.includes('walk') || a.includes('hike'))) return true;
-  if (p === 'bike' && (a.includes('ride') || a.includes('cycle') || a.includes('bike') || a.includes('virtual'))) return true;
+  if (p === 'bike' && (a.includes('ride') || a.includes('cycl') || a.includes('bike') || a.includes('virtual'))) return true;
   if (p === 'swim' && a.includes('swim')) return true;
   if (p === 'strength' && (a.includes('weight') || a.includes('strength') || a.includes('gym'))) return true;
   return p === a;
@@ -884,7 +884,7 @@ function PlannedMiniCard({ pw, onSelect, onStart, onCopy, onDelete, onRepeat, pa
 function actSportColor(sport) {
   const s = String(sport || '').toLowerCase();
   if (s.includes('run') || s.includes('walk') || s.includes('hike')) return '#f97316';
-  if (s.includes('ride') || s.includes('cycle') || s.includes('bike')) return '#3b82f6';
+  if (s.includes('ride') || s.includes('cycl') || s.includes('bike')) return '#3b82f6';
   if (s.includes('swim')) return '#06b6d4';
   return '#8b5cf6';
 }

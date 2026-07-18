@@ -61,7 +61,7 @@ function daysUntilRace(dateStr) {
 
 function normSport(sport) {
   const v = String(sport || '').toLowerCase();
-  if (v.includes('ride') || v.includes('bike') || v.includes('cycle')) return 'bike';
+  if (v.includes('ride') || v.includes('bike') || v.includes('cycl')) return 'bike';
   if (v.includes('run') || v.includes('walk') || v.includes('hike')) return 'run';
   if (v.includes('swim')) return 'swim';
   return 'other';

@@ -6073,7 +6073,7 @@ function _acNormSport(sport) {
   const s = String(sport || '').toLowerCase();
   if (s.includes('run') || s.includes('walk') || s.includes('hike')) return 'running';
   if (s.includes('swim')) return 'swimming';
-  if (s.includes('ride') || s.includes('cycle') || s.includes('bike') || s.includes('virtual')) return 'cycling';
+  if (s.includes('ride') || s.includes('cycl') || s.includes('bike') || s.includes('virtual')) return 'cycling';
   return null;
 }
 

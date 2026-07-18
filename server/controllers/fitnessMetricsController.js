@@ -26,7 +26,7 @@ function matchesSportFilter(sport, filter) {
   if (filter === 'all') return true;
   const sportLower = (sport || '').toLowerCase();
   if (filter === 'bike') {
-    return sportLower === 'cycling' || sportLower.includes('ride') || sportLower.includes('bike') || sportLower.includes('cycle');
+    return sportLower === 'cycling' || sportLower.includes('ride') || sportLower.includes('bike') || sportLower.includes('cycl');
   }
   if (filter === 'run') {
     return sportLower === 'running' || sportLower.includes('run') || sportLower === 'run'

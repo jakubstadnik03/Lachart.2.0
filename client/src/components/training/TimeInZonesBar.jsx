@@ -53,7 +53,7 @@ function recordSec(r, prev) {
 // ── Sport normalisation ────────────────────────────────────────────────────
 function sportKey(sport) {
   const s = String(sport || '').toLowerCase();
-  if (s.includes('bike') || s.includes('ride') || s.includes('cycle') || s.includes('virtual')) return 'cycling';
+  if (s.includes('bike') || s.includes('ride') || s.includes('cycl') || s.includes('virtual')) return 'cycling';
   if (s.includes('swim')) return 'swimming';
   return 'running'; // includes run, walk, hike, trail
 }

@@ -105,7 +105,7 @@ export function computePowerTss(activity, profile) {
   const thresholdPace = thresholdPaceFromProfile(profile);
   const thresholdSwimPace = thresholdSwimPaceFromProfile(profile);
 
-  if (sport.includes('ride') || sport.includes('cycle') || sport.includes('bike') || sport === 'cycling') {
+  if (sport.includes('ride') || sport.includes('cycl') || sport.includes('bike') || sport === 'cycling') {
     const np = Number(activity.normalizedPower || activity.weightedAveragePower || activity.weighted_average_watts || 0);
     const avg = Number(activity.avgPower || activity.averagePower || activity.average_watts || 0);
     const watts = np > 0 ? np : avg;
@@ -207,7 +207,7 @@ export function sportTssProfileKey(sport) {
   const s = String(sport || '').toLowerCase();
   if (s.includes('swim')) return 'swimming';
   if (s.includes('run') || s.includes('walk') || s.includes('hike') || s.includes('trail')) return 'running';
-  if (s.includes('ride') || s.includes('bike') || s.includes('cycle') || s.includes('virtual')) return 'cycling';
+  if (s.includes('ride') || s.includes('bike') || s.includes('cycl') || s.includes('virtual')) return 'cycling';
   return null;
 }
 
@@ -271,7 +271,7 @@ export function tssToggleDisabledReason(activity, profile) {
       const rz = profile?.powerZones?.running || profile?.runningZones;
       if (!Number(rz?.lt2 || rz?.zone4?.min)) missing.push('set run LT2 in profile');
       if (!activityAvgSpeedMps(activity)) missing.push('missing pace data');
-    } else if (sport.includes('ride') || sport.includes('cycle') || sport.includes('bike')) {
+    } else if (sport.includes('ride') || sport.includes('cycl') || sport.includes('bike')) {
       if (!ftpFromProfile(profile)) missing.push('set cycling FTP/LT2 in profile');
       const watts = Number(activity.normalizedPower || activity.averagePower || activity.average_watts || 0);
       if (!watts) missing.push('missing power data');
@@ -357,7 +357,7 @@ export function resolveActivityTss(activity, profile, options = {}) {
   if (profile?._thresholdsInferredFromActivities) {
     const sport = activitySport(activity);
     const dur = activityDuration(activity);
-    const endurance = sport.includes('ride') || sport.includes('cycle') || sport.includes('bike')
+    const endurance = sport.includes('ride') || sport.includes('cycl') || sport.includes('bike')
       || sport.includes('run') || sport.includes('walk') || sport.includes('hike')
       || sport.includes('swim');
     if (endurance && dur >= 1200) {

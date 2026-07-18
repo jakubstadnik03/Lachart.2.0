@@ -21,7 +21,7 @@ const INTERVALS_PER_PAGE = 10;
 const getSportIcon = (sport) => {
   const s = String(sport || '').toLowerCase();
   if (s.includes('run'))  return '/icon/run.svg';
-  if (s.includes('ride') || s.includes('cycle') || s.includes('bike')) return '/icon/bike.svg';
+  if (s.includes('ride') || s.includes('cycl') || s.includes('bike')) return '/icon/bike.svg';
   if (s.includes('swim')) return '/icon/swim.svg';
   if (s.includes('walk') || s.includes('hike')) return '/icon/walk.svg';
   if (s.includes('workout') || s.includes('weight') || s.includes('strength') ||
@@ -35,7 +35,7 @@ const getSportIcon = (sport) => {
 const sportColor = (sport) => {
   const s = String(sport || '').toLowerCase();
   if (s.includes('run'))  return '#f97316';
-  if (s.includes('ride') || s.includes('cycle') || s.includes('bike')) return '#767EB5';
+  if (s.includes('ride') || s.includes('cycl') || s.includes('bike')) return '#767EB5';
   if (s.includes('swim')) return '#38bdf8';
   if (s.includes('walk') || s.includes('hike')) return '#84cc16';
   if (s.includes('workout') || s.includes('weight') || s.includes('strength') ||

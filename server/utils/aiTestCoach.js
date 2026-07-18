@@ -67,7 +67,7 @@ function pickAnchor({ sport, measuredLt2, priorTestLt2, activities, userProfile 
     if (!a.date || new Date(a.date).getTime() < cutoff) return false;
     const s = String(a.sport || '').toLowerCase();
     if (isPace) return s.includes('run') || s.includes('swim');
-    return s.includes('ride') || s.includes('cycle') || s.includes('bike') || s === 'cycling';
+    return s.includes('ride') || s.includes('cycl') || s.includes('bike') || s === 'cycling';
   });
 
   if (!isPace) {

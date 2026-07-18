@@ -243,7 +243,7 @@ export default function TrainingPage() {
           date: t.date || t.timestamp || null,
           sport: (() => {
             const s = String(t.sport || '').toLowerCase();
-            if (s === 'cycling' || s.includes('cycle') || s.includes('bike') || s.includes('ride')) return 'bike';
+            if (s === 'cycling' || s.includes('cycl') || s.includes('bike') || s.includes('ride')) return 'bike';
             if (s === 'running' || s.includes('run')) return 'run';
             if (s === 'swimming' || s.includes('swim')) return 'swim';
             return t.sport || null;

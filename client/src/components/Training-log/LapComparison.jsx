@@ -51,7 +51,7 @@ function getLapValue(lap, metric, sport) {
   const s = String(sport || '').toLowerCase();
   const isSwim = s.includes('swim');
   const isRun  = s.includes('run') || s.includes('hike') || s.includes('walk') || s.includes('trail');
-  const isBike = s.includes('ride') || s.includes('cycle') || s.includes('bike') || s.includes('virtual');
+  const isBike = s.includes('ride') || s.includes('cycl') || s.includes('bike') || s.includes('virtual');
 
   if (metric === 'hr') {
     const hr = Number(lap.average_heartrate || lap.averageHeartRate || lap.avgHR || lap.avg_heart_rate || 0);
@@ -488,7 +488,7 @@ export default function LapComparison({ trainings: rawTrainings, selectedTitle: 
         const sportStr = String(session.sport || '').toLowerCase();
         const isSwim   = sportStr.includes('swim');
         const isRun    = sportStr.includes('run') || sportStr.includes('walk') || sportStr.includes('hike');
-        const isBike   = sportStr.includes('ride') || sportStr.includes('cycle') || sportStr.includes('bike');
+        const isBike   = sportStr.includes('ride') || sportStr.includes('cycl') || sportStr.includes('bike');
         const parseMaybeTime = (v) => {
           if (v == null || v === '') return 0;
           if (typeof v === 'number') return v;
@@ -584,7 +584,7 @@ export default function LapComparison({ trainings: rawTrainings, selectedTitle: 
   useEffect(() => {
     if (!sport) return;
     const s = sport.toLowerCase();
-    const isBike = s.includes('ride') || s.includes('cycle') || s.includes('bike') || s.includes('virtual');
+    const isBike = s.includes('ride') || s.includes('cycl') || s.includes('bike') || s.includes('virtual');
     const isSwim = s.includes('swim');
     setMetric(isBike ? 'power' : isSwim ? 'pace' : 'pace');
   }, [sport]);

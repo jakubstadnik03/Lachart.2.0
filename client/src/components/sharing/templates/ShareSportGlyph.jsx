@@ -12,7 +12,7 @@ import React from 'react';
 export function pickSportKey(sport) {
   const s = String(sport || '').toLowerCase();
   if (s.includes('run') || s.includes('hike') || s.includes('trail') || s.includes('walk')) return 'run';
-  if (s.includes('ride') || s.includes('cycle') || s.includes('bike') || s.includes('virtual') || s.includes('mtb')) return 'bike';
+  if (s.includes('ride') || s.includes('cycl') || s.includes('bike') || s.includes('virtual') || s.includes('mtb')) return 'bike';
   if (s.includes('swim')) return 'swim';
   if (s.includes('gym') || s.includes('weight') || s.includes('strength') || s.includes('workout') || s.includes('crossfit') || s.includes('fitness') || s.includes('elliptical')) return 'strength';
   return 'other';
