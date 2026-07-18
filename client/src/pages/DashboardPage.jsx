@@ -1045,7 +1045,9 @@ export default function DashboardPage() {
     applyIfCurrent(() => setCalendarError(null));
 
     const finalizeCalendar = (combined, externalActivitiesError = null) => {
-      const limitedForView = sortAndLimitCalendarActivities(combined);
+      // Single choke point: every path (fresh fetch, trainings-only prefetch)
+      // goes through here, so cross-source duplicates never reach state/cache.
+      const limitedForView = sortAndLimitCalendarActivities(dedupeMergedCalendarActivities(combined));
       const cacheKey = `calendarData_${targetId}`;
       const cacheTimestampKey = `calendarData_timestamp_${targetId}`;
       const now = Date.now();
@@ -1097,15 +1099,19 @@ export default function DashboardPage() {
           // dashboard loaded right after a first Strava connect, before activities
           // had synced) must NOT be served for 24h — fall through and refetch,
           // otherwise the calendar stays blank even after activities arrive.
-          if (isCacheValid && parsed.length > 0) {
-            applyIfCurrent(() => setCalendarData(parsed));
+          // Dedupe on restore too — caches written before the cross-source
+          // dedup existed hold both copies of FIT+Strava duplicates and would
+          // keep doubling week totals for up to 24h.
+          const parsedDeduped = dedupeMergedCalendarActivities(parsed);
+          if (isCacheValid && parsedDeduped.length > 0) {
+            applyIfCurrent(() => setCalendarData(parsedDeduped));
             notifyCalendarDataUpdated(targetId);
-            console.log('[DashboardPage] Using valid cached calendar data:', parsed.length, 'activities');
-          } else if (parsed.length > 0) {
+            console.log('[DashboardPage] Using valid cached calendar data:', parsedDeduped.length, 'activities');
+          } else if (parsedDeduped.length > 0) {
             // Cache is expired but has data, use it as fallback while loading
-            applyIfCurrent(() => setCalendarData(parsed));
+            applyIfCurrent(() => setCalendarData(parsedDeduped));
             notifyCalendarDataUpdated(targetId);
-            console.log('[DashboardPage] Using expired cache as fallback:', parsed.length, 'activities');
+            console.log('[DashboardPage] Using expired cache as fallback:', parsedDeduped.length, 'activities');
           }
         } catch (e) {
           console.error('Error parsing cached calendar data:', e);
@@ -1202,8 +1208,7 @@ export default function DashboardPage() {
           : [],
       ];
 
-      // Same workout as FIT upload AND Strava/Garmin sync → show/count once.
-      return finalizeCalendar(dedupeMergedCalendarActivities(combined), externalActivitiesError);
+      return finalizeCalendar(combined, externalActivitiesError);
       })();
 
       calendarRequestRef.current.set(targetId, request);
@@ -1227,7 +1232,7 @@ export default function DashboardPage() {
         const cacheKey = `calendarData_${targetId}`;
         const cachedData = localStorage.getItem(cacheKey);
         if (cachedData) {
-          const parsed = JSON.parse(cachedData);
+          const parsed = dedupeMergedCalendarActivities(JSON.parse(cachedData));
           applyIfCurrent(() => setCalendarData(parsed));
           return parsed;
         }
