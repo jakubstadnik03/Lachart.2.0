@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import ReactDOM from 'react-dom';
 import { connectStrava } from '../../utils/connectStrava';
+import { startGarminAuth } from '../../services/api';
 
 const SWIPE_THRESHOLD = 80;
 const SWIPE_VEL_THRESHOLD = 400;
@@ -86,6 +87,18 @@ export default function StravaConnectModal({ open, onClose }) {
     }
   };
 
+  const [busyGarmin, setBusyGarmin] = useState(false);
+  const handleConnectGarmin = async () => {
+    setBusyGarmin(true);
+    try {
+      const url = await startGarminAuth();
+      window.location.href = url; // Garmin OAuth consent → /garmin/callback
+    } catch (e) {
+      console.error('Garmin connect error:', e);
+      setBusyGarmin(false);
+    }
+  };
+
   if (!open && !closing) return null;
 
   const modalRoot = document.getElementById('app-modal-root') || document.body;
@@ -155,20 +168,29 @@ export default function StravaConnectModal({ open, onClose }) {
         </div>
 
         <h2 id="strava-connect-title" className="text-center text-lg font-bold text-gray-900 mb-1">
-          Connect Strava
+          Connect your activities
         </h2>
         <p className="text-center text-sm text-gray-500 mb-5 leading-relaxed">
-          Sync your activities automatically and import your full training history — laps, pace, heart rate and more.
+          Sync your activities automatically and import your training history — laps, pace, heart rate and more.
         </p>
 
         <button
           type="button"
           onClick={handleConnect}
-          disabled={busy}
+          disabled={busy || busyGarmin}
           className="w-full py-3 rounded-xl text-white text-sm font-bold disabled:opacity-60"
           style={{ background: '#FC5200' }}
         >
           {busy ? 'Opening Strava…' : 'Connect with Strava'}
+        </button>
+        <button
+          type="button"
+          onClick={handleConnectGarmin}
+          disabled={busy || busyGarmin}
+          className="w-full py-3 mt-2 rounded-xl text-white text-sm font-bold disabled:opacity-60"
+          style={{ background: '#007CC3' }}
+        >
+          {busyGarmin ? 'Opening Garmin…' : 'Connect with Garmin'}
         </button>
         <button
           type="button"
