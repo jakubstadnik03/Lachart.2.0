@@ -205,7 +205,13 @@ export default function TrainingPage() {
       if (cached && ts) {
         const age = Date.now() - parseInt(ts, 10);
         if (!Number.isNaN(age) && age < CACHE_TTL) {
-          const parsed = JSON.parse(cached);
+          // Drop Garmin/Apple entries on restore too — caches written before
+          // the source filter existed would keep unloadable sessions in the
+          // Training History picker until the TTL ran out.
+          const parsed = (JSON.parse(cached) || []).filter((a) => {
+            const src = a?.source || (a?.garminId != null ? 'garmin' : 'strava');
+            return src !== 'garmin' && src !== 'apple_health';
+          });
           if (Array.isArray(parsed) && parsed.length > 0) {
             setTrainings(parsed);
             // Default-select newest-with-results from cache so widgets aren't blank
@@ -251,7 +257,15 @@ export default function TrainingPage() {
         })),
         // Normalize Strava fields to match DashboardPage so shared cache entries
         // are always valid regardless of which page writes them first.
-        ...(stravaResponse.data || []).map(a => ({
+        // Garmin/Apple entries are excluded: this page's detail + field-lactate
+        // flows only load Strava/FIT sessions, so a Garmin ride would show up
+        // in the Training History picker but never load (no laps, 0 W).
+        ...(stravaResponse.data || [])
+          .filter(a => {
+            const src = a.source || (a.stravaId != null ? 'strava' : a.garminId != null ? 'garmin' : 'strava');
+            return src === 'strava';
+          })
+          .map(a => ({
           ...a,
           category: a.category || null,
           date: a.date || a.startDate || a.timestamp || null,
