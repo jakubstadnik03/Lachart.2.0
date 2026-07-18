@@ -26,7 +26,20 @@ export default function DashboardEmptyWelcome({ user, stravaConnected, onConnect
   const profileBasicsDone = Boolean(
     user?.dateOfBirth && user?.height && user?.weight && user?.sport
   );
-  const stravaDone = Boolean(stravaConnected || user?.strava?.athleteId);
+  const stravaDone = Boolean(
+    stravaConnected || user?.strava?.athleteId || user?.garmin?.athleteId
+  );
+
+  const connectGarmin = async () => {
+    try {
+      const { startGarminAuth } = await import('../../services/api');
+      const url = await startGarminAuth();
+      window.location.href = url;
+    } catch (e) {
+      console.error('Garmin connect error:', e);
+      navigate('/settings?tab=integrations');
+    }
+  };
 
   const steps = [
     {
@@ -41,14 +54,14 @@ export default function DashboardEmptyWelcome({ user, stravaConnected, onConnect
     {
       key: 'strava',
       title: 'Connect Strava or Garmin',
-      body: 'Sync activities automatically. Garmin is under Settings → Integrations.',
+      body: 'Sync activities automatically — laps, pace, heart rate and history import.',
       done: stravaDone,
       cta: stravaDone ? 'Connected' : 'Connect Strava',
       onClick: stravaDone ? undefined : onConnectStrava,
       Icon: LinkIcon,
-      secondary: {
-        label: 'Settings & Garmin',
-        onClick: () => navigate('/settings')
+      secondary: stravaDone ? undefined : {
+        label: 'Connect Garmin',
+        onClick: connectGarmin
       }
     },
     {

@@ -7,7 +7,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import ReactDOM from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthProvider';
-import api, { updateUserProfile, getStravaAuthUrl } from '../../services/api';
+import api, { updateUserProfile, getStravaAuthUrl, startGarminAuth } from '../../services/api';
 import { CheckIcon } from '@heroicons/react/24/solid';
 import { XMarkIcon } from '@heroicons/react/24/outline';
 import { Globe, Flag, Scale, Dumbbell, Timer, Zap, Microscope, Droplets, Heart, Users, FlaskConical, BarChart2, TrendingUp, Link2, CheckCircle, SlidersHorizontal, User as UserIcon } from 'lucide-react';
@@ -438,7 +438,19 @@ function UnitsStep({ user, onSave, saving }) {
 /** Step 3 — Strava */
 function StravaStep({ user, onSkip, onConnect }) {
   const [loading, setLoading] = useState(false);
+  const [garminLoading, setGarminLoading] = useState(false);
   const alreadyConnected = !!user?.strava?.athleteId;
+
+  const handleConnectGarmin = async () => {
+    setGarminLoading(true);
+    try {
+      const url = await startGarminAuth();
+      window.location.href = url; // Garmin OAuth consent → /garmin/callback
+    } catch (e) {
+      console.error('Garmin connect error:', e);
+      setGarminLoading(false);
+    }
+  };
 
   const handleConnect = async () => {
     setLoading(true);
@@ -474,8 +486,8 @@ function StravaStep({ user, onSkip, onConnect }) {
             <div className="flex items-start gap-3 p-4 rounded-2xl bg-orange-50 border border-orange-100">
               <img src="/images/strava.svg" alt="Strava" className="w-8 h-8 flex-shrink-0 mt-0.5" onError={e => { e.target.style.display='none'; }} />
               <div>
-                <p className="text-sm font-bold text-gray-900">Strava</p>
-                <p className="text-xs text-gray-600 mt-0.5">Automatically import workouts, laps and heart rate data from your Strava account</p>
+                <p className="text-sm font-bold text-gray-900">Strava or Garmin</p>
+                <p className="text-xs text-gray-600 mt-0.5">Automatically import workouts, laps and heart rate data from your account</p>
               </div>
             </div>
           </div>
@@ -483,10 +495,18 @@ function StravaStep({ user, onSkip, onConnect }) {
           <button
             type="button"
             onClick={handleConnect}
-            disabled={loading}
+            disabled={loading || garminLoading}
             className="w-full py-3 px-4 rounded-2xl bg-[#FC4C02] text-white font-semibold text-sm flex items-center justify-center gap-2 hover:bg-[#e04402] active:scale-[0.98] transition-all disabled:opacity-60"
           >
             {loading ? 'Redirecting…' : 'Connect with Strava'}
+          </button>
+          <button
+            type="button"
+            onClick={handleConnectGarmin}
+            disabled={loading || garminLoading}
+            className="w-full py-3 px-4 rounded-2xl bg-[#007CC3] text-white font-semibold text-sm flex items-center justify-center gap-2 hover:bg-[#006aa8] active:scale-[0.98] transition-all disabled:opacity-60"
+          >
+            {garminLoading ? 'Redirecting…' : 'Connect with Garmin'}
           </button>
         </>
       )}
