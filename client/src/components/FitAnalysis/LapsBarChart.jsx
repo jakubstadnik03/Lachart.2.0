@@ -311,11 +311,14 @@ export default function LapsBarChart({ laps = [], selectedLapNumber = null, onSe
   // ── Chart height: swim gets a taller canvas to better match Garmin ───────
   const CHART_H_PX = isSwim ? 192 : 128;
 
-  // ── Swim bar width: fixed pixel width so bars are uniform ─────────────────
-  // 28px bar + 2px gap looks close to the Garmin screenshot on a phone screen.
-  const SWIM_BAR_W   = 28;
+  // ── Swim bar spacing (bars themselves are distance-proportional) ──────────
   const SWIM_GAP_W   = 2;
   const SWIM_PAUSE_W = 6;
+
+  // Bar width weight per sport: swim & run scale by lap DISTANCE (a 500 m rep
+  // reads wider than a 100 m one), bike scales by TIME. Fallback to duration
+  // when a lap carries no distance (e.g. indoor trainer laps).
+  const nonSwimWeight = (entry) => (isRun && entry.distanceM > 0 ? entry.distanceM : entry.duration);
 
   return (
     <div className="w-full mb-3">
@@ -418,8 +421,10 @@ export default function LapsBarChart({ laps = [], selectedLapNumber = null, onSe
                       ref={isSelected ? selectedBarRef : null}
                       onClick={() => onSelect && onSelect(isSelected ? null : entry.lapNumber)}
                       title={`Lap ${entry.lapNumber}: ${fmtLabel(entry)}${hasLactate ? ` · La ${entry.lactate.toFixed(1)}` : ''}`}
-                      className="relative flex flex-col items-center justify-end focus:outline-none shrink-0 group"
-                      style={{ width: SWIM_BAR_W, height: CHART_H_PX }}
+                      className="relative flex flex-col items-center justify-end focus:outline-none group"
+                      // Width ∝ lap distance (a 500 m interval reads wider than
+                      // a 100 m one); minWidth keeps short reps tappable.
+                      style={{ flex: `${Math.max(entry.distanceM, 25)} 1 0%`, minWidth: 12, height: CHART_H_PX }}
                     >
                       {/* Lactate value floating above bar */}
                       {hasLactate && (
@@ -509,7 +514,7 @@ export default function LapsBarChart({ laps = [], selectedLapNumber = null, onSe
                       onClick={() => onSelect && onSelect(isSelected ? null : entry.lapNumber)}
                       title={`Lap ${entry.lapNumber}: ${fmtLabel(entry)}${entry.lactate != null ? ` · La ${entry.lactate.toFixed(1)}` : ''}`}
                       className="group focus:outline-none"
-                      style={{ flex: `${entry.duration} 1 0%`, minWidth: 2, height: CHART_H_PX, position: 'relative' }}
+                      style={{ flex: `${nonSwimWeight(entry)} 1 0%`, minWidth: 2, height: CHART_H_PX, position: 'relative' }}
                     >
                       {/* Bar: anchored to bottom, grows upward — unambiguous on all platforms */}
                       <div
@@ -573,7 +578,9 @@ export default function LapsBarChart({ laps = [], selectedLapNumber = null, onSe
                   return (
                     <div
                       key={entry.lapNumber}
-                      style={{ width: SWIM_BAR_W, flexShrink: 0 }}
+                      // Must mirror the bar sizing above (width ∝ distance) so
+                      // each number stays centred under its bar.
+                      style={{ flex: `${Math.max(entry.distanceM, 25)} 1 0%`, minWidth: 12 }}
                       className="text-center"
                     >
                       {show && (
@@ -608,7 +615,7 @@ export default function LapsBarChart({ laps = [], selectedLapNumber = null, onSe
                     const distLabel  = fmtDist(cumDist);
                     const show       = isSelected || sparseSet.has(entry.lapNumber);
                     return (
-                      <div key={entry.lapNumber} className="text-center overflow-visible relative" style={{ flex: `${entry.duration} 1 0%`, minWidth: 2 }}>
+                      <div key={entry.lapNumber} className="text-center overflow-visible relative" style={{ flex: `${nonSwimWeight(entry)} 1 0%`, minWidth: 2 }}>
                         {show && (
                           <span className={`absolute left-1/2 -translate-x-1/2 whitespace-nowrap text-[9px] leading-none font-medium ${isSelected ? 'text-primary' : 'text-gray-400'}`}>
                             {distLabel || entry.lapNumber}
@@ -648,7 +655,7 @@ export default function LapsBarChart({ laps = [], selectedLapNumber = null, onSe
             />
           )}
           <span className="text-[11px] font-bold text-gray-700 leading-none">
-            {isSwim ? `${selectedEntry.lapNumber}. kolo` : `Lap ${selectedEntry.lapNumber}`}
+            {`Lap ${selectedEntry.lapNumber}`}
           </span>
           {selectedEntry.distanceM > 0 && (
             <span className="text-[11px] text-gray-500 leading-none">

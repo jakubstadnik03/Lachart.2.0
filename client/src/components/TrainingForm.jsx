@@ -1293,39 +1293,18 @@ const TrainingForm = ({
           {isEditing ? "Edit Training" : "New Training"}
         </h2>
 
-        {/* Sport pills */}
-        <div className="flex items-center gap-1">
-          {ACTIVITIES.map((activity) => (
-            <button
-              key={activity.id}
-              type="button"
-              onClick={() => {
-                const newResults = formData.results.map(result => ({
-                  ...result,
-                  power: activity.id === 'bike' ? result.power : formatSecondsToMMSS(result.power)
-                }));
-                setFormData(prev => ({
-                  ...prev,
-                  sport: activity.id,
-                  results: newResults
-                }));
-              }}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-colors min-h-[36px] ${
-                formData.sport === activity.id
-                  ? "bg-primary text-white shadow-sm"
-                  : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-              }`}
-              style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
-            >
-              <img
-                src={activity.icon}
-                alt=""
-                className={`w-4 h-4 ${formData.sport === activity.id ? "brightness-0 invert" : ""}`}
-              />
-              <span>{activity.label}</span>
-            </button>
-          ))}
-        </div>
+        {/* Sport — read-only chip. The sport is fixed by the source activity /
+            entry point; switching it here silently mangled interval units
+            (power vs pace), so the toggle buttons are intentionally gone. */}
+        {(() => {
+          const current = ACTIVITIES.find((a) => a.id === formData.sport) || ACTIVITIES[1];
+          return (
+            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold min-h-[36px] bg-primary text-white shadow-sm select-none">
+              <img src={current.icon} alt="" className="w-4 h-4 brightness-0 invert" />
+              <span>{current.label}</span>
+            </div>
+          );
+        })()}
 
         {/* Close button */}
         <button
