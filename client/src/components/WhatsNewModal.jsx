@@ -38,7 +38,10 @@ function SlideMedia({ item }) {
   return (
     <div
       className="relative w-full overflow-hidden rounded-xl border border-gray-200/80 bg-gray-950 shadow-lg"
-      style={{ aspectRatio: '16 / 10' }}
+      // Height capped to the viewport (not a fixed 16:10 ratio) so the whole
+      // slide — media + title + bullets + Next — fits on one screen on a
+      // laptop instead of scrolling. object-cover crops the media to fit.
+      style={{ height: 'clamp(180px, 32vh, 340px)' }}
     >
       <div
         className="absolute inset-0 opacity-30"
