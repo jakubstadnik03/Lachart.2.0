@@ -22,7 +22,6 @@ import { XMarkIcon, TrashIcon, BookmarkIcon, WrenchScrewdriverIcon, RectangleSta
 import { Bike, WavesLadder, Dumbbell, PersonStanding, Repeat2, Sparkles, Waves, TestTube2, MoreHorizontal, Mountain, Snowflake } from 'lucide-react';
 import WorkoutBuilder, { PRESET_CATALOG, buildPresetSteps, computeEstTSS } from './WorkoutBuilder';
 import { createWorkoutTemplate, exportPlannedWorkout } from '../../services/workoutPlannerApi';
-import { sendPlannedWorkoutToWatch, isAppleWorkoutPlanSupported } from '../../services/appleWorkoutPlan';
 import { useCategories } from '../../context/CategoryContext';
 import { useAuth } from '../../context/AuthProvider';
 import { plannedDistanceMetres } from '../../utils/plannedWorkoutDistance';
@@ -948,33 +947,6 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
                     >
                       .tcx
                     </button>
-                    {isAppleWorkoutPlanSupported() && sport !== 'lactate' && (
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          try {
-                            const res = await sendPlannedWorkoutToWatch(
-                              { _id: workout._id, sport, title, date, steps },
-                              context
-                            );
-                            if (res?.scheduled) {
-                              alert('Sent to Apple Watch. Open the Workout app on your watch to start it.');
-                            } else if (res?.reason === 'no_steps') {
-                              alert('This workout has no structured steps to send.');
-                            } else if (res?.reason === 'not_authorized') {
-                              alert('Allow LaChart to schedule workouts: Watch app → enable, then try again.');
-                            } else if (res?.reason) {
-                              alert('Could not send to Apple Watch on this device.');
-                            }
-                          } catch (err) {
-                            alert(`Apple Watch sync failed: ${err?.message || 'unknown'}`);
-                          }
-                        }}
-                        className="px-3 py-2 rounded-xl border border-slate-200 text-slate-600 text-sm whitespace-nowrap shrink-0"
-                      >
-                        Apple Watch
-                      </button>
-                    )}
                   </>
                 )}
               </div>

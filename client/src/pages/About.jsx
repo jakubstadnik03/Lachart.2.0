@@ -1596,7 +1596,7 @@ export default function About() {
             <div className="lc-int-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
               {[
                 { dot: '#FF6B4A', name: 'Strava', body: 'Auto-sync activities, full interval detection, power graphs and HR zones.' },
-                { dot: '#3B82F6', name: 'FIT files', body: 'Garmin, Wahoo, Polar, Suunto, Apple Watch — every device supported.' },
+                { dot: '#3B82F6', name: 'FIT files', body: 'Garmin, Wahoo, Polar, Suunto — every device supported.' },
                 { dot: '#10B981', name: 'Manual entry', body: 'Log any workout in 30 seconds — even ones without a head unit.' },
               ].map((it, i) => (
                 <div key={it.name} ref={pushRef} className={`lc-reveal d${i+1} lc-card`} style={{ display: 'flex', alignItems: 'flex-start', gap: 14 }}>

@@ -173,7 +173,7 @@ export default function AppleHealthCard({ isMobile = false, onStatusChange }) {
       } else if (!msg) {
         setError(
           permHint
-            || 'Connected, but no resting HR, sleep or HRV found. Add data in Health (Apple Watch, Oura, etc.) and enable those types for LaChart in Health → Apps.',
+            || 'Connected, but no resting HR, sleep or HRV found. Add data in Health (from your watch, ring, etc.) and enable those types for LaChart in Health → Apps.',
         );
       } else if (permHint) {
         setError(`Synced ${msg}. ${permHint}`);
@@ -210,7 +210,7 @@ export default function AppleHealthCard({ isMobile = false, onStatusChange }) {
         );
       } else if (types.length > 0) {
         setError(
-          'Done — open Health → Profile → Apps → LaChart, scroll down and enable Resting Heart Rate, Sleep and HRV (they appear below the workout types from Apple Watch). Then tap Connect & sync.',
+          'Done — open Health → Profile → Apps → LaChart, scroll down and enable Resting Heart Rate, Sleep and HRV (they appear below the workout data types). Then tap Connect & sync.',
         );
       } else {
         setError('Could not register wellness types. Rebuild from Xcode (⌘R on iPhone) and try again.');
@@ -278,7 +278,7 @@ export default function AppleHealthCard({ isMobile = false, onStatusChange }) {
       </p>
 
       <p className={`${isMobile ? 'text-[9px] mb-2' : 'text-xs mb-3'} text-blue-900 bg-blue-50 border border-blue-200 rounded-lg px-2 py-1.5`}>
-        <strong>What you see in Health now</strong> (Workouts, Running Power, Heart Rate…) is from the <strong>Apple Watch</strong> app.
+        <strong>What you see in Health now</strong> (Workouts, Running Power, Heart Rate…) comes from your watch or other connected devices.
         Sleep, Resting HR and HRV are requested from the <strong>iPhone</strong> — tap <strong>Enable recovery data</strong> first, then scroll down in Health → Apps → LaChart for the new toggles.
       </p>
 

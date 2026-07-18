@@ -315,8 +315,8 @@ const RAW_SLIDES = [
     id: 'ios-app',
     icon: DevicePhoneMobileIcon,
     label: 'Mobile',
-    title: 'LaChart on iPhone & Apple Watch',
-    body: 'Take your zones, plans and live workouts anywhere. Start a session on your wrist and it syncs back to LaChart automatically.',
+    title: 'LaChart on your iPhone',
+    body: 'Take your zones, plans and live workouts anywhere — the full dashboard, calendar and lactate testing in a native iOS app.',
     bullets: [
       'Native iOS app on the App Store',
       'Home-screen Form / Fitness widget',

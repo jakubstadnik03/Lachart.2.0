@@ -42,12 +42,11 @@ export const MARKETING_FEATURES = [
   // Execution
   { cat: 'Execution', title: 'Live Workout Mode', body: 'Run planned sessions step-by-step — timers, target zones and adherence in the browser or iOS app.', icon: 'M5 3l14 9-14 9V3z' },
   { cat: 'Execution', title: 'Smart Trainer (FTMS)', body: 'Pair over Bluetooth and execute structured workouts with automatic resistance — no Zwift required.', icon: 'M12 18h.01M5 12.55a11 11 0 0 1 14.08 0M1.42 9a16 16 0 0 1 21.16 0M8.53 16.11a6 6 0 0 1 6.95 0' },
-  { cat: 'Execution', title: 'Apple Watch Workouts', body: 'Send structured plans to Apple Watch via WorkoutKit — intervals on your wrist.', icon: 'M12 8v4l3 3M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20z' },
 
   // Integration
   { cat: 'Integration', title: 'Strava Sync', body: 'Auto-import rides, runs and swims with power, HR, pace and laps — backfill history in one click.', icon: 'M7 16a4 4 0 0 1-.88-7.9A5 5 0 0 1 15.9 6M16 16a4 4 0 1 0 0-8M12 22V10M15 13l-3-3-3 3' },
   { cat: 'Integration', title: 'Garmin Connect', body: 'Sync activities from Garmin Connect — same pipeline as Strava, with auto-sync on a schedule.', icon: 'M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5' },
-  { cat: 'Integration', title: 'FIT File Upload', body: 'Garmin, Wahoo, Polar, Suunto, Apple Watch — upload FIT files with full interval detection.', icon: 'M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12' },
+  { cat: 'Integration', title: 'FIT File Upload', body: 'Garmin, Wahoo, Polar, Suunto — upload FIT files with full interval detection.', icon: 'M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12' },
   { cat: 'Integration', title: 'Apple Health', body: 'Resting HR, HRV, sleep and workouts from iPhone — wellness and readiness on the dashboard.', icon: 'M21 8.5c0-3-2-5.5-5-5.5-2.5 0-4 1.5-4 1.5S10.5 3 8 3c-3 0-5 2.5-5 5.5C3 14 12 21 12 21s9-7 9-12.5z' },
   { cat: 'Integration', title: 'Native iOS App', body: 'Full LaChart on iPhone — dashboard, testing, calendar, Apple Health and home-screen widget.', icon: 'M12 18h.01M7 21h10a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2z' },
 
