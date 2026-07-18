@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { XMarkIcon, LockClosedIcon, SparklesIcon } from '@heroicons/react/24/outline';
 import { isCapacitorNative } from '../utils/isNativeApp';
+import { trackCheckoutStarted } from '../utils/analytics';
 import {
   ATHLETE_PLAN_PRICE_LABEL,
   COACH_PLAN_PRICE_LABEL,
@@ -156,6 +157,7 @@ export default function UpgradeModal({ isOpen, onClose, feature = 'This feature'
     setError(null);
     setLoading(true);
     try {
+      trackCheckoutStarted(requiredPlan, 'upgrade_modal');
       const { url } = await createCheckoutSession(requiredPlan);
       if (url) {
         window.location.href = url;

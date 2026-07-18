@@ -485,6 +485,9 @@ export default function DashboardPage() {
       // The tour IS the What's New deck — don't show the same slides again.
       localStorage.setItem(whatsNewSeenKey(user._id), '1');
     }
+    import('../utils/analytics')
+      .then(({ trackFeatureTourClosed }) => trackFeatureTourClosed())
+      .catch(() => {});
     advanceModalQueue();
   }, [user?._id, advanceModalQueue]);
 

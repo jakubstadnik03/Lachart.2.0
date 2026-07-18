@@ -1360,6 +1360,10 @@ export async function generatePdfBlob({ test, athlete, thresholds, zones, prevTe
 }
 
 export async function downloadLactateReportPdf({ test, athlete, thresholds, zones, prevTest, prevThresholds, prevTest2, prevThresholds2, customNote, customAnalysis, creatorEmail, preTestSummary, coachBranding }) {
+  try {
+    const { trackPdfReportExported } = await import('../../utils/analytics');
+    trackPdfReportExported({ branded: Boolean(coachBranding?.logoUrl || coachBranding?.title) });
+  } catch { /* analytics only */ }
   const blob = await generatePdfBlob({ test, athlete, thresholds, zones, prevTest, prevThresholds, prevTest2, prevThresholds2, customNote, customAnalysis, creatorEmail, preTestSummary, coachBranding });
   const date = test?.date ? new Date(test.date).toISOString().slice(0,10) : 'report';
   const fileName = `lachart-report-${date}.pdf`;

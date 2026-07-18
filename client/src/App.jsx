@@ -453,7 +453,9 @@ function App() {
           <AthleteSelectionProvider>
           <TrainingProvider>
             <WorkoutSessionProvider>
-              {isProd && !isCapacitorNative() && initAnalytics('G-HNHPQH30BL')}
+              {/* GA runs in the native app too — analytics.js tags hits with
+                  app_platform (ios/android/web) and a stable client_id. */}
+              {isProd && initAnalytics('G-HNHPQH30BL')}
               <AppRoutes />
               {/* Floating "return to active workout" pill — renders only when
                   a session is live and the user is on a non-execution route.

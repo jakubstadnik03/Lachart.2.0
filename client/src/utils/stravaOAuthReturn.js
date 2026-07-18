@@ -6,6 +6,7 @@ import {
 } from '../services/api';
 import { saveUserToStorage } from './userStorage';
 import { maybeNotifyStravaActivitiesImported } from './stravaImportLocalNotification';
+import { trackIntegrationConnected } from './analytics';
 
 const HANDLED_SESSION_KEY = 'strava_oauth_return_handled';
 let handling = false;
@@ -48,6 +49,7 @@ export async function handleStravaOAuthReturn({ onNotify } = {}) {
     sessionStorage.setItem(HANDLED_SESSION_KEY, String(Date.now()));
 
     onNotify?.('Strava account connected — syncing your activities…', 'success');
+    try { trackIntegrationConnected('strava'); } catch { /* analytics only */ }
 
     try {
       await getIntegrationStatus();

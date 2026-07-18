@@ -30,7 +30,7 @@ import { Helmet } from 'react-helmet';
 import { useReducedMotion } from 'framer-motion';
 import { useAuth } from '../context/AuthProvider';
 import { isCapacitorNative } from '../utils/isNativeApp';
-import { trackEvent } from '../utils/analytics';
+import { trackEvent, trackCheckoutStarted } from '../utils/analytics';
 import { createCheckoutSession } from '../services/api';
 import { ATHLETE_PLAN_PRICE_LABEL, COACH_PLAN_PRICE_LABEL } from '../constants/planPricing';
 
@@ -2590,6 +2590,7 @@ function PriceCard({ name, price, badge, highlighted, features, ctaLabel, ctaTo,
 
     try {
       setLoading(true);
+      trackCheckoutStarted(planId, 'about_page');
       const { url } = await createCheckoutSession(planId);
       if (url) {
         window.location.href = url;

@@ -4,6 +4,7 @@ import {
   getIntegrationStatus,
 } from '../services/api';
 import { saveUserToStorage } from './userStorage';
+import { trackIntegrationConnected } from './analytics';
 
 const HANDLED_SESSION_KEY = 'garmin_oauth_return_handled';
 let handling = false;
@@ -47,6 +48,7 @@ export async function handleGarminOAuthReturn({ onNotify } = {}) {
     sessionStorage.setItem(HANDLED_SESSION_KEY, String(Date.now()));
 
     onNotify?.('Garmin account connected — syncing your activities…', 'success');
+    try { trackIntegrationConnected('garmin'); } catch { /* analytics only */ }
 
     try {
       await getIntegrationStatus();

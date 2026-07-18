@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { XMarkIcon, SparklesIcon, CheckIcon } from '@heroicons/react/24/outline';
 import { isCapacitorNative } from '../utils/isNativeApp';
+import { trackCheckoutStarted } from '../utils/analytics';
 import { createCheckoutSession } from '../services/api';
 import { ATHLETE_PLAN_PRICE_LABEL, COACH_PLAN_PRICE_LABEL } from '../constants/planPricing';
 
@@ -70,6 +71,7 @@ export default function WelcomePaywallModal({ open, onClose, userName }) {
     setError(null);
     setLoadingPlan(planId);
     try {
+      trackCheckoutStarted(planId, 'welcome_paywall');
       const { url } = await createCheckoutSession(planId);
       if (url) {
         window.location.href = url;

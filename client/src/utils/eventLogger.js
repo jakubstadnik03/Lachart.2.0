@@ -1,5 +1,6 @@
 // Event logging utility for client-side
 import { API_BASE_URL } from '../config/api.config';
+import { trackUserRegistration, trackConversionFunnel } from './analytics';
 
 export const logEvent = async (type, metadata = {}, userId = null) => {
   try {
@@ -44,6 +45,12 @@ const getSessionId = () => {
 
 // Predefined event logging functions
 export const logUserRegistration = (method = 'email', userId = null) => {
+  // Single choke point for signups (email/Google/Apple, web + native app) —
+  // mirror it into GA so registrations show up as conversions there too.
+  try {
+    trackUserRegistration(method);
+    trackConversionFunnel('signup_complete', { method });
+  } catch { /* analytics must never break signup */ }
   return logEvent('register', { method }, userId);
 };
 

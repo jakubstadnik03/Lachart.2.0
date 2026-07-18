@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthProvider';
+import { trackCheckoutStarted, trackIntegrationConnected } from '../utils/analytics';
 import { GoogleLogin } from '@react-oauth/google';
 import { useNotification } from '../context/NotificationContext';
 import { API_ENDPOINTS, API_BASE_URL } from '../config/api.config';
@@ -779,6 +780,7 @@ const SettingsPage = () => {
     setSubActionLoading(true);
     setSubError(null);
     try {
+      trackCheckoutStarted(planId, 'settings');
       const { url } = await createCheckoutSession(planId);
       if (url) window.location.href = url;
     } catch (err) {
@@ -1172,6 +1174,7 @@ const SettingsPage = () => {
         throw new Error(data.detail ? `${base} (Garmin: ${data.detail})` : base);
       }
       addNotification('Garmin connected via credentials!', 'success');
+      try { trackIntegrationConnected('garmin'); } catch { /* analytics only */ }
       setGarminConnected(true);
       setShowGarminLoginForm(false);
       setGarminLoginForm({ username: '', password: '' });
