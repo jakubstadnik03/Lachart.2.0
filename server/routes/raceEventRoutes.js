@@ -155,16 +155,20 @@ router.post('/:id/feedback', verifyToken, async (req, res) => {
       return res.status(403).json({ error: 'Only the athlete can submit race feedback' });
     }
 
-    const { rpe, feeling, notes } = req.body || {};
+    const { rpe, feeling, notes, result, finishTime, distanceKm } = req.body || {};
     const rpeNum = rpe != null && rpe !== '' ? Number(rpe) : null;
     if (rpeNum != null && (!Number.isFinite(rpeNum) || rpeNum < 1 || rpeNum > 10)) {
       return res.status(400).json({ error: 'RPE must be between 1 and 10' });
     }
+    const distNum = distanceKm != null && distanceKm !== '' ? Number(distanceKm) : null;
 
     ev.postRaceFeedback = {
       rpe: rpeNum,
       feeling: feeling ? String(feeling).slice(0, 40) : null,
       notes: notes ? String(notes).slice(0, 2000) : null,
+      result: result ? String(result).slice(0, 120) : null,
+      finishTime: finishTime ? String(finishTime).slice(0, 20) : null,
+      distanceKm: Number.isFinite(distNum) && distNum > 0 ? distNum : null,
       submittedAt: new Date(),
     };
     await ev.save();
@@ -178,6 +182,8 @@ router.post('/:id/feedback', verifyToken, async (req, res) => {
           great: 'great 🔥', good: 'good 👍', ok: 'OK 😐', tough: 'tough 😓', rough: 'bad 😞',
         };
         const parts = [];
+        if (ev.postRaceFeedback.finishTime) parts.push(ev.postRaceFeedback.finishTime);
+        if (ev.postRaceFeedback.result) parts.push(ev.postRaceFeedback.result);
         if (rpeNum != null) parts.push(`RPE ${rpeNum}/10`);
         if (ev.postRaceFeedback.feeling) {
           parts.push(`felt ${FEELING_LABELS[ev.postRaceFeedback.feeling] || ev.postRaceFeedback.feeling}`);

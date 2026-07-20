@@ -93,10 +93,17 @@ export default function RaceDetailModal({
   // ── Post-race reflection: local override + inline edit form ──────────────
   const [fbLocal, setFbLocal] = useState(null); // updated race.postRaceFeedback after save
   const effectiveFb = fbLocal || race?.postRaceFeedback || null;
-  const hasFb = Boolean(effectiveFb && (effectiveFb.rpe != null || effectiveFb.feeling || effectiveFb.notes));
+  const hasFb = Boolean(effectiveFb && (effectiveFb.rpe != null || effectiveFb.feeling || effectiveFb.notes
+    || effectiveFb.result || effectiveFb.finishTime || effectiveFb.distanceKm != null));
+  // Headline result line — shown prominently at the top once filled in.
+  const resultParts = [
+    effectiveFb?.finishTime,
+    effectiveFb?.distanceKm != null ? `${effectiveFb.distanceKm} km` : null,
+    effectiveFb?.result,
+  ].filter(Boolean);
   const [fbEditing, setFbEditing] = useState(false);
   const [fbSaving, setFbSaving] = useState(false);
-  const [fbForm, setFbForm] = useState({ rpe: 6, feeling: null, notes: '' });
+  const [fbForm, setFbForm] = useState({ rpe: 6, feeling: null, notes: '', result: '', finishTime: '', distanceKm: '' });
   const isOwnRace = user && race && String(user._id || user.id) === String(race.athleteId);
 
   // ── Swipe-down on the header closes the sheet (mobile bottom-sheet UX) ───
@@ -128,6 +135,9 @@ export default function RaceDetailModal({
       rpe: effectiveFb?.rpe ?? 6,
       feeling: effectiveFb?.feeling ?? null,
       notes: effectiveFb?.notes ?? '',
+      result: effectiveFb?.result ?? '',
+      finishTime: effectiveFb?.finishTime ?? '',
+      distanceKm: effectiveFb?.distanceKm != null ? String(effectiveFb.distanceKm) : '',
     });
     setFbEditing(true);
   };
@@ -137,6 +147,7 @@ export default function RaceDetailModal({
     try {
       const { data } = await submitRaceFeedback(race._id, {
         rpe: fbForm.rpe, feeling: fbForm.feeling, notes: fbForm.notes,
+        result: fbForm.result, finishTime: fbForm.finishTime, distanceKm: fbForm.distanceKm,
       });
       const updatedFb = data?.postRaceFeedback || { ...fbForm, submittedAt: new Date().toISOString() };
       setFbLocal(updatedFb);
@@ -371,6 +382,12 @@ export default function RaceDetailModal({
               </div>
               <h2 className="text-xl font-bold text-gray-900 truncate">{race?.name}</h2>
               <p className="text-sm text-gray-500 mt-0.5">{fmtDate(raceDateStr)}</p>
+              {/* Headline result — finish time · distance · placement */}
+              {resultParts.length > 0 && (
+                <p className="text-base font-extrabold text-gray-900 mt-1.5">
+                  🏁 {resultParts.join(' · ')}
+                </p>
+              )}
             </div>
             <button
               type="button"
@@ -523,6 +540,40 @@ export default function RaceDetailModal({
                       className="flex-1 accent-amber-600"
                     />
                   </div>
+                  <div className="grid grid-cols-3 gap-1.5 mb-2">
+                    <div>
+                      <div className="text-[9px] font-bold uppercase text-amber-700 mb-0.5">Time</div>
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        placeholder="4:32:10"
+                        value={fbForm.finishTime}
+                        onChange={(e) => setFbForm((p) => ({ ...p, finishTime: e.target.value }))}
+                        className="w-full rounded-lg border border-amber-200 bg-white px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                      />
+                    </div>
+                    <div>
+                      <div className="text-[9px] font-bold uppercase text-amber-700 mb-0.5">Distance km</div>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        placeholder="90"
+                        value={fbForm.distanceKm}
+                        onChange={(e) => setFbForm((p) => ({ ...p, distanceKm: e.target.value }))}
+                        className="w-full rounded-lg border border-amber-200 bg-white px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                      />
+                    </div>
+                    <div>
+                      <div className="text-[9px] font-bold uppercase text-amber-700 mb-0.5">Result</div>
+                      <input
+                        type="text"
+                        placeholder="3rd AG"
+                        value={fbForm.result}
+                        onChange={(e) => setFbForm((p) => ({ ...p, result: e.target.value }))}
+                        className="w-full rounded-lg border border-amber-200 bg-white px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                      />
+                    </div>
+                  </div>
                   <textarea
                     value={fbForm.notes}
                     onChange={(e) => setFbForm((p) => ({ ...p, notes: e.target.value }))}
@@ -550,6 +601,11 @@ export default function RaceDetailModal({
                 </div>
               ) : hasFb ? (
                 <>
+                  {resultParts.length > 0 && (
+                    <div className="text-sm font-extrabold text-amber-900 mb-0.5">
+                      🏁 {resultParts.join(' · ')}
+                    </div>
+                  )}
                   <div className="flex items-center gap-3 text-sm font-semibold text-amber-900">
                     {effectiveFb.feeling && (
                       <span>

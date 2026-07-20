@@ -20,6 +20,12 @@ const raceEventSchema = new mongoose.Schema({
     rpe: { type: Number, default: null },
     feeling: { type: String, default: null },
     notes: { type: String, default: null },
+    /** Official result — free text, e.g. "3rd AG · 25th overall". */
+    result: { type: String, default: null },
+    /** Finish time as entered, e.g. "4:32:10". */
+    finishTime: { type: String, default: null },
+    /** Race distance in km (may differ from plan — course changes etc.). */
+    distanceKm: { type: Number, default: null },
     submittedAt: { type: Date, default: null },
   },
   /** Idempotent race reminder tracking (d14, d7, d3, d1, taper10, postRace, ctlGapN). */
