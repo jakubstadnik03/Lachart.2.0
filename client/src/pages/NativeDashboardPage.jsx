@@ -15,7 +15,6 @@ import RaceCountdownCard from '../components/DashboardPage/RaceCountdownCard';
 import PostRaceFeedbackCard from '../components/DashboardPage/PostRaceFeedbackCard';
 import PlannedWorkoutEditor from '../components/NativeDashboard/PlannedWorkoutEditor';
 import StravaConnectModal from '../components/NativeDashboard/StravaConnectModal';
-const RaceDetailModal = lazy(() => import('../components/Calendar/RaceDetailModal'));
 import PremiumLock from '../components/PremiumLock';
 import { NATIVE_DASHBOARD_KEYFRAMES, cardEntry } from '../components/NativeDashboard/animations';
 import TrainingForm from '../components/TrainingForm';
@@ -41,6 +40,7 @@ import {
 const ActivityFullModal = lazy(() =>
   import('../components/Calendar/CalendarView').then(m => ({ default: m.ActivityFullModal }))
 );
+const RaceDetailModal = lazy(() => import('../components/Calendar/RaceDetailModal'));
 // Same lazy strategy for the day-theme editor sheet (shared with the calendar).
 const DayPlanEditSheet = lazy(() =>
   import('../components/Calendar/CalendarView').then(m => ({ default: m.DayPlanEditSheet }))
