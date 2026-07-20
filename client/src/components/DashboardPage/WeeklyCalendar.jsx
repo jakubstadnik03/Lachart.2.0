@@ -25,7 +25,8 @@ import { useNavigate } from 'react-router-dom';
 import TrainingStats from '../FitAnalysis/TrainingStats';
 import LapsTable from '../FitAnalysis/LapsTable';
 import { ActivityFullModal } from '../Calendar/CalendarView';
-import { getFitTraining, getStravaActivityDetail, updateFitTraining, updateStravaActivity, createFieldLactateMeasurement } from '../../services/api';
+import { getFitTraining, getStravaActivityDetail, updateFitTraining, updateStravaActivity, createFieldLactateMeasurement, getRaceEvents } from '../../services/api';
+import RaceDetailModal from '../Calendar/RaceDetailModal';
 import api from '../../services/api';
 import { resolveActivityTss } from '../../utils/computeTss';
 import { compareActivitiesChronologically, buildChronologicalDayItems } from '../../utils/calendarDayOrdering';
@@ -950,6 +951,49 @@ const WeeklyCalendar = ({
   activitiesLoading = false,
 }) => {
   const { user } = useAuth();
+
+  // Races — flag ribbon on their day + detail modal (shared 60s cache with
+  // RaceCountdownCard, so this costs nothing extra).
+  const [races, setRaces] = useState([]);
+  const [selectedRace, setSelectedRace] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data } = await getRaceEvents(selectedAthleteId || user?._id);
+        if (!cancelled) setRaces(Array.isArray(data) ? data : []);
+      } catch { /* decorative */ }
+    })();
+    return () => { cancelled = true; };
+  }, [selectedAthleteId, user?._id]);
+  const racesByDay = useMemo(() => {
+    const m = new Map();
+    (races || []).forEach((r) => {
+      const key = String(r?.date || '').slice(0, 10);
+      if (!key) return;
+      if (!m.has(key)) m.set(key, []);
+      m.get(key).push(r);
+    });
+    return m;
+  }, [races]);
+  const RACE_RIBBON_COLOR = { A: '#dc2626', B: '#ea580c', C: '#d97706' };
+  const renderRaceRibbon = (key) => {
+    const rs = racesByDay.get(key);
+    if (!rs || !rs.length) return null;
+    return rs.map((r, i) => (
+      <button
+        key={r._id || i}
+        type="button"
+        onClick={(e) => { e.stopPropagation(); setSelectedRace(r); }}
+        className="w-full flex items-center gap-1 rounded-md px-1.5 py-0.5 mb-1 text-white text-[10px] font-extrabold uppercase tracking-wide truncate cursor-pointer hover:brightness-110"
+        style={{ background: RACE_RIBBON_COLOR[r.priority] || '#dc2626' }}
+        title={`${r.name} — race detail`}
+      >
+        <span aria-hidden>🚩</span>
+        <span className="truncate">{r.name}</span>
+      </button>
+    ));
+  };
   const { getCategory } = useCategories();
 
   const catBadgeStyle = (catId) => {
@@ -1780,6 +1824,7 @@ const WeeklyCalendar = ({
                         isToday ? 'border-primary/30 ring-1 ring-primary/20' : 'border-gray-200'
                       }`}
                     >
+                      {renderRaceRibbon(key)}
                       <div className="flex items-center justify-between mb-1.5">
                         <div>
                           <div className={`text-xs font-bold leading-none ${isToday ? 'text-primary' : 'text-gray-700'}`}>
@@ -1841,6 +1886,7 @@ const WeeklyCalendar = ({
                     isToday ? 'border-primary/30 ring-1 ring-primary/20' : 'border-gray-200'
                   }`}
                 >
+                  {renderRaceRibbon(key)}
                   <div className="flex items-center justify-between mb-1.5">
                     <div>
                       <div className={`text-sm font-bold leading-none ${isToday ? 'text-primary' : 'text-gray-700'}`}>
@@ -2639,6 +2685,31 @@ const WeeklyCalendar = ({
             )}
           </div>
         )
+      )}
+
+      {/* Race detail — opened from the day ribbon */}
+      {selectedRace && (
+        <RaceDetailModal
+          race={selectedRace}
+          activities={activities}
+          plannedWorkouts={plannedWorkouts}
+          userProfile={effectiveUserProfile}
+          user={user}
+          onClose={() => setSelectedRace(null)}
+          onOpenActivity={(act) => {
+            setSelectedRace(null);
+            setActivityModal({ activity: act, plannedWorkout: null });
+          }}
+          onFeedbackSaved={(updated) => {
+            if (!updated?._id) return;
+            setRaces((prev) => prev.map((r) =>
+              String(r._id) === String(updated._id) ? { ...r, ...updated } : r
+            ));
+            setSelectedRace((prev) =>
+              prev && String(prev._id) === String(updated._id) ? { ...prev, ...updated } : prev
+            );
+          }}
+        />
       )}
 
       {/* Shared activity modal — same UI as Training Calendar */}
