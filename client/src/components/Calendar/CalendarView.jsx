@@ -24,6 +24,7 @@ import {
   BeakerIcon,
   HeartIcon,
   FlagIcon,
+  MoonIcon,
 } from '@heroicons/react/24/outline';
 import SportIcon from '../shared/SportIcon';
 import { DurationPickerField, DurationPickerSheet } from '../shared/DurationWheelPicker.jsx';
@@ -56,6 +57,8 @@ import {
   resolveActivitySaveKind,
 } from '../../utils/activityEventPatches';
 import { sanitizeDecimalInput, parseLactateValue } from '../../utils/lactateInput';
+import { fetchWellness } from '../../services/wellnessData';
+import { baseline, dayRecoveryStatus } from '../../utils/recovery';
 import { useAuth } from '../../context/AuthProvider';
 import { useCategories, hexToRgba } from '../../context/CategoryContext';
 import { DAY_THEME_PRESETS, dayThemePresetColor, PERIOD_TYPES, periodColor, buildPeriodsByDate } from '../../utils/calendarThemes';
@@ -7284,6 +7287,48 @@ export function PeriodEditSheet({ period, defaultDate, onClose, onSave, onDelete
   );
 }
 
+/**
+ * Compact per-day Apple Health recovery strip for calendar day cells:
+ * sleep duration, resting HR and (space permitting) HRV, with a small
+ * recovery-status dot colored like the dashboard WeeklyCalendar badges.
+ */
+function DayWellnessStrip({ w, status, className = '' }) {
+  if (!w) return null;
+  const hasSleep = w.sleepMinutes > 0;
+  const hasRhr = w.restingHeartRate > 0;
+  const hasHrv = w.hrvMs > 0;
+  if (!hasSleep && !hasRhr && !hasHrv) return null;
+  const sleepLabel = hasSleep
+    ? `${Math.floor(w.sleepMinutes / 60)}:${String(Math.round(w.sleepMinutes % 60)).padStart(2, '0')}`
+    : null;
+  return (
+    <div
+      className={`flex items-center gap-1.5 text-[10px] leading-none text-gray-400 ${className}`}
+      title="Apple Health — sleep · resting HR · HRV"
+    >
+      {status && <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: status.hex }} />}
+      {sleepLabel && (
+        <span className="flex items-center gap-0.5 min-w-0">
+          <MoonIcon className="w-3 h-3 flex-shrink-0" />
+          <span className="font-semibold text-gray-500">{sleepLabel}</span>
+        </span>
+      )}
+      {hasRhr && (
+        <span className="flex items-center gap-0.5">
+          <HeartIcon className="w-3 h-3 flex-shrink-0" />
+          <span className="font-semibold text-gray-500">{Math.round(w.restingHeartRate)}</span>
+        </span>
+      )}
+      {hasHrv && (
+        <span className="hidden lg:flex items-center gap-0.5">
+          <span className="font-semibold text-gray-500">{Math.round(w.hrvMs)}</span>
+          <span>ms</span>
+        </span>
+      )}
+    </div>
+  );
+}
+
 export default function CalendarView({
   activities = [],
   onSelectActivity,
@@ -7421,6 +7466,44 @@ export default function CalendarView({
   const [sportFilter, setSportFilter] = useState(getInitialSportFilter);
   const [categoryFilter, setCategoryFilter] = useState(() => localStorage.getItem('calendarView_categoryFilter') || 'all');
   const [expandedDays, setExpandedDays] = useState(new Set());
+
+  // Apple Health wellness (sleep / resting HR / HRV) rendered as a small strip
+  // in every day cell. 90 days is the server-side max window; refetched after
+  // each Apple Health sync via the global `appleHealth:synced` event.
+  const [wellnessDays, setWellnessDays] = useState([]);
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const w = await fetchWellness(90, athleteId || null);
+        if (!cancelled) setWellnessDays(w.days || []);
+      } catch {
+        if (!cancelled) setWellnessDays([]);
+      }
+    };
+    load();
+    window.addEventListener('appleHealth:synced', load);
+    return () => { cancelled = true; window.removeEventListener('appleHealth:synced', load); };
+  }, [athleteId]);
+
+  const wellnessByDate = useMemo(() => {
+    const map = new Map();
+    if (!wellnessDays || wellnessDays.length === 0) return map;
+    const rhrBase = baseline(wellnessDays, 'restingHeartRate', false);
+    const hrvBase = baseline(wellnessDays, 'hrvMs', false);
+    wellnessDays.forEach((d) => {
+      if (!d?.date) return;
+      map.set(d.date, { w: d, status: dayRecoveryStatus(d, rhrBase, hrvBase) });
+    });
+    return map;
+  }, [wellnessDays]);
+
+  /** Small sleep/RHR/HRV strip for a day cell; null when the day has no data. */
+  const renderWellness = (key, opts = {}) => {
+    const entry = wellnessByDate.get(key);
+    if (!entry) return null;
+    return <DayWellnessStrip w={entry.w} status={entry.status} className={opts.className || ''} />;
+  };
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   // Optimistic selection — marks activity immediately on click, before parent updates selectedActivityId
   const [optimisticSelectedId, setOptimisticSelectedId] = useState(null);
@@ -9065,6 +9148,8 @@ export default function CalendarView({
                       )}
                     </div>
                     ); })()}
+                    {/* Apple Health recovery (sleep / resting HR / HRV) */}
+                    {renderWellness(key, { className: 'px-3 pt-1.5 -mb-0.5' })}
                     {/* Content */}
                     {hasItems ? (
                       <div className="px-3 pb-2.5 pt-1.5 flex flex-col gap-1.5">
@@ -9476,6 +9561,9 @@ export default function CalendarView({
                           )}
                         </div>
 
+                        {/* Apple Health recovery (sleep / resting HR / HRV) */}
+                        {renderWellness(key, { className: 'mb-1' })}
+
                         {dayItems.map((item, pi) => {
                           if (item.kind === 'pair' || item.kind === 'planned') {
                             const pw = item.pw;
@@ -9663,6 +9751,8 @@ export default function CalendarView({
                         </button>
                       )}
                     </div>
+                    {/* Apple Health recovery (sleep / resting HR / HRV) */}
+                    {renderWellness(key, { className: 'mb-1' })}
                     <motion.div
                       layout
                       className="space-y-1 w-full"

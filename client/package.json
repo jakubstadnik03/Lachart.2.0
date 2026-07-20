@@ -68,6 +68,8 @@
     "cap:sync": "npm run build:no-prerender && npx cap sync && node scripts/patch-ios-health-plugin.mjs",
     "cap:sync:no-build": "npx cap sync && node scripts/patch-ios-health-plugin.mjs",
     "cap:sync:ios": "npm run build && npx cap sync ios && node scripts/patch-ios-health-plugin.mjs && cd ios/App && pod install",
+    "capacitor:copy:after": "node scripts/patch-ios-health-plugin.mjs",
+    "capacitor:sync:after": "node scripts/patch-ios-health-plugin.mjs",
     "cap:ios": "npx cap open ios",
     "cap:android": "npx cap open android",
     "whats-new:videos": "node scripts/check-whats-new-videos.js"
