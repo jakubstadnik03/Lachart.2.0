@@ -295,6 +295,27 @@ export default function RaceDetailModal({
             <p className="text-xs text-gray-500 mt-2 bg-gray-50 rounded-lg px-3 py-2">{race.notes}</p>
           )}
 
+          {/* Post-race reflection — shown once the athlete submitted it */}
+          {!editing && race?.postRaceFeedback
+            && (race.postRaceFeedback.rpe != null || race.postRaceFeedback.feeling || race.postRaceFeedback.notes) && (() => {
+            const fb = race.postRaceFeedback;
+            const FEELING = {
+              great: '🔥 Great', good: '👍 Good', ok: '😐 OK', tough: '😓 Tough', rough: '😞 Bad',
+            };
+            return (
+              <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+                <div className="text-[10px] font-bold uppercase tracking-wide text-amber-700 mb-1">Race reflection</div>
+                <div className="flex items-center gap-3 text-sm font-semibold text-amber-900">
+                  {fb.feeling && <span>{FEELING[fb.feeling] || fb.feeling}</span>}
+                  {fb.rpe != null && <span>RPE {fb.rpe}/10</span>}
+                </div>
+                {fb.notes && (
+                  <p className="text-xs text-amber-800 italic mt-1 whitespace-pre-wrap">“{fb.notes}”</p>
+                )}
+              </div>
+            );
+          })()}
+
           {/* Countdown + metrics */}
           <div className="flex items-baseline gap-2 mt-3">
             <span className="text-4xl font-extrabold text-gray-900 leading-none">

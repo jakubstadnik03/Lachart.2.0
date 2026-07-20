@@ -15,6 +15,7 @@ import RaceCountdownCard from '../components/DashboardPage/RaceCountdownCard';
 import PostRaceFeedbackCard from '../components/DashboardPage/PostRaceFeedbackCard';
 import PlannedWorkoutEditor from '../components/NativeDashboard/PlannedWorkoutEditor';
 import StravaConnectModal from '../components/NativeDashboard/StravaConnectModal';
+const RaceDetailModal = lazy(() => import('../components/Calendar/RaceDetailModal'));
 import PremiumLock from '../components/PremiumLock';
 import { NATIVE_DASHBOARD_KEYFRAMES, cardEntry } from '../components/NativeDashboard/animations';
 import TrainingForm from '../components/TrainingForm';
@@ -168,7 +169,7 @@ function AnimatedCard({ children, animKey }) {
 // ─── Day activities card ───────────────────────────────────────────────────────
 // onOpenActivity receives the full activity object so the caller can build the right URL.
 // onOpenPlanned receives the planned workout (with optional `linkedActivity`) for editing.
-function DayActivitiesCard({ date, activities, plannedWorkouts, dayPlans = [], periods = [], races = [], onEditTheme = null, onEditPeriod = null, onOpenActivity, onOpenPlanned, onPlanWorkout, userProfile = null }) {
+function DayActivitiesCard({ date, activities, plannedWorkouts, dayPlans = [], periods = [], races = [], onEditTheme = null, onEditPeriod = null, onOpenActivity, onOpenPlanned, onPlanWorkout, onOpenRace = null, userProfile = null }) {
   const { user } = useAuth() || {};
   const profile = mergeProfileZones(userProfile, user) || userProfile || user;
   const dateStr = toLocalDateStr(date);
@@ -313,48 +314,71 @@ function DayActivitiesCard({ date, activities, plannedWorkouts, dayPlans = [], p
           ? race.postRaceFeedback : null;
         const feel = fb?.feeling ? FEELING_DISPLAY[fb.feeling] || { emoji: '', label: fb.feeling } : null;
         const isPast = new Date(race.date) < new Date();
+        // Same ribbon style as the big calendar's race badge (priority colour).
+        const RACE_PRIORITY_COLOR = { A: '#dc2626', B: '#ea580c', C: '#d97706' };
+        const color = RACE_PRIORITY_COLOR[race.priority] || '#dc2626';
         return (
-          <div
+          <button
             key={`race-${race._id}`}
+            type="button"
+            onClick={() => onOpenRace && onOpenRace(race)}
             style={{
-              marginBottom: 6,
-              padding: '10px 12px',
-              borderRadius: 14,
-              background: 'rgba(249,115,22,0.08)',
-              border: '1px solid rgba(249,115,22,0.28)',
-              borderLeft: '3px solid #f97316',
+              display: 'block', width: '100%', textAlign: 'left',
+              marginBottom: 6, padding: 0, border: 'none', background: 'transparent',
+              cursor: 'pointer', WebkitTapHighlightColor: 'transparent',
+              fontFamily: 'inherit',
             }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-              <span style={{ fontSize: 14, lineHeight: 1 }}>🚩</span>
-              <span style={{ fontSize: 14, fontWeight: 800, color: '#9a3412', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+            {/* Calendar-style ribbon on top */}
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 6,
+              background: color, color: '#fff',
+              borderRadius: fb || isPast ? '12px 12px 0 0' : 12,
+              padding: '8px 12px',
+            }}>
+              <span style={{ fontSize: 13, lineHeight: 1 }}>🚩</span>
+              <span style={{
+                fontSize: 13, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.02em',
+                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1,
+              }}>
                 {race.name}
               </span>
               <span style={{
-                fontSize: 10, fontWeight: 800, color: '#fff', background: '#f97316',
+                fontSize: 10, fontWeight: 800, background: 'rgba(255,255,255,0.25)',
                 borderRadius: 6, padding: '2px 6px', lineHeight: 1, flexShrink: 0,
               }}>
                 {race.priority || 'A'}
               </span>
             </div>
-            {fb ? (
-              <div style={{ marginTop: 6 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: '#7c2d12', fontWeight: 600 }}>
-                  {feel && <span>{feel.emoji} {feel.label}</span>}
-                  {fb.rpe != null && <span>· RPE {fb.rpe}/10</span>}
-                </div>
-                {fb.notes && (
-                  <div style={{ marginTop: 3, fontSize: 12, color: '#78350f', fontStyle: 'italic', whiteSpace: 'pre-wrap' }}>
-                    “{fb.notes}”
+            {/* Reflection summary under the ribbon */}
+            {(fb || isPast) && (
+              <div style={{
+                padding: '8px 12px',
+                borderRadius: '0 0 12px 12px',
+                background: hexToRgba(color, 0.08),
+                border: `1px solid ${hexToRgba(color, 0.25)}`,
+                borderTop: 'none',
+              }}>
+                {fb ? (
+                  <>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: '#7c2d12', fontWeight: 600 }}>
+                      {feel && <span>{feel.emoji} {feel.label}</span>}
+                      {fb.rpe != null && <span>· RPE {fb.rpe}/10</span>}
+                    </div>
+                    {fb.notes && (
+                      <div style={{ marginTop: 3, fontSize: 12, color: '#78350f', fontStyle: 'italic', whiteSpace: 'pre-wrap' }}>
+                        “{fb.notes}”
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div style={{ fontSize: 11, color: '#b45309' }}>
+                    No race reflection yet — add it from the dashboard card.
                   </div>
                 )}
               </div>
-            ) : (isPast && (
-              <div style={{ marginTop: 5, fontSize: 11, color: '#b45309' }}>
-                No race reflection yet — add it from the dashboard card.
-              </div>
-            ))}
-          </div>
+            )}
+          </button>
         );
       })}
 
@@ -897,6 +921,7 @@ export default function NativeDashboardPage({
   // in the day view, with the saved post-race reflection. getRaceEvents has a
   // 60s client cache shared with RaceCountdownCard, so this is cheap.
   const [races, setRaces] = useState([]);
+  const [selectedRace, setSelectedRace] = useState(null); // day-card ribbon → detail modal
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -1264,6 +1289,7 @@ export default function NativeDashboardPage({
                 dayPlans={dayPlans}
                 periods={periods}
                 races={races}
+                onOpenRace={setSelectedRace}
                 userProfile={fitnessProfile}
                 onEditTheme={onDayPlanSave ? (d) => setThemeEditDate(toLocalDateStr(d)) : null}
                 onEditPeriod={onPeriodSave ? (arg) => setPeriodEdit(arg) : null}
@@ -1464,6 +1490,20 @@ export default function NativeDashboardPage({
 
       {/* Strava connect prompt (shown when not connected) */}
       <StravaConnectModal open={showStravaConnect && !stravaConnected} onClose={dismissStravaConnect} />
+
+      {/* Race detail — opened from the day-card race ribbon */}
+      {selectedRace && (
+        <Suspense fallback={null}>
+          <RaceDetailModal
+            race={selectedRace}
+            activities={activities}
+            plannedWorkouts={plannedWorkouts}
+            userProfile={fitnessProfile}
+            user={user}
+            onClose={() => setSelectedRace(null)}
+          />
+        </Suspense>
+      )}
 
       {/* Error toast for lactate-from-dashboard failures (no laps, network, etc.) */}
       {lactateError && (
