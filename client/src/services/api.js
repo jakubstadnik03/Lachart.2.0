@@ -1321,6 +1321,7 @@ export const createLap = async (trainingId, { startTime, endTime }) => {
 export const deleteFitTraining = async (trainingId) => {
   try {
     const response = await api.delete(`/api/fit/trainings/${trainingId}`);
+    invalidateTrainingCaches();
     return response.data;
   } catch (error) {
     console.error('Error deleting FIT training:', error);
@@ -1778,6 +1779,9 @@ export const deleteStravaActivity = async (stravaId, athleteId = null) => {
     `/api/integrations/strava/activities/${encodeURIComponent(id)}`,
     { params },
   );
+  // Drop cached lists — otherwise the 120s axios cache and the dashboard's
+  // localStorage snapshot keep showing the deleted activity everywhere.
+  invalidateTrainingCaches();
   return data; // { ok: true, deleted: { activity, streams } }
 };
 
@@ -1793,6 +1797,7 @@ export const deleteGarminActivity = async (garminId, athleteId = null) => {
     `/api/integrations/garmin/activities/${encodeURIComponent(id)}`,
     { params },
   );
+  invalidateTrainingCaches();
   return data; // { ok: true, deleted: { activity, streams } }
 };
 

@@ -33,6 +33,10 @@ function WheelColumn({ min, max, value, onChange, formatLabel }) {
   const scrollerRef = useRef(null);
   const scrollEndTimer = useRef(null);
   const syncingRef = useRef(false);
+  // True while the USER is dragging/flicking this column. External value
+  // changes (parent re-renders, sibling-column commits) must not snap the
+  // wheel mid-gesture — that read as "it jumped back while I was scrolling".
+  const interactingRef = useRef(false);
 
   const indexForValue = useCallback((v) => {
     const offset = Math.max(0, Math.min(count - 1, v - min));
@@ -63,19 +67,20 @@ function WheelColumn({ min, max, value, onChange, formatLabel }) {
   }, [count, middleRepeat]);
 
   useLayoutEffect(() => {
-    if (syncingRef.current) return;
+    if (syncingRef.current || interactingRef.current) return;
     scrollToValue(value, false);
   }, [value, scrollToValue]);
 
   const handleScroll = () => {
     const el = scrollerRef.current;
     if (!el || syncingRef.current) return;
+    interactingRef.current = true;
     rebalanceScroll(el);
 
     clearTimeout(scrollEndTimer.current);
     scrollEndTimer.current = setTimeout(() => {
       const node = scrollerRef.current;
-      if (!node) return;
+      if (!node) { interactingRef.current = false; return; }
       rebalanceScroll(node);
       const idx = Math.round(node.scrollTop / ITEM_HEIGHT);
       const newVal = valueAtIndex(idx);
@@ -84,7 +89,10 @@ function WheelColumn({ min, max, value, onChange, formatLabel }) {
       if (node.scrollTop !== normalizedIdx * ITEM_HEIGHT) {
         node.scrollTo({ top: normalizedIdx * ITEM_HEIGHT, behavior: 'smooth' });
       }
-      requestAnimationFrame(() => { syncingRef.current = false; });
+      requestAnimationFrame(() => {
+        syncingRef.current = false;
+        interactingRef.current = false;
+      });
       if (newVal !== value) onChange(newVal);
     }, 60);
   };

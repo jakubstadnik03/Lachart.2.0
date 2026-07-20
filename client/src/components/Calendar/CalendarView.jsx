@@ -3948,9 +3948,16 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
     };
     const applyPlannedDurationSecs = (secs) => {
       const s = Math.max(0, Math.floor(secs));
+      // ALWAYS H:MM:SS. fmtDur emits "45:30" (M:SS) for sub-hour values, but
+      // plannedDurationSecs() parses the display with style 'hm' — "45:30"
+      // read back as 45 HOURS 30 min, so the wheel jumped wildly mid-edit.
+      // A 3-part string round-trips exactly regardless of parse style.
+      const h = Math.floor(s / 3600);
+      const m = Math.floor((s % 3600) / 60);
+      const sec = s % 60;
       setPlanForm((p) => ({
         ...p,
-        durationDisplay: fmtDur(s),
+        durationDisplay: `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`,
         durationMins: s / 60,
       }));
     };
