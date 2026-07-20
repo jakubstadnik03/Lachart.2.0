@@ -26,6 +26,10 @@ const raceEventSchema = new mongoose.Schema({
     finishTime: { type: String, default: null },
     /** Race distance in km (may differ from plan — course changes etc.). */
     distanceKm: { type: Number, default: null },
+    /** Triathlon splits in km — used instead of distanceKm for triathlon races. */
+    swimKm: { type: Number, default: null },
+    bikeKm: { type: Number, default: null },
+    runKm: { type: Number, default: null },
     submittedAt: { type: Date, default: null },
   },
   /** Idempotent race reminder tracking (d14, d7, d3, d1, taper10, postRace, ctlGapN). */

@@ -155,12 +155,16 @@ router.post('/:id/feedback', verifyToken, async (req, res) => {
       return res.status(403).json({ error: 'Only the athlete can submit race feedback' });
     }
 
-    const { rpe, feeling, notes, result, finishTime, distanceKm } = req.body || {};
+    const { rpe, feeling, notes, result, finishTime, distanceKm, swimKm, bikeKm, runKm } = req.body || {};
     const rpeNum = rpe != null && rpe !== '' ? Number(rpe) : null;
     if (rpeNum != null && (!Number.isFinite(rpeNum) || rpeNum < 1 || rpeNum > 10)) {
       return res.status(400).json({ error: 'RPE must be between 1 and 10' });
     }
     const distNum = distanceKm != null && distanceKm !== '' ? Number(distanceKm) : null;
+    const numOrNull = (v) => {
+      const n = v != null && v !== '' ? Number(v) : null;
+      return Number.isFinite(n) && n > 0 ? n : null;
+    };
 
     ev.postRaceFeedback = {
       rpe: rpeNum,
@@ -169,6 +173,9 @@ router.post('/:id/feedback', verifyToken, async (req, res) => {
       result: result ? String(result).slice(0, 120) : null,
       finishTime: finishTime ? String(finishTime).slice(0, 20) : null,
       distanceKm: Number.isFinite(distNum) && distNum > 0 ? distNum : null,
+      swimKm: numOrNull(swimKm),
+      bikeKm: numOrNull(bikeKm),
+      runKm: numOrNull(runKm),
       submittedAt: new Date(),
     };
     await ev.save();

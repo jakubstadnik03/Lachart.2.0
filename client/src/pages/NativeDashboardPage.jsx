@@ -361,9 +361,15 @@ function DayActivitiesCard({ date, activities, plannedWorkouts, dayPlans = [], p
               }}>
                 {fb ? (
                   <>
-                    {(fb.finishTime || fb.result || fb.distanceKm != null) && (
+                    {(fb.finishTime || fb.result || fb.distanceKm != null || fb.swimKm != null || fb.bikeKm != null || fb.runKm != null) && (
                       <div style={{ fontSize: 12, color: '#7c2d12', fontWeight: 800, marginBottom: 2 }}>
-                        🏁 {[fb.finishTime, fb.distanceKm != null ? `${fb.distanceKm} km` : null, fb.result].filter(Boolean).join(' · ')}
+                        🏁 {[
+                          fb.finishTime,
+                          (fb.swimKm != null || fb.bikeKm != null || fb.runKm != null)
+                            ? `${fb.swimKm ?? '–'}/${fb.bikeKm ?? '–'}/${fb.runKm ?? '–'} km`
+                            : (fb.distanceKm != null ? `${fb.distanceKm} km` : null),
+                          fb.result,
+                        ].filter(Boolean).join(' · ')}
                       </div>
                     )}
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: '#7c2d12', fontWeight: 600 }}>
