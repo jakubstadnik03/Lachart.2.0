@@ -486,7 +486,7 @@ export default function RaceCountdownCard({
                             opacity: taperApplying ? 0.6 : 1,
                           }}
                         >
-                          {taperApplying ? 'Ukládám…' : 'Přeplánovat'}
+                          {taperApplying ? 'Saving…' : 'Reschedule'}
                         </button>
                         <button
                           type="button"

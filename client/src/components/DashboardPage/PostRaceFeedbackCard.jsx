@@ -6,11 +6,11 @@ import { getRaceEvents, submitRaceFeedback } from '../../services/api';
 import SportIcon from '../shared/SportIcon';
 
 const FEELINGS = [
-  { id: 'great', label: 'Skvěle', emoji: '🔥' },
-  { id: 'good', label: 'Dobře', emoji: '👍' },
-  { id: 'ok', label: 'Ujde', emoji: '😐' },
-  { id: 'tough', label: 'Těžké', emoji: '😓' },
-  { id: 'rough', label: 'Špatně', emoji: '😞' },
+  { id: 'great', label: 'Great', emoji: '🔥' },
+  { id: 'good', label: 'Good', emoji: '👍' },
+  { id: 'ok', label: 'OK', emoji: '😐' },
+  { id: 'tough', label: 'Tough', emoji: '😓' },
+  { id: 'rough', label: 'Bad', emoji: '😞' },
 ];
 
 function startOfDay(d) {
@@ -93,13 +93,13 @@ export default function PostRaceFeedbackCard({
       setRaces((prev) => prev.filter((r) => String(r._id) !== String(activeRace._id)));
       onSubmitted?.(data);
     } catch (e) {
-      setError(e?.response?.data?.error || 'Uložení se nepovedlo');
+      setError(e?.response?.data?.error || 'Could not save feedback');
     } finally {
       setSaving(false);
     }
   };
 
-  const dateLabel = new Date(activeRace.date).toLocaleDateString('cs-CZ', {
+  const dateLabel = new Date(activeRace.date).toLocaleDateString('en-GB', {
     weekday: 'short',
     day: 'numeric',
     month: 'short',
@@ -117,9 +117,9 @@ export default function PostRaceFeedbackCard({
           </span>
         )}
         <div className="min-w-0 flex-1">
-          <p className="text-xs font-semibold text-amber-800 uppercase tracking-wide">Po závodu</p>
+          <p className="text-xs font-semibold text-amber-800 uppercase tracking-wide">After the race</p>
           <h3 className="text-base font-bold text-gray-900 truncate">{activeRace.name}</h3>
-          <p className="text-xs text-gray-600">{dateLabel} — jak to šlo?</p>
+          <p className="text-xs text-gray-600">{dateLabel} — how did it go?</p>
         </div>
       </div>
 
@@ -154,7 +154,7 @@ export default function PostRaceFeedbackCard({
         className="w-full mb-3 accent-amber-600"
       />
 
-      <p className="text-xs font-medium text-gray-700 mb-1.5">Pocit ze závodu</p>
+      <p className="text-xs font-medium text-gray-700 mb-1.5">How the race felt</p>
       <div className="flex flex-wrap gap-1.5 mb-3">
         {FEELINGS.map((f) => (
           <button
@@ -176,7 +176,7 @@ export default function PostRaceFeedbackCard({
       <textarea
         value={notes}
         onChange={(e) => setNotes(e.target.value)}
-        placeholder="Poznámka pro sebe nebo trenéra…"
+        placeholder="Note for yourself or your coach…"
         rows={compact ? 2 : 3}
         className="w-full text-sm rounded-xl border border-amber-100 bg-white/90 px-3 py-2 mb-3 resize-none focus:outline-none focus:ring-2 focus:ring-amber-300"
       />
@@ -189,7 +189,7 @@ export default function PostRaceFeedbackCard({
         disabled={saving}
         className="w-full py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-sm font-semibold disabled:opacity-60"
       >
-        {saving ? 'Ukládám…' : 'Uložit reflexi'}
+        {saving ? 'Saving…' : 'Save reflection'}
       </button>
     </div>
   );
