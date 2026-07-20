@@ -659,7 +659,7 @@ async function updateFitTraining(req, res) {
   try {
     const userId = req.user?.userId;
     const trainingId = req.params.id;
-    const { title, description, category, selectedLapIndices, movingTime, duration, elapsedTime, distance, calories, lactate, rpe, tss, tssDisplayMode, savedAutoLaps } = req.body;
+    const { title, description, category, selectedLapIndices, movingTime, duration, elapsedTime, distance, calories, lactate, rpe, tss, tssDisplayMode, savedAutoLaps, startDate } = req.body;
 
     const training = await FitTraining.findOne({
       _id: trainingId,
@@ -725,6 +725,11 @@ async function updateFitTraining(req, res) {
     // Saved "Smart detect" laps: array to save, empty array / null to clear.
     if (savedAutoLaps !== undefined) {
       training.savedAutoLaps = sanitizeSavedAutoLaps(savedAutoLaps);
+    }
+    // User-edited start date/time.
+    if (startDate !== undefined && startDate !== null && startDate !== '') {
+      const d = new Date(startDate);
+      if (!Number.isNaN(d.getTime())) training.timestamp = d;
     }
 
     await training.save();

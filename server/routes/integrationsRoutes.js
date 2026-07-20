@@ -190,6 +190,7 @@ function invalidateActivitiesCacheForUser(userId) {
 /** Keep user-edited duration/distance/TSS when Strava sync re-fetches the activity. */
 function preserveManualStravaMetrics(existing, doc) {
   if (!existing?.metricsManualized || !doc) return doc;
+  if (existing.startDate != null) doc.startDate = existing.startDate;
   if (existing.movingTime != null) doc.movingTime = existing.movingTime;
   if (existing.elapsedTime != null) doc.elapsedTime = existing.elapsedTime;
   if (existing.distance != null) doc.distance = existing.distance;
@@ -5197,7 +5198,7 @@ router.put('/strava/activities/:id', verifyToken, async (req, res) => {
       return res.status(403).json({ error: 'You are not authorized to update this activity' });
     }
     
-    const { title, description, category, movingTime, duration, elapsedTime, distance, calories, tss, rpe, lactate, tssDisplayMode, savedAutoLaps } = req.body;
+    const { title, description, category, movingTime, duration, elapsedTime, distance, calories, tss, rpe, lactate, tssDisplayMode, savedAutoLaps, startDate } = req.body;
 
     const activity = await StravaActivity.findOne({
       userId: targetUserId,
@@ -5278,6 +5279,10 @@ router.put('/strava/activities/:id', verifyToken, async (req, res) => {
       const lac = Number(lactate);
       if (Number.isFinite(lac)) activity.lactate = lac;
     }
+    if (startDate !== undefined && startDate !== null && startDate !== '') {
+      const d = new Date(startDate);
+      if (!Number.isNaN(d.getTime())) activity.startDate = d;
+    }
     if (tssDisplayMode !== undefined) {
       if (tssDisplayMode === null || tssDisplayMode === '') {
         activity.tssDisplayMode = null;
@@ -5288,6 +5293,15 @@ router.put('/strava/activities/:id', verifyToken, async (req, res) => {
     // Saved "Smart detect" laps: array to save, empty array / null to clear.
     if (savedAutoLaps !== undefined) {
       activity.savedAutoLaps = sanitizeSavedAutoLaps(savedAutoLaps);
+    }
+    // User-edited start date/time. metricsManualized guards it from being
+    // overwritten by the next Strava re-sync (preserveManualStravaMetrics).
+    if (startDate !== undefined && startDate !== null && startDate !== '') {
+      const d = new Date(startDate);
+      if (!Number.isNaN(d.getTime())) {
+        activity.startDate = d;
+        activity.metricsManualized = true;
+      }
     }
 
     await activity.save();
@@ -5438,7 +5452,7 @@ router.put('/garmin/activities/:id', verifyToken, async (req, res) => {
     const activity = await GarminActivity.findOne({ userId: targetUserId, garminId });
     if (!activity) return res.status(404).json({ error: 'Garmin activity not found' });
 
-    const { title, description, category, movingTime, duration, elapsedTime, distance, calories, rpe, lactate, tss, tssDisplayMode } = req.body;
+    const { title, description, category, movingTime, duration, elapsedTime, distance, calories, rpe, lactate, tss, tssDisplayMode, startDate } = req.body;
     if (title !== undefined) {
       activity.titleManual = (title && typeof title === 'string' && title.trim()) ? title.trim() : null;
     }

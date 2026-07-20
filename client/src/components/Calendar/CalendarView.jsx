@@ -3236,7 +3236,10 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
   const [editingPlanned, setEditingPlanned] = useState(!initialPlannedWorkout);
 
   // Completed metadata edit state
-  const [completedForm, setCompletedForm] = useState({ title: '', description: '', distanceKm: '', durationDisplay: '', tss: '', calories: '', rpe: '', lactate: '' });
+  const [completedForm, setCompletedForm] = useState({ title: '', description: '', distanceKm: '', durationDisplay: '', tss: '', calories: '', rpe: '', lactate: '', whenDate: '', whenTime: '' });
+  // Seeded date/time snapshot — startDate is only sent on save when the user
+  // actually changed one of the two fields.
+  const initialWhenRef = useRef({ whenDate: '', whenTime: '' });
   const [savingCompleted, setSavingCompleted] = useState(false);
   const [saveError, setSaveError] = useState('');
   const [editingCompleted, setEditingCompleted] = useState(false); // desktop inline edit of the completed activity
@@ -3491,7 +3494,10 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
     setSavingPlan(true);
     try {
       const { createPlannedWorkout, updatePlannedWorkout } = await import('../../services/workoutPlannerApi.js');
-      const dateForPlan = actDate ? new Date(actDate).toISOString().slice(0,10) : new Date().toISOString().slice(0,10);
+      // Prefer the (possibly just edited) date field so a moved workout takes
+      // its linked plan along to the new day.
+      const dateForPlan = completedForm.whenDate
+        || (actDate ? new Date(actDate).toISOString().slice(0,10) : new Date().toISOString().slice(0,10));
       const sportForPlan = isBike ? 'bike' : isRun ? 'run' : isSwim ? 'swim' : 'bike';
       const durSecsFromForm = parseDurationToSeconds(planForm.durationDisplay, 'hm');
       const durMins = planForm.durationMins || parseDurationToMinutes(planForm.durationDisplay);
@@ -3602,6 +3608,16 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
     const distDisplayVal = dist > 0 ? formatDistanceInputFromMetres(dist, unitSystem, { isSwim: false }) : '';
     const durDisplay = dur > 0 ? fmtDur(dur) : '';
     const formTitle = String(plannedWorkout?.title || '').trim() || title || '';
+    // Local wall-clock date + time of the activity (editable in the form).
+    let whenDate = '';
+    let whenTime = '';
+    const d = actDate ? new Date(actDate) : null;
+    if (d && !Number.isNaN(d.getTime())) {
+      const pad = (n) => String(n).padStart(2, '0');
+      whenDate = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+      whenTime = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    }
+    initialWhenRef.current = { whenDate, whenTime };
     setCompletedForm({
       title: formTitle,
       description: notes || '',
@@ -3611,6 +3627,8 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
       calories: calories > 0 ? String(Math.round(calories)) : '',
       rpe: rpe > 0 ? String(rpe) : '',
       lactate: sessionLactate != null ? String(sessionLactate) : '',
+      whenDate,
+      whenTime,
     });
   }, [activityKey, plannedWorkout?.title, plannedWorkout?._id]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -3749,6 +3767,17 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
         extraFields.distance = Math.round(metres);
       }
 
+      // Date/time — sent only when the user changed either field. The string
+      // is local wall-clock; new Date() interprets it in the local timezone.
+      const whenChanged = completedForm.whenDate
+        && (completedForm.whenDate !== initialWhenRef.current.whenDate
+          || completedForm.whenTime !== initialWhenRef.current.whenTime);
+      if (whenChanged) {
+        const when = new Date(`${completedForm.whenDate}T${completedForm.whenTime || '00:00'}:00`);
+        if (Number.isNaN(when.getTime())) throw new Error('Invalid date or time');
+        extraFields.startDate = when.toISOString();
+      }
+
       const basePayload = { title: completedForm.title, description: completedForm.description };
 
       const buildDetailPatch = (fields) => {
@@ -3811,6 +3840,8 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
         if (extraFields.movingTime != null) {
           trainingPayload.duration = fmtDur(extraFields.movingTime);
         }
+        // Training model stores its date under `date` (not startDate).
+        if (extraFields.startDate) trainingPayload.date = extraFields.startDate;
         savedResponse = await updateTraining(externalId, trainingPayload);
       }
 
@@ -3826,6 +3857,18 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
         tss: savedTss,
       });
       setDetail((prev) => ({ ...(prev || {}), ...detailPatch }));
+      if (extraFields.startDate) {
+        // Reflect the moved date in the open modal (header, day pairing) and
+        // reset the change-detection baseline so a follow-up save without
+        // touching the fields doesn't resend it.
+        setDetail((prev) => ({
+          ...(prev || {}),
+          date: extraFields.startDate,
+          startDate: extraFields.startDate,
+          timestamp: extraFields.startDate,
+        }));
+        initialWhenRef.current = { whenDate: completedForm.whenDate, whenTime: completedForm.whenTime };
+      }
       if (savedMoving != null) {
         setCompletedForm((p) => ({
           ...p,
@@ -3857,6 +3900,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
         movingTime: savedMoving,
         duration: savedMoving,
         distance: savedDist,
+        ...(extraFields.startDate ? { date: extraFields.startDate, startDate: extraFields.startDate } : {}),
         tssDisplayMode: effectiveMode,
         metricsManualized: Boolean(
           savedAct.metricsManualized
@@ -4082,6 +4126,22 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                 style={doneStyle(durColor)}
               />
             )}
+          </PlannedVsCompletedRow>
+          <PlannedVsCompletedRow labelCol={labelCol} label="Date" compact={mobile}>
+            <input
+              type="date"
+              value={completedForm.whenDate}
+              onChange={(e) => setCompletedForm((p) => ({ ...p, whenDate: e.target.value }))}
+              className={inputCls}
+            />
+          </PlannedVsCompletedRow>
+          <PlannedVsCompletedRow labelCol={labelCol} label="Time" compact={mobile}>
+            <input
+              type="time"
+              value={completedForm.whenTime}
+              onChange={(e) => setCompletedForm((p) => ({ ...p, whenTime: e.target.value }))}
+              className={inputCls}
+            />
           </PlannedVsCompletedRow>
           <PlannedVsCompletedRow
             labelCol={labelCol}
