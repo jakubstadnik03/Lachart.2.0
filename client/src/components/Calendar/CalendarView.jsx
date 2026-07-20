@@ -10032,6 +10032,16 @@ export default function CalendarView({
           userProfile={userProfile}
           user={user}
           onClose={() => setSelectedRace(null)}
+          onOpenActivity={(act) => {
+            setSelectedRace(null);
+            setActivityModal({ activity: act, plannedWorkout: null });
+          }}
+          onFeedbackSaved={(updated) => {
+            if (!updated?._id) return;
+            setSelectedRace((prev) =>
+              prev && String(prev._id) === String(updated._id) ? { ...prev, ...updated } : prev
+            );
+          }}
         />
       )}
     </>
