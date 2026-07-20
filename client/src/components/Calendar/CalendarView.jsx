@@ -4069,6 +4069,32 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
           />
         </div>
 
+        {/* Date & time — one full-width row (no planned counterpart, so it
+            lives outside the Planned/Completed grid where the inputs
+            overflowed the narrow column). */}
+        <div className={`flex gap-2 ${mobile ? '' : 'mt-3 mb-3'}`}>
+          <div className="flex-1 min-w-0">
+            <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1">Date</div>
+            <input
+              type="date"
+              value={completedForm.whenDate}
+              onChange={(e) => setCompletedForm((p) => ({ ...p, whenDate: e.target.value }))}
+              className={`w-full px-3 rounded-xl border border-gray-200 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 ${mobile ? 'py-2' : 'py-2.5'}`}
+              style={{ WebkitAppearance: 'none', minWidth: 0 }}
+            />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1">Time</div>
+            <input
+              type="time"
+              value={completedForm.whenTime}
+              onChange={(e) => setCompletedForm((p) => ({ ...p, whenTime: e.target.value }))}
+              className={`w-full px-3 rounded-xl border border-gray-200 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 ${mobile ? 'py-2' : 'py-2.5'}`}
+              style={{ WebkitAppearance: 'none', minWidth: 0 }}
+            />
+          </div>
+        </div>
+
         <div className={`rounded-xl border border-gray-200 bg-white divide-y divide-gray-100 ${mobile ? 'px-2 py-0.5' : 'px-3 py-1'}`}>
           <div className={`grid ${mobile ? 'gap-1 pb-0.5 pt-0.5' : 'gap-2 pb-1.5 pt-1'}`} style={{ gridTemplateColumns: `${labelCol} 1fr 1fr` }}>
             <div />
@@ -4126,22 +4152,6 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                 style={doneStyle(durColor)}
               />
             )}
-          </PlannedVsCompletedRow>
-          <PlannedVsCompletedRow labelCol={labelCol} label="Date" compact={mobile}>
-            <input
-              type="date"
-              value={completedForm.whenDate}
-              onChange={(e) => setCompletedForm((p) => ({ ...p, whenDate: e.target.value }))}
-              className={inputCls}
-            />
-          </PlannedVsCompletedRow>
-          <PlannedVsCompletedRow labelCol={labelCol} label="Time" compact={mobile}>
-            <input
-              type="time"
-              value={completedForm.whenTime}
-              onChange={(e) => setCompletedForm((p) => ({ ...p, whenTime: e.target.value }))}
-              className={inputCls}
-            />
           </PlannedVsCompletedRow>
           <PlannedVsCompletedRow
             labelCol={labelCol}
