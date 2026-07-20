@@ -168,7 +168,7 @@ function AnimatedCard({ children, animKey }) {
 // ─── Day activities card ───────────────────────────────────────────────────────
 // onOpenActivity receives the full activity object so the caller can build the right URL.
 // onOpenPlanned receives the planned workout (with optional `linkedActivity`) for editing.
-function DayActivitiesCard({ date, activities, plannedWorkouts, dayPlans = [], periods = [], onEditTheme = null, onEditPeriod = null, onOpenActivity, onOpenPlanned, onPlanWorkout, userProfile = null }) {
+function DayActivitiesCard({ date, activities, plannedWorkouts, dayPlans = [], periods = [], races = [], onEditTheme = null, onEditPeriod = null, onOpenActivity, onOpenPlanned, onPlanWorkout, userProfile = null }) {
   const { user } = useAuth() || {};
   const profile = mergeProfileZones(userProfile, user) || userProfile || user;
   const dateStr = toLocalDateStr(date);
@@ -208,7 +208,21 @@ function DayActivitiesCard({ date, activities, plannedWorkouts, dayPlans = [], p
     pairPlannedWithActivities,
   );
 
-  const hasContent = dayActs.length > 0 || dayPlanned.length > 0;
+  // Races on this day — shown as a flag card with the saved post-race
+  // reflection (feeling / RPE / note) once the athlete submits it.
+  const dayRaces = (races || []).filter((r) => {
+    const d = r?.date ? new Date(r.date) : null;
+    return d && !Number.isNaN(d.getTime()) && toLocalDateStr(d) === dateStr;
+  });
+  const FEELING_DISPLAY = {
+    great: { emoji: '🔥', label: 'Great' },
+    good: { emoji: '👍', label: 'Good' },
+    ok: { emoji: '😐', label: 'OK' },
+    tough: { emoji: '😓', label: 'Tough' },
+    rough: { emoji: '😞', label: 'Bad' },
+  };
+
+  const hasContent = dayActs.length > 0 || dayPlanned.length > 0 || dayRaces.length > 0;
   const label = isToday
     ? 'Today'
     : date.toLocaleDateString('en', { weekday: 'long', day: 'numeric', month: 'short' });
@@ -293,6 +307,56 @@ function DayActivitiesCard({ date, activities, plannedWorkouts, dayPlans = [], p
           )}
         </div>
       </div>
+
+      {dayRaces.map((race) => {
+        const fb = race.postRaceFeedback && (race.postRaceFeedback.submittedAt || race.postRaceFeedback.rpe != null || race.postRaceFeedback.feeling)
+          ? race.postRaceFeedback : null;
+        const feel = fb?.feeling ? FEELING_DISPLAY[fb.feeling] || { emoji: '', label: fb.feeling } : null;
+        const isPast = new Date(race.date) < new Date();
+        return (
+          <div
+            key={`race-${race._id}`}
+            style={{
+              marginBottom: 6,
+              padding: '10px 12px',
+              borderRadius: 14,
+              background: 'rgba(249,115,22,0.08)',
+              border: '1px solid rgba(249,115,22,0.28)',
+              borderLeft: '3px solid #f97316',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+              <span style={{ fontSize: 14, lineHeight: 1 }}>🚩</span>
+              <span style={{ fontSize: 14, fontWeight: 800, color: '#9a3412', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+                {race.name}
+              </span>
+              <span style={{
+                fontSize: 10, fontWeight: 800, color: '#fff', background: '#f97316',
+                borderRadius: 6, padding: '2px 6px', lineHeight: 1, flexShrink: 0,
+              }}>
+                {race.priority || 'A'}
+              </span>
+            </div>
+            {fb ? (
+              <div style={{ marginTop: 6 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: '#7c2d12', fontWeight: 600 }}>
+                  {feel && <span>{feel.emoji} {feel.label}</span>}
+                  {fb.rpe != null && <span>· RPE {fb.rpe}/10</span>}
+                </div>
+                {fb.notes && (
+                  <div style={{ marginTop: 3, fontSize: 12, color: '#78350f', fontStyle: 'italic', whiteSpace: 'pre-wrap' }}>
+                    “{fb.notes}”
+                  </div>
+                )}
+              </div>
+            ) : (isPast && (
+              <div style={{ marginTop: 5, fontSize: 11, color: '#b45309' }}>
+                No race reflection yet — add it from the dashboard card.
+              </div>
+            ))}
+          </div>
+        );
+      })}
 
       {dayItems.map((item, pi) => {
         if (item.kind === 'activity') {
@@ -829,6 +893,22 @@ export default function NativeDashboardPage({
     setSearchParams(next, { replace: true });
   }, [searchParams, setSearchParams]);
 
+  // Races (incl. past ones) — shown as flags in the WeekStrip and as a card
+  // in the day view, with the saved post-race reflection. getRaceEvents has a
+  // 60s client cache shared with RaceCountdownCard, so this is cheap.
+  const [races, setRaces] = useState([]);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { getRaceEvents } = await import('../services/api');
+        const { data } = await getRaceEvents(athleteId || user?._id);
+        if (!cancelled) setRaces(Array.isArray(data) ? data : []);
+      } catch { /* races are decorative here — ignore */ }
+    })();
+    return () => { cancelled = true; };
+  }, [athleteId, user?._id]);
+
   // ── + Lactate from activity modal: open TrainingForm prefilled with laps ──
   const [lactateModal, setLactateModal] = useState({ isOpen: false, initialData: null });
   const [lactateSubmitting, setLactateSubmitting] = useState(false);
@@ -1165,6 +1245,7 @@ export default function NativeDashboardPage({
               plannedWorkouts={plannedWorkouts}
               dayPlans={dayPlans}
               periods={periods}
+              races={races}
               selectedDate={selectedDate}
               onSelectDate={handleSelectDate}
               onPlanWorkout={onPlanWorkout}
@@ -1182,6 +1263,7 @@ export default function NativeDashboardPage({
                 plannedWorkouts={plannedWorkouts}
                 dayPlans={dayPlans}
                 periods={periods}
+                races={races}
                 userProfile={fitnessProfile}
                 onEditTheme={onDayPlanSave ? (d) => setThemeEditDate(toLocalDateStr(d)) : null}
                 onEditPeriod={onPeriodSave ? (arg) => setPeriodEdit(arg) : null}
@@ -1232,7 +1314,16 @@ export default function NativeDashboardPage({
               athleteId={athleteId || user?._id || user?.id}
               focusRaceId={raceFeedbackFocusId}
               compact
-              onSubmitted={() => setRaceFeedbackFocusId(null)}
+              onSubmitted={(savedRace) => {
+                setRaceFeedbackFocusId(null);
+                // Reflect the fresh reflection in the WeekStrip/day card
+                // immediately (getRaceEvents has a 60s cache).
+                if (savedRace?._id) {
+                  setRaces((prev) => prev.map((r) =>
+                    String(r._id) === String(savedRace._id) ? { ...r, ...savedRace } : r
+                  ));
+                }
+              }}
             />
           </div>
 

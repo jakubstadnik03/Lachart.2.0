@@ -3,7 +3,7 @@ const router = express.Router();
 const verifyToken = require('../middleware/verifyToken');
 const RaceEvent = require('../models/RaceEvent');
 const User = require('../models/UserModel');
-const { notifyAthlete } = require('../utils/notificationHelper');
+const { notifyAthlete, notifyCoachesOfAthlete } = require('../utils/notificationHelper');
 const { previewTaperForRace, applyTaperForRace } = require('../services/taperPlannerService');
 
 // Resolve which athlete's races the caller may read/write. Athletes get their
@@ -168,6 +168,35 @@ router.post('/:id/feedback', verifyToken, async (req, res) => {
       submittedAt: new Date(),
     };
     await ev.save();
+
+    // Let the coach know the athlete debriefed — fire-and-forget so a push
+    // failure never blocks the save response.
+    (async () => {
+      try {
+        const athlete = await User.findById(r.athleteId).select('name').lean();
+        const FEELING_LABELS = {
+          great: 'great 🔥', good: 'good 👍', ok: 'OK 😐', tough: 'tough 😓', rough: 'bad 😞',
+        };
+        const parts = [];
+        if (rpeNum != null) parts.push(`RPE ${rpeNum}/10`);
+        if (ev.postRaceFeedback.feeling) {
+          parts.push(`felt ${FEELING_LABELS[ev.postRaceFeedback.feeling] || ev.postRaceFeedback.feeling}`);
+        }
+        const note = ev.postRaceFeedback.notes
+          ? ` · “${ev.postRaceFeedback.notes.slice(0, 80)}${ev.postRaceFeedback.notes.length > 80 ? '…' : ''}”`
+          : '';
+        await notifyCoachesOfAthlete(String(r.athleteId), {
+          type: 'race_feedback',
+          title: 'Race reflection',
+          body: `${athlete?.name || 'Athlete'} — ${ev.name}: ${parts.join(', ') || 'reflection submitted'}${note}`,
+          resourceType: 'race',
+          pushData: { type: 'race_feedback', raceId: String(ev._id), athleteId: String(r.athleteId) },
+        });
+      } catch (notifErr) {
+        console.warn('[RaceFeedback] coach notification failed:', notifErr?.message || notifErr);
+      }
+    })();
+
     res.json(ev);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });

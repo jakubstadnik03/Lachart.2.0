@@ -106,7 +106,16 @@ function fmtDur(secs) {
   return `${h}h${m}`;
 }
 
-export default function WeekStrip({ activities = [], plannedWorkouts = [], dayPlans = [], periods = [], selectedDate, onSelectDate, onPlanWorkout = null, userProfile = null }) {
+export default function WeekStrip({ activities = [], plannedWorkouts = [], dayPlans = [], periods = [], races = [], selectedDate, onSelectDate, onPlanWorkout = null, userProfile = null }) {
+  // Race days get a flag marker so an upcoming/past race is visible at a glance.
+  const raceDates = React.useMemo(() => {
+    const set = new Set();
+    (races || []).forEach((r) => {
+      const d = r?.date ? new Date(r.date) : null;
+      if (d && !Number.isNaN(d.getTime())) set.add(toLocalDateStr(d));
+    });
+    return set;
+  }, [races]);
   const { user } = useAuth() || {};
   const profile = mergeProfileZones(userProfile, user) || userProfile || user;
   const [tssModeTick, setTssModeTick] = React.useState(0);
@@ -328,6 +337,15 @@ export default function WeekStrip({ activities = [], plannedWorkouts = [], dayPl
               transition: 'background .18s ease, box-shadow .18s ease, transform .12s ease',
             }}
           >
+            {/* Race day — small flag in the top-right corner */}
+            {raceDates.has(toLocalDateStr(d)) && (
+              <span
+                aria-label="Race day"
+                style={{ position: 'absolute', top: 2, right: 3, fontSize: 9, lineHeight: 1, zIndex: 1 }}
+              >
+                🚩
+              </span>
+            )}
             {/* Period band(s) — thin colored stripe at the top of the day */}
             {(() => {
               const ps = periodsByDate.get(toLocalDateStr(d));
