@@ -417,15 +417,18 @@ export default function RaceDetailModal({
           )}
 
 
-          {/* Countdown + metrics */}
-          <div className="flex items-baseline gap-2 mt-3">
-            <span className="text-4xl font-extrabold text-gray-900 leading-none">
-              {isFuture ? Math.max(0, daysUntil) : 0}
-            </span>
-            <span className="text-sm font-semibold text-gray-500">
-              {daysUntil === 0 ? 'race day' : isFuture ? 'days to go' : 'days ago'}
-            </span>
-          </div>
+          {/* Countdown — only while the race is still ahead (or today);
+              a finished race shows the result headline instead. */}
+          {isFuture && (
+            <div className="flex items-baseline gap-2 mt-3">
+              <span className="text-4xl font-extrabold text-gray-900 leading-none">
+                {Math.max(0, daysUntil)}
+              </span>
+              <span className="text-sm font-semibold text-gray-500">
+                {daysUntil === 0 ? 'race day' : 'days to go'}
+              </span>
+            </div>
+          )}
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-4">
             <MetricBox
