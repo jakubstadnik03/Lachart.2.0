@@ -18,6 +18,17 @@ import {
 } from '../../utils/formFitnessFromActivities';
 import { daysUntilRace } from '../../utils/trainingInsights';
 import { pmcAxisDomainsFromPoints, PMC_COLORS } from '../../utils/pmcChartAxes';
+import TrainingComments from '../TrainingComments';
+import SportIcon from '../shared/SportIcon';
+import { submitRaceFeedback } from '../../services/api';
+
+const FEELING_OPTIONS = [
+  { id: 'great', label: 'Great', emoji: '🔥' },
+  { id: 'good', label: 'Good', emoji: '👍' },
+  { id: 'ok', label: 'OK', emoji: '😐' },
+  { id: 'tough', label: 'Tough', emoji: '😓' },
+  { id: 'rough', label: 'Bad', emoji: '😞' },
+];
 
 const PRIORITY_COLOR = { A: '#dc2626', B: '#ea580c', C: '#d97706' };
 const SPORTS = ['run', 'bike', 'swim', 'triathlon', 'hyrox', 'other'];
@@ -72,8 +83,71 @@ export default function RaceDetailModal({
   onClose,
   onSave,
   onDelete,
+  /** Open a race-day activity's detail (native day view passes openActivity). */
+  onOpenActivity = null,
+  /** Called with the updated race after the reflection is saved/edited. */
+  onFeedbackSaved = null,
 }) {
   const [editing, setEditing] = useState(false);
+
+  // ── Post-race reflection: local override + inline edit form ──────────────
+  const [fbLocal, setFbLocal] = useState(null); // updated race.postRaceFeedback after save
+  const effectiveFb = fbLocal || race?.postRaceFeedback || null;
+  const hasFb = Boolean(effectiveFb && (effectiveFb.rpe != null || effectiveFb.feeling || effectiveFb.notes));
+  const [fbEditing, setFbEditing] = useState(false);
+  const [fbSaving, setFbSaving] = useState(false);
+  const [fbForm, setFbForm] = useState({ rpe: 6, feeling: null, notes: '' });
+  const isOwnRace = user && race && String(user._id || user.id) === String(race.athleteId);
+
+  // ── Swipe-down on the header closes the sheet (mobile bottom-sheet UX) ───
+  const [dragY, setDragY] = useState(0);
+  const dragStartYRef = React.useRef(0);
+  const dragStartTimeRef = React.useRef(0);
+  const draggingRef = React.useRef(false);
+  const onHeaderTouchStart = (e) => {
+    draggingRef.current = true;
+    dragStartYRef.current = e.touches[0].clientY;
+    dragStartTimeRef.current = Date.now();
+  };
+  const onHeaderTouchMove = (e) => {
+    if (!draggingRef.current) return;
+    const dy = e.touches[0].clientY - dragStartYRef.current;
+    if (dy > 0) setDragY(dy);
+  };
+  const onHeaderTouchEnd = () => {
+    if (!draggingRef.current) return;
+    draggingRef.current = false;
+    const dt = (Date.now() - dragStartTimeRef.current) / 1000;
+    const vel = dt > 0 ? dragY / dt : 0;
+    if (dragY > 90 || vel > 450) onClose?.();
+    setDragY(0);
+  };
+
+  const startFbEdit = () => {
+    setFbForm({
+      rpe: effectiveFb?.rpe ?? 6,
+      feeling: effectiveFb?.feeling ?? null,
+      notes: effectiveFb?.notes ?? '',
+    });
+    setFbEditing(true);
+  };
+
+  const saveFb = async () => {
+    setFbSaving(true);
+    try {
+      const { data } = await submitRaceFeedback(race._id, {
+        rpe: fbForm.rpe, feeling: fbForm.feeling, notes: fbForm.notes,
+      });
+      const updatedFb = data?.postRaceFeedback || { ...fbForm, submittedAt: new Date().toISOString() };
+      setFbLocal(updatedFb);
+      setFbEditing(false);
+      onFeedbackSaved?.(data || { ...race, postRaceFeedback: updatedFb });
+    } catch (e) {
+      console.error('Race reflection save failed:', e);
+    } finally {
+      setFbSaving(false);
+    }
+  };
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -136,6 +210,18 @@ export default function RaceDetailModal({
   const raceDateStr = String(race?.date || '').slice(0, 10);
   const daysUntil = daysUntilRace(raceDateStr);
   const isFuture = daysUntil >= 0;
+
+  // Completed activities on race day — the actual race sessions.
+  const raceDayActs = useMemo(() => {
+    if (!raceDateStr) return [];
+    const pad = (n) => String(n).padStart(2, '0');
+    return (activities || []).filter((a) => {
+      const v = a?.date || a?.startDate || a?.timestamp || a?.start_time;
+      const d = v ? new Date(v) : null;
+      if (!d || Number.isNaN(d.getTime())) return false;
+      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` === raceDateStr;
+    });
+  }, [raceDateStr, activities]);
   const priorityColor = PRIORITY_COLOR[race?.priority] || '#dc2626';
 
   const profile = useMemo(
@@ -253,14 +339,23 @@ export default function RaceDetailModal({
         style={{
           paddingBottom: 'env(safe-area-inset-bottom, 0px)',
           pointerEvents: 'auto',
+          transform: dragY > 0 ? `translateY(${dragY}px)` : 'translateY(0)',
+          transition: dragY > 0 ? 'none' : 'transform .25s cubic-bezier(.4,0,.2,1)',
         }}
         onClick={(e) => e.stopPropagation()}
         onTouchStart={(e) => e.stopPropagation()}
         onTouchMove={(e) => e.stopPropagation()}
         onTouchEnd={(e) => e.stopPropagation()}
       >
-        {/* Header */}
-        <div className="px-5 pt-5 pb-3 border-b border-gray-100 shrink-0">
+        {/* Header — drag zone: swipe down to close */}
+        <div
+          className="px-5 pt-2 pb-3 border-b border-gray-100 shrink-0"
+          onTouchStart={onHeaderTouchStart}
+          onTouchMove={onHeaderTouchMove}
+          onTouchEnd={onHeaderTouchEnd}
+          style={{ touchAction: 'none' }}
+        >
+          <div className="mx-auto mb-2 sm:hidden" style={{ width: 44, height: 5, borderRadius: 999, background: '#d1d5db' }} />
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2 mb-1">
@@ -295,26 +390,6 @@ export default function RaceDetailModal({
             <p className="text-xs text-gray-500 mt-2 bg-gray-50 rounded-lg px-3 py-2">{race.notes}</p>
           )}
 
-          {/* Post-race reflection — shown once the athlete submitted it */}
-          {!editing && race?.postRaceFeedback
-            && (race.postRaceFeedback.rpe != null || race.postRaceFeedback.feeling || race.postRaceFeedback.notes) && (() => {
-            const fb = race.postRaceFeedback;
-            const FEELING = {
-              great: '🔥 Great', good: '👍 Good', ok: '😐 OK', tough: '😓 Tough', rough: '😞 Bad',
-            };
-            return (
-              <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
-                <div className="text-[10px] font-bold uppercase tracking-wide text-amber-700 mb-1">Race reflection</div>
-                <div className="flex items-center gap-3 text-sm font-semibold text-amber-900">
-                  {fb.feeling && <span>{FEELING[fb.feeling] || fb.feeling}</span>}
-                  {fb.rpe != null && <span>RPE {fb.rpe}/10</span>}
-                </div>
-                {fb.notes && (
-                  <p className="text-xs text-amber-800 italic mt-1 whitespace-pre-wrap">“{fb.notes}”</p>
-                )}
-              </div>
-            );
-          })()}
 
           {/* Countdown + metrics */}
           <div className="flex items-baseline gap-2 mt-3">
@@ -373,16 +448,135 @@ export default function RaceDetailModal({
           onTouchStart={(e) => e.stopPropagation()}
           onTouchMove={(e) => e.stopPropagation()}
         >
-          {chartData.length < 2 ? (
+          {/* Completed race: the actual race sessions — tap to open */}
+          {!isFuture && raceDayActs.length > 0 && (
+            <div className="mb-4">
+              <div className="text-[10px] font-bold uppercase tracking-wide text-gray-400 mb-1.5">Race activities</div>
+              <div className="space-y-1.5">
+                {raceDayActs.map((act, i) => {
+                  const secs = Number(act.totalTime || act.duration || act.movingTime || act.elapsedTime || act.totalElapsedTime || 0);
+                  const durStr = secs > 0 ? `${Math.floor(secs / 3600) > 0 ? `${Math.floor(secs / 3600)}h ` : ''}${Math.floor((secs % 3600) / 60)}m` : null;
+                  const dist = Number(act.distance || act.totalDistance || 0);
+                  const distStr = dist > 0 ? `${(dist / 1000).toFixed(dist >= 100000 ? 0 : 1)} km` : null;
+                  return (
+                    <button
+                      key={act.id || act._id || i}
+                      type="button"
+                      onClick={() => { if (onOpenActivity) { onClose?.(); onOpenActivity(act); } }}
+                      disabled={!onOpenActivity}
+                      className="w-full flex items-center gap-2.5 rounded-xl border border-gray-200 bg-white px-3 py-2 text-left active:bg-gray-50 disabled:cursor-default"
+                      style={{ WebkitTapHighlightColor: 'transparent' }}
+                    >
+                      <SportIcon sport={act.sport || act.type} className="w-4 h-4 shrink-0" />
+                      <span className="text-sm font-semibold text-gray-900 truncate flex-1">
+                        {act.title || act.titleManual || act.name || 'Activity'}
+                      </span>
+                      <span className="text-xs text-gray-500 tabular-nums shrink-0">
+                        {[durStr, distStr].filter(Boolean).join(' · ')}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Completed race: reflection — view + inline edit */}
+          {!isFuture && !editing && (
+            <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5">
+              <div className="flex items-center justify-between mb-1">
+                <div className="text-[10px] font-bold uppercase tracking-wide text-amber-700">Race reflection</div>
+                {isOwnRace && !fbEditing && (
+                  <button
+                    type="button"
+                    onClick={startFbEdit}
+                    className="text-[11px] font-bold text-amber-700 underline underline-offset-2 active:opacity-70"
+                  >
+                    {hasFb ? 'Edit' : 'Add'}
+                  </button>
+                )}
+              </div>
+              {fbEditing ? (
+                <div>
+                  <div className="flex flex-wrap gap-1.5 mb-2">
+                    {FEELING_OPTIONS.map((f) => (
+                      <button
+                        key={f.id}
+                        type="button"
+                        onClick={() => setFbForm((p) => ({ ...p, feeling: f.id }))}
+                        className={`px-2.5 py-1 rounded-full text-[12px] font-semibold border ${
+                          fbForm.feeling === f.id
+                            ? 'bg-amber-600 text-white border-amber-600'
+                            : 'bg-white text-amber-900 border-amber-300'
+                        }`}
+                      >
+                        {f.emoji} {f.label}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-xs font-semibold text-amber-900 shrink-0">RPE {fbForm.rpe}/10</span>
+                    <input
+                      type="range" min="1" max="10" step="1"
+                      value={fbForm.rpe}
+                      onChange={(e) => setFbForm((p) => ({ ...p, rpe: Number(e.target.value) }))}
+                      className="flex-1 accent-amber-600"
+                    />
+                  </div>
+                  <textarea
+                    value={fbForm.notes}
+                    onChange={(e) => setFbForm((p) => ({ ...p, notes: e.target.value }))}
+                    placeholder="Note for yourself or your coach…"
+                    rows={2}
+                    className="w-full rounded-lg border border-amber-200 bg-white px-2.5 py-1.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-amber-400"
+                  />
+                  <div className="flex gap-2 mt-2">
+                    <button
+                      type="button"
+                      onClick={saveFb}
+                      disabled={fbSaving}
+                      className="flex-1 rounded-lg bg-amber-600 py-1.5 text-sm font-bold text-white active:bg-amber-700 disabled:opacity-60"
+                    >
+                      {fbSaving ? 'Saving…' : 'Save reflection'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFbEditing(false)}
+                      className="rounded-lg border border-amber-300 px-3 py-1.5 text-sm font-semibold text-amber-800"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : hasFb ? (
+                <>
+                  <div className="flex items-center gap-3 text-sm font-semibold text-amber-900">
+                    {effectiveFb.feeling && (
+                      <span>
+                        {(FEELING_OPTIONS.find((f) => f.id === effectiveFb.feeling) || {}).emoji}{' '}
+                        {(FEELING_OPTIONS.find((f) => f.id === effectiveFb.feeling) || { label: effectiveFb.feeling }).label}
+                      </span>
+                    )}
+                    {effectiveFb.rpe != null && <span>RPE {effectiveFb.rpe}/10</span>}
+                  </div>
+                  {effectiveFb.notes && (
+                    <p className="text-xs text-amber-800 italic mt-1 whitespace-pre-wrap">“{effectiveFb.notes}”</p>
+                  )}
+                </>
+              ) : (
+                <p className="text-xs text-amber-700">No reflection yet — how did it go?</p>
+              )}
+            </div>
+          )}
+
+          {isFuture && (chartData.length < 2 ? (
             <div className="text-sm text-gray-400 text-center py-12">
               Not enough training data yet — complete a few workouts to see your Form curve.
             </div>
           ) : (
             <>
               <p className="text-xs text-gray-500 mb-3 text-center">
-                {isFuture
-                  ? 'How your Form (freshness) should build toward race day based on your plan'
-                  : 'Your Form leading into race day'}
+                {'How your Form (freshness) should build toward race day based on your plan'}
               </p>
               <div className="h-[280px] w-full">
                 <ResponsiveContainer width="100%" height="100%">
@@ -527,6 +721,13 @@ export default function RaceDetailModal({
                 </p>
               )}
             </>
+          ))}
+
+          {/* Comments — same thread component as activities; coach + athlete */}
+          {race?._id && (
+            <div className="mt-4 border-t border-gray-100 pt-3">
+              <TrainingComments trainingId={String(race._id)} trainingType="race" isMobile />
+            </div>
           )}
         </div>
 

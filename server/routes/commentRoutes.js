@@ -276,6 +276,14 @@ router.post('/training/:trainingId', verifyToken, async (req, res) => {
               .select('sport athleteId title').lean();
           }
           resourceType = 'planned';
+        } else if (trainingType === 'race') {
+          if (mongoose.Types.ObjectId.isValid(trainingId)) {
+            const RaceEvent = require('../models/RaceEvent');
+            trainingDoc = await RaceEvent.findById(trainingId)
+              .select('sport athleteId name').lean();
+            if (trainingDoc && !trainingDoc.title) trainingDoc.title = trainingDoc.name;
+          }
+          resourceType = 'race';
         }
         const rawSport   = trainingDoc?.sport || null;
         const notifSport = normalizeSportForNotif(rawSport);
@@ -330,7 +338,14 @@ router.post('/training/:trainingId', verifyToken, async (req, res) => {
           fromName: authorName,
           sport: notifSport,
           // commentId lets the app scroll to / highlight the specific comment
-          pushData: trainingType === 'planned'
+          pushData: trainingType === 'race'
+            ? {
+                trainingId,
+                trainingType,
+                commentId: String(comment._id),
+                raceId: trainingId,
+              }
+            : trainingType === 'planned'
             ? {
                 trainingId,
                 trainingType,

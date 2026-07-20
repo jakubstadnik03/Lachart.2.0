@@ -1501,6 +1501,16 @@ export default function NativeDashboardPage({
             userProfile={fitnessProfile}
             user={user}
             onClose={() => setSelectedRace(null)}
+            onOpenActivity={openActivity}
+            onFeedbackSaved={(updated) => {
+              if (!updated?._id) return;
+              setRaces((prev) => prev.map((r) =>
+                String(r._id) === String(updated._id) ? { ...r, ...updated } : r
+              ));
+              setSelectedRace((prev) =>
+                prev && String(prev._id) === String(updated._id) ? { ...prev, ...updated } : prev
+              );
+            }}
           />
         </Suspense>
       )}
