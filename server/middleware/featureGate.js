@@ -46,6 +46,8 @@ const FEATURE_MATRIX = {
   smart_trainer:          ['pro', 'coach', 'team', 'enterprise'],
   advanced_analytics:     ['pro', 'coach', 'team', 'enterprise'],
   population_comparison:  ['pro', 'coach', 'team', 'enterprise'],
+  test_history:           ['pro', 'coach', 'team', 'enterprise'], // view/compare past tests + LT trend (gated client-side)
+  calendar_full_history:  ['pro', 'coach', 'team', 'enterprise'], // >30 days calendar + load charts (enforced in /integrations/activities)
   pdf_export:             ['pro', 'coach', 'team', 'enterprise'],
   apple_health_sync:      ['pro', 'coach', 'team', 'enterprise'],
   priority_support:       ['pro', 'coach', 'team', 'enterprise'],

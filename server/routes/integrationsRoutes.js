@@ -10,6 +10,7 @@ const AppleHealthWellness = require('../models/AppleHealthWellness');
 const StravaStream = require('../models/StravaStream');
 const GarminActivity = require('../models/GarminActivity');
 const GarminStream = require('../models/GarminStream');
+const { resolveUserPlan } = require('../middleware/featureGate');
 const User = require('../models/UserModel');
 const Training = require('../models/training');
 const TrainingAbl = require('../abl/trainingAbl');
@@ -4197,7 +4198,7 @@ router.get('/activities', verifyToken, activitiesCacheMiddleware, async (req, re
       : (isHRTestPlan ? 5000 : 1000);
     const requestedFrom = req.query.from ? new Date(req.query.from) : null;
     const requestedTo = req.query.to ? new Date(req.query.to) : null;
-    const dateCutoff = requestedFrom && !Number.isNaN(requestedFrom.getTime())
+    let dateCutoff = requestedFrom && !Number.isNaN(requestedFrom.getTime())
       ? requestedFrom
       : isHRTestPlan
       ? new Date(Date.now() - (180 * 24 * 60 * 60 * 1000)) // 180 days for HR test plan
@@ -4206,6 +4207,22 @@ router.get('/activities', verifyToken, activitiesCacheMiddleware, async (req, re
           twoYearsAgo.setFullYear(twoYearsAgo.getFullYear() - 2);
           return twoYearsAgo;
         })();
+
+    // Free plan sees only the last 30 days of history — full calendar history
+    // and the training-load charts that depend on it are a Pro feature. The
+    // cap follows the REQUESTER's plan, so a (premium) coach viewing an athlete
+    // still gets full history. resolveUserPlan returns a non-'free' plan for any
+    // bypass (admin / SUBSCRIPTION_ENABLED off / manual premium / real sub).
+    try {
+      const { plan } = await resolveUserPlan(req);
+      if (plan === 'free') {
+        const thirtyDaysAgo = new Date(Date.now() - (30 * 24 * 60 * 60 * 1000));
+        if (dateCutoff < thirtyDaysAgo) dateCutoff = thirtyDaysAgo;
+      }
+    } catch (planErr) {
+      console.warn('[activities] plan resolve failed, not capping history:', planErr.message);
+    }
+
     const dateFilter = { $gte: dateCutoff };
     if (requestedTo && !Number.isNaN(requestedTo.getTime())) {
       dateFilter.$lte = requestedTo;

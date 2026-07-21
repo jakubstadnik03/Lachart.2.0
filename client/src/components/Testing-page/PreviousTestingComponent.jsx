@@ -475,11 +475,19 @@ const PreviousTestingComponent = ({
             exit={{ opacity: 0, y: -20 }}
             transition={{ duration: 0.3 }}
           >
-        <DateSelector
-          tests={filteredTests}
-          onSelectTest={handleDateSelectorTestSelect}
-          selectedTestId={currentTest?._id}
-        />
+        {(isPremium || filteredTests.length <= 1) ? (
+          <DateSelector
+            tests={filteredTests}
+            onSelectTest={handleDateSelectorTestSelect}
+            selectedTestId={currentTest?._id}
+          />
+        ) : (
+          <PremiumLockedCard
+            title="Your test history"
+            description="Switch between all your past tests and track how your thresholds change. Free shows your latest test only."
+            onUpgrade={() => gate('Test History', 'pro')}
+          />
+        )}
           </motion.div>
         ) : (
           <motion.div
@@ -588,16 +596,24 @@ const PreviousTestingComponent = ({
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.3 }}
       >
-        <TestSelector 
-          tests={filteredTests}
-          selectedTests={selectedTests}
-          onTestSelect={handleTestSelect}
-          selectedSport={selectedSport}
-        />
+        {isPremium ? (
+          <TestSelector
+            tests={filteredTests}
+            selectedTests={selectedTests}
+            onTestSelect={handleTestSelect}
+            selectedSport={selectedSport}
+          />
+        ) : (
+          <PremiumLockedCard
+            title="Compare tests over time"
+            description="Overlay your lactate curves from different dates to see exactly how your fitness has moved."
+            onUpgrade={() => gate('Test Comparison', 'pro')}
+          />
+        )}
       </motion.div>
 
       <AnimatePresence>
-        {selectedTests && selectedTests.length > 0 && (
+        {isPremium && selectedTests && selectedTests.length > 0 && (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}

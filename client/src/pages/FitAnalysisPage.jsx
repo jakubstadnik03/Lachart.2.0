@@ -26,6 +26,7 @@ import { useAuth } from '../context/AuthProvider';
 import { useNotification } from '../context/NotificationContext';
 import UpgradeModal from '../components/UpgradeModal';
 import { usePremium } from '../hooks/usePremium';
+import { isCapacitorNative } from '../utils/isNativeApp';
 import SimilarWorkoutsPanel from '../components/FitAnalysis/SimilarWorkoutsPanel';
 import TrainingForm from '../components/TrainingForm';
 import TrainingChart from '../components/FitAnalysis/TrainingChart';
@@ -4536,6 +4537,22 @@ const FitAnalysisPage = () => {
                 </button>
               )}
             </div>
+          </div>
+        )}
+        {!isPremium && !isCapacitorNative() && (
+          <div
+            onClick={() => navigate('/settings?tab=subscription')}
+            role="button"
+            className="mb-4 flex items-center gap-3 rounded-xl border border-primary/20 bg-gradient-to-r from-primary/5 to-violet-50 px-4 py-2.5 cursor-pointer hover:from-primary/10 transition-colors"
+          >
+            <span className="text-base shrink-0" aria-hidden>🔒</span>
+            <p className="text-xs sm:text-sm text-gray-700 flex-1 min-w-0">
+              <span className="font-semibold text-gray-900">You're viewing the last 30 days.</span>{' '}
+              Upgrade to Pro for your full training history and load charts.
+            </p>
+            <span className="hidden sm:inline-flex items-center px-3 py-1.5 rounded-lg bg-primary text-white text-xs font-semibold shrink-0">
+              Unlock full history →
+            </span>
           </div>
         )}
         <CalendarView
