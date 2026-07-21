@@ -11,6 +11,7 @@ import {
   requestWellnessAuthorizationOnly,
   wellnessPermissionHint,
 } from '../../services/appleHealthCapacitor';
+import { clearFormFitnessCache } from '../../utils/uiPrefs';
 import {
   deleteAppleHealthWorkouts,
   disconnectAppleHealth,
@@ -262,14 +263,21 @@ export default function AppleHealthCard({ isMobile = false, onStatusChange }) {
     setError(null);
     try {
       const result = await deleteAppleHealthWorkouts();
-      setError(`Removed ${result?.deleted ?? 0} imported workout(s).`);
+      setError(`Removed ${result?.deleted ?? 0} imported workout(s). Refreshing…`);
+      // The calendar / Form & Fitness caches still hold the deleted workouts —
+      // purge them and reload so every chart recomputes from the server.
       try {
-        window.dispatchEvent(new CustomEvent('appleHealth:synced', { detail: { imported: 0 } }));
+        clearFormFitnessCache();
+        const stale = [];
+        for (let i = 0; i < localStorage.length; i += 1) {
+          const k = localStorage.key(i);
+          if (k && (k.startsWith('calendarData_') || k.startsWith('weeklyCalendar'))) stale.push(k);
+        }
+        stale.forEach((k) => localStorage.removeItem(k));
       } catch { /* ignore */ }
-      await refresh();
+      setTimeout(() => { try { window.location.reload(); } catch { /* ignore */ } }, 800);
     } catch (e) {
       setError(e?.response?.data?.error || e?.message || 'Remove failed');
-    } finally {
       setBusyKind(null);
     }
   };
