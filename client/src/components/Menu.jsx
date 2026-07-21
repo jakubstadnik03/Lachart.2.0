@@ -8,6 +8,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { getAvatarBySportAndGender } from '../utils/avatarUtils';
 import { LAYOUT_DESKTOP_MIN_PX } from '../constants/layoutBreakpoints';
 import { isCapacitorNative } from '../utils/isNativeApp';
+import { usePremium } from '../hooks/usePremium';
 
 const SIX_WEEKS_MS = 6 * 7 * 24 * 60 * 60 * 1000;
 const TWELVE_WEEKS_MS = 12 * 7 * 24 * 60 * 60 * 1000;
@@ -30,6 +31,7 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
   const menuRef = useRef(null);
   const navigate = useNavigate();
   const location = useLocation();
+  const { isPremium } = usePremium();
   const currentPath = location.pathname.split('/')[1];
   const currentAthleteIdFromUrl = location.pathname.split('/')[2];
 
@@ -572,6 +574,19 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
             </div>
           ) : (
             <div className="px-2 py-2 sm:p-4 sm:pt-3">
+              {/* Persistent upgrade nudge for free web users — the only ambient
+                  reminder that the 60-day trial exists (welcome modal is one-shot).
+                  Hidden on native iOS (App Store 3.1.1: no external purchase CTA). */}
+              {!isPremium && !isCapacitorNative() && (
+                <button
+                  type="button"
+                  onClick={() => { navigate('/settings?tab=subscription'); setIsMenuOpen?.(false); }}
+                  className="w-full mb-2 flex items-center justify-center gap-2 min-h-[44px] px-3 py-2.5 rounded-lg text-sm font-semibold text-white bg-gradient-to-r from-primary to-violet-500 hover:opacity-90 transition shadow-sm touch-manipulation"
+                >
+                  <span aria-hidden>🎁</span>
+                  <span className="truncate">Start 60-day free trial</span>
+                </button>
+              )}
               <ul className="grid max-lg:grid-cols-2 max-lg:gap-1 lg:space-y-2">
                 <li data-tour="tour-menu-settings" className="min-w-0">
                   <NavLink

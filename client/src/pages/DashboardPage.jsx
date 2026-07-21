@@ -10,6 +10,7 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { usePremium } from '../hooks/usePremium';
 import UpgradeModal from '../components/UpgradeModal';
 import WelcomePaywallModal from '../components/WelcomePaywallModal';
+import TrialBanner from '../components/TrialBanner';
 import WhatsNewModal, { whatsNewSeenKey, featureTourSeenKey } from '../components/WhatsNewModal';
 import IOSLaunchModal, { iosLaunchSeenKey } from '../components/IOSLaunchModal';
 import EmptyStateCTA from '../components/common/EmptyStateCTA';
@@ -2600,6 +2601,7 @@ export default function DashboardPage() {
       animate={{ opacity: 1 }}
       className="mx-auto w-full max-w-[1600px] px-2 sm:px-4 py-4 md:p-6"
     >
+      <TrialBanner />
       {/* CoachDashboardHeader is now shown globally in Layout (CoachAthleteBar) */}
       {isCoachLikeRole &&
         selectedAthleteId &&
