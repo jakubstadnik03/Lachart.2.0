@@ -52,16 +52,23 @@ export async function autoSyncAppleHealth({ force = false } = {}) {
     // HealthKit read status is opaque — skip the permission gate and try reading;
     // empty arrays simply mean no data or types disabled in Health → LaChart.
     const wellness = await collectAppleHealthWellness(7).catch(() => []);
-    const since = new Date(Date.now() - 14 * 24 * 3600 * 1000).toISOString();
-    const workouts = await collectAppleHealthWorkouts(since, { enrichHeartRate: false }).catch(() => []);
 
     if (wellness.length > 0) {
       await syncAppleHealthWellness({ wellness, markConnected: true }).catch(() => {});
     }
+
+    // Workout import is opt-in (same preference as the Settings card) — most
+    // users get workouts from Strava/Garmin, so Apple's copies just duplicate.
+    let importWorkouts = false;
+    try { importWorkouts = localStorage.getItem('appleHealth_importWorkouts') === '1'; } catch { /* ignore */ }
     let imported = 0;
-    if (workouts.length > 0) {
-      const res = await syncAppleHealth({ workouts });
-      imported = res?.imported ?? 0;
+    if (importWorkouts) {
+      const since = new Date(Date.now() - 14 * 24 * 3600 * 1000).toISOString();
+      const workouts = await collectAppleHealthWorkouts(since, { enrichHeartRate: false }).catch(() => []);
+      if (workouts.length > 0) {
+        const res = await syncAppleHealth({ workouts });
+        imported = res?.imported ?? 0;
+      }
     }
 
     markSynced();

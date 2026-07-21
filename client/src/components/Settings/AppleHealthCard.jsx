@@ -40,6 +40,16 @@ export default function AppleHealthCard({ isMobile = false, onStatusChange }) {
   const [status, setStatus] = useState(null);
   const [latest, setLatest] = useState(null);
   const [diagInfo, setDiagInfo] = useState(null);
+  // Off by default: most people who connect Apple Health already get workouts
+  // from Strava/Garmin, so importing Apple's copies just creates duplicates.
+  // Persisted per device.
+  const [importWorkouts, setImportWorkouts] = useState(() => {
+    try { return localStorage.getItem('appleHealth_importWorkouts') === '1'; } catch { return false; }
+  });
+  const toggleImportWorkouts = (next) => {
+    setImportWorkouts(next);
+    try { localStorage.setItem('appleHealth_importWorkouts', next ? '1' : '0'); } catch { /* ignore */ }
+  };
   const syncAbortRef = useRef(false);
   const syncStepRef = useRef(null);
   const syncing = busyKind != null;
@@ -164,27 +174,30 @@ export default function AppleHealthCard({ isMobile = false, onStatusChange }) {
       const permStatus = await getAppleHealthPermissionStatus();
       const permHint = wellnessPermissionHint(permStatus.types);
 
-      // Workout leg is best-effort: a slow HealthKit read or upload becomes a
-      // soft warning instead of failing the whole connect.
+      // Workout leg is best-effort AND opt-in: skipped entirely unless the user
+      // turned on workout import (recovery data is the common case, and Apple's
+      // workouts usually duplicate Strava/Garmin).
       let workoutImported = 0;
       let workoutsFound = 0;
       let workoutWarning = null;
-      try {
-        step('Reading workouts…');
-        const since = new Date(Date.now() - 90 * 24 * 3600 * 1000).toISOString();
-        const workouts = await Promise.race([
-          collectAppleHealthWorkouts(since, { enrichHeartRate: false }),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('workout_read_slow')), 45000)),
-        ]);
-        if (syncAbortRef.current) return;
-        workoutsFound = workouts.length;
-        if (workouts.length > 0) {
-          step('Uploading workouts…');
-          const res = await syncAppleHealth({ workouts });
-          workoutImported = res?.imported ?? 0;
+      if (importWorkouts) {
+        try {
+          step('Reading workouts…');
+          const since = new Date(Date.now() - 90 * 24 * 3600 * 1000).toISOString();
+          const workouts = await Promise.race([
+            collectAppleHealthWorkouts(since, { enrichHeartRate: false }),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('workout_read_slow')), 45000)),
+          ]);
+          if (syncAbortRef.current) return;
+          workoutsFound = workouts.length;
+          if (workouts.length > 0) {
+            step('Uploading workouts…');
+            const res = await syncAppleHealth({ workouts });
+            workoutImported = res?.imported ?? 0;
+          }
+        } catch {
+          workoutWarning = 'Recovery data synced. Workout import was slow and was skipped — it will finish during the next automatic sync.';
         }
-      } catch {
-        workoutWarning = 'Recovery data synced. Workout import was slow and was skipped — it will finish during the next automatic sync.';
       }
 
       await refresh();
@@ -195,7 +208,7 @@ export default function AppleHealthCard({ isMobile = false, onStatusChange }) {
       const wCount = wellness.length;
       const msg = [
         wCount ? `${wCount} day(s) of wellness data` : null,
-        workoutsFound ? `${workoutImported} workout(s)` : null,
+        importWorkouts && workoutsFound ? `${workoutImported} workout(s)` : null,
       ].filter(Boolean).join(', ');
 
       if (authWarning) {
@@ -396,6 +409,22 @@ export default function AppleHealthCard({ isMobile = false, onStatusChange }) {
       {error && (
         <p className={`${isMobile ? 'text-[9px] mb-2' : 'text-xs mb-3'} text-red-600`}>{error}</p>
       )}
+
+      {/* Workout import is opt-in — Apple's workouts usually duplicate Strava/Garmin. */}
+      <label className={`flex items-start gap-2 ${isMobile ? 'mb-2' : 'mb-3'} cursor-pointer select-none`}>
+        <input
+          type="checkbox"
+          checked={importWorkouts}
+          onChange={(e) => toggleImportWorkouts(e.target.checked)}
+          disabled={syncing}
+          className="mt-0.5 h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary/40"
+        />
+        <span className={`${isMobile ? 'text-[9px]' : 'text-xs'} text-gray-600`}>
+          <span className="font-semibold text-gray-800">Also import workouts from Apple Health</span>
+          <br />
+          Leave off if your workouts already come from Strava or Garmin — Apple's copies would just duplicate them. Only sleep, resting HR and HRV are synced.
+        </span>
+      </label>
 
       <div className={`flex flex-wrap gap-2 ${isMobile ? '' : ''}`}>
         {!connected && (
