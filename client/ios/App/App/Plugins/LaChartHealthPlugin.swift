@@ -477,6 +477,7 @@ public class LaChartHealthPlugin: CAPPlugin, CAPBridgedPlugin {
                 }
                 var byDay: [String: Double] = [:]
                 var stagesByDay: [String: [String: Double]] = [:]
+                var segmentsByDay: [String: [[String: Any]]] = [:]
                 for (key, stageMap) in intervalsByDay {
                     byDay[key] = unionMinutes(stageMap["asleepTotal"] ?? [])
                     var stages: [String: Double] = [:]
@@ -485,6 +486,32 @@ public class LaChartHealthPlugin: CAPPlugin, CAPBridgedPlugin {
                         if mins > 0 { stages[stage] = (mins * 10).rounded() / 10 }
                     }
                     if !stages.isEmpty { stagesByDay[key] = stages }
+
+                    // Time-ordered hypnogram: flatten every stage segment, sort by
+                    // start, clip overlaps (multiple sources) to a single timeline,
+                    // then merge touching same-stage runs. Emitted as epoch-ms.
+                    var flat: [(Double, Double, String)] = []
+                    for (stage, ivs) in stageMap where stage != "asleepTotal" {
+                        for iv in ivs { flat.append((iv.0, iv.1, stage)) }
+                    }
+                    flat.sort { $0.0 < $1.0 }
+                    var cleaned: [(Double, Double, String)] = []
+                    var cursor = -Double.greatestFiniteMagnitude
+                    for (s, e, stage) in flat {
+                        let start = max(s, cursor)
+                        if e > start { cleaned.append((start, e, stage)); cursor = e }
+                    }
+                    var merged: [(Double, Double, String)] = []
+                    for seg in cleaned {
+                        if let last = merged.last, last.2 == seg.2, seg.0 - last.1 < 1 {
+                            merged[merged.count - 1] = (last.0, seg.1, last.2)
+                        } else {
+                            merged.append(seg)
+                        }
+                    }
+                    if !merged.isEmpty {
+                        segmentsByDay[key] = merged.map { ["t": $0.2, "s": Int($0.0 * 1000), "e": Int($0.1 * 1000)] }
+                    }
                 }
                 let rows = byDay.keys.sorted().map { day -> [String: Any] in
                     var row: [String: Any] = [
@@ -496,6 +523,9 @@ public class LaChartHealthPlugin: CAPPlugin, CAPBridgedPlugin {
                     ]
                     if let stages = stagesByDay[day] {
                         row["stages"] = stages // { core, deep, rem, awake, unspecified } minutes
+                    }
+                    if let segs = segmentsByDay[day] {
+                        row["segments"] = segs // [{ t: stage, s: startMs, e: endMs }] ordered
                     }
                     return row
                 }

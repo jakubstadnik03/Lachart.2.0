@@ -14,6 +14,8 @@ const appleHealthWellnessSchema = new mongoose.Schema(
     sleepMinutes: { type: Number, default: null },
     /** Per-stage minutes (Apple sleep stages), e.g. { coreMin, deepMin, remMin, awakeMin, unspecifiedMin }. */
     sleepStages: { type: mongoose.Schema.Types.Mixed, default: null },
+    /** Time-ordered hypnogram: [{ stage, start, end }] with epoch-ms boundaries. */
+    sleepSegments: { type: [mongoose.Schema.Types.Mixed], default: null },
     hrvMs: { type: Number, default: null },
     respiratoryRate: { type: Number, default: null },
     source: { type: String, default: 'apple_health' },

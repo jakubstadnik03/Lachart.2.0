@@ -375,6 +375,12 @@ export async function collectAppleHealthWellness(days = 14) {
           unspecifiedMin: Math.round(Number(s.stages.unspecified) || 0),
         };
       }
+      // Time-ordered hypnogram segments ({ t: stage, s: startMs, e: endMs }).
+      if (Array.isArray(s.segments) && s.segments.length > 0) {
+        patch.sleepSegments = s.segments
+          .filter((seg) => seg && seg.e > seg.s)
+          .map((seg) => ({ stage: String(seg.t), start: Number(seg.s), end: Number(seg.e) }));
+      }
       touch(s.startDate, patch);
     }
   }
