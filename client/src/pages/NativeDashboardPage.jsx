@@ -1330,9 +1330,14 @@ export default function NativeDashboardPage({
             </PremiumLock>
           </div>
 
-          {/* 3b · Race countdown */}
+          {/* 3b · Apple Health wellness (iOS, when connected) */}
           <div style={{ ...cardEntry(3), ...snapStyle }}>
-            <PremiumLock feature="Upcoming Races" plan="pro" minHeight={120}>
+            <AppleHealthWellnessCard loading={loading} />
+          </div>
+
+          {/* 3c · Race countdown */}
+          <div style={{ ...cardEntry(4), ...snapStyle }}>
+            <PremiumLock feature="Upcoming Races" plan="pro" minHeight={110}>
               <RaceCountdownCard
                 athleteId={athleteId || user?._id || user?.id}
                 currentCTL={todayMetrics?.fitness}
@@ -1345,8 +1350,8 @@ export default function NativeDashboardPage({
             </PremiumLock>
           </div>
 
-          {/* 3c · Post-race feedback */}
-          <div style={{ ...cardEntry(3), ...snapStyle }}>
+          {/* 3d · Post-race feedback */}
+          <div style={{ ...cardEntry(4), ...snapStyle }}>
             <PostRaceFeedbackCard
               athleteId={athleteId || user?._id || user?.id}
               focusRaceId={raceFeedbackFocusId}
@@ -1362,11 +1367,6 @@ export default function NativeDashboardPage({
                 }
               }}
             />
-          </div>
-
-          {/* 4 · Apple Health wellness (iOS, when connected) */}
-          <div style={{ ...cardEntry(4), ...snapStyle }}>
-            <AppleHealthWellnessCard loading={loading} />
           </div>
 
           {/* 5 · Weekly summary */}

@@ -215,13 +215,13 @@ export default function RaceCountdownCard({
         background: '#fff',
         border: '1px solid #E5E7EB',
         borderRadius: 16,
-        padding: '16px 16px 14px',
+        padding: '12px 16px 12px',
         boxShadow: '0 1px 2px rgba(15,23,42,.04)',
         overflow: 'hidden',
         minWidth: 0,
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
         <span
           style={{
             fontSize: 12,
@@ -362,7 +362,7 @@ export default function RaceCountdownCard({
             {/* Stacks on mobile, single row on wide screens. */}
             <div className="flex flex-col lg:flex-row lg:items-center gap-1 lg:gap-6 pr-8">
               <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }} className="shrink-0">
-                <span style={{ fontSize: 30, fontWeight: 800, color: '#0A0E1A', lineHeight: 1 }}>
+                <span style={{ fontSize: 26, fontWeight: 800, color: '#0A0E1A', lineHeight: 1 }}>
                   {Math.max(0, days)}
                 </span>
                 <span style={{ fontSize: 12, fontWeight: 700, color: '#6B7280' }}>
@@ -415,7 +415,7 @@ export default function RaceCountdownCard({
             </div>
           </button>
           {hints.length > 0 && (
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
               {hints.map((h) => (
                 <span
                   key={h.kind + h.text}
