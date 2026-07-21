@@ -3,7 +3,10 @@ import { ChevronLeft, ChevronRight, Heart } from 'lucide-react';
 import { GlassCard, NativeSkeletonRows } from '../native/shared/Tiles';
 import { fetchWellness } from '../../services/wellnessData';
 import { isAppleHealthSupported } from '../../services/appleHealthCapacitor';
+import { metricDayStatus } from '../../utils/recovery';
 import WellnessDetailSheet from '../shared/WellnessDetailSheet';
+
+const STATUS_COLOR = { bad: '#e11d48', good: '#059669', normal: '#111827' };
 
 function fmtSleep(mins) {
   if (!mins || mins <= 0) return '—';
@@ -93,19 +96,22 @@ export default function AppleHealthWellnessCard({ loading: parentLoading = false
 
   const showSkeleton = parentLoading || loading;
 
-  const metricCell = (label, value, unit, metricId) => (
-    <button
-      type="button"
-      onClick={() => openDetail(metricId)}
-      style={{ background: 'none', border: 'none', padding: 0, textAlign: 'center', cursor: 'pointer', WebkitTapHighlightColor: 'transparent' }}
-    >
-      <div style={{ fontSize: 10, color: '#6B7280' }}>{label}</div>
-      <div style={{ fontSize: 17, fontWeight: 800, color: '#111827' }}>
-        {value ?? '—'}
-        {value != null && unit && <span style={{ fontSize: 10, fontWeight: 500 }}> {unit}</span>}
-      </div>
-    </button>
-  );
+  const metricCell = (label, value, unit, metricId, rawValue, key, higherIsBetter) => {
+    const status = metricDayStatus(rawValue, days, key, higherIsBetter);
+    return (
+      <button
+        type="button"
+        onClick={() => openDetail(metricId)}
+        style={{ background: 'none', border: 'none', padding: 0, textAlign: 'center', cursor: 'pointer', WebkitTapHighlightColor: 'transparent' }}
+      >
+        <div style={{ fontSize: 10, color: '#6B7280' }}>{label}</div>
+        <div style={{ fontSize: 17, fontWeight: 800, color: STATUS_COLOR[status] }}>
+          {value ?? '—'}
+          {value != null && unit && <span style={{ fontSize: 10, fontWeight: 500 }}> {unit}</span>}
+        </div>
+      </button>
+    );
+  };
 
   return (
     <>
@@ -145,10 +151,10 @@ export default function AppleHealthWellnessCard({ loading: parentLoading = false
           </p>
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 6 }}>
-            {metricCell('Resting HR', row.restingHeartRate, 'bpm', 'rhr')}
-            {metricCell('Low HR', row.sleepingHeartRate, 'bpm', 'lowhr')}
-            {metricCell('Sleep', row.sleepMinutes > 0 ? fmtSleep(row.sleepMinutes) : null, null, 'sleep')}
-            {metricCell('HRV', row.hrvMs, 'ms', 'hrv')}
+            {metricCell('Resting HR', row.restingHeartRate, 'bpm', 'rhr', row.restingHeartRate, 'restingHeartRate', false)}
+            {metricCell('Low HR', row.sleepingHeartRate, 'bpm', 'lowhr', row.sleepingHeartRate, 'sleepingHeartRate', false)}
+            {metricCell('Sleep', row.sleepMinutes > 0 ? fmtSleep(row.sleepMinutes) : null, null, 'sleep', row.sleepMinutes, 'sleepMinutes', true)}
+            {metricCell('HRV', row.hrvMs, 'ms', 'hrv', row.hrvMs, 'hrvMs', true)}
           </div>
         )}
       </GlassCard>

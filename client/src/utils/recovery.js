@@ -75,6 +75,29 @@ export function assessReadiness(days, { tsb = null } = {}) {
 }
 
 /**
+ * Status of one metric value vs the personal baseline ±1 SD over `days`.
+ * `higherIsBetter` flips which tail counts as good/bad (HRV/sleep vs RHR).
+ * @returns {'bad'|'good'|'normal'}
+ */
+export function metricDayStatus(value, days, key, higherIsBetter) {
+  if (value == null || value <= 0) return 'normal';
+  const vals = (days || []).map((d) => d?.[key]).filter((v) => v != null && v > 0);
+  if (vals.length < 3) return 'normal';
+  const mean = vals.reduce((a, b) => a + b, 0) / vals.length;
+  const sd = Math.sqrt(vals.reduce((a, b) => a + (b - mean) ** 2, 0) / vals.length);
+  if (value < mean - sd) return higherIsBetter ? 'bad' : 'good';
+  if (value > mean + sd) return higherIsBetter ? 'good' : 'bad';
+  return 'normal';
+}
+
+/** Tailwind text colour for a metricDayStatus result (bad→rose, good→emerald). */
+export const METRIC_STATUS_TEXT = {
+  bad: 'text-rose-600',
+  good: 'text-emerald-600',
+  normal: 'text-gray-800',
+};
+
+/**
  * Per-day recovery status for a single wellness row, relative to baselines.
  * Used for the small calendar badges. Returns null when the day has no data.
  * @returns {{ level:'high'|'watch'|'ok', hex:string } | null}

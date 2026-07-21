@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom';
 import EChartsModule from 'echarts-for-react';
 import { XMarkIcon } from '@heroicons/react/24/outline';
 import { fetchWellness } from '../../services/wellnessData';
+import { metricDayStatus, METRIC_STATUS_TEXT } from '../../utils/recovery';
 
 const ReactECharts = EChartsModule?.default ?? EChartsModule;
 
@@ -374,20 +375,29 @@ export default function WellnessDetailSheet({ open, onClose, initialMetric = 'sl
           <div className="flex justify-center pt-2 pb-1">
             <div className="h-1 w-10 rounded-full bg-gray-300" />
           </div>
-          <div className="px-4 pb-2 flex items-center justify-between border-b border-gray-100">
-            <div className="flex bg-gray-100 rounded-xl p-1 gap-1 overflow-x-auto max-w-[calc(100%-3rem)]">
-              {METRICS.map((m) => (
-                <button
-                  key={m.id}
-                  type="button"
-                  onClick={() => setMetricId(m.id)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors whitespace-nowrap flex-shrink-0 ${m.id === metric.id ? 'bg-white shadow text-gray-900' : 'text-gray-500'}`}
-                >
-                  {m.label}
-                </button>
-              ))}
+          <div className="px-3 pb-2 flex items-stretch gap-2">
+            <div className="flex bg-gray-100 rounded-xl p-1 gap-1 flex-1 min-w-0">
+              {METRICS.map((m) => {
+                const v = selectedRow ? selectedRow[m.key] : null;
+                const active = m.id === metric.id;
+                const st = active ? selStatus : metricDayStatus(v, windowRows, m.key, m.higherIsBetter);
+                const valColor = st === 'bad' ? 'text-rose-600' : st === 'good' ? 'text-emerald-600' : 'text-gray-900';
+                return (
+                  <button
+                    key={m.id}
+                    type="button"
+                    onClick={() => setMetricId(m.id)}
+                    className={`flex-1 min-w-0 rounded-lg py-1 px-1 text-center transition-colors ${active ? 'bg-white shadow' : ''}`}
+                  >
+                    <div className={`text-[9px] leading-tight truncate font-medium ${active ? 'text-gray-500' : 'text-gray-400'}`}>{m.label}</div>
+                    <div className={`text-[13px] font-bold tabular-nums leading-tight ${valColor}`}>
+                      {m.id === 'sleep' ? (v > 0 ? fmtSleepHm(v) : '—') : (v ?? '—')}
+                    </div>
+                  </button>
+                );
+              })}
             </div>
-            <button type="button" onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full text-gray-400 hover:bg-gray-100">
+            <button type="button" onClick={onClose} className="w-8 flex items-center justify-center rounded-full text-gray-400 hover:bg-gray-100 flex-shrink-0">
               <XMarkIcon className="w-5 h-5" />
             </button>
           </div>
@@ -396,7 +406,7 @@ export default function WellnessDetailSheet({ open, onClose, initialMetric = 'sl
         <div ref={scrollRef} className="px-4 py-4 overflow-y-auto">
           <div className="flex items-end justify-between mb-1">
             <div>
-              <div className="text-3xl font-extrabold text-gray-900">
+              <div className={`text-3xl font-extrabold ${selStatus === 'bad' ? 'text-rose-600' : selStatus === 'good' ? 'text-emerald-600' : 'text-gray-900'}`}>
                 {fmtValue(metric, selVal)}
                 <span className="text-sm font-semibold text-gray-400 ml-1">{metric.id === 'sleep' ? 'h' : metric.unit}</span>
               </div>
@@ -411,29 +421,6 @@ export default function WellnessDetailSheet({ open, onClose, initialMetric = 'sl
               </div>
             )}
           </div>
-
-          {/* All of the selected day's metrics at a glance. */}
-          {selectedRow && (
-            <div className="grid grid-cols-4 gap-1.5 mb-3">
-              {METRICS.map((m) => {
-                const v = selectedRow[m.key];
-                const active = m.id === metric.id;
-                return (
-                  <button
-                    key={m.id}
-                    type="button"
-                    onClick={() => setMetricId(m.id)}
-                    className={`rounded-lg py-1.5 px-1 text-center transition-colors ${active ? 'bg-gray-100 ring-1 ring-gray-200' : 'bg-gray-50 hover:bg-gray-100'}`}
-                  >
-                    <div className="text-[9px] text-gray-400 truncate">{m.label}</div>
-                    <div className="text-[13px] font-bold text-gray-800 tabular-nums">
-                      {m.id === 'sleep' ? (v > 0 ? fmtSleepHm(v) : '—') : (v ?? '—')}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          )}
 
           {loading ? (
             <div className="h-56 flex items-center justify-center text-sm text-gray-400">Loading…</div>

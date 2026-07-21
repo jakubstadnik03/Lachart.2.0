@@ -3,7 +3,7 @@ import { HeartIcon, MoonIcon, BoltIcon, ChevronLeftIcon, ChevronRightIcon } from
 import { useAuth } from '../../context/AuthProvider';
 import { getTodayMetrics } from '../../services/api';
 import { fetchWellness } from '../../services/wellnessData';
-import { assessReadiness, baseline, READINESS_COLORS } from '../../utils/recovery';
+import { assessReadiness, baseline, metricDayStatus, READINESS_COLORS } from '../../utils/recovery';
 import { TSS_DISPLAY_MODE_EVENT } from '../../utils/uiPrefs';
 import WellnessDetailSheet from '../shared/WellnessDetailSheet';
 
@@ -130,6 +130,13 @@ export default function WellnessCard({ athleteId = null }) {
     return { delta, good };
   }, [recentDays, latest, viewingLatest]);
 
+  // Colour the viewed day's value when it sits outside the personal baseline
+  // band in the unfavourable direction (high RHR/Low HR, low sleep/HRV).
+  const valCls = (key, higherIsBetter) => {
+    const st = metricDayStatus(latest?.[key], days, key, higherIsBetter);
+    return st === 'bad' ? 'text-rose-600' : st === 'good' ? 'text-emerald-600' : 'text-slate-900';
+  };
+
   if (!loaded) return null;
   if (!connected && !latest) {
     if (isCoachView) {
@@ -207,7 +214,7 @@ export default function WellnessCard({ athleteId = null }) {
           <div className="flex items-center justify-center gap-1 text-[11px] text-slate-500 mb-1">
             <HeartIcon className="w-3.5 h-3.5" /> Resting HR
           </div>
-          <div className="text-center text-xl font-extrabold text-slate-900 tabular-nums mb-1">
+          <div className={`text-center text-xl font-extrabold tabular-nums mb-1 ${valCls('restingHeartRate', false)}`}>
             {latest?.restingHeartRate ?? '—'}
             {latest?.restingHeartRate != null && <span className="text-[11px] font-medium text-slate-400"> bpm</span>}
             <Delta t={rhrTrend} />
@@ -217,7 +224,7 @@ export default function WellnessCard({ athleteId = null }) {
 
         <button type="button" onClick={() => setDetailMetric('lowhr')} className="rounded-xl bg-slate-50 p-3 text-left hover:ring-1 hover:ring-slate-300 transition-shadow cursor-pointer">
           <div className="text-center text-[11px] text-slate-500 mb-1">Low HR</div>
-          <div className="text-center text-xl font-extrabold text-slate-900 tabular-nums mb-1">
+          <div className={`text-center text-xl font-extrabold tabular-nums mb-1 ${valCls('sleepingHeartRate', false)}`}>
             {latest?.sleepingHeartRate ?? '—'}
             {latest?.sleepingHeartRate != null && <span className="text-[11px] font-medium text-slate-400"> bpm</span>}
           </div>
@@ -228,7 +235,7 @@ export default function WellnessCard({ athleteId = null }) {
           <div className="flex items-center justify-center gap-1 text-[11px] text-slate-500 mb-1">
             <MoonIcon className="w-3.5 h-3.5" /> Sleep
           </div>
-          <div className="text-center text-xl font-extrabold text-slate-900 tabular-nums mb-1">
+          <div className={`text-center text-xl font-extrabold tabular-nums mb-1 ${valCls('sleepMinutes', true)}`}>
             {fmtSleep(latest?.sleepMinutes)}
           </div>
           <Sparkline days={sparkDays} dataKey="sleepMinutes" color="#6366f1" />
@@ -236,7 +243,7 @@ export default function WellnessCard({ athleteId = null }) {
 
         <button type="button" onClick={() => setDetailMetric('hrv')} className="rounded-xl bg-slate-50 p-3 text-left hover:ring-1 hover:ring-slate-300 transition-shadow cursor-pointer">
           <div className="text-center text-[11px] text-slate-500 mb-1">HRV</div>
-          <div className="text-center text-xl font-extrabold text-slate-900 tabular-nums mb-1">
+          <div className={`text-center text-xl font-extrabold tabular-nums mb-1 ${valCls('hrvMs', true)}`}>
             {latest?.hrvMs ?? '—'}
             {latest?.hrvMs != null && <span className="text-[11px] font-medium text-slate-400"> ms</span>}
             <Delta t={hrvTrend} />
