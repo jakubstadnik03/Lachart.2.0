@@ -331,7 +331,10 @@ export const deleteTraining = (id) => api.delete(`/training/${id}`).then(r => { 
 export const getUserTests = () => api.get('/test/user');
 export const getAllTests = () => api.get('/test');
 export const getTestById = (id) => api.get(`/test/${id}`);
-export const addTest = (testData) => api.post('/test', testData).then(r => { invalidateTestCaches(); return r; });
+// handlesPremiumInline: this page catches the quota 403 itself and shows a
+// contextual upgrade modal, so the global interceptor must NOT hijack it with
+// a redirect to /settings (that would unmount the page before the modal shows).
+export const addTest = (testData) => api.post('/test', testData, { handlesPremiumInline: true }).then(r => { invalidateTestCaches(); return r; });
 export const updateTest = (id, testData) => api.put(`/test/${id}`, testData).then(r => { invalidateTestCaches(); return r; });
 export const deleteTest = (id) => api.delete(`/test/${id}`).then(r => { invalidateTestCaches(); return r; });
 export const sendDemoTestEmail = (testData, email, name, userId = null) => api.post('/test/send-demo-email', { testData, email, name, userId });
@@ -461,6 +464,7 @@ api.interceptors.response.use(
     if (
       error.response?.status === 403 &&
       premiumGateCodes.includes(error.response?.data?.code) &&
+      !error.config?.handlesPremiumInline &&
       typeof window !== 'undefined' &&
       window.dispatchEvent
     ) {

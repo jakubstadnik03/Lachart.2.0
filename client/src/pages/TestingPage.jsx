@@ -1244,7 +1244,11 @@ const TestingPage = () => {
       }
     } catch (err) {
       console.error('Error adding test:', err);
-      if (err?.response?.status === 403 && err?.response?.data?.error === 'FREE_PLAN_LIMIT') {
+      // Free-plan test cap. The middleware returns code 'QUOTA_EXCEEDED'; the
+      // older inline check returned error 'FREE_PLAN_LIMIT' — match both so the
+      // contextual upgrade modal fires reliably at this high-intent moment.
+      const d = err?.response?.data;
+      if (err?.response?.status === 403 && (d?.code === 'QUOTA_EXCEEDED' || d?.error === 'FREE_PLAN_LIMIT')) {
         setPlanLimitModal({ isOpen: true, feature: 'Unlimited Tests' });
         return;
       }

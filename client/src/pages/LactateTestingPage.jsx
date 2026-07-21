@@ -930,7 +930,8 @@ const LactateTestingPage = () => {
             addNotification('Test saved & added to Testing', 'success');
           } catch (testErr) {
             console.warn('[LactateTest] addTest failed (non-critical):', testErr?.message || testErr);
-            if (testErr?.response?.status === 403 && testErr?.response?.data?.error === 'FREE_PLAN_LIMIT') {
+            const d = testErr?.response?.data;
+            if (testErr?.response?.status === 403 && (d?.code === 'QUOTA_EXCEEDED' || d?.error === 'FREE_PLAN_LIMIT')) {
               addNotification('Free plan limit reached — upgrade to Pro to save unlimited tests', 'error');
               setShowUpgradeModal(true);
             } else {
