@@ -32,14 +32,19 @@ function Sparkline({ days, dataKey, color }) {
     const y = h - ((v - min) / span) * (h - 4) - 2;
     d += `${d ? 'L' : 'M'}${x.toFixed(1)},${y.toFixed(1)} `;
   });
-  const lastIdx = pts.length - 1;
-  const lastVal = pts[lastIdx];
   return (
     <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" className="w-full h-6">
-      <path d={d.trim()} fill="none" stroke={color} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
-      {lastVal != null && (
-        <circle cx={lastIdx * step} cy={h - ((lastVal - min) / span) * (h - 4) - 2} r="2.5" fill={color} />
-      )}
+      {/* non-scaling stroke — the viewBox is stretched to the tile width, which
+          would otherwise render a smeared, unevenly-thick line */}
+      <path
+        d={d.trim()}
+        fill="none"
+        stroke={color}
+        strokeWidth="1.75"
+        strokeLinejoin="round"
+        strokeLinecap="round"
+        vectorEffect="non-scaling-stroke"
+      />
     </svg>
   );
 }

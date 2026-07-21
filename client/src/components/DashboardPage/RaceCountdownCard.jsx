@@ -341,70 +341,78 @@ export default function RaceCountdownCard({
           <button
             type="button"
             onClick={() => setSelectedRace(next)}
-            style={raceTapStyle}
+            style={{ ...raceTapStyle, position: 'relative' }}
           >
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 4 }}>
-              <span style={{ fontSize: 30, fontWeight: 800, color: '#0A0E1A', lineHeight: 1 }}>
-                {Math.max(0, days)}
-              </span>
-              <span style={{ fontSize: 12, fontWeight: 700, color: '#6B7280' }}>
-                {days === 0 ? 'race day' : 'days until'}
-              </span>
-              <span
-                style={{
-                  marginLeft: 'auto',
-                  fontSize: 10,
-                  fontWeight: 800,
-                  color: '#fff',
-                  background: PRIORITY_COLOR[next.priority] || '#767EB5',
-                  borderRadius: 6,
-                  padding: '2px 7px',
-                }}
-              >
-                {next.priority}
-              </span>
-            </div>
-            <div style={{ fontSize: 15, fontWeight: 800, color: '#0A0E1A' }}>{next.name}</div>
-            <div
+            {/* Priority badge pinned to the corner so the row layout below stays clean. */}
+            <span
               style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-                flexWrap: 'wrap',
-                marginTop: 4,
-                minWidth: 0,
+                position: 'absolute',
+                top: 0,
+                right: 0,
+                fontSize: 10,
+                fontWeight: 800,
+                color: '#fff',
+                background: PRIORITY_COLOR[next.priority] || '#767EB5',
+                borderRadius: 6,
+                padding: '2px 7px',
               }}
             >
-              <span style={{ fontSize: 11.5, color: '#6B7280' }}>
-                {fmtDate(next.date)}
-                {next.sport ? ` · ${next.sport}` : ''}
-                {next.location ? ` · ${next.location}` : ''}
-              </span>
-              <FormPill form={currentForm} />
-            </div>
-            {next.targetCTL != null && (
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  marginTop: 8,
-                  flexWrap: 'wrap',
-                  minWidth: 0,
-                  fontSize: 12,
-                }}
-              >
-                {currentCTL != null && (
-                  <span style={{ color: '#6B7280', whiteSpace: 'nowrap' }}>
-                    Fitness <b style={{ color: '#0A0E1A' }}>{Math.round(currentCTL)}</b>
-                    <span style={{ margin: '0 3px' }}>→</span>
-                  </span>
-                )}
-                <span style={{ fontWeight: 700, color: '#767EB5', whiteSpace: 'nowrap' }}>
-                  Target {Math.round(next.targetCTL)} CTL
+              {next.priority}
+            </span>
+            {/* Stacks on mobile, single row on wide screens. */}
+            <div className="flex flex-col lg:flex-row lg:items-center gap-1 lg:gap-6 pr-8">
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }} className="shrink-0">
+                <span style={{ fontSize: 30, fontWeight: 800, color: '#0A0E1A', lineHeight: 1 }}>
+                  {Math.max(0, days)}
+                </span>
+                <span style={{ fontSize: 12, fontWeight: 700, color: '#6B7280' }}>
+                  {days === 0 ? 'race day' : 'days until'}
                 </span>
               </div>
-            )}
+              <div className="min-w-0 lg:flex-1">
+                <div style={{ fontSize: 15, fontWeight: 800, color: '#0A0E1A' }} className="truncate">{next.name}</div>
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    flexWrap: 'wrap',
+                    marginTop: 2,
+                    minWidth: 0,
+                  }}
+                >
+                  <span style={{ fontSize: 11.5, color: '#6B7280' }}>
+                    {fmtDate(next.date)}
+                    {next.sport ? ` · ${next.sport}` : ''}
+                    {next.location ? ` · ${next.location}` : ''}
+                  </span>
+                  <FormPill form={currentForm} />
+                </div>
+              </div>
+              {next.targetCTL != null && (
+                <div
+                  className="shrink-0"
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    flexWrap: 'wrap',
+                    minWidth: 0,
+                    fontSize: 12,
+                  }}
+                >
+                  {currentCTL != null && (
+                    <span style={{ color: '#6B7280', whiteSpace: 'nowrap' }}>
+                      Fitness <b style={{ color: '#0A0E1A' }}>{Math.round(currentCTL)}</b>
+                      <span style={{ margin: '0 3px' }}>→</span>
+                    </span>
+                  )}
+                  <span style={{ fontWeight: 700, color: '#767EB5', whiteSpace: 'nowrap' }}>
+                    Target {Math.round(next.targetCTL)} CTL
+                  </span>
+                </div>
+              )}
+            </div>
           </button>
           {hints.length > 0 && (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
