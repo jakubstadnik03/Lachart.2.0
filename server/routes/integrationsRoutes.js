@@ -7140,6 +7140,7 @@ router.post('/apple-health/wellness-sync', verifyToken, async (req, res) => {
       const patch = {
         restingHeartRate: row.restingHeartRate != null ? Number(row.restingHeartRate) : null,
         sleepMinutes: row.sleepMinutes != null ? Number(row.sleepMinutes) : null,
+        sleepStages: row.sleepStages && typeof row.sleepStages === 'object' ? row.sleepStages : null,
         hrvMs: row.hrvMs != null ? Number(row.hrvMs) : null,
         respiratoryRate: row.respiratoryRate != null ? Number(row.respiratoryRate) : null,
         source: 'apple_health',
@@ -7198,6 +7199,7 @@ router.get('/apple-health/wellness', verifyToken, async (req, res) => {
         date: r.date,
         restingHeartRate: r.restingHeartRate,
         sleepMinutes: r.sleepMinutes,
+        sleepStages: r.sleepStages || null,
         hrvMs: r.hrvMs,
       })),
     });

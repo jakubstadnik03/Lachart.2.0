@@ -240,8 +240,46 @@ export default function WellnessDetailSheet({ open, onClose, initialMetric = 'sl
               No data in this range yet. Sync Apple Health in Settings and daily values will appear here.
             </div>
           ) : (
-            <ReactECharts option={chartOption} style={{ height: 230 }} notMerge lazyUpdate />
+            // key forces a clean re-init when the metric or range changes —
+            // some ECharts option diffs (markArea/markLine) don't apply cleanly.
+            <ReactECharts key={`${metric.id}-${rangeDays}`} option={chartOption} style={{ height: 230 }} notMerge lazyUpdate />
           )}
+
+          {metric.id === 'sleep' && (() => {
+            const latestWithStages = [...windowRows].reverse().find((r) => r.sleepStages
+              && (r.sleepStages.coreMin || r.sleepStages.deepMin || r.sleepStages.remMin || r.sleepStages.awakeMin));
+            if (!latestWithStages) return null;
+            const st = latestWithStages.sleepStages;
+            const segments = [
+              { label: 'Deep', min: st.deepMin || 0, color: '#3730a3' },
+              { label: 'Core', min: (st.coreMin || 0) + (st.unspecifiedMin || 0), color: '#6366f1' },
+              { label: 'REM', min: st.remMin || 0, color: '#a5b4fc' },
+              { label: 'Awake', min: st.awakeMin || 0, color: '#fb923c' },
+            ].filter((s) => s.min > 0);
+            const total = segments.reduce((a, s) => a + s.min, 0);
+            if (!total) return null;
+            return (
+              <div className="mt-3">
+                <div className="text-[11px] font-bold text-gray-400 uppercase tracking-wide mb-1.5">
+                  Sleep stages · {new Date(`${latestWithStages.date}T00:00:00`).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}
+                </div>
+                <div className="flex h-3 rounded-full overflow-hidden bg-gray-100">
+                  {segments.map((s) => (
+                    <div key={s.label} style={{ width: `${(s.min / total) * 100}%`, backgroundColor: s.color }} />
+                  ))}
+                </div>
+                <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2">
+                  {segments.map((s) => (
+                    <span key={s.label} className="flex items-center gap-1.5 text-[11px] text-gray-600">
+                      <span className="w-2 h-2 rounded-full" style={{ backgroundColor: s.color }} />
+                      <span className="font-semibold">{s.label}</span>
+                      <span className="text-gray-400">{fmtSleepHm(s.min)}</span>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
 
           <div className="flex gap-1.5 mt-3 mb-4">
             {RANGES.map((d) => (

@@ -10,6 +10,8 @@ const appleHealthWellnessSchema = new mongoose.Schema(
     date: { type: String, required: true }, // YYYY-MM-DD
     restingHeartRate: { type: Number, default: null },
     sleepMinutes: { type: Number, default: null },
+    /** Per-stage minutes (Apple sleep stages), e.g. { coreMin, deepMin, remMin, awakeMin, unspecifiedMin }. */
+    sleepStages: { type: mongoose.Schema.Types.Mixed, default: null },
     hrvMs: { type: Number, default: null },
     respiratoryRate: { type: Number, default: null },
     source: { type: String, default: 'apple_health' },

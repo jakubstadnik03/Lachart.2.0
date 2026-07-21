@@ -352,7 +352,18 @@ export async function collectAppleHealthWellness(days = 14) {
       const mins = s.unit === 'second' || s.unit === 's'
         ? Math.round(s.value / 60)
         : Math.round(s.value);
-      touch(s.startDate, { sleepMinutes: mins });
+      const patch = { sleepMinutes: mins };
+      // Per-stage minutes from the native aggregator (core/deep/rem/awake).
+      if (s.stages && typeof s.stages === 'object') {
+        patch.sleepStages = {
+          coreMin: Math.round(Number(s.stages.core) || 0),
+          deepMin: Math.round(Number(s.stages.deep) || 0),
+          remMin: Math.round(Number(s.stages.rem) || 0),
+          awakeMin: Math.round(Number(s.stages.awake) || 0),
+          unspecifiedMin: Math.round(Number(s.stages.unspecified) || 0),
+        };
+      }
+      touch(s.startDate, patch);
     }
   }
   for (const s of hrvRes?.samples || []) {

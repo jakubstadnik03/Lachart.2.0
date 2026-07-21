@@ -435,18 +435,22 @@ public class LaChartHealthPlugin: CAPPlugin, CAPBridgedPlugin {
                 // the symbols need a 16.0 deployment target, the ints don't):
                 // 0 inBed, 1 asleepUnspecified, 2 awake, 3 core, 4 deep, 5 REM.
                 let asleepValues: Set<Int> = [1, 3, 4, 5]
-                var intervalsByDay: [String: [(Double, Double)]] = [:]
+                let stageNames: [Int: String] = [1: "unspecified", 2: "awake", 3: "core", 4: "deep", 5: "rem"]
+                // day -> stage -> intervals (also "asleepTotal" pseudo-stage for the union of all asleep stages)
+                var intervalsByDay: [String: [String: [(Double, Double)]]] = [:]
                 for s in (samples as? [HKCategorySample] ?? []) {
-                    guard asleepValues.contains(s.value) else { continue }
+                    guard let stage = stageNames[s.value] else { continue } // skips inBed
                     guard s.endDate > s.startDate else { continue }
                     let bucketDate = s.startDate.addingTimeInterval(6 * 3600)
                     let key = dayFmt.string(from: cal.startOfDay(for: bucketDate))
-                    intervalsByDay[key, default: []].append(
-                        (s.startDate.timeIntervalSince1970, s.endDate.timeIntervalSince1970)
-                    )
+                    let iv = (s.startDate.timeIntervalSince1970, s.endDate.timeIntervalSince1970)
+                    intervalsByDay[key, default: [:]][stage, default: []].append(iv)
+                    if asleepValues.contains(s.value) {
+                        intervalsByDay[key, default: [:]]["asleepTotal", default: []].append(iv)
+                    }
                 }
-                var byDay: [String: Double] = [:]
-                for (key, intervals) in intervalsByDay {
+                // Sum the UNION of intervals (multiple sources overlap).
+                func unionMinutes(_ intervals: [(Double, Double)]) -> Double {
                     let sorted = intervals.sorted { $0.0 < $1.0 }
                     var total = 0.0
                     var curStart = -Double.greatestFiniteMagnitude
@@ -461,16 +465,31 @@ public class LaChartHealthPlugin: CAPPlugin, CAPBridgedPlugin {
                         }
                     }
                     if curEnd > curStart { total += curEnd - curStart }
-                    byDay[key] = total / 60.0
+                    return total / 60.0
+                }
+                var byDay: [String: Double] = [:]
+                var stagesByDay: [String: [String: Double]] = [:]
+                for (key, stageMap) in intervalsByDay {
+                    byDay[key] = unionMinutes(stageMap["asleepTotal"] ?? [])
+                    var stages: [String: Double] = [:]
+                    for (stage, ivs) in stageMap where stage != "asleepTotal" {
+                        let mins = unionMinutes(ivs)
+                        if mins > 0 { stages[stage] = (mins * 10).rounded() / 10 }
+                    }
+                    if !stages.isEmpty { stagesByDay[key] = stages }
                 }
                 let rows = byDay.keys.sorted().map { day -> [String: Any] in
-                    [
+                    var row: [String: Any] = [
                         "dataType": "sleep",
                         "value": byDay[day] ?? 0,
                         "unit": "minute",
                         "startDate": "\(day)T00:00:00.000Z",
                         "endDate": "\(day)T23:59:59.000Z",
                     ]
+                    if let stages = stagesByDay[day] {
+                        row["stages"] = stages // { core, deep, rem, awake, unspecified } minutes
+                    }
+                    return row
                 }
                 call.resolve(["samples": rows])
             }

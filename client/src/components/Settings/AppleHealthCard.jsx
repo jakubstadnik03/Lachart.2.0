@@ -148,7 +148,9 @@ export default function AppleHealthCard({ isMobile = false, onStatusChange }) {
       // Wellness first, uploaded immediately — connecting must not depend on the
       // (slower, optional) workout import succeeding.
       step('Reading wellness…');
-      const wellness = await collectAppleHealthWellness(30);
+      // 90 days = the server-side history cap; gives the trend charts a
+      // meaningful window on first connect.
+      const wellness = await collectAppleHealthWellness(90);
       if (syncAbortRef.current) return;
 
       step('Uploading wellness…');
