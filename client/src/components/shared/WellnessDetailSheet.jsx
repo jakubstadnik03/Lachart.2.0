@@ -17,6 +17,7 @@ const METRICS = [
   { id: 'sleep', key: 'sleepMinutes', label: 'Sleep', unit: 'h', color: '#8b5cf6', higherIsBetter: true },
   { id: 'rhr', key: 'restingHeartRate', label: 'Resting HR', unit: 'bpm', color: '#f43f5e', higherIsBetter: false },
   { id: 'hrv', key: 'hrvMs', label: 'HRV', unit: 'ms', color: '#10b981', higherIsBetter: true },
+  { id: 'lowhr', key: 'sleepingHeartRate', label: 'Low HR', unit: 'bpm', color: '#0ea5e9', higherIsBetter: false },
 ];
 const RANGES = [7, 14, 30, 60, 90];
 
@@ -79,6 +80,10 @@ function insightText(metric, stats) {
       if (stats.status === 'high') return `${head} Resting HR above your baseline often signals fatigue, dehydration or oncoming illness — consider an easier day.`;
       if (stats.status === 'good-low') return `${head} Resting HR below baseline is a good sign of adaptation and recovery.`;
       return `${head} Resting HR at your baseline means your body is coping well with the current load.`;
+    case 'lowhr':
+      if (stats.status === 'high') return `${head} Your overnight low is elevated — a classic sign of incomplete recovery, late meals, alcohol or an oncoming illness.`;
+      if (stats.status === 'good-low') return `${head} A lower overnight minimum than usual signals deep recovery and good aerobic adaptation.`;
+      return `${head} This is your nightly heart-rate minimum (what Apple shows in Vitals) — it dips well below daytime resting HR during deep sleep.`;
     case 'sleep':
     default:
       if (stats.status === 'low') return `${head} You slept less than usual — recovery quality drops fast under 7 h; try to bank extra sleep tonight.`;
@@ -193,13 +198,13 @@ export default function WellnessDetailSheet({ open, onClose, initialMetric = 'sl
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
       <div className="relative bg-white w-full md:max-w-lg md:rounded-2xl rounded-t-2xl shadow-xl max-h-[92vh] overflow-y-auto">
         <div className="sticky top-0 bg-white px-4 pt-4 pb-2 flex items-center justify-between border-b border-gray-100 z-10">
-          <div className="flex bg-gray-100 rounded-xl p-1 gap-1">
+          <div className="flex bg-gray-100 rounded-xl p-1 gap-1 overflow-x-auto max-w-[calc(100%-3rem)]">
             {METRICS.map((m) => (
               <button
                 key={m.id}
                 type="button"
                 onClick={() => setMetricId(m.id)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${m.id === metric.id ? 'bg-white shadow text-gray-900' : 'text-gray-500'}`}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors whitespace-nowrap flex-shrink-0 ${m.id === metric.id ? 'bg-white shadow text-gray-900' : 'text-gray-500'}`}
               >
                 {m.label}
               </button>

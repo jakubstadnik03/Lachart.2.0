@@ -270,7 +270,15 @@ public class LaChartHealthPlugin: CAPPlugin, CAPBridgedPlugin {
                 var samples: [[String: Any]] = []
                 let unit = self.preferredUnit(for: dataType)
                 collection.enumerateStatistics(from: startDate, to: endDate) { stats, _ in
-                    guard let qty = stats.averageQuantity() ?? stats.sumQuantity() else { return }
+                    // HKStatistics only exposes the quantity matching the
+                    // requested options — min/max return nil from averageQuantity().
+                    let resolved: HKQuantity?
+                    switch aggregation {
+                    case "min": resolved = stats.minimumQuantity()
+                    case "max": resolved = stats.maximumQuantity()
+                    default: resolved = stats.averageQuantity() ?? stats.sumQuantity()
+                    }
+                    guard let qty = resolved else { return }
                     let value = qty.doubleValue(for: unit)
                     guard value > 0 else { return }
                     let startIso = self.isoFormatter.string(from: stats.startDate)

@@ -7139,6 +7139,7 @@ router.post('/apple-health/wellness-sync', verifyToken, async (req, res) => {
       if (!row?.date || !/^\d{4}-\d{2}-\d{2}$/.test(row.date)) continue;
       const patch = {
         restingHeartRate: row.restingHeartRate != null ? Number(row.restingHeartRate) : null,
+        sleepingHeartRate: row.sleepingHeartRate != null ? Number(row.sleepingHeartRate) : null,
         sleepMinutes: row.sleepMinutes != null ? Number(row.sleepMinutes) : null,
         sleepStages: row.sleepStages && typeof row.sleepStages === 'object' ? row.sleepStages : null,
         hrvMs: row.hrvMs != null ? Number(row.hrvMs) : null,
@@ -7198,6 +7199,7 @@ router.get('/apple-health/wellness', verifyToken, async (req, res) => {
       days: rows.map((r) => ({
         date: r.date,
         restingHeartRate: r.restingHeartRate,
+        sleepingHeartRate: r.sleepingHeartRate ?? null,
         sleepMinutes: r.sleepMinutes,
         sleepStages: r.sleepStages || null,
         hrvMs: r.hrvMs,

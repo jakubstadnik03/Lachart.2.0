@@ -328,10 +328,22 @@ export async function collectAppleHealthWellness(days = 14) {
     `Read ${dataType}`,
   ).catch(() => ({ samples: [] }));
 
-  const [rhrRes, sleepRes, hrvRes] = await Promise.all([
+  const [rhrRes, sleepRes, hrvRes, minHrRes] = await Promise.all([
     query('restingHeartRate'),
     query('sleep'),
     query('heartRateVariability'),
+    // Overnight low — the daily heart-rate minimum (Apple Vitals' "sleeping" HR).
+    withTimeout(
+      Health.queryAggregated({
+        dataType: 'heartRate',
+        startDate: startIso,
+        endDate: endIso,
+        bucket: 'day',
+        aggregation: 'min',
+      }),
+      30000,
+      'Read heartRate min',
+    ).catch(() => ({ samples: [] })),
   ]);
 
   const byDate = new Map();
@@ -368,6 +380,10 @@ export async function collectAppleHealthWellness(days = 14) {
   }
   for (const s of hrvRes?.samples || []) {
     if (s.value > 0) touch(s.startDate, { hrvMs: Math.round(s.value * 10) / 10 });
+  }
+  for (const s of minHrRes?.samples || []) {
+    // Sanity band: a daily HR minimum outside 25–120 bpm is sensor noise.
+    if (s.value >= 25 && s.value <= 120) touch(s.startDate, { sleepingHeartRate: Math.round(s.value) });
   }
 
   return Array.from(byDate.values()).sort((a, b) => a.date.localeCompare(b.date));

@@ -9,6 +9,8 @@ const appleHealthWellnessSchema = new mongoose.Schema(
     userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
     date: { type: String, required: true }, // YYYY-MM-DD
     restingHeartRate: { type: Number, default: null },
+    /** Daily heart-rate minimum (overnight low, Apple Vitals' sleeping HR). */
+    sleepingHeartRate: { type: Number, default: null },
     sleepMinutes: { type: Number, default: null },
     /** Per-stage minutes (Apple sleep stages), e.g. { coreMin, deepMin, remMin, awakeMin, unspecifiedMin }. */
     sleepStages: { type: mongoose.Schema.Types.Mixed, default: null },
