@@ -185,6 +185,20 @@ export function trackCheckoutStarted(plan, source) {
   });
 }
 
+/**
+ * Checkout completed — user returned from Stripe with an active subscription.
+ * GA4 recommended event name `purchase`. Closes the funnel:
+ * paywall shown → begin_checkout → purchase.
+ */
+export function trackPurchase({ plan, value, currency = 'EUR' } = {}) {
+  trackEvent('purchase', {
+    plan: plan || 'unknown',
+    value: Number.isFinite(Number(value)) ? Number(value) : undefined,
+    currency,
+    event_category: 'subscription',
+  });
+}
+
 /** Strava / Garmin / Apple Health successfully connected. */
 export function trackIntegrationConnected(provider) {
   trackEvent('integration_connected', {

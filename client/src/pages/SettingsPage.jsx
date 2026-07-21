@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthProvider';
-import { trackCheckoutStarted, trackIntegrationConnected } from '../utils/analytics';
+import { trackCheckoutStarted, trackIntegrationConnected, trackPurchase } from '../utils/analytics';
 import { GoogleLogin } from '@react-oauth/google';
 import { useNotification } from '../context/NotificationContext';
 import { API_ENDPOINTS, API_BASE_URL } from '../config/api.config';
@@ -423,6 +423,16 @@ const SettingsPage = () => {
       // Stripe redirect feedback
       if (tab === 'subscription' && q.get('success') === '1') {
         addNotification('Payment successful! Your subscription is now active.', 'success');
+        // Fire the purchase conversion once per checkout (guard against
+        // double-count on refresh — the ?success=1 URL persists).
+        try {
+          const sid = q.get('session_id') || 'checkout';
+          const guardKey = `lc_purchase_tracked_${sid}`;
+          if (!sessionStorage.getItem(guardKey)) {
+            sessionStorage.setItem(guardKey, '1');
+            trackPurchase({ plan: q.get('plan') || undefined });
+          }
+        } catch { /* ignore */ }
       }
       if (tab === 'subscription' && q.get('canceled') === '1') {
         addNotification('Checkout was canceled. No charges were made.', 'info');

@@ -1942,7 +1942,10 @@ export const getCurrentSubscription = async () => {
 
 /** Create a Stripe checkout session and redirect */
 export const createCheckoutSession = async (planId) => {
-  const successUrl = `${window.location.origin}/settings?tab=subscription&success=1`;
+  // Carry the plan through to the success redirect so the `purchase`
+  // conversion event can record which plan was bought.
+  const planParam = planId ? `&plan=${encodeURIComponent(planId)}` : '';
+  const successUrl = `${window.location.origin}/settings?tab=subscription&success=1${planParam}`;
   const cancelUrl = `${window.location.origin}/settings?tab=subscription&canceled=1`;
   const { data } = await api.post('/api/subscription/create-checkout-session', {
     planId,
