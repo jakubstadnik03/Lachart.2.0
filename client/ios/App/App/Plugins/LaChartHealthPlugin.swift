@@ -419,17 +419,49 @@ public class LaChartHealthPlugin: CAPPlugin, CAPBridgedPlugin {
             guard let self = self else { return }
             DispatchQueue.main.async {
                 if let error = error { call.reject(error.localizedDescription, nil, error); return }
-                var byDay: [String: Double] = [:]
                 let cal = Calendar.current
                 let dayFmt = DateFormatter()
                 dayFmt.dateFormat = "yyyy-MM-dd"
                 dayFmt.timeZone = TimeZone.current
+
+                // Match the Health app's "time asleep":
+                // 1. Only actual asleep stages — skip inBed (0) and awake (2).
+                // 2. Whole night belongs to the wake-up day: bucket by
+                //    (start + 6h), i.e. an 18:00→18:00 sleep day, so
+                //    Sat 23:00 → Sun 07:00 counts once, under Sunday.
+                // 3. Watch + iPhone (+ other apps) all write overlapping
+                //    samples — sum the UNION of intervals, not raw durations.
+                // Raw values (stable since iOS 16 introduced sleep stages;
+                // the symbols need a 16.0 deployment target, the ints don't):
+                // 0 inBed, 1 asleepUnspecified, 2 awake, 3 core, 4 deep, 5 REM.
+                let asleepValues: Set<Int> = [1, 3, 4, 5]
+                var intervalsByDay: [String: [(Double, Double)]] = [:]
                 for s in (samples as? [HKCategorySample] ?? []) {
-                    if s.value == HKCategoryValueSleepAnalysis.inBed.rawValue { continue }
-                    let day = cal.startOfDay(for: s.startDate)
-                    let key = dayFmt.string(from: day)
-                    let mins = s.endDate.timeIntervalSince(s.startDate) / 60.0
-                    byDay[key] = (byDay[key] ?? 0) + mins
+                    guard asleepValues.contains(s.value) else { continue }
+                    guard s.endDate > s.startDate else { continue }
+                    let bucketDate = s.startDate.addingTimeInterval(6 * 3600)
+                    let key = dayFmt.string(from: cal.startOfDay(for: bucketDate))
+                    intervalsByDay[key, default: []].append(
+                        (s.startDate.timeIntervalSince1970, s.endDate.timeIntervalSince1970)
+                    )
+                }
+                var byDay: [String: Double] = [:]
+                for (key, intervals) in intervalsByDay {
+                    let sorted = intervals.sorted { $0.0 < $1.0 }
+                    var total = 0.0
+                    var curStart = -Double.greatestFiniteMagnitude
+                    var curEnd = -Double.greatestFiniteMagnitude
+                    for (start, end) in sorted {
+                        if start > curEnd {
+                            if curEnd > curStart { total += curEnd - curStart }
+                            curStart = start
+                            curEnd = end
+                        } else if end > curEnd {
+                            curEnd = end
+                        }
+                    }
+                    if curEnd > curStart { total += curEnd - curStart }
+                    byDay[key] = total / 60.0
                 }
                 let rows = byDay.keys.sorted().map { day -> [String: Any] in
                     [

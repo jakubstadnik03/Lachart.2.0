@@ -3,6 +3,7 @@
  * Keeps Workout Planner fitness metrics aligned with Dashboard / FormFitnessChart.
  */
 import { mapExternalActivitiesToCalendar } from './mapExternalActivityToCalendar';
+import { dedupeMergedCalendarActivities } from './dedupeMergedCalendarActivities';
 
 const MAX_CALENDAR_ACTIVITIES = 2000;
 
@@ -72,8 +73,11 @@ export function buildCombinedCalendarActivities(regTrainings, fitData, externalD
     ...mapExternalActivitiesToCalendar(externalData, regTrainings),
   ];
 
+  // Same dedupe as DashboardPage.finalizeCalendar — without it, a workout
+  // present in both Strava and Garmin (or as a FIT upload) counts twice in PMC.
+  const deduped = dedupeMergedCalendarActivities(combined);
   const tMs = (a) => new Date(a.date || a.startDate || a.timestamp || 0).getTime();
-  return [...combined].sort((a, b) => tMs(b) - tMs(a)).slice(0, MAX_CALENDAR_ACTIVITIES);
+  return [...deduped].sort((a, b) => tMs(b) - tMs(a)).slice(0, MAX_CALENDAR_ACTIVITIES);
 }
 
 /** Fetch & merge calendar activities (same endpoints as Dashboard). */

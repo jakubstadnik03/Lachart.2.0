@@ -88,7 +88,17 @@ export function dedupeMergedCalendarActivities(list) {
         && dist > 0 && cand.dist > 0
         && Math.abs(dist - cand.dist) <= 0.01 * Math.max(dist, cand.dist);
 
-      if (!tier1 && !tier2) continue;
+      // Tier 3 — one provider reports elapsed time, the other moving time
+      // (Apple Health vs Strava/Garmin), so durations disagree by hours for
+      // the same ride. Start within ±15 min + distance within 3.5% is still a
+      // unique fingerprint on its own (GPS trimming between providers can
+      // shift race distances by ~3%: 21.48 vs 20.85 km for the same run).
+      const tier3 = Number.isFinite(ms) && Number.isFinite(cand.ms)
+        && Math.abs(ms - cand.ms) <= 15 * 60 * 1000
+        && dist > 200 && cand.dist > 200
+        && Math.abs(dist - cand.dist) <= 0.035 * Math.max(dist, cand.dist);
+
+      if (!tier1 && !tier2 && !tier3) continue;
       dup = cand;
       break;
     }

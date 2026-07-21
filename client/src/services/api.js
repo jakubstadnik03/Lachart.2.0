@@ -1710,6 +1710,12 @@ export const disconnectAppleHealth = async () => {
   return data;
 };
 
+/** Remove imported Apple Health workouts only — keeps wellness + connection. */
+export const deleteAppleHealthWorkouts = async () => {
+  const { data } = await api.delete('/api/integrations/apple-health/workouts');
+  return data;
+};
+
 /**
  * Strava activities (recent) missing field lactate on at least one lap, or with no laps loaded yet.
  * @param {string | null} [athleteId] coach viewing athlete

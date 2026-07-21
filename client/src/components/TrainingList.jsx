@@ -19,7 +19,7 @@ const TrainingList = () => {
                 });
 
                 if (!response.ok) {
-                    throw new Error('Nepodařilo se načíst tréninky');
+                    throw new Error('Failed to load trainings');
                 }
 
                 const data = await response.json();

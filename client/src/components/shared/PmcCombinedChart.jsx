@@ -38,6 +38,10 @@ export default function PmcCombinedChart({
   userProfile = null,
   user = null,
   isMobile = false,
+  /** Optional pre-merged & deduped activity list — when provided (non-empty),
+   *  used directly instead of the calendarData_* cache / own fetch, so the
+   *  chart always matches the page that supplied it. */
+  activities = null,
 }) {
   const [viewDays, setViewDays] = useState(90);
   const [pmcActivities, setPmcActivities] = useState([]);
@@ -55,6 +59,11 @@ export default function PmcCombinedChart({
   );
 
   const reloadActivities = useCallback(async () => {
+    if (Array.isArray(activities) && activities.length > 0) {
+      setPmcActivities(activities);
+      setLoadingActs(false);
+      return;
+    }
     if (!athleteId) {
       setPmcActivities([]);
       setLoadingActs(false);
@@ -77,7 +86,7 @@ export default function PmcCombinedChart({
     } finally {
       setLoadingActs(false);
     }
-  }, [athleteId]);
+  }, [athleteId, activities]);
 
   // Future planned TSS — same 8-week window as the dashboard Form & Fitness card.
   useEffect(() => {

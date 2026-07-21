@@ -60,14 +60,14 @@ export async function autoSyncAppleHealth({ force = false } = {}) {
     }
     let imported = 0;
     if (workouts.length > 0) {
-      const { data } = await syncAppleHealth({ workouts });
-      imported = data?.imported ?? 0;
+      const res = await syncAppleHealth({ workouts });
+      imported = res?.imported ?? 0;
     }
 
     markSynced();
-    if (imported > 0) {
-      // Let the dashboard/calendar refresh its activity feed.
-      window.dispatchEvent(new CustomEvent('appleHealth:synced', { detail: { imported } }));
+    if (imported > 0 || wellness.length > 0) {
+      // Let the dashboard/calendar refresh activities and wellness strips.
+      window.dispatchEvent(new CustomEvent('appleHealth:synced', { detail: { imported, wellnessDays: wellness.length } }));
     }
     return { imported, wellnessDays: wellness.length };
   } catch (e) {

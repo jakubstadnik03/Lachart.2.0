@@ -59,6 +59,7 @@ import {
 import { sanitizeDecimalInput, parseLactateValue } from '../../utils/lactateInput';
 import { fetchWellness } from '../../services/wellnessData';
 import { baseline, dayRecoveryStatus } from '../../utils/recovery';
+import WellnessDetailSheet from '../shared/WellnessDetailSheet';
 import { useAuth } from '../../context/AuthProvider';
 import { useCategories, hexToRgba } from '../../context/CategoryContext';
 import { DAY_THEME_PRESETS, dayThemePresetColor, PERIOD_TYPES, periodColor, buildPeriodsByDate } from '../../utils/calendarThemes';
@@ -7292,7 +7293,7 @@ export function PeriodEditSheet({ period, defaultDate, onClose, onSave, onDelete
  * sleep duration, resting HR and (space permitting) HRV, with a small
  * recovery-status dot colored like the dashboard WeeklyCalendar badges.
  */
-function DayWellnessStrip({ w, status, className = '' }) {
+function DayWellnessStrip({ w, status, className = '', onOpen = null }) {
   if (!w) return null;
   const hasSleep = w.sleepMinutes > 0;
   const hasRhr = w.restingHeartRate > 0;
@@ -7301,10 +7302,14 @@ function DayWellnessStrip({ w, status, className = '' }) {
   const sleepLabel = hasSleep
     ? `${Math.floor(w.sleepMinutes / 60)}:${String(Math.round(w.sleepMinutes % 60)).padStart(2, '0')}`
     : null;
+  const Tag = onOpen ? 'button' : 'div';
   return (
-    <div
-      className={`flex items-center gap-1.5 text-[10px] leading-none text-gray-400 ${className}`}
-      title="Apple Health — sleep · resting HR · HRV"
+    <Tag
+      type={onOpen ? 'button' : undefined}
+      onClick={onOpen ? (e) => { e.stopPropagation(); onOpen(); } : undefined}
+      className={`flex items-center gap-1.5 text-[10px] leading-none text-gray-400 ${onOpen ? 'cursor-pointer active:opacity-60' : ''} ${className}`}
+      title="Apple Health — sleep · resting HR · HRV. Tap for trends."
+      style={onOpen ? { WebkitTapHighlightColor: 'transparent' } : undefined}
     >
       {status && <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: status.hex }} />}
       {sleepLabel && (
@@ -7320,12 +7325,12 @@ function DayWellnessStrip({ w, status, className = '' }) {
         </span>
       )}
       {hasHrv && (
-        <span className="hidden lg:flex items-center gap-0.5">
+        <span className="flex items-center gap-0.5">
           <span className="font-semibold text-gray-500">{Math.round(w.hrvMs)}</span>
           <span>ms</span>
         </span>
       )}
-    </div>
+    </Tag>
   );
 }
 
@@ -7498,11 +7503,21 @@ export default function CalendarView({
     return map;
   }, [wellnessDays]);
 
+  // Which wellness metric detail is open ('sleep' | 'rhr' | 'hrv' | null).
+  const [wellnessDetailMetric, setWellnessDetailMetric] = useState(null);
+
   /** Small sleep/RHR/HRV strip for a day cell; null when the day has no data. */
   const renderWellness = (key, opts = {}) => {
     const entry = wellnessByDate.get(key);
     if (!entry) return null;
-    return <DayWellnessStrip w={entry.w} status={entry.status} className={opts.className || ''} />;
+    return (
+      <DayWellnessStrip
+        w={entry.w}
+        status={entry.status}
+        className={opts.className || ''}
+        onOpen={() => setWellnessDetailMetric('sleep')}
+      />
+    );
   };
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   // Optimistic selection — marks activity immediately on click, before parent updates selectedActivityId
@@ -10096,6 +10111,13 @@ export default function CalendarView({
           }}
         />
       )}
+      {/* Wellness (sleep / RHR / HRV) trend detail */}
+      <WellnessDetailSheet
+        open={Boolean(wellnessDetailMetric)}
+        initialMetric={wellnessDetailMetric || 'sleep'}
+        athleteId={athleteId}
+        onClose={() => setWellnessDetailMetric(null)}
+      />
       {/* Calendar period editor */}
       {periodEdit && onPeriodSave && (
         <PeriodEditSheet

@@ -12,6 +12,7 @@ import {
   wellnessPermissionHint,
 } from '../../services/appleHealthCapacitor';
 import {
+  deleteAppleHealthWorkouts,
   disconnectAppleHealth,
   getAppleHealthStatus,
   getAppleHealthWellness,
@@ -39,16 +40,25 @@ export default function AppleHealthCard({ isMobile = false, onStatusChange }) {
   const [latest, setLatest] = useState(null);
   const [diagInfo, setDiagInfo] = useState(null);
   const syncAbortRef = useRef(false);
+  const syncStepRef = useRef(null);
   const syncing = busyKind != null;
+
+  const step = useCallback((label) => {
+    syncStepRef.current = label;
+    setSyncStep(label);
+  }, []);
 
   useEffect(() => {
     if (!busyKind) return undefined;
+    // Worst honest path: auth 9s + wellness read 30s + upload 60s (Render cold
+    // start) + workouts leg 45s — the watchdog is a last resort above all that.
     const watchdog = setTimeout(() => {
       syncAbortRef.current = true;
       setBusyKind(null);
       setSyncStep(null);
-      setError('Sync took too long. Open Health → Profile → Apps → LaChart, enable Resting Heart Rate, Sleep and HRV, then tap Connect & sync again.');
-    }, 90000);
+      const at = syncStepRef.current ? ` (stuck at: ${syncStepRef.current})` : '';
+      setError(`Sync took too long${at}. Open Health → Profile → Apps → LaChart, enable Resting Heart Rate, Sleep and HRV, then tap Connect & sync again.`);
+    }, 150000);
     return () => clearTimeout(watchdog);
   }, [busyKind]);
 
@@ -101,7 +111,7 @@ export default function AppleHealthCard({ isMobile = false, onStatusChange }) {
     setSyncStep(null);
     setError(null);
     try {
-      setSyncStep('Checking HealthKit…');
+      step('Checking HealthKit…');
       if (!available) {
         const diag = await getAppleHealthDiagnostics();
         if (syncAbortRef.current) return;
@@ -119,7 +129,10 @@ export default function AppleHealthCard({ isMobile = false, onStatusChange }) {
         setError(null);
       }
 
-      setSyncStep('Requesting access…');
+      step('Requesting access…');
+      // Warm up the backend (Render cold start) while the permission dialog is up,
+      // so the wellness upload below doesn't eat the whole 60s axios timeout.
+      getAppleHealthStatus().catch(() => {});
       const authResult = await Promise.race([
         requestAppleHealthAccess(),
         new Promise((resolve) => {
@@ -132,27 +145,43 @@ export default function AppleHealthCard({ isMobile = false, onStatusChange }) {
       const authWarning = authResult?.warning;
       if (syncAbortRef.current) return;
 
-      const permStatus = await getAppleHealthPermissionStatus();
-      const permHint = wellnessPermissionHint(permStatus.types);
-
-      setSyncStep('Reading wellness…');
-      const wellness = await collectAppleHealthWellness(14);
-      if (syncAbortRef.current) return;
-      const since = new Date(Date.now() - 90 * 24 * 3600 * 1000).toISOString();
-      setSyncStep('Reading workouts…');
-      const workouts = await collectAppleHealthWorkouts(since, { enrichHeartRate: false });
+      // Wellness first, uploaded immediately — connecting must not depend on the
+      // (slower, optional) workout import succeeding.
+      step('Reading wellness…');
+      const wellness = await collectAppleHealthWellness(30);
       if (syncAbortRef.current) return;
 
-      setSyncStep('Uploading…');
+      step('Uploading wellness…');
       await syncAppleHealthWellness({
         wellness,
         markConnected: true,
       });
+      if (syncAbortRef.current) return;
 
+      const permStatus = await getAppleHealthPermissionStatus();
+      const permHint = wellnessPermissionHint(permStatus.types);
+
+      // Workout leg is best-effort: a slow HealthKit read or upload becomes a
+      // soft warning instead of failing the whole connect.
       let workoutImported = 0;
-      if (workouts.length > 0) {
-        const { data } = await syncAppleHealth({ workouts });
-        workoutImported = data?.imported ?? 0;
+      let workoutsFound = 0;
+      let workoutWarning = null;
+      try {
+        step('Reading workouts…');
+        const since = new Date(Date.now() - 90 * 24 * 3600 * 1000).toISOString();
+        const workouts = await Promise.race([
+          collectAppleHealthWorkouts(since, { enrichHeartRate: false }),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('workout_read_slow')), 45000)),
+        ]);
+        if (syncAbortRef.current) return;
+        workoutsFound = workouts.length;
+        if (workouts.length > 0) {
+          step('Uploading workouts…');
+          const res = await syncAppleHealth({ workouts });
+          workoutImported = res?.imported ?? 0;
+        }
+      } catch {
+        workoutWarning = 'Recovery data synced. Workout import was slow and was skipped — it will finish during the next automatic sync.';
       }
 
       await refresh();
@@ -163,7 +192,7 @@ export default function AppleHealthCard({ isMobile = false, onStatusChange }) {
       const wCount = wellness.length;
       const msg = [
         wCount ? `${wCount} day(s) of wellness data` : null,
-        workouts.length ? `${workoutImported} workout(s)` : null,
+        workoutsFound ? `${workoutImported} workout(s)` : null,
       ].filter(Boolean).join(', ');
 
       if (authWarning) {
@@ -175,6 +204,8 @@ export default function AppleHealthCard({ isMobile = false, onStatusChange }) {
           permHint
             || 'Connected, but no resting HR, sleep or HRV found. Add data in Health (from your watch, ring, etc.) and enable those types for LaChart in Health → Apps.',
         );
+      } else if (workoutWarning) {
+        setError(`Synced ${msg}. ${workoutWarning}`);
       } else if (permHint) {
         setError(`Synced ${msg}. ${permHint}`);
       }
@@ -196,7 +227,7 @@ export default function AppleHealthCard({ isMobile = false, onStatusChange }) {
 
   const runWellnessAuth = async () => {
     setBusyKind('wellness');
-    setSyncStep('Requesting Sleep, RHR & HRV…');
+    step('Requesting Sleep, RHR & HRV…');
     setError(null);
     try {
       const result = await Promise.race([
@@ -219,6 +250,24 @@ export default function AppleHealthCard({ isMobile = false, onStatusChange }) {
       setError(e?.message || 'Wellness permission failed');
     } finally {
       setSyncStep(null);
+      setBusyKind(null);
+    }
+  };
+
+  const handleRemoveWorkouts = async () => {
+    if (!window.confirm('Remove all workouts imported from Apple Health? Recovery data (sleep, resting HR, HRV) stays. Duplicates of Strava/Garmin activities will no longer be re-imported.')) return;
+    setBusyKind('sync');
+    setError(null);
+    try {
+      const result = await deleteAppleHealthWorkouts();
+      setError(`Removed ${result?.deleted ?? 0} imported workout(s).`);
+      try {
+        window.dispatchEvent(new CustomEvent('appleHealth:synced', { detail: { imported: 0 } }));
+      } catch { /* ignore */ }
+      await refresh();
+    } catch (e) {
+      setError(e?.response?.data?.error || e?.message || 'Remove failed');
+    } finally {
       setBusyKind(null);
     }
   };
@@ -385,6 +434,15 @@ export default function AppleHealthCard({ isMobile = false, onStatusChange }) {
         </button>
         {connected && (
           <>
+            <button
+              type="button"
+              disabled={syncing}
+              onClick={handleRemoveWorkouts}
+              className={`${isMobile ? 'px-2.5 py-1.5 text-[10px]' : 'px-3 py-2 text-sm'} rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50`}
+              title="Delete workouts imported from Apple Health; keeps sleep/RHR/HRV"
+            >
+              Remove imported workouts
+            </button>
             <button
               type="button"
               disabled={syncing}

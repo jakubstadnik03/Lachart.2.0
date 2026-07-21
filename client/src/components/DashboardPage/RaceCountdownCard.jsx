@@ -108,15 +108,15 @@ export default function RaceCountdownCard({
     const out = [];
     if (next.targetCTL != null && currentCTL != null) {
       const gap = Math.round(Number(next.targetCTL) - Number(currentCTL));
-      if (gap > 3) out.push({ kind: 'ctl', text: `Do cílového CTL +${gap}` });
-      else if (gap < -3) out.push({ kind: 'ctl', text: `CTL ${Math.round(currentCTL)} (cíl ${Math.round(next.targetCTL)})` });
+      if (gap > 3) out.push({ kind: 'ctl', text: `+${gap} CTL to target` });
+      else if (gap < -3) out.push({ kind: 'ctl', text: `CTL ${Math.round(currentCTL)} (target ${Math.round(next.targetCTL)})` });
     }
     if (next.priority === 'A' && days != null && days <= 14 && days >= 0) {
       const weekTss = sumWeekPlannedTss(plannedWorkouts);
       if (weekTss > 0) {
         const rec = recommendedTaperTss(weekTss);
         if (weekTss > rec * 1.1) {
-          out.push({ kind: 'taper', text: `Týden ${Math.round(weekTss)} TSS → taper ~${rec}` });
+          out.push({ kind: 'taper', text: `Week ${Math.round(weekTss)} TSS → taper ~${rec}` });
         }
       }
     }
@@ -445,16 +445,16 @@ export default function RaceCountdownCard({
                     cursor: 'pointer',
                   }}
                 >
-                  Aplikovat taper na plán
+                  Apply taper to plan
                 </button>
               ) : (
                 <div style={{ padding: 10, background: '#FFFBEB', borderRadius: 10, border: '1px solid #FDE68A' }}>
                   {taperLoading ? (
-                    <div style={{ fontSize: 12, color: '#92400E' }}>Počítám návrh…</div>
+                    <div style={{ fontSize: 12, color: '#92400E' }}>Calculating suggestion…</div>
                   ) : taperPreview?.changes?.length ? (
                     <>
                       <div style={{ fontSize: 12, fontWeight: 700, color: '#92400E', marginBottom: 6 }}>
-                        {taperPreview.summary.workouts} tréninků · {taperPreview.summary.tssBefore} → {taperPreview.summary.tssAfter} TSS
+                        {taperPreview.summary.workouts} workout(s) · {taperPreview.summary.tssBefore} → {taperPreview.summary.tssAfter} TSS
                       </div>
                       <ul style={{ margin: '0 0 8px', paddingLeft: 16, fontSize: 11, color: '#78350F' }}>
                         {taperPreview.changes.slice(0, 4).map((c) => (
@@ -465,7 +465,7 @@ export default function RaceCountdownCard({
                       </ul>
                       {taperPreview.suggestedPeriod && (
                         <div style={{ fontSize: 10.5, color: '#A16207', marginBottom: 8 }}>
-                          + perioda Taper ({taperPreview.suggestedPeriod.startDate} – {taperPreview.suggestedPeriod.endDate})
+                          + Taper period ({taperPreview.suggestedPeriod.startDate} – {taperPreview.suggestedPeriod.endDate})
                         </div>
                       )}
                       <div style={{ display: 'flex', gap: 8 }}>
@@ -502,13 +502,13 @@ export default function RaceCountdownCard({
                             cursor: 'pointer',
                           }}
                         >
-                          Zrušit
+                          Cancel
                         </button>
                       </div>
                     </>
                   ) : (
                     <div style={{ fontSize: 12, color: '#92400E' }}>
-                      Žádné budoucí plány k úpravě — přidej tréninky do kalendáře.
+                      No upcoming planned workouts to adjust — add workouts to the calendar.
                       <button type="button" onClick={() => setTaperOpen(false)} style={{ marginLeft: 8, fontWeight: 700, background: 'none', border: 'none', color: '#B45309', cursor: 'pointer' }}>OK</button>
                     </div>
                   )}

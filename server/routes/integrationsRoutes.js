@@ -4418,7 +4418,15 @@ router.get('/activities', verifyToken, activitiesCacheMiddleware, async (req, re
         const durationDiff = Math.abs(parseInt(duration) - parseInt(actDuration)) / Math.max(parseInt(duration), parseInt(actDuration), 1);
         const distanceDiff = Math.abs(parseInt(distance) - parseInt(actDistance)) / Math.max(parseInt(distance), parseInt(actDistance), 1);
 
-        if (durationDiff <= 0.1 && distanceDiff <= 0.05) {
+        // Strong distance match: Apple reports elapsed time while Strava/
+        // Garmin report moving time, so durations for the same ride can be
+        // hours apart — but start within ±5 min + distance within 3.5% is a
+        // unique enough fingerprint on its own (distances are in 100m units;
+        // provider GPS trimming shifts race distances by up to ~3%).
+        const strongDistanceMatch = parseInt(actDistance) > 2 && parseInt(distance) > 2
+          && distanceDiff <= 0.035;
+
+        if ((durationDiff <= 0.1 && distanceDiff <= 0.05) || strongDistanceMatch) {
           isDuplicate = true;
           const seenAct = candidate.activity;
           const merged = choosePreferredActivity(seenAct, act);
@@ -6986,7 +6994,41 @@ router.post('/apple-health/sync', verifyToken, async (req, res) => {
       return res.json({ imported: 0, message: 'No workouts provided' });
     }
 
+    // Skip Apple workouts that duplicate an already-synced Strava/Garmin
+    // activity (the same session recorded by the watch AND imported from
+    // Strava/Garmin). Apple reports elapsed time while Strava reports moving
+    // time, so match on start proximity + distance rather than duration.
+    const startTimes = workouts
+      .map((w) => new Date(w.startDate).getTime())
+      .filter(Number.isFinite);
+    let externalNearby = [];
+    if (startTimes.length > 0) {
+      const from = new Date(Math.min(...startTimes) - 15 * 60 * 1000);
+      const to = new Date(Math.max(...startTimes) + 15 * 60 * 1000);
+      const [stravaNearby, garminNearby] = await Promise.all([
+        StravaActivity.find({ userId, startDate: { $gte: from, $lte: to } })
+          .select('startDate distance movingTime elapsedTime').lean().catch(() => []),
+        GarminActivity.find({ userId, startDate: { $gte: from, $lte: to } })
+          .select('startDate distance duration durationSeconds movingTime elapsedTime').lean().catch(() => []),
+      ]);
+      externalNearby = [...stravaNearby, ...garminNearby];
+    }
+    const duplicatesExternal = (startMs, distMeters, durSec) => externalNearby.some((ext) => {
+      const extStart = new Date(ext.startDate).getTime();
+      if (!Number.isFinite(extStart) || Math.abs(extStart - startMs) > 10 * 60 * 1000) return false;
+      const extDist = Number(ext.distance) || 0;
+      if (distMeters > 100 && extDist > 100) {
+        return Math.abs(extDist - distMeters) <= 0.035 * Math.max(extDist, distMeters);
+      }
+      const extDur = Number(ext.movingTime || ext.elapsedTime || ext.duration || ext.durationSeconds) || 0;
+      if (durSec > 0 && extDur > 0) {
+        return Math.abs(extDur - durSec) <= Math.max(180, 0.15 * Math.max(extDur, durSec));
+      }
+      return true; // started within 10 min, no comparable metrics — same session
+    });
+
     let imported = 0;
+    let skippedDuplicates = 0;
 
     for (const w of workouts) {
       if (!w.id || !w.startDate) continue;
@@ -6995,6 +7037,11 @@ router.post('/apple-health/sync', verifyToken, async (req, res) => {
       const startDate = new Date(w.startDate);
       const durationSec = Number(w.durationSeconds) || 0;
       const distanceMeters = Number(w.distanceMeters) || 0;
+
+      if (duplicatesExternal(startDate.getTime(), distanceMeters, durationSec)) {
+        skippedDuplicates += 1;
+        continue;
+      }
 
       // Identity / immutable fields — only written on first insert so we never
       // clobber the user's manual edits (title/category live on the doc too).
@@ -7047,9 +7094,30 @@ router.post('/apple-health/sync', verifyToken, async (req, res) => {
       { $set: { 'appleHealth.lastWorkoutSyncAt': new Date(), 'appleHealth.connectedAt': new Date() } }
     );
 
-    res.json({ imported, total: workouts.length });
+    res.json({ imported, skippedDuplicates, total: workouts.length });
   } catch (err) {
     console.error('[apple-health] sync error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * DELETE /api/integrations/apple-health/workouts
+ * Removes imported Apple Health workouts only — keeps wellness rows
+ * (sleep/RHR/HRV) and the connection itself. For users whose workouts
+ * already come from Strava/Garmin and only want recovery data from Apple.
+ */
+router.delete('/apple-health/workouts', verifyToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const result = await AppleHealthActivity.deleteMany({ userId });
+    await User.updateOne(
+      { _id: userId },
+      { $unset: { 'appleHealth.lastWorkoutSyncAt': 1 } }
+    );
+    res.json({ deleted: result.deletedCount || 0 });
+  } catch (err) {
+    console.error('[apple-health] workouts delete error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });

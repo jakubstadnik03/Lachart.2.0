@@ -1738,6 +1738,7 @@ export default function CalendarPeriodStats({
                 userProfile={effectiveProfile}
                 user={user}
                 isMobile={isMobile}
+                activities={activities}
               />
             )}
 

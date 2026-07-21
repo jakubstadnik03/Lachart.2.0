@@ -93,26 +93,33 @@ async function resolveHealthPlugin() {
   return { plugin: null, name: 'none', version: null };
 }
 
+/**
+ * IMPORTANT: never resolve an async function with a raw Capacitor plugin proxy.
+ * The proxy is a thenable — `proxy.then` is a generated method wrapper — so the
+ * promise-resolution procedure calls proxy.then(resolve, reject), the native
+ * "then" method doesn't exist, resolve/reject are never invoked, and the
+ * caller's `await` hangs forever. Always wrap the proxy in an object.
+ */
 async function getHealth() {
   if (Capacitor.getPlatform() === 'ios') {
-    return iosHealthPlugin();
+    return { plugin: iosHealthPlugin() };
   }
   const resolved = await resolveHealthPlugin();
-  if (resolved.plugin) return resolved.plugin;
-  if (Capacitor.isPluginAvailable('LaChartHealth')) return LaChartHealth;
+  if (resolved.plugin) return { plugin: resolved.plugin };
+  if (Capacitor.isPluginAvailable('LaChartHealth')) return { plugin: LaChartHealth };
   const { Health } = await import('@capgo/capacitor-health');
-  return Health;
+  return { plugin: Health };
 }
 
 function unavailableUserHint({ platform, pluginVersion, reason, isSimulator, pluginName }) {
   if (isSimulator) {
-    return 'Apple Health v simulátoru má omezení. Pro plný sync použij fyzický iPhone (Xcode → Run na zařízení).';
+    return 'Apple Health is limited in the iOS Simulator. Use a physical iPhone for full sync (Xcode → Run on device).';
   }
   if (!pluginName || pluginName === 'none') {
-    return 'Health plugin se nenačetl. V terminálu: cd client && npm run cap:sync:ios — pak Xcode Product → Clean Build Folder → Run na iPhonu.';
+    return 'Health plugin did not load. In terminal: cd client && npm run cap:sync:ios — then Xcode Product → Clean Build Folder → Run on iPhone.';
   }
   if (platform === 'web' || pluginVersion === 'web') {
-    return 'Health plugin se nenačetl v tomto buildu. Rebuild z Xcode na fyzickém iPhonu (ne TestFlight starší build).';
+    return 'Health plugin did not load in this build. Rebuild from Xcode on a physical iPhone (not an older TestFlight build).';
   }
   if (reason) return reason;
   return 'Apple Health není na tomto zařízení dostupné.';
@@ -232,7 +239,7 @@ export async function requestAppleHealthAccess() {
   if (!isAppleHealthSupported()) {
     return { granted: false, reason: 'not_ios' };
   }
-  const Health = await getHealth();
+  const { plugin: Health } = await getHealth();
   let authWarning = null;
 
   try {
@@ -265,9 +272,9 @@ export async function requestAppleHealthAccess() {
 export async function getAppleHealthPermissionStatus() {
   if (!isAppleHealthSupported()) return { types: [] };
   try {
-    const Health = await getHealth();
+    const { plugin: Health } = await getHealth();
     if (!Health.getAuthorizationStatus) return { types: [] };
-    const result = await Health.getAuthorizationStatus();
+    const result = await withTimeout(Health.getAuthorizationStatus(), 5000, 'Permission status');
     return { types: result?.types || [] };
   } catch {
     return { types: [] };
@@ -302,7 +309,7 @@ function dateKeyFromIso(iso) {
 export async function collectAppleHealthWellness(days = 14) {
   if (!isAppleHealthSupported()) return [];
 
-  const Health = await getHealth();
+  const { plugin: Health } = await getHealth();
   const end = new Date();
   const start = new Date(end);
   start.setDate(start.getDate() - days);
@@ -393,7 +400,7 @@ export async function collectAppleHealthWorkouts(sinceIso, opts = {}) {
   if (!isAppleHealthSupported()) return [];
   const { enrichHeartRate = false, enrichLimit = 25 } = opts;
 
-  const Health = await getHealth();
+  const { plugin: Health } = await getHealth();
   const { workouts = [] } = await withTimeout(
     Health.queryWorkouts({
       startDate: sinceIso,
