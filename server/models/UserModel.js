@@ -170,7 +170,13 @@ const userSchema = new mongoose.Schema({
     // Set every time a Garmin Push/Ping webhook delivers data for this user.
     // Mirrors strava.webhookLastEventAt — lets the UI show whether Garmin's
     // async delivery works at all, or whether backfill data silently never arrives.
-    webhookLastEventAt: { type: Date, default: null }
+    webhookLastEventAt: { type: Date, default: null },
+    // Granted Garmin Connect Developer permissions, e.g. ACTIVITY_EXPORT,
+    // HISTORICAL_DATA_EXPORT, HEALTH_EXPORT. Populated from /rest/user/permissions.
+    permissions: { type: [String], default: undefined },
+    permissionsCheckedAt: { type: Date, default: null },
+    // Last time a Garmin Health API wellness summary (sleep/RHR/HRV) landed.
+    lastWellnessSyncAt: { type: Date, default: null }
   },
   appleHealth: {
     connectedAt: { type: Date, default: null },

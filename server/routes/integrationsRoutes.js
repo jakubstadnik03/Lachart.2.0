@@ -10,6 +10,7 @@ const AppleHealthWellness = require('../models/AppleHealthWellness');
 const StravaStream = require('../models/StravaStream');
 const GarminActivity = require('../models/GarminActivity');
 const GarminStream = require('../models/GarminStream');
+const GarminWellness = require('../models/GarminWellness');
 const { resolveUserPlan } = require('../middleware/featureGate');
 const User = require('../models/UserModel');
 const Training = require('../models/training');
@@ -573,6 +574,159 @@ async function findUserByGarminHealthId(healthUserId, userAccessToken = null) {
   return null;
 }
 
+// ---------------------------------------------------------------------------
+// Garmin Health API wellness ingestion (dailies / sleeps / hrv).
+// Dormant until the Garmin app is granted HEALTH_EXPORT — then these push
+// payloads arrive and populate GarminWellness in the same shape as Apple
+// Health, so the shared fetchWellness() UI works unchanged.
+// ---------------------------------------------------------------------------
+
+const GARMIN_WELLNESS_TYPES = new Set(['dailies', 'sleeps', 'sleep', 'hrv', 'stressDetails', 'respiration']);
+
+/** Garmin gives a calendar date; fall back to deriving it from the start epoch. */
+function garminCalendarDate(entry) {
+  if (entry?.calendarDate && /^\d{4}-\d{2}-\d{2}$/.test(entry.calendarDate)) return entry.calendarDate;
+  const startSec = Number(entry?.startTimeInSeconds);
+  const offset = Number(entry?.startTimeOffsetInSeconds) || 0;
+  if (Number.isFinite(startSec) && startSec > 0) {
+    // Sleep that begins before midnight belongs to the wake-up day — shift by
+    // +6h (local) before taking the date, matching the Apple aggregator.
+    const local = new Date((startSec + offset + 6 * 3600) * 1000);
+    return local.toISOString().slice(0, 10);
+  }
+  return null;
+}
+
+/** Map a Garmin `dailies` summary → wellness patch (RHR, overnight low, respiration). */
+function mapGarminDaily(entry) {
+  const patch = {};
+  const rhr = Number(entry.restingHeartRateInBeatsPerMinute);
+  if (Number.isFinite(rhr) && rhr > 0) patch.restingHeartRate = Math.round(rhr);
+  const minHr = Number(entry.minHeartRateInBeatsPerMinute);
+  if (Number.isFinite(minHr) && minHr >= 25 && minHr <= 120) patch.sleepingHeartRate = Math.round(minHr);
+  const resp = Number(entry.averageRespirationValue ?? entry.avgRespirationValue);
+  if (Number.isFinite(resp) && resp > 0) patch.respiratoryRate = Math.round(resp * 10) / 10;
+  return patch;
+}
+
+/** Map a Garmin `sleeps` summary → wellness patch (sleep minutes, stages, hypnogram). */
+function mapGarminSleep(entry) {
+  const patch = {};
+  const deep = Number(entry.deepSleepDurationInSeconds) || 0;
+  const light = Number(entry.lightSleepDurationInSeconds) || 0;
+  const rem = Number(entry.remSleepInSeconds ?? entry.remSleepDurationInSeconds) || 0;
+  const awake = Number(entry.awakeDurationInSeconds) || 0;
+  const unmeasurable = Number(entry.unmeasurableSleepInSeconds) || 0;
+  const asleepSec = deep + light + rem + unmeasurable;
+  if (asleepSec > 0) patch.sleepMinutes = Math.round(asleepSec / 60);
+  const stages = {
+    deepMin: Math.round(deep / 60),
+    coreMin: Math.round(light / 60),
+    remMin: Math.round(rem / 60),
+    awakeMin: Math.round(awake / 60),
+    unspecifiedMin: Math.round(unmeasurable / 60),
+  };
+  if (deep || light || rem || awake) patch.sleepStages = stages;
+
+  // sleepLevelsMap: { deep:[{startTimeInSeconds,endTimeInSeconds}], light, rem, awake }
+  const map = entry.sleepLevelsMap || entry.sleepLevels || null;
+  if (map && typeof map === 'object') {
+    const stageKey = { deep: 'deep', light: 'core', rem: 'rem', awake: 'awake' };
+    const segments = [];
+    for (const [gStage, intervals] of Object.entries(map)) {
+      const stage = stageKey[gStage] || gStage;
+      if (!Array.isArray(intervals)) continue;
+      for (const iv of intervals) {
+        const s = Number(iv.startTimeInSeconds);
+        const e = Number(iv.endTimeInSeconds);
+        if (Number.isFinite(s) && Number.isFinite(e) && e > s) {
+          segments.push({ stage, start: s * 1000, end: e * 1000 });
+        }
+      }
+    }
+    if (segments.length) {
+      segments.sort((a, b) => a.start - b.start);
+      patch.sleepSegments = segments;
+    }
+  }
+  const resp = Number(entry.averageRespirationValue);
+  if (Number.isFinite(resp) && resp > 0) patch.respiratoryRate = Math.round(resp * 10) / 10;
+  return patch;
+}
+
+/** Map a Garmin `hrv` summary → wellness patch (overnight average HRV in ms). */
+function mapGarminHrv(entry) {
+  const patch = {};
+  const avg = Number(entry.lastNightAvg ?? entry.hrvSummary?.lastNightAvg);
+  if (Number.isFinite(avg) && avg > 0) patch.hrvMs = Math.round(avg * 10) / 10;
+  return patch;
+}
+
+function mapGarminWellnessEntry(summaryType, entry) {
+  switch (summaryType) {
+    case 'dailies': return mapGarminDaily(entry);
+    case 'sleeps':
+    case 'sleep': return mapGarminSleep(entry);
+    case 'hrv': return mapGarminHrv(entry);
+    case 'respiration': {
+      const resp = Number(entry.averageRespirationValue ?? entry.avgRespirationValue);
+      return Number.isFinite(resp) && resp > 0 ? { respiratoryRate: Math.round(resp * 10) / 10 } : {};
+    }
+    default: return {};
+  }
+}
+
+/** Upsert one Garmin wellness day, setting only the fields present in `patch`. */
+async function upsertGarminWellness(user, summaryType, entry) {
+  const date = garminCalendarDate(entry);
+  if (!date) return false;
+  const patch = mapGarminWellnessEntry(summaryType, entry);
+  if (!patch || Object.keys(patch).length === 0) return false;
+  patch.source = 'garmin';
+  await GarminWellness.updateOne(
+    { userId: user._id, date },
+    { $set: patch },
+    { upsert: true }
+  );
+  await User.updateOne(
+    { _id: user._id },
+    { $set: { 'garmin.lastWellnessSyncAt': new Date() } }
+  ).catch(() => {});
+  return true;
+}
+
+/**
+ * Ask Garmin to backfill historical wellness (dailies / sleeps / hrv). Data is
+ * delivered asynchronously via the same webhook, so this just queues requests.
+ * No-op unless the account actually has HEALTH_EXPORT.
+ */
+async function triggerGarminWellnessBackfill(user, days = 30) {
+  const permissions = Array.isArray(user?.garmin?.permissions) ? user.garmin.permissions : [];
+  if (!permissions.includes('HEALTH_EXPORT')) return { queued: false, reason: 'no_health_permission' };
+  try {
+    const tokenData = await getValidGarminToken(user);
+    const endSec = Math.floor(Date.now() / 1000);
+    const startSec = endSec - days * 24 * 3600;
+    const base = getGarminWellnessApiBaseUrl();
+    const types = ['dailies', 'sleeps', 'hrv'];
+    for (const t of types) {
+      // Garmin caps each backfill request to ≤90 days; `days` default is well under.
+      await axios.get(`${base}/rest/backfill/${t}`, {
+        headers: { Authorization: `${tokenData.tokenType} ${tokenData.accessToken}` },
+        params: { summaryStartTimeInSeconds: startSec, summaryEndTimeInSeconds: endSec },
+        timeout: 30000,
+        validateStatus: (s) => s === 202 || s === 200 || s === 409,
+      }).catch((e) => {
+        console.warn(`[Garmin wellness backfill] ${t} failed:`, e?.response?.data || e.message);
+      });
+    }
+    return { queued: true };
+  } catch (e) {
+    console.warn('[Garmin wellness backfill] token error:', e?.message);
+    return { queued: false, reason: 'token_error' };
+  }
+}
+
 async function processGarminWebhookPayload(payload) {
   if (!payload || typeof payload !== 'object') return { imported: 0, updated: 0, dropped: 0 };
 
@@ -609,6 +763,32 @@ async function processGarminWebhookPayload(payload) {
       // Delivery diagnostic — surfaced in /garmin/status as webhookLastEventAt.
       User.updateOne({ _id: user._id }, { $set: { 'garmin.webhookLastEventAt': new Date() } })
         .catch(() => {});
+
+      // Health API wellness push (dailies / sleeps / hrv). Inline summary or a
+      // ping with callbackURL → fetch the array of summaries, then upsert each.
+      if (GARMIN_WELLNESS_TYPES.has(summaryType)) {
+        try {
+          if (entry.callbackURL) {
+            const tokenData = await getValidGarminToken(user);
+            const resp = await axios.get(entry.callbackURL, {
+              headers: { Authorization: `${tokenData.tokenType} ${tokenData.accessToken}` },
+              timeout: 30000,
+            });
+            const body = resp.data;
+            const records = Array.isArray(body)
+              ? body
+              : (Array.isArray(body?.[summaryType]) ? body[summaryType] : [body]);
+            for (const rec of records) {
+              if (await upsertGarminWellness(user, summaryType, rec)) imported += 1;
+            }
+          } else if (await upsertGarminWellness(user, summaryType, entry)) {
+            imported += 1;
+          }
+        } catch (e) {
+          console.warn(`[Garmin webhook] wellness ${summaryType} failed:`, e?.response?.data || e.message);
+        }
+        continue;
+      }
 
       // Activity Details push — carries samples[] + lap markers → laps + streams
       if (isDetailsType(summaryType) && (Array.isArray(entry.samples) || entry.summary) && !entry.callbackURL) {
@@ -2650,6 +2830,10 @@ router.get('/garmin/callback', async (req, res) => {
     } catch (_) { /* ignore */ }
 
     await user.save();
+
+    // If the account has Health API access, queue a wellness backfill so the
+    // recovery cards fill in immediately (no-op without HEALTH_EXPORT).
+    triggerGarminWellnessBackfill(user, 30).catch(() => {});
 
     // Pull recent activities immediately so the calendar has data while history import runs.
     setTimeout(() => {
@@ -7209,6 +7393,55 @@ router.get('/apple-health/wellness', verifyToken, async (req, res) => {
     });
   } catch (err) {
     console.error('[apple-health] wellness get error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * GET /api/integrations/garmin/wellness?days=14&athleteId=...
+ * Garmin mirror of the Apple Health wellness feed — same response shape so the
+ * client can merge both. Populated once the Garmin app has HEALTH_EXPORT.
+ */
+router.get('/garmin/wellness', verifyToken, async (req, res) => {
+  try {
+    const resolved = await resolveIntegrationTargetUserId(req);
+    if (!resolved.ok) return res.status(resolved.status).json({ error: resolved.error });
+    const { targetUserId } = resolved;
+
+    const days = Math.min(Math.max(Number(req.query.days) || 14, 1), 90);
+    const user = await User.findById(targetUserId).select('garmin').lean();
+
+    const since = new Date();
+    since.setDate(since.getDate() - days);
+    const sinceKey = since.toISOString().slice(0, 10);
+
+    const rows = await GarminWellness.find({
+      userId: targetUserId,
+      date: { $gte: sinceKey },
+    })
+      .sort({ date: 1 })
+      .lean();
+
+    // "Connected" for wellness = we have actually received some Garmin health
+    // rows (HEALTH_EXPORT granted). A Garmin token alone only covers activities.
+    const connected = rows.length > 0;
+
+    res.json({
+      connected,
+      athleteId: String(targetUserId),
+      lastWellnessSync: user?.garmin?.lastWellnessSyncAt ?? null,
+      days: rows.map((r) => ({
+        date: r.date,
+        restingHeartRate: r.restingHeartRate,
+        sleepingHeartRate: r.sleepingHeartRate ?? null,
+        sleepMinutes: r.sleepMinutes,
+        sleepStages: r.sleepStages || null,
+        sleepSegments: r.sleepSegments || null,
+        hrvMs: r.hrvMs,
+      })),
+    });
+  } catch (err) {
+    console.error('[garmin] wellness get error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });

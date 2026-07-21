@@ -1700,6 +1700,16 @@ export const getAppleHealthWellness = async (opts = {}) => {
   return data;
 };
 
+/** Garmin wellness — same shape as Apple Health. Empty until HEALTH_EXPORT is granted. */
+export const getGarminWellness = async (opts = {}) => {
+  const cfg = { params: {} };
+  if (opts.days != null) cfg.params.days = opts.days;
+  if (opts.athleteId) cfg.params.athleteId = opts.athleteId;
+  if (opts.signal) cfg.signal = opts.signal;
+  const { data } = await api.get('/api/integrations/garmin/wellness', cfg);
+  return data;
+};
+
 export const getAppleHealthStatus = async () => {
   const { data } = await api.get('/api/integrations/apple-health/status');
   return data;
