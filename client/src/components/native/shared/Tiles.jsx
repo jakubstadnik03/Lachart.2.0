@@ -138,9 +138,9 @@ export function KpiTile({ label, value, style }) {
 // ─── GlassCard ───────────────────────────────────────────────────────────────
 // The frosted-glass card style used everywhere on the native dashboard.
 
-export function GlassCard({ children, style }) {
+export function GlassCard({ children, style, ...rest }) {
   return (
-    <div style={{
+    <div {...rest} style={{
       background: 'rgba(255,255,255,.65)',
       backdropFilter: 'blur(22px) saturate(170%)',
       WebkitBackdropFilter: 'blur(22px) saturate(170%)',
