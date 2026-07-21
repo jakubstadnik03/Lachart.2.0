@@ -1,6 +1,17 @@
 // Blog posts metadata — single source of truth for index cards, related posts, and SEO
 export const blogPosts = [
   {
+    slug:     'lactate-threshold-heart-rate',
+    title:    'Lactate Threshold Heart Rate (LTHR): How to Find Yours and Train By It',
+    excerpt:  'Your LTHR is the most useful heart-rate number in endurance training — and almost nobody\'s is what the %-of-max formulas say. What it is, the three ways to measure it, and how to build your HR zones around it.',
+    date:     '2026-07-12',
+    readTime: '11 min',
+    category: 'Training Science',
+    tags:     ['LTHR', 'lactate threshold heart rate', 'heart rate zones', 'LT2', 'threshold', 'HR training'],
+    image:    '/images/lactate-analysis.jpg',
+    featured: true,
+  },
+  {
     slug:     'zone-2-training-lactate',
     title:    'Zone 2 Training Explained: How to Find Your True Zone 2 with a Lactate Test',
     excerpt:  'Everyone talks about Zone 2, almost nobody knows where theirs actually sits. Heart-rate formulas and %FTP put most athletes in the wrong band — here is what Zone 2 really is, why it works, and how a lactate test pins it down to the watt.',

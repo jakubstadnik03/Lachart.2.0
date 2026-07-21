@@ -72,6 +72,7 @@ const PRERENDER_ROUTES = [
   '/blog/ftp-vs-lt2',
   '/blog/best-lactate-analyzer-2026',
   '/blog/zone-2-training-lactate',
+  '/blog/lactate-threshold-heart-rate',
 ];
 
 async function startServer() {
