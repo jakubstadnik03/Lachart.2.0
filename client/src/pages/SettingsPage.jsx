@@ -3417,33 +3417,37 @@ const SettingsPage = () => {
                                   </button>
                                 </div>
 
-                                <div className={`grid ${isMobile ? 'grid-cols-1 gap-1' : 'grid-cols-2 gap-2'} ${isMobile ? 'text-[10px]' : 'text-xs'} ${toneCls}`}>
-                                  <div><span className="font-semibold">Last webhook:</span> {formatRelativeSyncTime(stravaWebhookStatus.webhookLastEventAt)}</div>
-                                  <div><span className="font-semibold">Last sync:</span> {formatRelativeSyncTime(stravaWebhookStatus.lastSyncDate)}</div>
-                                  <div><span className="font-semibold">Fallback:</span> {stravaAutoSync ? 'enabled (up to 5 min)' : 'off'}</div>
-                                  <div><span className="font-semibold">Rate limit:</span> {stravaWebhookStatus.rateLimitedSecondsLeft > 0 ? `${stravaWebhookStatus.rateLimitedSecondsLeft}s left` : 'OK'}</div>
+                                {/* Regular users just need reassurance it's working — one friendly line. */}
+                                <div className={`${isMobile ? 'text-[10px]' : 'text-xs'} ${toneCls}`}>
+                                  <span className="font-semibold">Last synced:</span> {formatRelativeSyncTime(stravaWebhookStatus.lastSyncDate)}
                                 </div>
 
+                                {/* Everything technical lives here, collapsed, admin-only. */}
                                 {isAdminUser && (
-                                  <div className={`${isMobile ? 'text-[10px]' : 'text-xs'} rounded-lg bg-white/75 border border-current/20 px-2 py-1.5 ${toneCls}`}>
-                                    <div className="font-semibold">Admin diagnostics</div>
-                                    <div>Bootstrap: {subscription.state || 'unknown'}{subscription.subscriptionId ? ` (#${subscription.subscriptionId})` : ''}</div>
-                                    {subscription.callbackUrl && <div className="break-all">Callback: {subscription.callbackUrl}</div>}
-                                    {subscription.message && <div>{subscription.message}</div>}
-                                    {budget.windowLimit ? <div>Budget: {budget.windowUsed || 0}/{budget.windowLimit} in current window</div> : null}
-                                    {(subscription.state === 'dead' || subscription.state === 'error') && (
-                                      <div className="mt-1 font-semibold">
-                                        Set `SERVER_PUBLIC_URL` or `STRAVA_WEBHOOK_CALLBACK_URL` on the backend and restart the server.
-                                      </div>
-                                    )}
-                                    <button
-                                      onClick={handleResetStravaBudget}
-                                      title="Reset the server's Strava rate-limit estimator. Use when webhooks fail with 'Strava local budget exhausted'."
-                                      className={`mt-1.5 ${isMobile ? 'px-2 py-1 text-[10px]' : 'px-2.5 py-1 text-[11px]'} rounded-md bg-white border border-amber-300 text-amber-700 hover:bg-amber-50 font-semibold transition-colors`}
-                                    >
-                                      Reset budget
-                                    </button>
-                                  </div>
+                                  <details className={`${isMobile ? 'text-[10px]' : 'text-xs'} rounded-lg bg-white/75 border border-current/20 px-2 py-1.5 ${toneCls}`}>
+                                    <summary className="font-semibold cursor-pointer select-none">Diagnostics</summary>
+                                    <div className="mt-1.5 space-y-1">
+                                      <div><span className="font-semibold">Last webhook:</span> {formatRelativeSyncTime(stravaWebhookStatus.webhookLastEventAt)}</div>
+                                      <div><span className="font-semibold">Fallback:</span> {stravaAutoSync ? 'enabled (up to 5 min)' : 'off'}</div>
+                                      <div><span className="font-semibold">Rate limit:</span> {stravaWebhookStatus.rateLimitedSecondsLeft > 0 ? `${stravaWebhookStatus.rateLimitedSecondsLeft}s left` : 'OK'}</div>
+                                      <div>Bootstrap: {subscription.state || 'unknown'}{subscription.subscriptionId ? ` (#${subscription.subscriptionId})` : ''}</div>
+                                      {subscription.callbackUrl && <div className="break-all">Callback: {subscription.callbackUrl}</div>}
+                                      {subscription.message && <div>{subscription.message}</div>}
+                                      {budget.windowLimit ? <div>Budget: {budget.windowUsed || 0}/{budget.windowLimit} in current window</div> : null}
+                                      {(subscription.state === 'dead' || subscription.state === 'error') && (
+                                        <div className="mt-1 font-semibold">
+                                          Set `SERVER_PUBLIC_URL` or `STRAVA_WEBHOOK_CALLBACK_URL` on the backend and restart the server.
+                                        </div>
+                                      )}
+                                      <button
+                                        onClick={handleResetStravaBudget}
+                                        title="Reset the server's Strava rate-limit estimator. Use when webhooks fail with 'Strava local budget exhausted'."
+                                        className={`mt-1.5 ${isMobile ? 'px-2 py-1 text-[10px]' : 'px-2.5 py-1 text-[11px]'} rounded-md bg-white border border-amber-300 text-amber-700 hover:bg-amber-50 font-semibold transition-colors`}
+                                      >
+                                        Reset budget
+                                      </button>
+                                    </div>
+                                  </details>
                                 )}
                               </div>
                             );
