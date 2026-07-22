@@ -47,7 +47,7 @@ import {
   paceUnitShort,
   resolveDistanceUnitSystem,
 } from '../../utils/unitsConverter';
-import { distinctiveTitleTokens, isGenericTitle, titleTokens } from '../../utils/compareSimilarity';
+import { distinctiveTitleTokens, isGenericTitle } from '../../utils/compareSimilarity';
 import {
   buildActivityMatcher,
   getActivityAppId,
@@ -1869,19 +1869,25 @@ function CompareContent({ merged, athleteId, onOpen }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentLaps]);
 
-  // Title token-overlap helper: extracts meaningful words (≥3 chars, lowercased).
-  const currentTitle    = currentTitleStr;
-  const currentCategory = merged?.category || null;
-  const currentTokens   = useMemo(() => titleTokens(currentTitle), [currentTitle]);
-  const currentDistM    = Number(merged?.distance || merged?.totalDistance || 0);
+  // Title token-overlap helper: only DISTINCTIVE words (skips generic
+  // auto-generated labels like "Morning Ride" / "Afternoon Run" via stopwords).
+  const currentTitle      = currentTitleStr;
+  const currentCategory   = merged?.category || null;
+  const currentTokens     = useMemo(() => new Set(distinctiveTitleTokens(currentTitle)), [currentTitle]);
+  const currentTitleGeneric = useMemo(() => isGenericTitle(currentTitle), [currentTitle]);
+  const currentDistM      = Number(merged?.distance || merged?.totalDistance || 0);
 
   const similarityScore = useCallback((r) => {
     let score = 0;
 
-    // ── Title match — strongest signal that this is the same workout.
-    //    Exact match weighted highest, substring next, then token overlap.
+    // ── Title match — strongest signal that this is the same workout, BUT
+    //    only when the title is meaningful. Auto-generated names ("Morning
+    //    Ride", "Afternoon Run", "Ride"…) carry no signal, so a generic title
+    //    on either side scores nothing here — similarity then falls back to
+    //    structure/duration/category. Token overlap uses DISTINCTIVE tokens
+    //    only, so a shared "ride"/"run" never counts.
     const rTitle = String(r.titleManual || r.title || r.name || '').trim();
-    if (currentTitle && rTitle) {
+    if (currentTitle && rTitle && !currentTitleGeneric && !isGenericTitle(rTitle)) {
       const a = currentTitle.toLowerCase();
       const b = rTitle.toLowerCase();
       if (a === b) {
@@ -1889,11 +1895,11 @@ function CompareContent({ merged, athleteId, onOpen }) {
       } else if (a.includes(b) || b.includes(a)) {
         score += 0.25;                                       // substring
       } else if (currentTokens.size > 0) {
-        const rTok = titleTokens(rTitle);
+        const rTok = new Set(distinctiveTitleTokens(rTitle));
         let common = 0;
         currentTokens.forEach(t => { if (rTok.has(t)) common += 1; });
         const overlap = common / currentTokens.size;         // 0..1
-        if (overlap >= 0.5) score += 0.15 * overlap;         // ≥50% tokens shared
+        if (overlap >= 0.5) score += 0.15 * overlap;         // ≥50% distinctive tokens shared
       }
     }
 
@@ -1944,7 +1950,7 @@ function CompareContent({ merged, athleteId, onOpen }) {
 
     return score;
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentDurSec, currentWorkLapCount, currentTitle, currentCategory, currentTokens, currentLaps, currentDistM]);
+  }, [currentDurSec, currentWorkLapCount, currentTitle, currentTitleGeneric, currentCategory, currentTokens, currentLaps, currentDistM]);
 
   const matchLabel = (score) => {
     if (score >= 0.65) return 'Strong match';
