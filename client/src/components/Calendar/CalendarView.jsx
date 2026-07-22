@@ -49,6 +49,7 @@ import {
 } from '../../utils/unitsConverter';
 import { distinctiveTitleTokens, isGenericTitle } from '../../utils/compareSimilarity';
 import { buildStructureTitle } from '../../utils/workoutStructureTitle';
+import { classifyLaps } from '../../utils/lapClassify';
 import {
   buildActivityMatcher,
   getActivityAppId,
@@ -1628,33 +1629,6 @@ const COMPARE_STEP_BG     = { warmup:'#fef3c7', work:'#eef0fa', recovery:'#d1fae
 const COMPARE_STEP_TEXT   = { warmup:'#92400e', work:'#3730a3', recovery:'#065f46', cooldown:'#0369a1', rest:'#4b5563' };
 const COMPARE_TYPE_LABELS = { warmup:'Warm-up', work:'Work', recovery:'Recovery', cooldown:'Cool-down', rest:'Rest' };
 
-function detectLapType(lap, index, total) {
-  // 1. Explicit interval type tag
-  const it = lap?.intervalType;
-  if (it && COMPARE_STEP_COLORS[it]) return it;
-  // 2. Name-based heuristics
-  const name = String(lap?.name || '').toLowerCase();
-  if (/warm.?up|rozeh/i.test(name)) return 'warmup';
-  if (/cool.?down|zklidn/i.test(name)) return 'cooldown';
-  if (/recov|odpoc|rest/i.test(name)) return 'recovery';
-  if (/interval|work|int\s*\d/i.test(name)) return 'work';
-  // 3. Distance + pace heuristic: very short laps are clearly rest/recovery
-  //    (e.g. 31m in 0:57, 75m in 1:00 between 800m intervals)
-  const dist = Number(lap?.distance || lap?.totalDistance || 0);
-  const dur  = Number(lap?.elapsed_time || lap?.totalElapsedTime || lap?.duration || 0);
-  if (dist > 0 && dist < 200) return 'recovery'; // < 200m = clearly a rest/transition
-  // Very slow pace for a run lap (> 8:00/km) = walking / recovery jog
-  if (dist > 0 && dur > 0) {
-    const paceSecKm = dur / (dist / 1000);
-    if (paceSecKm > 480) return 'recovery'; // > 8:00/km
-  }
-  // 4. Position heuristic: first/last = warmup/cooldown, alternating = work/recovery
-  if (index === 0 && total > 2) return 'warmup';
-  if (index === total - 1 && total > 2) return 'cooldown';
-  // Odd-indexed laps in an alternating session → work, even → recovery
-  if (total >= 5) return index % 2 === 1 ? 'work' : 'recovery';
-  return 'work';
-}
 
 function CompareLapTable({ laps, isBike, isRun, isSwim, workOnly, unitSystem = 'metric' }) {
   if (!Array.isArray(laps) || laps.length === 0) return (
@@ -1680,11 +1654,10 @@ function CompareLapTable({ laps, isBike, isRun, isSwim, workOnly, unitSystem = '
     if (isSwim && dist > 0 && moving > 0) return formatPaceFromDistanceAndDuration(dist, moving, unitSystem, 'swim');
     return '—';
   };
-  const total = laps.length;
-  const rows = laps.map((lap, i) => {
-    const type = detectLapType(lap, i, total);
-    return { lap, i, type };
-  }).filter(({ type }) => !workOnly || type === 'work');
+  const tableSport = isBike ? 'bike' : isRun ? 'run' : isSwim ? 'swim' : 'bike';
+  const lapTypes = classifyLaps(laps, tableSport);
+  const rows = laps.map((lap, i) => ({ lap, i, type: lapTypes[i] }))
+    .filter(({ type }) => !workOnly || type === 'work');
 
   return (
     <table className="w-full text-[10px] border-collapse">
@@ -1762,9 +1735,10 @@ function WorkLapCompareTable({ currentLaps, results, isBike, isRun, isSwim, unit
   };
   const fmtHr = lap => { const h = Number(lap.average_heartrate || lap.avgHeartRate || lap.heartRate || 0); return h > 0 ? `${Math.round(h)}` : null; };
 
+  const tableSport = isBike ? 'bike' : isRun ? 'run' : isSwim ? 'swim' : 'bike';
   const sessWorkLaps = sessions.map(s => {
-    const total = s.laps.length;
-    return s.laps.map((lap, i) => ({ lap, origIdx: i, type: detectLapType(lap, i, total) }))
+    const types = classifyLaps(s.laps, tableSport);
+    return s.laps.map((lap, i) => ({ lap, origIdx: i, type: types[i] }))
                  .filter(({ type }) => type === 'work');
   });
   const maxWork = Math.max(...sessWorkLaps.map(w => w.length), 0);
@@ -1865,10 +1839,10 @@ function CompareContent({ merged, athleteId, onOpen }) {
   // Similarity helpers — used to rank fetched results
   const currentDurSec = Number(merged?.duration || merged?.elapsed_time || merged?.totalElapsedTime || 0);
   const currentWorkLapCount = useMemo(() => {
-    const n = currentLaps.length;
-    return currentLaps.filter((l, i) => detectLapType(l, i, n) === 'work').length;
+    const types = classifyLaps(currentLaps, normSport);
+    return types.filter((t) => t === 'work').length;
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentLaps]);
+  }, [currentLaps, normSport]);
 
   // Title token-overlap helper: only DISTINCTIVE words (skips generic
   // auto-generated labels like "Morning Ride" / "Afternoon Run" via stopwords).
@@ -1925,7 +1899,8 @@ function CompareContent({ merged, athleteId, onOpen }) {
 
     // ── Work-lap-count similarity.
     const laps = Array.isArray(r.laps) ? r.laps : [];
-    const wlCount = laps.filter((l, i) => detectLapType(l, i, laps.length) === 'work').length;
+    const rTypes = classifyLaps(laps, normSport);
+    const wlCount = rTypes.filter((t) => t === 'work').length;
     if (currentWorkLapCount > 0 && wlCount > 0) {
       const lapScore = Math.max(0, 1 - Math.abs(currentWorkLapCount - wlCount) / Math.max(currentWorkLapCount, wlCount));
       score += lapScore * 0.15;
@@ -1936,7 +1911,8 @@ function CompareContent({ merged, athleteId, onOpen }) {
     //    have 5 (or 10) work laps — captures the workout STRUCTURE.
     if (currentWorkLapCount > 0 && wlCount > 0 && currentLaps.length > 0 && laps.length > 0) {
       const avgDur = (arr) => {
-        const works = arr.filter((l, i) => detectLapType(l, i, arr.length) === 'work');
+        const types = classifyLaps(arr, normSport);
+        const works = arr.filter((l, i) => types[i] === 'work');
         if (works.length === 0) return 0;
         const sum = works.reduce((a, l) => a + Number(l.elapsed_time || l.totalElapsedTime || l.duration || 0), 0);
         return sum / works.length;
@@ -1951,7 +1927,7 @@ function CompareContent({ merged, athleteId, onOpen }) {
 
     return score;
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentDurSec, currentWorkLapCount, currentTitle, currentTitleGeneric, currentCategory, currentTokens, currentLaps, currentDistM]);
+  }, [currentDurSec, currentWorkLapCount, currentTitle, currentTitleGeneric, currentCategory, currentTokens, currentLaps, currentDistM, normSport]);
 
   const matchLabel = (score) => {
     if (score >= 0.65) return 'Strong match';
@@ -3528,7 +3504,8 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
     const curTitle = String(merged.title || merged.name || '').trim();
     if (curTitle && !isGenericTitle(curTitle)) return; // keep meaningful names
     const catLabel = merged.category ? (getCategory?.(merged.category)?.label || null) : null;
-    const structured = buildStructureTitle(merged.laps, { categoryLabel: catLabel });
+    const sportKey = /run/i.test(merged.sport || '') ? 'run' : /swim/i.test(merged.sport || '') ? 'swim' : 'bike';
+    const structured = buildStructureTitle(merged.laps, { categoryLabel: catLabel, sport: sportKey });
     if (!structured || structured === curTitle) return;
     autoStructTitleRef.current = true;
     (async () => {
@@ -5216,8 +5193,8 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                             : 0;
                           const lapLa = lap.lactate ?? lap.lactateValue;
                           const lapNum = lap.lapNumber ?? (i + 1);
-                          // Detect lap type for color-coding
-                          const lapType = detectLapType(lap, i, displayLaps.length);
+                          // Detect lap type for color-coding (intensity-based)
+                          const lapType = classifyLaps(displayLaps, /run/i.test(sport) ? 'run' : /swim/i.test(sport) ? 'swim' : 'bike')[i];
                           const isRestLap = lapType === 'recovery' || lapType === 'rest';
                           // Pace — use moving time to exclude stopped time; suppress crazy values
                           let lapPaceStr = '—';
@@ -5724,8 +5701,8 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                         const lapHr    = Number(lap.average_heartrate || lap.avgHeartRate || lap.averageHeartRate || lap.avgHR || 0);
                         const lapLa    = lap.lactate ?? lap.lactateValue;
                         const lapNum   = lap.lapNumber ?? (i + 1);
-                        // Detect lap type for color-coding
-                        const lapType  = detectLapType(lap, i, laps.length);
+                        // Detect lap type for color-coding (intensity-based)
+                        const lapType  = classifyLaps(laps, /run/i.test(sport) ? 'run' : /swim/i.test(sport) ? 'swim' : 'bike')[i];
                         const isRestLap = lapType === 'recovery' || lapType === 'rest';
 
                         let lapPaceStr = '—';

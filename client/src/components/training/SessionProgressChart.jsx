@@ -21,6 +21,7 @@
 
 import React, { useState, useMemo } from 'react';
 import useElementWidth from '../../hooks/useElementWidth';
+import { classifyLaps } from '../../utils/lapClassify';
 
 // ─── helpers (mirrored from NativeTrainingPage) ───────────────────────────────
 
@@ -93,42 +94,6 @@ function sessionShade(idx, total, metric = 'power') {
 function metricColor(metric) {
   const hi = (METRIC_RAMP[metric] || METRIC_RAMP.power)[1];
   return `rgb(${hi[0]},${hi[1]},${hi[2]})`;
-}
-
-function isWarmupOrCooldown(iv, idx, total) {
-  const t = String(iv?.intervalType || '').toLowerCase();
-  if (t === 'warmup' || t === 'cooldown') return true;
-  if (iv?.isRecovery === true) return true;
-  if (total >= 3 && (idx === 0 || idx === total - 1)) return true;
-  return false;
-}
-
-/**
- * Detect if a lap is a non-work lap (warmup, cooldown, recovery, rest).
- * Mirrors CalendarView's detectLapType() heuristic.
- */
-function isNonWorkLap(iv, idx, total) {
-  const t = String(iv?.intervalType || '').toLowerCase();
-  if (t === 'warmup' || t === 'cooldown' || t === 'recovery' || t === 'rest') return true;
-  if (t === 'work') return false;
-  const name = String(iv?.name || '').toLowerCase();
-  if (/warm.?up|rozeh/i.test(name)) return true;
-  if (/cool.?down|zklidn/i.test(name)) return true;
-  if (/recov|odpoc|rest/i.test(name)) return true;
-  // distance-based: short laps (<200m) are likely recovery
-  const dist = Number(iv?.distanceMeters || iv?.distance || iv?.totalDistance || 0);
-  if (dist > 0 && dist < 200) return true;
-  // pace-based: very slow laps (>8:00/km) are likely recovery
-  const dur = Number(iv?.elapsed_time || iv?.totalElapsedTime || iv?.durationSeconds || iv?.duration || 0);
-  if (dist > 0 && dur > 0) {
-    const paceSecKm = dur / (dist / 1000);
-    if (paceSecKm > 480) return true;
-  }
-  // position-based
-  if (total >= 3 && (idx === 0 || idx === total - 1)) return true;
-  // alternating pattern (even = recovery between work intervals)
-  if (total >= 5 && idx % 2 === 0 && idx > 0 && idx < total - 1) return true;
-  return false;
 }
 
 function lapBarColor({ intervalType, lactate, sessionShade: shade, isSelected = false, metric = 'power' }) {
@@ -365,15 +330,18 @@ export default function SessionProgressChart({
 
   const data = useMemo(() => {
     return sessions.map((s, i) => {
-      let intervals = getIntervals(s);
-      const rawTotal = intervals.length;
+      const rawIntervals = getIntervals(s);
+      // Intensity-based lap types over the FULL lap set (before filtering) so
+      // "Work only" keeps the real hard efforts, not odd-indexed laps, and the
+      // bar colours reflect the real classification.
+      const lapTypes = classifyLaps(rawIntervals, sport);
+      let intervals = rawIntervals.map((iv, idx) => ({ iv, type: lapTypes[idx] }));
       if (workOnly) {
-        // Filter to work laps only (exclude warmup, cooldown, recovery, rest)
-        intervals = intervals.filter((iv, idx) => !isNonWorkLap(iv, idx, rawTotal));
+        intervals = intervals.filter((x) => x.type === 'work');
       } else if (hideWarmCool) {
-        intervals = intervals.filter((iv, idx) => !isWarmupOrCooldown(iv, idx, rawTotal));
+        intervals = intervals.filter((x) => x.type !== 'warmup' && x.type !== 'cooldown');
       }
-      const laps = intervals.map((iv, idx) => {
+      const laps = intervals.map(({ iv, type }, idx) => {
         let v = null;
         if (isPace) v = intervalPaceSec(iv, sport);
         else        v = getIntervalMetric(iv, metric);
@@ -383,7 +351,7 @@ export default function SessionProgressChart({
         const pace   = (sport === 'run' || sport === 'swim') ? intervalPaceSec(iv, sport) : null;
         const power  = sport === 'bike' ? Number(iv.power ?? iv.average_watts ?? iv.avgPower) || null : null;
         const rpe    = Number(iv.RPE ?? iv.rpe) || null;
-        return { idx, value: v, lactate: intervalLactate(iv), intervalType: iv?.intervalType || null, durationSec: durSec, hr, dist, pace, power, rpe };
+        return { idx, value: v, lactate: intervalLactate(iv), intervalType: iv?.intervalType || type || null, durationSec: durSec, hr, dist, pace, power, rpe };
       }).filter(l => l.value != null && l.value > 0);
       return { id: activityKey(s), date: getDate(s), laps, color: sessionShade(i, sessions.length, isPace ? 'power' : metric), meta: s };
     }).filter(s => s.laps.length > 0);
