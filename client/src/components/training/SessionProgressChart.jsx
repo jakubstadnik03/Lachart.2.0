@@ -245,53 +245,45 @@ function SelectedLapInfo({ selected, onOpen, onEdit, onClear, formatValue }) {
         <span style={{ fontSize: 10.5, color: '#9CA3AF', fontWeight: 600 }}>Tap a bar to inspect a lap</span>
       ) : (
         <>
-          <div style={{ minWidth: 0, flex: 1, display: 'flex', flexDirection: 'column', gap: 1 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 10.5, fontVariantNumeric: 'tabular-nums' }}>
-              <span style={{ fontWeight: 800, color: selected.sessionColor, background: selected.sessionColor + '18', padding: '1px 6px', borderRadius: 5 }}>
-                Lap {selected.lapIdx}{selected.lapCount ? `/${selected.lapCount}` : ''}
-              </span>
-              <span style={{ fontWeight: 800, color: '#0A0E1A' }}>{formatValue(selected.value)}</span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap', fontSize: 10, fontVariantNumeric: 'tabular-nums', color: '#6B7280', marginTop: 2 }}>
-              {selected.dist > 0 && (
-                <Metric label="DIST" value={selected.dist >= 1000 ? `${(selected.dist / 1000).toFixed(2)} km` : `${Math.round(selected.dist)} m`} />
-              )}
-              {selected.durationSec > 0 && (
-                <Metric label="TIME" value={selected.durationSec >= 60
-                  ? `${Math.floor(selected.durationSec / 60)}:${String(Math.round(selected.durationSec % 60)).padStart(2, '0')}`
-                  : `${Math.round(selected.durationSec)}s`} />
-              )}
-              {selected.pace > 0 && selected.sport !== 'bike' && !selected.isPace && (
-                <Metric label="PACE" value={`${Math.floor(selected.pace / 60)}:${String(Math.round(selected.pace % 60)).padStart(2, '0')}/${selected.sport === 'swim' ? '100m' : 'km'}`} />
-              )}
-              {selected.power > 0 && (
-                <Metric label="PWR" value={`${Math.round(selected.power)} W`} />
-              )}
-              {selected.hr > 0 && (
-                <Metric label="HR" value={`${Math.round(selected.hr)} bpm`} color="#B84238" />
-              )}
-              {selected.lactate != null && (
-                <Metric label="LAC" value={`${Number(selected.lactate).toFixed(1)} mmol`} color="#B45309" />
-              )}
-              {selected.rpe > 0 && (
-                <Metric label="RPE" value={String(Math.round(selected.rpe))} />
-              )}
-            </div>
+          <div style={{ minWidth: 0, flex: 1, display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap', fontSize: 10, fontVariantNumeric: 'tabular-nums', color: '#6B7280' }}>
+            {/* Primary value = the selected metric; the metrics below never repeat it. */}
+            <span style={{ fontSize: 12, fontWeight: 800, color: selected.sessionColor }}>{formatValue(selected.value)}</span>
+            {selected.dist > 0 && (
+              <Metric label="DIST" value={selected.dist >= 1000 ? `${(selected.dist / 1000).toFixed(2)} km` : `${Math.round(selected.dist)} m`} />
+            )}
+            {selected.durationSec > 0 && (
+              <Metric label="TIME" value={selected.durationSec >= 60
+                ? `${Math.floor(selected.durationSec / 60)}:${String(Math.round(selected.durationSec % 60)).padStart(2, '0')}`
+                : `${Math.round(selected.durationSec)}s`} />
+            )}
+            {selected.pace > 0 && selected.sport !== 'bike' && !selected.isPace && (
+              <Metric label="PACE" value={`${Math.floor(selected.pace / 60)}:${String(Math.round(selected.pace % 60)).padStart(2, '0')}/${selected.sport === 'swim' ? '100m' : 'km'}`} />
+            )}
+            {selected.power > 0 && selected.metric !== 'power' && (
+              <Metric label="PWR" value={`${Math.round(selected.power)} W`} />
+            )}
+            {selected.hr > 0 && selected.metric !== 'heartRate' && (
+              <Metric label="HR" value={`${Math.round(selected.hr)} bpm`} color="#B84238" />
+            )}
+            {selected.lactate != null && selected.metric !== 'lactate' && (
+              <Metric label="LAC" value={`${Number(selected.lactate).toFixed(1)} mmol`} color="#B45309" />
+            )}
+            {selected.rpe > 0 && selected.metric !== 'RPE' && (
+              <Metric label="RPE" value={String(Math.round(selected.rpe))} />
+            )}
           </div>
-          {/* Edit button */}
+          {/* Edit — icon only to save width */}
           {onEdit && (
-            <button onClick={onEdit} title="Edit training" style={{
-              flexShrink: 0, padding: '5px 8px', borderRadius: 8,
+            <button onClick={onEdit} title="Edit training" aria-label="Edit training" style={{
+              flexShrink: 0, width: 26, height: 26, padding: 0, borderRadius: 8,
               background: '#F0F9FF', border: '1px solid #BAE6FD', color: '#0369A1',
-              fontFamily: 'inherit', fontSize: 10.5, fontWeight: 800,
-              cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4,
+              cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
               WebkitTapHighlightColor: 'transparent',
             }}>
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
                 <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
               </svg>
-              Edit
             </button>
           )}
           {/* Open full modal */}
