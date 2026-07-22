@@ -19,6 +19,7 @@ import PremiumLock from '../components/PremiumLock';
 import { NATIVE_DASHBOARD_KEYFRAMES, cardEntry } from '../components/NativeDashboard/animations';
 import TrainingForm from '../components/TrainingForm';
 import { getStravaActivityDetail, addTraining, updateTraining, updateStravaLactateValues, getTrainingCommentCounts } from '../services/api';
+import { fetchWellness } from '../services/wellnessData';
 import { useCategories, hexToRgba } from '../context/CategoryContext';
 import { dayThemePresetColor, periodColor, buildPeriodsByDate } from '../utils/calendarThemes';
 import { buildActivityMatcher, metricsPatchFromDetail } from '../utils/activityEventPatches';
@@ -185,7 +186,7 @@ function NdCommentBadge({ count }) {
   );
 }
 
-function DayActivitiesCard({ date, activities, plannedWorkouts, dayPlans = [], periods = [], races = [], onEditTheme = null, onEditPeriod = null, onOpenActivity, onOpenPlanned, onPlanWorkout, onOpenRace = null, userProfile = null, commentCounts = {} }) {
+function DayActivitiesCard({ date, activities, plannedWorkouts, dayPlans = [], periods = [], races = [], onEditTheme = null, onEditPeriod = null, onOpenActivity, onOpenPlanned, onPlanWorkout, onOpenRace = null, userProfile = null, commentCounts = {}, wellness = null }) {
   const { user } = useAuth() || {};
   const profile = mergeProfileZones(userProfile, user) || userProfile || user;
   const dateStr = toLocalDateStr(date);
@@ -296,6 +297,31 @@ function DayActivitiesCard({ date, activities, plannedWorkouts, dayPlans = [], p
           ))}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {/* Wellness for this day (Apple/Garmin) — sits before the session count. */}
+          {wellness && (() => {
+            const sleep = wellness.sleepMinutes > 0
+              ? `${Math.floor(wellness.sleepMinutes / 60)}:${String(Math.round(wellness.sleepMinutes % 60)).padStart(2, '0')}` : null;
+            const rhr = wellness.restingHeartRate > 0 ? Math.round(wellness.restingHeartRate) : null;
+            const hrv = wellness.hrvMs > 0 ? Math.round(wellness.hrvMs) : null;
+            if (!sleep && !rhr && !hrv) return null;
+            return (
+              <span style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 10.5, fontWeight: 700, color: '#6B7280', fontVariantNumeric: 'tabular-nums' }}>
+                {sleep && (
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="#8b5cf6"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>{sleep}
+                  </span>
+                )}
+                {rhr != null && (
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="#f43f5e"><path d="M12 21s-7-4.35-9.5-8.5C.5 8.5 3 5 6.5 5 8.5 5 10 6 12 8c2-2 3.5-3 5.5-3C21 5 23.5 8.5 21.5 12.5 19 16.65 12 21 12 21z"/></svg>{rhr}
+                  </span>
+                )}
+                {hrv != null && (
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 2 }}>{hrv}<span style={{ opacity: 0.7 }}>ms</span></span>
+                )}
+              </span>
+            );
+          })()}
           {dayActs.length > 0 && (
             <span style={{ fontSize: 10.5, color: '#6B7280', fontWeight: 600 }}>
               {dayActs.length} session{dayActs.length !== 1 ? 's' : ''}
@@ -434,6 +460,7 @@ function DayActivitiesCard({ date, activities, plannedWorkouts, dayPlans = [], p
               onTouchStart={(e)=> { e.currentTarget.style.transform = 'scale(.98)'; }}
               onTouchEnd={(e)  => { e.currentTarget.style.transform = 'scale(1)'; }}
               style={{
+                position: 'relative',
                 display: 'flex', alignItems: 'center', gap: 10,
                 width: '100%', padding: '10px 11px', borderRadius: 13,
                 background: 'rgba(255,255,255,.55)',
@@ -447,13 +474,18 @@ function DayActivitiesCard({ date, activities, plannedWorkouts, dayPlans = [], p
                 transition: 'transform .15s ease',
               }}
             >
+              {/* Comment badge — bottom-right corner. */}
+              {(commentCounts[act._id] || commentCounts[act.id] || 0) > 0 && (
+                <span style={{ position: 'absolute', right: 9, bottom: 7 }}>
+                  <NdCommentBadge count={commentCounts[act._id] || commentCounts[act.id] || 0} />
+                </span>
+              )}
               <SportIcon sport={sport} size={22} />
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
                   <div style={{ fontSize: 13, fontWeight: 700, color: '#0A0E1A', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
                     {title}
                   </div>
-                  <NdCommentBadge count={commentCounts[act._id] || commentCounts[act.id] || 0} />
                   {act.category && catStyle(act.category) && (
                     <span style={{
                       fontSize: 9, fontWeight: 700, textTransform: 'uppercase',
@@ -719,6 +751,28 @@ export default function NativeDashboardPage({
       .catch(() => { if (!cancelled) setCommentCounts({}); });
     return () => { cancelled = true; };
   }, [activities]);
+
+  // Apple Health / Garmin wellness rows → shown for the selected day in the card.
+  const [wellnessByDate, setWellnessByDate] = useState({});
+  useEffect(() => {
+    let cancelled = false;
+    const load = () => fetchWellness(90, athleteId || null)
+      .then((w) => {
+        if (cancelled) return;
+        const map = {};
+        (w.days || []).forEach((d) => { if (d?.date) map[d.date] = d; });
+        setWellnessByDate(map);
+      })
+      .catch(() => { if (!cancelled) setWellnessByDate({}); });
+    load();
+    window.addEventListener('appleHealth:synced', load);
+    window.addEventListener('garmin:synced', load);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('appleHealth:synced', load);
+      window.removeEventListener('garmin:synced', load);
+    };
+  }, [athleteId]);
 
   // Track viewport width so the phone-first dashboard centres into a
   // comfortable column on iPad instead of stretching its cards (and the
@@ -1330,6 +1384,7 @@ export default function NativeDashboardPage({
                 periods={periods}
                 races={races}
                 commentCounts={commentCounts}
+                wellness={wellnessByDate[toLocalDateStr(selectedDate)] || null}
                 onOpenRace={setSelectedRace}
                 userProfile={fitnessProfile}
                 onEditTheme={onDayPlanSave ? (d) => setThemeEditDate(toLocalDateStr(d)) : null}

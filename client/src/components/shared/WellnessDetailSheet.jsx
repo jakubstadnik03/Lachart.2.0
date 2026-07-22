@@ -3,7 +3,7 @@ import ReactDOM from 'react-dom';
 import EChartsModule from 'echarts-for-react';
 import { XMarkIcon } from '@heroicons/react/24/outline';
 import { fetchWellness } from '../../services/wellnessData';
-import { metricDayStatus, METRIC_STATUS_TEXT } from '../../utils/recovery';
+import { metricDayStatus } from '../../utils/recovery';
 
 const ReactECharts = EChartsModule?.default ?? EChartsModule;
 

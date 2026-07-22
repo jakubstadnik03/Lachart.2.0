@@ -806,7 +806,6 @@ function WeekActivityCard({ a, isSelected, onSelect, onActivityClick, onAddLacta
         <div className="flex items-center gap-1 min-w-0">
           <SportIcon sport={a.sport} className="w-3.5 h-3.5 flex-shrink-0" />
           <span className="text-[11px] font-bold truncate flex-1 leading-tight">{title}</span>
-          <CommentBadge count={commentCount} isSelected={isSelected} />
           {a.category && catBadgeStyle && catLabel && (
             <span
               className="text-[8px] font-bold uppercase tracking-wide px-1 py-0 rounded border flex-shrink-0 leading-none max-w-[64px] truncate"
@@ -833,6 +832,11 @@ function WeekActivityCard({ a, isSelected, onSelect, onActivityClick, onAddLacta
         >
           + La
         </button>
+      )}
+      {commentCount > 0 && (
+        <span className="absolute bottom-1 right-1.5 pointer-events-none">
+          <CommentBadge count={commentCount} isSelected={isSelected} />
+        </span>
       )}
     </div>
   );
@@ -9212,12 +9216,16 @@ export default function CalendarView({
                                   return (
                                     <button key={`act-${pi}`}
                                       onClick={e => { e.stopPropagation(); const r = e.currentTarget?.getBoundingClientRect() || null; handleActivityClick(a, r); }}
-                                      className={`w-full text-left flex flex-col gap-1 px-3 py-2.5 rounded-xl border transition-all touch-manipulation ${isActSelected ? 'bg-primary/10 border-primary/30' : 'bg-white border-gray-100 active:bg-gray-50'}`}
+                                      className={`relative w-full text-left flex flex-col gap-1 px-3 py-2.5 rounded-xl border transition-all touch-manipulation ${isActSelected ? 'bg-primary/10 border-primary/30' : 'bg-white border-gray-100 active:bg-gray-50'}`}
                                       style={{ borderLeftColor: color, borderLeftWidth: 4, WebkitTapHighlightColor: 'transparent' }}>
+                                      {activityCommentCount(a, commentCounts) > 0 && (
+                                        <span className="absolute bottom-1.5 right-2 pointer-events-none">
+                                          <CommentBadge count={activityCommentCount(a, commentCounts)} />
+                                        </span>
+                                      )}
                                       <div className="flex items-center gap-2 min-w-0">
                                         <SportIcon sport={a.sport} className="w-5 h-5 flex-shrink-0" />
                                         <span className="text-sm font-bold text-gray-800 flex-1 truncate min-w-0">{title}</span>
-                                        <CommentBadge count={activityCommentCount(a, commentCounts)} />
                                         {a.category && (
                                           <span
                                             className="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-md flex-shrink-0 font-bold border leading-none"
@@ -9878,7 +9886,6 @@ export default function CalendarView({
                               <div className="flex items-center gap-1.5 min-w-0">
                                 <SportIcon sport={a.sport} className="w-4 h-4 flex-shrink-0" />
                                 <span className="truncate min-w-0 flex-1 font-semibold" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{activityTitle}</span>
-                                <CommentBadge count={activityCommentCount(a, commentCounts)} isSelected={isSelected} />
                                 {tssVal > 0 && (
                                   <span className={`flex-shrink-0 text-[10px] font-bold ${isSelected ? 'text-white/80' : 'text-gray-500'}`}>{Math.round(tssVal)}</span>
                                 )}
@@ -9914,6 +9921,11 @@ export default function CalendarView({
                               >
                                 + La
                               </button>
+                            )}
+                            {activityCommentCount(a, commentCounts) > 0 && (
+                              <span className="absolute bottom-1 right-1.5 pointer-events-none">
+                                <CommentBadge count={activityCommentCount(a, commentCounts)} isSelected={isSelected} />
+                              </span>
                             )}
                           </div>
                         );
