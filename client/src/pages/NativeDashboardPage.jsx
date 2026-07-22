@@ -18,7 +18,7 @@ import StravaConnectModal from '../components/NativeDashboard/StravaConnectModal
 import PremiumLock from '../components/PremiumLock';
 import { NATIVE_DASHBOARD_KEYFRAMES, cardEntry } from '../components/NativeDashboard/animations';
 import TrainingForm from '../components/TrainingForm';
-import { getStravaActivityDetail, addTraining, updateTraining, updateStravaLactateValues } from '../services/api';
+import { getStravaActivityDetail, addTraining, updateTraining, updateStravaLactateValues, getTrainingCommentCounts } from '../services/api';
 import { useCategories, hexToRgba } from '../context/CategoryContext';
 import { dayThemePresetColor, periodColor, buildPeriodsByDate } from '../utils/calendarThemes';
 import { buildActivityMatcher, metricsPatchFromDetail } from '../utils/activityEventPatches';
@@ -169,7 +169,23 @@ function AnimatedCard({ children, animKey }) {
 // ─── Day activities card ───────────────────────────────────────────────────────
 // onOpenActivity receives the full activity object so the caller can build the right URL.
 // onOpenPlanned receives the planned workout (with optional `linkedActivity`) for editing.
-function DayActivitiesCard({ date, activities, plannedWorkouts, dayPlans = [], periods = [], races = [], onEditTheme = null, onEditPeriod = null, onOpenActivity, onOpenPlanned, onPlanWorkout, onOpenRace = null, userProfile = null }) {
+/** Small speech-bubble badge for an activity that has coach/athlete comments. */
+function NdCommentBadge({ count }) {
+  if (!count || count <= 0) return null;
+  return (
+    <span
+      title={`${count} comment${count > 1 ? 's' : ''}`}
+      style={{ display: 'flex', alignItems: 'center', gap: 1, flexShrink: 0, fontSize: 10, fontWeight: 800, color: '#767EB5', lineHeight: 1 }}
+    >
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
+      </svg>
+      {count > 1 ? count : ''}
+    </span>
+  );
+}
+
+function DayActivitiesCard({ date, activities, plannedWorkouts, dayPlans = [], periods = [], races = [], onEditTheme = null, onEditPeriod = null, onOpenActivity, onOpenPlanned, onPlanWorkout, onOpenRace = null, userProfile = null, commentCounts = {} }) {
   const { user } = useAuth() || {};
   const profile = mergeProfileZones(userProfile, user) || userProfile || user;
   const dateStr = toLocalDateStr(date);
@@ -437,6 +453,7 @@ function DayActivitiesCard({ date, activities, plannedWorkouts, dayPlans = [], p
                   <div style={{ fontSize: 13, fontWeight: 700, color: '#0A0E1A', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
                     {title}
                   </div>
+                  <NdCommentBadge count={commentCounts[act._id] || commentCounts[act.id] || 0} />
                   {act.category && catStyle(act.category) && (
                     <span style={{
                       fontSize: 9, fontWeight: 700, textTransform: 'uppercase',
@@ -690,6 +707,18 @@ export default function NativeDashboardPage({
   const [searchParams, setSearchParams] = useSearchParams();
   const today         = new Date();
   const [selectedDate, setSelectedDate] = useState(today);
+
+  // Comment counts (coach/athlete) → speech-bubble badge on day activities.
+  const [commentCounts, setCommentCounts] = useState({});
+  useEffect(() => {
+    const ids = (activities || []).map((a) => a?._id || a?.id).filter(Boolean).map(String);
+    if (ids.length === 0) { setCommentCounts({}); return; }
+    let cancelled = false;
+    getTrainingCommentCounts([...new Set(ids)])
+      .then((r) => { if (!cancelled) setCommentCounts(r.data || {}); })
+      .catch(() => { if (!cancelled) setCommentCounts({}); });
+    return () => { cancelled = true; };
+  }, [activities]);
 
   // Track viewport width so the phone-first dashboard centres into a
   // comfortable column on iPad instead of stretching its cards (and the
@@ -1300,6 +1329,7 @@ export default function NativeDashboardPage({
                 dayPlans={dayPlans}
                 periods={periods}
                 races={races}
+                commentCounts={commentCounts}
                 onOpenRace={setSelectedRace}
                 userProfile={fitnessProfile}
                 onEditTheme={onDayPlanSave ? (d) => setThemeEditDate(toLocalDateStr(d)) : null}

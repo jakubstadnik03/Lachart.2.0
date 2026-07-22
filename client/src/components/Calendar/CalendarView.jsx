@@ -754,7 +754,30 @@ function PlannedWorkoutCard({ pw, onSelect, onStart, compact = false, onDragStar
 }
 
 // ─── Week view activity card (richer, TrainingPeaks style) ───────────────────
-function WeekActivityCard({ a, isSelected, onSelect, onActivityClick, onAddLactate, catBadgeStyle, catLabel, userProfile = null }) {
+/** Small speech-bubble badge shown on an activity that has coach/athlete comments. */
+function CommentBadge({ count, isSelected = false, className = '' }) {
+  if (!count || count <= 0) return null;
+  return (
+    <span
+      className={`flex items-center gap-0.5 flex-shrink-0 text-[9px] font-bold leading-none ${className}`}
+      style={{ color: isSelected ? 'rgba(255,255,255,0.9)' : '#767EB5' }}
+      title={`${count} comment${count > 1 ? 's' : ''}`}
+    >
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
+      </svg>
+      {count > 1 ? count : ''}
+    </span>
+  );
+}
+
+/** Comment count for an activity from a `commentCounts` map keyed by id. */
+function activityCommentCount(a, commentCounts) {
+  if (!a || !commentCounts) return 0;
+  return commentCounts[a._id] || commentCounts[a.id] || commentCounts[String(a._id)] || 0;
+}
+
+function WeekActivityCard({ a, isSelected, onSelect, onActivityClick, onAddLactate, catBadgeStyle, catLabel, userProfile = null, commentCount = 0 }) {
   const title = a.title || a.name || a.originalFileName || 'Activity';
   const statsLine = activityCompletedStats(a, userProfile);
   const color = sportColor(a.sport);
@@ -783,6 +806,7 @@ function WeekActivityCard({ a, isSelected, onSelect, onActivityClick, onAddLacta
         <div className="flex items-center gap-1 min-w-0">
           <SportIcon sport={a.sport} className="w-3.5 h-3.5 flex-shrink-0" />
           <span className="text-[11px] font-bold truncate flex-1 leading-tight">{title}</span>
+          <CommentBadge count={commentCount} isSelected={isSelected} />
           {a.category && catBadgeStyle && catLabel && (
             <span
               className="text-[8px] font-bold uppercase tracking-wide px-1 py-0 rounded border flex-shrink-0 leading-none max-w-[64px] truncate"
@@ -9193,6 +9217,7 @@ export default function CalendarView({
                                       <div className="flex items-center gap-2 min-w-0">
                                         <SportIcon sport={a.sport} className="w-5 h-5 flex-shrink-0" />
                                         <span className="text-sm font-bold text-gray-800 flex-1 truncate min-w-0">{title}</span>
+                                        <CommentBadge count={activityCommentCount(a, commentCounts)} />
                                         {a.category && (
                                           <span
                                             className="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-md flex-shrink-0 font-bold border leading-none"
@@ -9618,6 +9643,7 @@ export default function CalendarView({
                               catBadgeStyle={catBadgeStyle}
                               catLabel={catLabel}
                               userProfile={userProfile}
+                              commentCount={activityCommentCount(a, commentCounts)}
                             />
                           );
                         })}
@@ -9815,6 +9841,7 @@ export default function CalendarView({
                               catBadgeStyle={catBadgeStyle}
                               catLabel={catLabel}
                               userProfile={userProfile}
+                              commentCount={activityCommentCount(a, commentCounts)}
                             />
                           );
                         }
@@ -9851,6 +9878,7 @@ export default function CalendarView({
                               <div className="flex items-center gap-1.5 min-w-0">
                                 <SportIcon sport={a.sport} className="w-4 h-4 flex-shrink-0" />
                                 <span className="truncate min-w-0 flex-1 font-semibold" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{activityTitle}</span>
+                                <CommentBadge count={activityCommentCount(a, commentCounts)} isSelected={isSelected} />
                                 {tssVal > 0 && (
                                   <span className={`flex-shrink-0 text-[10px] font-bold ${isSelected ? 'text-white/80' : 'text-gray-500'}`}>{Math.round(tssVal)}</span>
                                 )}

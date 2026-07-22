@@ -6,6 +6,13 @@ import { mergeProfileZones } from '../../utils/inferThresholdsFromActivities';
 import { activityOnLocalDay } from '../../utils/formFitnessFromActivities';
 import { useAuth } from '../../context/AuthProvider';
 import { TSS_DISPLAY_MODE_EVENT } from '../../utils/uiPrefs';
+import { fetchWellness } from '../../services/wellnessData';
+import { baseline, dayRecoveryStatus } from '../../utils/recovery';
+
+const fmtSleepShort = (mins) => {
+  if (!mins || mins <= 0) return null;
+  return `${Math.floor(mins / 60)}:${String(Math.round(mins % 60)).padStart(2, '0')}`;
+};
 
 const DOW = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
@@ -129,6 +136,35 @@ export default function WeekStrip({ activities = [], plannedWorkouts = [], dayPl
     };
   }, []);
   void tssModeTick;
+
+  // Apple Health / Garmin wellness → compact per-day sleep + resting HR, with
+  // the value tinted by the recovery status (mirrors the calendar strips).
+  const [wellnessDays, setWellnessDays] = React.useState([]);
+  React.useEffect(() => {
+    let cancelled = false;
+    const load = () => fetchWellness(90)
+      .then((w) => { if (!cancelled) setWellnessDays(w.days || []); })
+      .catch(() => { if (!cancelled) setWellnessDays([]); });
+    load();
+    window.addEventListener('appleHealth:synced', load);
+    window.addEventListener('garmin:synced', load);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('appleHealth:synced', load);
+      window.removeEventListener('garmin:synced', load);
+    };
+  }, []);
+  const wellnessByDate = React.useMemo(() => {
+    const map = new Map();
+    if (!wellnessDays.length) return map;
+    const rhrBase = baseline(wellnessDays, 'restingHeartRate', false);
+    const hrvBase = baseline(wellnessDays, 'hrvMs', false);
+    wellnessDays.forEach((d) => {
+      if (d?.date) map.set(d.date, { w: d, status: dayRecoveryStatus(d, rhrBase, hrvBase) });
+    });
+    return map;
+  }, [wellnessDays]);
+
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
@@ -435,6 +471,41 @@ export default function WeekStrip({ activities = [], plannedWorkouts = [], dayPl
                 }}>
                   {tot.tss > 0 && <span>{tot.tss}</span>}
                   {durStr && <span style={{ fontSize: 7.5, opacity: 0.75, fontWeight: 700 }}>{durStr}</span>}
+                </div>
+              );
+            })()}
+
+            {/* Wellness (sleep + resting HR), tinted by recovery status. */}
+            {(() => {
+              const entry = wellnessByDate.get(toLocalDateStr(d));
+              if (!entry) return null;
+              const { w, status } = entry;
+              const sleep = fmtSleepShort(w.sleepMinutes);
+              const rhr = w.restingHeartRate > 0 ? Math.round(w.restingHeartRate) : null;
+              if (!sleep && !rhr) return null;
+              const rhrColor = isSelected
+                ? 'rgba(255,255,255,.9)'
+                : status?.level === 'high' ? '#e11d48'
+                  : status?.level === 'watch' ? '#d97706'
+                    : '#5E6590';
+              const baseColor = isSelected ? 'rgba(255,255,255,.75)' : '#9CA3AF';
+              return (
+                <div style={{
+                  marginTop: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  gap: 3, fontSize: 7.5, fontWeight: 700, fontVariantNumeric: 'tabular-nums', lineHeight: 1,
+                }}>
+                  {sleep && (
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 1, color: baseColor }}>
+                      <svg width="6" height="6" viewBox="0 0 24 24" fill="currentColor"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+                      {sleep}
+                    </span>
+                  )}
+                  {rhr != null && (
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 1, color: rhrColor }}>
+                      <svg width="6" height="6" viewBox="0 0 24 24" fill="currentColor"><path d="M12 21s-7-4.35-9.5-8.5C.5 8.5 3 5 6.5 5 8.5 5 10 6 12 8c2-2 3.5-3 5.5-3C21 5 23.5 8.5 21.5 12.5 19 16.65 12 21 12 21z"/></svg>
+                      {rhr}
+                    </span>
+                  )}
                 </div>
               );
             })()}
