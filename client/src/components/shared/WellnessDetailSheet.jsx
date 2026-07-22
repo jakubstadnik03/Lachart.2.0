@@ -254,9 +254,22 @@ export default function WellnessDetailSheet({ open, onClose, initialMetric = 'sl
     };
   }, [windowRows, metric, stats, resolvedIdx]);
 
-  const onChartEvents = useMemo(() => ({
-    click: (p) => { if (p && typeof p.dataIndex === 'number') setSelectedIdx(p.dataIndex); },
-  }), []);
+  const onChartEvents = useMemo(() => {
+    // Precise taps on a line symbol are hard on touch. Drive the selection
+    // from the axis pointer instead: tapping (or dragging) anywhere snaps to
+    // the nearest day, so the dashed marker + header slide with the finger.
+    const pick = (idx) => {
+      if (idx == null || !Number.isFinite(idx) || idx < 0) return;
+      setSelectedIdx((prev) => (prev === idx ? prev : idx));
+    };
+    return {
+      updateAxisPointer: (p) => {
+        const info = p?.axesInfo?.[0];
+        if (info && typeof info.value === 'number') pick(info.value);
+      },
+      click: (p) => { if (p && typeof p.dataIndex === 'number') pick(p.dataIndex); },
+    };
+  }, []);
 
   // Hypnogram for the selected night.
   const hypnoOption = useMemo(() => {
