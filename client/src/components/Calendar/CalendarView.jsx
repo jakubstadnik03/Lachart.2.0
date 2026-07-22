@@ -48,6 +48,7 @@ import {
   resolveDistanceUnitSystem,
 } from '../../utils/unitsConverter';
 import { distinctiveTitleTokens, isGenericTitle } from '../../utils/compareSimilarity';
+import { buildStructureTitle } from '../../utils/workoutStructureTitle';
 import {
   buildActivityMatcher,
   getActivityAppId,
@@ -2565,6 +2566,7 @@ function resolveCommentsTarget(activity, plannedWorkout) {
 
 export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWorkout, onClose, onEditPlanned, onAddLactate, onPlannedSaved, onCompletedSaved = null, onOpenFull = null, athleteId = null, onDeleted = null, highlightMetric: highlightMetricProp = null, radarWatts: radarWattsProp = null, profile: profileProp = null }) {
   const a = activity;
+  const { getCategory } = useCategories();
 
   // Read highlightMetric + radarWatts from props (passed by SpiderChart navigation) or URL params
   const _urlParams = useMemo(() => new URLSearchParams(window.location.search), []);
@@ -3513,6 +3515,46 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
     const m = Math.floor(s/60), sec = Math.floor(s%60);
     return `${m}:${String(sec).padStart(2,'0')}`;
   };
+
+  // ── Auto-title from detected interval structure ──
+  // When an activity still has a generic/auto-generated name ("Morning Ride",
+  // "Bike wu"…) and no manual title, and its laps reveal a repeated structure,
+  // name it e.g. "5×8min LT2". Never touches a title the athlete set by hand.
+  const autoStructTitleRef = useRef(false);
+  useEffect(() => {
+    if (autoStructTitleRef.current) return;
+    if (!Array.isArray(merged?.laps) || merged.laps.length < 3) return;
+    if (merged.titleManual) return; // respect manual names
+    const curTitle = String(merged.title || merged.name || '').trim();
+    if (curTitle && !isGenericTitle(curTitle)) return; // keep meaningful names
+    const catLabel = merged.category ? (getCategory?.(merged.category)?.label || null) : null;
+    const structured = buildStructureTitle(merged.laps, { categoryLabel: catLabel });
+    if (!structured || structured === curTitle) return;
+    autoStructTitleRef.current = true;
+    (async () => {
+      try {
+        const id = String(merged.id || merged._id || '');
+        const isStrava = !!merged.stravaId || merged.source === 'strava' || merged.type === 'strava' || id.startsWith('strava-');
+        const isFit    = merged.source === 'fit' || merged.type === 'fit' || id.startsWith('fit-') || (!!merged.timestamp && !isStrava && !merged._id);
+        const { updateStravaActivity, updateFitTraining, updateTraining } = await import('../../services/api.js');
+        if (isStrava) {
+          await updateStravaActivity(String(merged.stravaId || id.replace(/^strava-/, '')), { title: structured });
+        } else if (isFit) {
+          await updateFitTraining(String(merged._id || id.replace(/^fit-/, '')), { titleManual: structured });
+        } else if (merged._id) {
+          await updateTraining(String(merged._id), { title: structured });
+        } else {
+          return;
+        }
+        setDetail((prev) => ({ ...(prev || {}), titleManual: structured, title: structured }));
+        try {
+          window.dispatchEvent(new CustomEvent('activityTitleUpdated', { detail: { id: String(merged.id || merged._id || ''), title: structured } }));
+        } catch { /* ignore */ }
+      } catch {
+        autoStructTitleRef.current = false; // allow retry on next open
+      }
+    })();
+  }, [merged?.id, merged?._id, merged?.laps, merged?.titleManual, merged?.title, merged?.category, getCategory]);
 
   // Planned workout data
   const plannedDur  = plannedWorkout ? plannedWorkoutDurationSecs(plannedWorkout, dur) : 0;
