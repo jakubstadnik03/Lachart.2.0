@@ -96,6 +96,33 @@ function metricColor(metric) {
   return `rgb(${hi[0]},${hi[1]},${hi[2]})`;
 }
 
+// ── Colour helpers for value-shaded bars ──────────────────────────────────
+function hexToRgb(h) {
+  let s = String(h || '').replace('#', '');
+  if (s.length === 3) s = s.split('').map((c) => c + c).join('');
+  const n = parseInt(s, 16);
+  return Number.isFinite(n) ? [(n >> 16) & 255, (n >> 8) & 255, n & 255] : [118, 126, 181];
+}
+function rgbToHex(r, g, b) {
+  return '#' + [r, g, b].map((x) => Math.max(0, Math.min(255, Math.round(x))).toString(16).padStart(2, '0')).join('');
+}
+function mixHex(h1, h2, t) {
+  const a = hexToRgb(h1), b = hexToRgb(h2);
+  return rgbToHex(a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t);
+}
+/**
+ * Shade a bar by its value: low → light tint, high → saturated/dark. For pace
+ * (lower is faster/better) the scale inverts so faster laps read darker.
+ */
+function valueShade(value, lo, hi, base, invert = false) {
+  let r = hi > lo ? (value - lo) / (hi - lo) : 0.5;
+  r = Math.max(0, Math.min(1, r));
+  if (invert) r = 1 - r;
+  const light = mixHex('#ffffff', base, 0.32); // easy laps
+  const dark = mixHex(base, '#1e1b4b', 0.18);  // hard laps
+  return mixHex(light, dark, r);
+}
+
 function lapBarColor({ intervalType, lactate, sessionShade: shade, isSelected = false, metric = 'power' }) {
   const t = String(intervalType || '').toLowerCase();
   if (t === 'warmup')   return isSelected ? '#d97706' : '#fbbf24';
@@ -219,15 +246,6 @@ function SelectedLapInfo({ selected, onOpen, onEdit, onClear, formatValue }) {
       ) : (
         <>
           <div style={{ minWidth: 0, flex: 1, display: 'flex', flexDirection: 'column', gap: 1 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 5, minWidth: 0 }}>
-              <span style={{ width: 6, height: 6, borderRadius: '50%', background: selected.sessionColor, flexShrink: 0 }} />
-              <span style={{ fontSize: 11, fontWeight: 800, color: '#0A0E1A', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {selected.sessionTitle || 'Training'}
-              </span>
-              <span style={{ fontSize: 9.5, color: '#9CA3AF', fontWeight: 700, fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>
-                · {selected.sessionDate ? selected.sessionDate.toLocaleDateString('en', { day: 'numeric', month: 'short' }) : ''}
-              </span>
-            </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 10.5, fontVariantNumeric: 'tabular-nums' }}>
               <span style={{ fontWeight: 800, color: selected.sessionColor, background: selected.sessionColor + '18', padding: '1px 6px', borderRadius: 5 }}>
                 Lap {selected.lapIdx}{selected.lapCount ? `/${selected.lapCount}` : ''}
@@ -317,7 +335,9 @@ export default function SessionProgressChart({
   // Draw into a viewBox whose width equals the chart's real pixel width so the
   // bars / line fill the full width without horizontal stretch on iPad.
   const [wrapRef, measuredW] = useElementWidth(320);
-  const H = 230, padX = 30, padTop = 14, padBottom = 28;
+  // Wider left gutter so pace labels ("1:29/100m") and 3-digit power fit.
+  const H = 230, padLeft = 46, padRight = 14, padTop = 14, padBottom = 28;
+  const padX = padLeft; // clusters/time still start at the left gutter
   const W = measuredW > 0 ? measuredW : 320;
   const sportIsPace = sport === 'run' || sport === 'swim';
   const isPace = sportIsPace && metric === 'power';
@@ -376,6 +396,8 @@ export default function SessionProgressChart({
   // stays tight automatically.
   const allVals = data.flatMap(s => s.laps.map(l => l.value));
   const avg    = allVals.reduce((a, b) => a + b, 0) / allVals.length;
+  const valMin = Math.min(...allVals);
+  const valMax = Math.max(...allVals);
   const maxDev = Math.max(...allVals.map(v => Math.abs(v - avg)));
   const spread = (maxDev || avg * 0.08 || (isPace ? 10 : 2)) * 1.3;
   const yLo = Math.max(0, avg - spread);
@@ -385,7 +407,7 @@ export default function SessionProgressChart({
     ? padTop + ((v - yLo) / (yHi - yLo || 1)) * (H - padTop - padBottom)
     : H - padBottom - ((v - yLo) / (yHi - yLo || 1)) * (H - padTop - padBottom);
 
-  const innerW     = W - padX * 2;
+  const innerW     = W - padLeft - padRight;
   const sessionGap = 8;
   const totalGaps  = sessionGap * (data.length - 1);
   const sessionTotals = data.map(s => {
@@ -488,7 +510,7 @@ export default function SessionProgressChart({
         {/* Y grid */}
         {ticks.map((t, i) => (
           <g key={`y-${i}`}>
-            <line x1={padX} y1={py(t)} x2={W - padX} y2={py(t)} stroke="rgba(118,126,181,.08)" strokeDasharray="2 4" />
+            <line x1={padLeft} y1={py(t)} x2={W - padRight} y2={py(t)} stroke="rgba(118,126,181,.08)" strokeDasharray="2 4" />
             <text x={padX - 4} y={py(t)} dy="3" textAnchor="end"
               style={{ fontSize: 8.5, fill: '#9CA3AF', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
               {fmtY(t)}
@@ -496,7 +518,7 @@ export default function SessionProgressChart({
           </g>
         ))}
         {/* Baseline */}
-        <line x1={padX} y1={H - padBottom} x2={W - padX} y2={H - padBottom} stroke="rgba(118,126,181,.18)" />
+        <line x1={padLeft} y1={H - padBottom} x2={W - padRight} y2={H - padBottom} stroke="rgba(118,126,181,.18)" />
 
         {/* ── TIME MODE — sessions overlaid on a shared elapsed-time axis ── */}
         {xMode === 'time' && (
@@ -611,7 +633,14 @@ export default function SessionProgressChart({
                   const baseY = H - padBottom;
                   const h     = Math.abs(baseY - top);
                   const isSel = selected && selected.sessionId === s.id && selected.lapIdx === li + 1;
-                  const fill  = lapBarColor({ intervalType: l.intervalType, lactate: l.lactate, sessionShade: s.color, isSelected: isSel, metric: isPace ? 'power' : metric });
+                  // Colour each bar by its value: lighter = easier, darker =
+                  // harder (faster pace / higher power). Lactate laps keep the
+                  // metric accent; selected bar uses the full session colour.
+                  const fill = l.lactate != null
+                    ? lapBarColor({ intervalType: l.intervalType, lactate: l.lactate, sessionShade: s.color, isSelected: isSel, metric: isPace ? 'power' : metric })
+                    : isSel
+                      ? s.color
+                      : valueShade(l.value, valMin, valMax, s.color, isPace);
                   if (chartType === 'line') {
                     const r = isSel ? 4 : (isHighlight ? 3 : 2.4);
                     return (
