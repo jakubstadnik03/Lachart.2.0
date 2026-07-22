@@ -10,6 +10,7 @@ import WeeklySummaryCarousel from '../components/NativeDashboard/WeeklySummaryCa
 import LastTestCard      from '../components/NativeDashboard/LastTestCard';
 import ZoneDistCard      from '../components/NativeDashboard/ZoneDistCard';
 import AppleHealthWellnessCard from '../components/NativeDashboard/AppleHealthWellnessCard';
+import WellnessDetailSheet from '../components/shared/WellnessDetailSheet';
 import TrainingInsightsCard from '../components/DashboardPage/TrainingInsightsCard';
 import RaceCountdownCard from '../components/DashboardPage/RaceCountdownCard';
 import PostRaceFeedbackCard from '../components/DashboardPage/PostRaceFeedbackCard';
@@ -186,7 +187,7 @@ function NdCommentBadge({ count }) {
   );
 }
 
-function DayActivitiesCard({ date, activities, plannedWorkouts, dayPlans = [], periods = [], races = [], onEditTheme = null, onEditPeriod = null, onOpenActivity, onOpenPlanned, onPlanWorkout, onOpenRace = null, userProfile = null, commentCounts = {}, wellness = null }) {
+function DayActivitiesCard({ date, activities, plannedWorkouts, dayPlans = [], periods = [], races = [], onEditTheme = null, onEditPeriod = null, onOpenActivity, onOpenPlanned, onPlanWorkout, onOpenRace = null, userProfile = null, commentCounts = {}, wellness = null, onOpenWellness = null }) {
   const { user } = useAuth() || {};
   const profile = mergeProfileZones(userProfile, user) || userProfile || user;
   const dateStr = toLocalDateStr(date);
@@ -304,20 +305,26 @@ function DayActivitiesCard({ date, activities, plannedWorkouts, dayPlans = [], p
             const rhr = wellness.restingHeartRate > 0 ? Math.round(wellness.restingHeartRate) : null;
             const hrv = wellness.hrvMs > 0 ? Math.round(wellness.hrvMs) : null;
             if (!sleep && !rhr && !hrv) return null;
+            const open = (metric) => (e) => { e.stopPropagation(); if (onOpenWellness) onOpenWellness(metric); };
+            const itemStyle = {
+              display: 'flex', alignItems: 'center', gap: 2, background: 'none', border: 'none',
+              padding: 0, font: 'inherit', color: 'inherit', cursor: onOpenWellness ? 'pointer' : 'default',
+              WebkitTapHighlightColor: 'transparent',
+            };
             return (
               <span style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 10.5, fontWeight: 700, color: '#6B7280', fontVariantNumeric: 'tabular-nums' }}>
                 {sleep && (
-                  <span style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                  <button type="button" onClick={open('sleep')} style={itemStyle}>
                     <svg width="10" height="10" viewBox="0 0 24 24" fill="#8b5cf6"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>{sleep}
-                  </span>
+                  </button>
                 )}
                 {rhr != null && (
-                  <span style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                  <button type="button" onClick={open('rhr')} style={itemStyle}>
                     <svg width="10" height="10" viewBox="0 0 24 24" fill="#f43f5e"><path d="M12 21s-7-4.35-9.5-8.5C.5 8.5 3 5 6.5 5 8.5 5 10 6 12 8c2-2 3.5-3 5.5-3C21 5 23.5 8.5 21.5 12.5 19 16.65 12 21 12 21z"/></svg>{rhr}
-                  </span>
+                  </button>
                 )}
                 {hrv != null && (
-                  <span style={{ display: 'flex', alignItems: 'center', gap: 2 }}>{hrv}<span style={{ opacity: 0.7 }}>ms</span></span>
+                  <button type="button" onClick={open('hrv')} style={itemStyle}>{hrv}<span style={{ opacity: 0.7 }}>ms</span></button>
                 )}
               </span>
             );
@@ -1016,6 +1023,7 @@ export default function NativeDashboardPage({
   // 60s client cache shared with RaceCountdownCard, so this is cheap.
   const [races, setRaces] = useState([]);
   const [selectedRace, setSelectedRace] = useState(null); // day-card ribbon → detail modal
+  const [wellnessDetailMetric, setWellnessDetailMetric] = useState(null); // TODAY-card wellness → detail sheet
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -1385,6 +1393,7 @@ export default function NativeDashboardPage({
                 races={races}
                 commentCounts={commentCounts}
                 wellness={wellnessByDate[toLocalDateStr(selectedDate)] || null}
+                onOpenWellness={(m) => setWellnessDetailMetric(m || 'sleep')}
                 onOpenRace={setSelectedRace}
                 userProfile={fitnessProfile}
                 onEditTheme={onDayPlanSave ? (d) => setThemeEditDate(toLocalDateStr(d)) : null}
@@ -1610,6 +1619,14 @@ export default function NativeDashboardPage({
           />
         </Suspense>
       )}
+
+      {/* Wellness trend detail from the TODAY-card sleep/RHR/HRV chips */}
+      <WellnessDetailSheet
+        open={Boolean(wellnessDetailMetric)}
+        initialMetric={wellnessDetailMetric || 'sleep'}
+        athleteId={athleteId}
+        onClose={() => setWellnessDetailMetric(null)}
+      />
 
       {/* Error toast for lactate-from-dashboard failures (no laps, network, etc.) */}
       {lactateError && (
