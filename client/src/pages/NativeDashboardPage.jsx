@@ -806,14 +806,31 @@ export default function NativeDashboardPage({
   // if dismissed, so it nudges without nagging every launch).
   const [showStravaConnect, setShowStravaConnect] = useState(false);
   useEffect(() => {
-    if (stravaConnected) { setShowStravaConnect(false); return; }
+    let cancelled = false;
+    const WEEK = 7 * 24 * 60 * 60 * 1000;
     let dismissedAt = 0;
     try { dismissedAt = Number(localStorage.getItem('stravaConnectDismissedAt') || 0); } catch (_) {}
-    const WEEK = 7 * 24 * 60 * 60 * 1000;
-    if (!dismissedAt || (Date.now() - dismissedAt) > WEEK) {
-      const t = setTimeout(() => setShowStravaConnect(true), 600); // let the dashboard paint first
-      return () => clearTimeout(t);
-    }
+    const recentlyDismissed = dismissedAt && (Date.now() - dismissedAt) <= WEEK;
+    if (recentlyDismissed) return undefined;
+
+    // Prompt when there's still a data source worth connecting: no Strava,
+    // or (on iOS) Apple Health not connected yet for recovery data.
+    (async () => {
+      let appleHealthMissing = false;
+      try {
+        const { isAppleHealthSupported } = await import('../services/appleHealthCapacitor');
+        if (isAppleHealthSupported()) {
+          const { getAppleHealthStatus } = await import('../services/api');
+          const st = await getAppleHealthStatus().catch(() => null);
+          appleHealthMissing = !st?.connected;
+        }
+      } catch (_) { /* web / no plugin */ }
+      if (cancelled) return;
+      if (!stravaConnected || appleHealthMissing) {
+        setTimeout(() => { if (!cancelled) setShowStravaConnect(true); }, 600);
+      }
+    })();
+    return () => { cancelled = true; };
   }, [stravaConnected]);
   const dismissStravaConnect = useCallback(() => {
     try { localStorage.setItem('stravaConnectDismissedAt', String(Date.now())); } catch (_) {}
@@ -1589,7 +1606,7 @@ export default function NativeDashboardPage({
       )}
 
       {/* Strava connect prompt (shown when not connected) */}
-      <StravaConnectModal open={showStravaConnect && !stravaConnected} onClose={dismissStravaConnect} />
+      <StravaConnectModal open={showStravaConnect} onClose={dismissStravaConnect} />
 
       {/* Race detail — opened from the day-card race ribbon */}
       {selectedRace && (

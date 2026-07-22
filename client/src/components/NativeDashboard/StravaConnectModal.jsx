@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import ReactDOM from 'react-dom';
 import { connectStrava } from '../../utils/connectStrava';
 import { startGarminAuth } from '../../services/api';
+import { isAppleHealthSupported } from '../../services/appleHealthCapacitor';
 
 const SWIPE_THRESHOLD = 80;
 const SWIPE_VEL_THRESHOLD = 400;
@@ -99,6 +100,31 @@ export default function StravaConnectModal({ open, onClose }) {
     }
   };
 
+  const appleHealthSupported = isAppleHealthSupported();
+  const [busyAH, setBusyAH] = useState(false);
+  const [ahMsg, setAhMsg] = useState(null);
+  const handleConnectAppleHealth = async () => {
+    setBusyAH(true);
+    setAhMsg(null);
+    try {
+      const { requestAppleHealthAccess, collectAppleHealthWellness } = await import('../../services/appleHealthCapacitor');
+      const { syncAppleHealthWellness } = await import('../../services/api');
+      await requestAppleHealthAccess();
+      // Recovery-only connect (sleep / resting HR / HRV) — workouts come from
+      // Strava/Garmin, matching the opt-out default in Settings.
+      const wellness = await collectAppleHealthWellness(30);
+      await syncAppleHealthWellness({ wellness, markConnected: true });
+      try { window.dispatchEvent(new CustomEvent('appleHealth:synced', { detail: { wellnessDays: wellness.length } })); } catch { /* ignore */ }
+      onClose?.();
+    } catch (e) {
+      console.error('Apple Health connect error:', e);
+      setAhMsg('Could not read Apple Health. In Health → Profile → Apps → LaChart, enable Sleep, Resting HR and HRV, then try again.');
+    } finally {
+      setBusyAH(false);
+    }
+  };
+  const anyBusy = busy || busyGarmin || busyAH;
+
   if (!open && !closing) return null;
 
   const modalRoot = document.getElementById('app-modal-root') || document.body;
@@ -168,16 +194,17 @@ export default function StravaConnectModal({ open, onClose }) {
         </div>
 
         <h2 id="strava-connect-title" className="text-center text-lg font-bold text-gray-900 mb-1">
-          Connect your activities
+          Connect your data
         </h2>
         <p className="text-center text-sm text-gray-500 mb-5 leading-relaxed">
-          Sync your activities automatically and import your training history — laps, pace, heart rate and more.
+          Sync activities and training history from Strava or Garmin — laps, pace, heart rate and more.
+          {appleHealthSupported ? ' Add Apple Health for sleep, resting HR and HRV recovery.' : ''}
         </p>
 
         <button
           type="button"
           onClick={handleConnect}
-          disabled={busy || busyGarmin}
+          disabled={anyBusy}
           className="w-full py-3 rounded-xl text-white text-sm font-bold disabled:opacity-60"
           style={{ background: '#FC5200' }}
         >
@@ -186,12 +213,29 @@ export default function StravaConnectModal({ open, onClose }) {
         <button
           type="button"
           onClick={handleConnectGarmin}
-          disabled={busy || busyGarmin}
+          disabled={anyBusy}
           className="w-full py-3 mt-2 rounded-xl text-white text-sm font-bold disabled:opacity-60"
           style={{ background: '#007CC3' }}
         >
           {busyGarmin ? 'Opening Garmin…' : 'Connect with Garmin'}
         </button>
+        {appleHealthSupported && (
+          <button
+            type="button"
+            onClick={handleConnectAppleHealth}
+            disabled={anyBusy}
+            className="w-full py-3 mt-2 rounded-xl text-white text-sm font-bold disabled:opacity-60 flex items-center justify-center gap-2"
+            style={{ background: '#111827' }}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="#FF375F" aria-hidden>
+              <path d="M12 21s-7-4.35-9.5-8.5C.5 8.5 3 5 6.5 5 8.5 5 10 6 12 8c2-2 3.5-3 5.5-3C21 5 23.5 8.5 21.5 12.5 19 16.65 12 21 12 21z" />
+            </svg>
+            {busyAH ? 'Reading Apple Health…' : 'Connect Apple Health'}
+          </button>
+        )}
+        {ahMsg && (
+          <p className="text-center text-[11px] text-rose-600 mt-2 leading-snug">{ahMsg}</p>
+        )}
         <button
           type="button"
           onClick={triggerClose}
