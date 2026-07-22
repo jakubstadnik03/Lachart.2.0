@@ -329,11 +329,6 @@ function DayActivitiesCard({ date, activities, plannedWorkouts, dayPlans = [], p
               </span>
             );
           })()}
-          {dayActs.length > 0 && (
-            <span style={{ fontSize: 10.5, color: '#6B7280', fontWeight: 600 }}>
-              {dayActs.length} session{dayActs.length !== 1 ? 's' : ''}
-            </span>
-          )}
           {onPlanWorkout && (
             <button
               type="button"
