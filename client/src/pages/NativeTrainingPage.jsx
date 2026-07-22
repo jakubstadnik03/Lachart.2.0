@@ -610,8 +610,32 @@ function computePaceYDomain(laps, sport) {
 // Bars with a recorded lactate value are highlighted in warm tones.
 // X-axis labels show every Nth session date.
 
+// Colour a bar by its value: lighter = easier, darker = harder (pace inverts
+// so a faster lap reads darker). Mirrors SessionProgressChart.
+function _hexToRgb(h) {
+  let s = String(h || '').replace('#', '');
+  if (s.length === 3) s = s.split('').map((c) => c + c).join('');
+  const n = parseInt(s, 16);
+  return Number.isFinite(n) ? [(n >> 16) & 255, (n >> 8) & 255, n & 255] : [118, 126, 181];
+}
+function _rgbToHex(r, g, b) {
+  return '#' + [r, g, b].map((x) => Math.max(0, Math.min(255, Math.round(x))).toString(16).padStart(2, '0')).join('');
+}
+function _mixHex(h1, h2, t) {
+  const a = _hexToRgb(h1), b = _hexToRgb(h2);
+  return _rgbToHex(a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t);
+}
+function valueShade(value, lo, hi, base, invert = false) {
+  let r = hi > lo ? (value - lo) / (hi - lo) : 0.5;
+  r = Math.max(0, Math.min(1, r));
+  if (invert) r = 1 - r;
+  return _mixHex(_mixHex('#ffffff', base, 0.32), _mixHex(base, '#1e1b4b', 0.18), r);
+}
+
 function SessionBarChart({ sessions, metric, sport, user = null, unitSystem = 'metric', highlightId, onSessionTap, onLapEditLactate, hideWarmCool = false, stravaLapsCache = {} }) {
-  const W = 320, H = 230, padX = 30, padTop = 14, padBottom = 28;
+  // Wider left gutter so pace ("4:35/km") and 3-digit power Y labels fit.
+  const W = 320, H = 230, padLeft = 46, padRight = 14, padTop = 14, padBottom = 28;
+  const padX = padLeft;
   // For run/swim: ALWAYS use pace, regardless of metric tab (it's the natural unit).
   // For bike: use the chosen metric.
   const sportIsPace = sport === 'run' || sport === 'swim';
@@ -679,6 +703,9 @@ function SessionBarChart({ sessions, metric, sport, user = null, unitSystem = 'm
   // Y-domain — for pace, ignore absurdly slow laps so one standing segment
   // doesn't squash every real interval into the top sliver of the chart.
   const allLaps = data.flatMap(s => s.laps);
+  const _allV = allLaps.map(l => l.value);
+  const valMin = _allV.length ? Math.min(..._allV) : 0;
+  const valMax = _allV.length ? Math.max(..._allV) : 1;
   let yLo;
   let yHi;
   if (isPace) {
@@ -705,7 +732,7 @@ function SessionBarChart({ sessions, metric, sport, user = null, unitSystem = 'm
   // X geometry — sessions are sized PROPORTIONAL to total session duration,
   // and within each session, lap widths are proportional to the lap's duration
   // (so a 30-min interval reads as wider than a 1-min recovery).
-  const innerW = W - padX * 2;
+  const innerW = W - padLeft - padRight;
   const sessionGap = 8;
   const totalGaps = sessionGap * (data.length - 1);
   // Total duration per session — fall back to lap-count if no durations available
@@ -771,9 +798,9 @@ function SessionBarChart({ sessions, metric, sport, user = null, unitSystem = 'm
       {/* Y grid lines + labels */}
       {ticks.map((t, i) => (
         <g key={`y-${i}`}>
-          <line x1={padX} y1={py(t)} x2={W - padX} y2={py(t)}
+          <line x1={padLeft} y1={py(t)} x2={W - padRight} y2={py(t)}
             stroke="rgba(118,126,181,.08)" strokeDasharray="2 4" />
-          <text x={padX - 4} y={py(t)} dy="3"
+          <text x={padLeft - 4} y={py(t)} dy="3"
             textAnchor="end"
             style={{ fontSize: 8.5, fill: '#9CA3AF', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
             {fmtY(t)}
@@ -782,7 +809,7 @@ function SessionBarChart({ sessions, metric, sport, user = null, unitSystem = 'm
       ))}
 
       {/* Baseline */}
-      <line x1={padX} y1={H - padBottom} x2={W - padX} y2={H - padBottom}
+      <line x1={padLeft} y1={H - padBottom} x2={W - padRight} y2={H - padBottom}
         stroke="rgba(118,126,181,.18)" />
 
       {/* Session clusters — each session's width is proportional to its total
@@ -832,15 +859,13 @@ function SessionBarChart({ sessions, metric, sport, user = null, unitSystem = 'm
                   && selected.sessionId === s.id
                   && selected.lapIdx === li + 1;
 
-                // Match the LapsBarChart palette in TrainingForm: warm-up
-                // amber, cool-down sky, recovery gray, lactate-marked violet,
-                // otherwise per-session purple shade.
-                const fill = lapBarColor({
-                  intervalType: l.intervalType,
-                  lactate: l.lactate,
-                  sessionShade: s.color,
-                  isSelected: isSelectedBar,
-                });
+                // Colour by value (light = easy, dark = hard; pace inverts).
+                // Lactate laps keep the accent; selected bar the full colour.
+                const fill = l.lactate != null
+                  ? lapBarColor({ intervalType: l.intervalType, lactate: l.lactate, sessionShade: s.color, isSelected: isSelectedBar })
+                  : isSelectedBar
+                    ? s.color
+                    : valueShade(l.value, valMin, valMax, s.color, isPace);
 
                 // Tap a bar → select (or deselect on second tap of same bar)
                 const handleBarTap = (e) => {
@@ -983,71 +1008,37 @@ function SelectedLapInfo({ selected, onOpen, onEditLactate, onClear, formatValue
         </span>
       ) : (
         <>
-          <div style={{ minWidth: 0, flex: 1, display: 'flex', flexDirection: 'column', gap: 1 }}>
-            {/* Title + date */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 5, minWidth: 0 }}>
-              <span style={{
-                width: 6, height: 6, borderRadius: '50%',
-                background: selected.sessionColor, flexShrink: 0,
-              }} />
-              <span style={{
-                fontSize: 11, fontWeight: 800, color: '#0A0E1A',
-                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-              }}>
-                {selected.sessionTitle || 'Training'}
-              </span>
-              <span style={{
-                fontSize: 9.5, color: '#9CA3AF', fontWeight: 700,
-                fontVariantNumeric: 'tabular-nums', flexShrink: 0,
-              }}>
-                · {selected.sessionDate ? selected.sessionDate.toLocaleDateString('en', { day: 'numeric', month: 'short' }) : ''}
-              </span>
-            </div>
-            {/* Lap pill + active metric value */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 10.5, fontVariantNumeric: 'tabular-nums' }}>
-              <span style={{
-                fontWeight: 800, color: selected.sessionColor,
-                background: selected.sessionColor + '18',
-                padding: '1px 6px', borderRadius: 5,
-              }}>
-                Lap {selected.lapIdx}{selected.lapCount ? `/${selected.lapCount}` : ''}
-              </span>
-              <span style={{ fontWeight: 800, color: '#0A0E1A' }}>
-                {formatValue(selected.value)}
-              </span>
-            </div>
-            {/* Per-lap metrics row — distance · time · pace · power · HR · lactate · RPE.
-                Only shows fields the lap actually has so the strip stays compact. */}
-            <div style={{
-              display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap',
-              fontSize: 10, fontVariantNumeric: 'tabular-nums', color: '#6B7280', marginTop: 2,
-            }}>
-              {selected.dist > 0 && (
-                <Metric label="DIST" value={formatActivityDistance(selected.dist, user) || '—'} />
-              )}
-              {selected.durationSec > 0 && (
-                <Metric label="TIME" value={
-                  selected.durationSec >= 60
-                    ? `${Math.floor(selected.durationSec / 60)}:${String(Math.round(selected.durationSec % 60)).padStart(2, '0')}`
-                    : `${Math.round(selected.durationSec)}s`
-                } />
-              )}
-              {selected.pace > 0 && selected.sport !== 'bike' && !selected.isPace && (
-                <Metric label="PACE" value={fmtPace(selected.pace, unitSystem, selected.sport || 'run')} />
-              )}
-              {selected.power > 0 && (
-                <Metric label="PWR" value={`${Math.round(selected.power)} W`} />
-              )}
-              {selected.hr > 0 && (
-                <Metric label="HR" value={`${Math.round(selected.hr)} bpm`} color="#B84238" />
-              )}
-              {selected.lactate != null && (
-                <Metric label="LAC" value={`${Number(selected.lactate).toFixed(1)} mmol`} color="#B45309" />
-              )}
-              {selected.rpe > 0 && (
-                <Metric label="RPE" value={String(Math.round(selected.rpe))} />
-              )}
-            </div>
+          <div style={{
+            minWidth: 0, flex: 1, display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap',
+            fontSize: 10, fontVariantNumeric: 'tabular-nums', color: '#6B7280',
+          }}>
+            {/* Primary value = the selected metric; chips never repeat it. */}
+            <span style={{ fontSize: 12, fontWeight: 800, color: selected.sessionColor }}>{formatValue(selected.value)}</span>
+            {selected.dist > 0 && (
+              <Metric label="DIST" value={formatActivityDistance(selected.dist, user) || '—'} />
+            )}
+            {selected.durationSec > 0 && (
+              <Metric label="TIME" value={
+                selected.durationSec >= 60
+                  ? `${Math.floor(selected.durationSec / 60)}:${String(Math.round(selected.durationSec % 60)).padStart(2, '0')}`
+                  : `${Math.round(selected.durationSec)}s`
+              } />
+            )}
+            {selected.pace > 0 && selected.sport !== 'bike' && !selected.isPace && (
+              <Metric label="PACE" value={fmtPace(selected.pace, unitSystem, selected.sport || 'run')} />
+            )}
+            {selected.power > 0 && selected.metric !== 'power' && (
+              <Metric label="PWR" value={`${Math.round(selected.power)} W`} />
+            )}
+            {selected.hr > 0 && selected.metric !== 'heartRate' && (
+              <Metric label="HR" value={`${Math.round(selected.hr)} bpm`} color="#B84238" />
+            )}
+            {selected.lactate != null && selected.metric !== 'lactate' && (
+              <Metric label="LAC" value={`${Number(selected.lactate).toFixed(1)} mmol`} color="#B45309" />
+            )}
+            {selected.rpe > 0 && selected.metric !== 'RPE' && (
+              <Metric label="RPE" value={String(Math.round(selected.rpe))} />
+            )}
           </div>
           {/* Lactate quick-edit — opens the TrainingForm for this session so
               the user can add/edit the lactate value for this specific lap
