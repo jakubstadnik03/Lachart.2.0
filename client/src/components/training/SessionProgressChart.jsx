@@ -359,6 +359,7 @@ export default function SessionProgressChart({
 
   const [selected, setSelected] = useState(null);
   const [chartType, setChartType] = useState('bars'); // 'bars' | 'line'
+  const [xMode, setXMode] = useState('laps'); // 'laps' (clusters) | 'time' (overlaid on shared time axis)
   const clearSelection = () => setSelected(null);
   const metricStroke = metricColor(isPace ? 'power' : metric);
 
@@ -443,11 +444,44 @@ export default function SessionProgressChart({
   const labeledIdxs = data.map((_, i) => i).filter(i => i === 0 || i === data.length - 1 || i % labelStep === 0);
   const fmtY = (v) => isPace ? fmtPace(v) : Math.round(v).toString();
 
+  // Time mode — shared elapsed-time X axis (0 → longest visible session), so
+  // sessions overlay and you compare the metric minute-by-minute.
+  const maxDurAll = Math.max(1, ...data.map(s => s.laps.reduce((a, l) => a + (l.durationSec || 0), 0)));
+  const tx = (t) => padX + (t / maxDurAll) * innerW;
+  const fmtClockSec = (s) => {
+    const m = Math.floor(s / 60);
+    const sec = Math.round(s % 60);
+    const h = Math.floor(m / 60);
+    return h > 0 ? `${h}:${String(m % 60).padStart(2, '0')}` : `${m}:${String(sec).padStart(2, '0')}`;
+  };
+  const timeTicks = [0, maxDurAll / 2, maxDurAll];
+
   return (
     <div style={{ position: 'relative', width: '100%' }}
       onClick={(e) => { if (e.target.tagName !== 'rect' && e.target.tagName !== 'circle') clearSelection(); }}
     >
-      {/* Chart-type toggle (bars ↔ line) */}
+      {/* X-axis mode toggle (per-lap clusters ↔ shared time axis) */}
+      <div style={{ position: 'absolute', top: 54, left: 6, zIndex: 2, display: 'flex', gap: 2,
+        padding: 2, borderRadius: 7, background: 'rgba(118,126,181,.08)', border: '1px solid rgba(118,126,181,.14)' }}>
+        {[{ k: 'laps', label: 'Laps' }, { k: 'time', label: 'Time' }].map(opt => {
+          const active = xMode === opt.k;
+          return (
+            <button key={opt.k} onClick={(e) => { e.stopPropagation(); setXMode(opt.k); clearSelection(); }}
+              style={{
+                padding: '3px 7px', borderRadius: 5, border: 'none', cursor: 'pointer',
+                fontSize: 9.5, fontWeight: 700, fontFamily: 'inherit',
+                background: active ? '#fff' : 'transparent',
+                color: active ? metricStroke : '#9CA3AF',
+                boxShadow: active ? '0 1px 2px rgba(10,14,26,.10)' : 'none',
+                WebkitTapHighlightColor: 'transparent',
+              }}>
+              {opt.label}
+            </button>
+          );
+        })}
+      </div>
+      {/* Chart-type toggle (bars ↔ line) — laps mode only */}
+      {xMode === 'laps' && (
       <div style={{ position: 'absolute', top: 54, right: 6, zIndex: 2, display: 'flex', gap: 2,
         padding: 2, borderRadius: 7, background: 'rgba(118,126,181,.08)', border: '1px solid rgba(118,126,181,.14)' }}>
         {[
@@ -472,6 +506,7 @@ export default function SessionProgressChart({
           );
         })}
       </div>
+      )}
       <SelectedLapInfo
         selected={selected}
         onOpen={() => { if (!selected) return; clearSelection(); onSessionTap && onSessionTap(selected.session); }}
@@ -494,8 +529,70 @@ export default function SessionProgressChart({
         ))}
         {/* Baseline */}
         <line x1={padX} y1={H - padBottom} x2={W - padX} y2={H - padBottom} stroke="rgba(118,126,181,.18)" />
+
+        {/* ── TIME MODE — sessions overlaid on a shared elapsed-time axis ── */}
+        {xMode === 'time' && (
+          <>
+            {timeTicks.map((t, i) => (
+              <text key={`tt-${i}`} x={tx(t)} y={H - 10}
+                textAnchor={i === 0 ? 'start' : i === timeTicks.length - 1 ? 'end' : 'middle'}
+                style={{ fontSize: 9, fontWeight: 700, fill: '#9CA3AF', fontVariantNumeric: 'tabular-nums' }}>
+                {fmtClockSec(t)}
+              </text>
+            ))}
+            {data.map((s) => {
+              const isHighlight = highlightId && s.id === highlightId;
+              const dimmed = highlightId && !isHighlight;
+              let t = 0;
+              const pts = [];
+              const segs = [];
+              s.laps.forEach((l, li) => {
+                const tStart = t;
+                const tEnd = t + (l.durationSec || 1);
+                t = tEnd;
+                const y = py(l.value);
+                pts.push(`${tx(tStart)},${y}`, `${tx(tEnd)},${y}`);
+                segs.push({ l, li, tStart, tEnd, y });
+              });
+              const selectLap = (l, li) => ({
+                sessionId: s.id, session: s.meta, sessionDate: s.date,
+                sessionTitle: s.meta?.title || s.meta?.titleManual || s.meta?.name || 'Training',
+                sessionColor: s.color, lapIdx: li + 1, lapCount: s.laps.length,
+                value: l.value, lactate: l.lactate, durationSec: l.durationSec,
+                hr: l.hr, dist: l.dist, pace: l.pace, power: l.power, rpe: l.rpe,
+                sport, isPace, metric,
+              });
+              return (
+                <g key={s.id} style={{ opacity: dimmed ? 0.2 : 1, transition: 'opacity .25s ease' }}>
+                  <polyline fill="none" stroke={s.color} strokeWidth={isHighlight ? 2.4 : 1.6}
+                    strokeLinejoin="round" strokeLinecap="round" points={pts.join(' ')} pointerEvents="none" />
+                  {segs.map((seg) => {
+                    const isSel = selected && selected.sessionId === s.id && selected.lapIdx === seg.li + 1;
+                    return (
+                      <g key={seg.li}>
+                        {/* full-height transparent hit target for the lap's time span */}
+                        <rect x={tx(seg.tStart)} y={padTop} width={Math.max(1, tx(seg.tEnd) - tx(seg.tStart))} height={H - padTop - padBottom}
+                          fill="transparent"
+                          onClick={(e) => { e.stopPropagation(); if (isSel) { clearSelection(); return; } setSelected(selectLap(seg.l, seg.li)); }}
+                          style={{ cursor: 'pointer' }} />
+                        {isSel && (
+                          <>
+                            <line x1={(tx(seg.tStart) + tx(seg.tEnd)) / 2} y1={padTop} x2={(tx(seg.tStart) + tx(seg.tEnd)) / 2} y2={H - padBottom}
+                              stroke={s.color} strokeWidth={1} strokeDasharray="2 3" pointerEvents="none" />
+                            <circle cx={(tx(seg.tStart) + tx(seg.tEnd)) / 2} cy={seg.y} r={3.5} fill={s.color} stroke="#fff" strokeWidth={1} pointerEvents="none" />
+                          </>
+                        )}
+                      </g>
+                    );
+                  })}
+                </g>
+              );
+            })}
+          </>
+        )}
+
         {/* Session clusters */}
-        {(() => {
+        {xMode === 'laps' && (() => {
           let runningX = padX;
           return data.map((s, si) => {
             const sessionW = sessionWs[si];
