@@ -1568,26 +1568,27 @@ router.post("/coach/invite-athlete", verifyToken, async (req, res) => {
                 const plan = fullCoach?.subscriptionId?.plan || 'free';
                 const ATHLETE_LIMITS = { free: 1, pro: 0, coach: 10, team: 25, enterprise: 60 };
                 const limit = ATHLETE_LIMITS[plan] !== undefined ? ATHLETE_LIMITS[plan] : 1;
+                // Count linked AND pending (invited-not-yet-accepted) athletes —
+                // otherwise a coach can invite unlimited athletes since invites
+                // land in pendingAthleteIds and never increment athletes.length.
+                const athleteCount = (coach.athletes?.length || 0) + (coach.pendingAthleteIds?.length || 0);
                 if (limit === 0) {
                     return res.status(403).json({
                         error: 'FREE_PLAN_LIMIT',
                         feature: 'athletes',
                         message: 'Your plan does not include athlete management. Upgrade to Coach plan.',
-                        limit: 0, current: coach.athletes?.length || 0,
+                        limit: 0, current: athleteCount,
                         upgradeUrl: '/settings?tab=subscription'
                     });
                 }
-                if (limit !== -1) {
-                    const athleteCount = coach.athletes?.length || 0;
-                    if (athleteCount >= limit) {
-                        return res.status(403).json({
-                            error: 'FREE_PLAN_LIMIT',
-                            feature: 'athletes',
-                            message: `Your plan allows only ${limit} athlete(s). Upgrade to Coach plan for more.`,
-                            limit, current: athleteCount,
-                            upgradeUrl: '/settings?tab=subscription'
-                        });
-                    }
+                if (limit !== -1 && athleteCount >= limit) {
+                    return res.status(403).json({
+                        error: 'FREE_PLAN_LIMIT',
+                        feature: 'athletes',
+                        message: `Your plan allows only ${limit} athlete(s). Upgrade to Coach plan for more.`,
+                        limit, current: athleteCount,
+                        upgradeUrl: '/settings?tab=subscription'
+                    });
                 }
             }
         }

@@ -8,6 +8,7 @@ const Test = require('../models/test');
 const User = require('../models/UserModel');
 const { notifyCoachesOfAthlete, notifyAthlete } = require('../utils/notificationHelper');
 const { requireQuotaSlot } = require('../middleware/featureGate');
+const { countCurrentTests } = require('../utils/testQuota');
 
 // H4 — 3 demo emails per hour per IP
 const demoEmailLimiter = rateLimit({
@@ -316,19 +317,9 @@ router.get('/list/:athleteId', verifyToken, async (req, res) => {
 router.post(
   "/",
   verifyToken,
-  requireQuotaSlot('tests', async (req, user) => {
-    // Determine whose quota this test counts against. If a coach is creating
-    // a test for one of their athletes, the body.athleteId is the athlete —
-    // their plan is what matters. Otherwise the requester's own tests count.
-    const role = String(user?.role || '').toLowerCase();
-    const bodyAthleteId = req.body?.athleteId;
-    const isCoachLike = ['coach', 'tester', 'testing'].includes(role) || user?.admin === true;
-    // Coach-on-behalf — count against the athlete, not the coach.
-    if (isCoachLike && bodyAthleteId && String(bodyAthleteId) !== String(user._id)) {
-      return Test.countDocuments({ athleteId: String(bodyAthleteId) });
-    }
-    return Test.countDocuments({ athleteId: String(user._id) });
-  }),
+  // Counts across ALL test types (graded / VLaMax / CP) so the free "1 test"
+  // cap can't be bypassed by creating one of each — see utils/testQuota.
+  requireQuotaSlot('tests', countCurrentTests),
   async (req, res) => {
     try {
         const user = await User.findById(req.user.userId).select('role');

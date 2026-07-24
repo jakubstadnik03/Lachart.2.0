@@ -4,6 +4,8 @@ const CPTest = require('../models/cpTest');
 const User = require('../models/UserModel');
 const StravaActivity = require('../models/StravaActivity');
 const verifyToken = require('../middleware/verifyToken');
+const { requireQuotaSlot } = require('../middleware/featureGate');
+const { countCurrentTests } = require('../utils/testQuota');
 
 /**
  * Authorization helper — same model as lactate tests. Coaches can read/write
@@ -57,7 +59,7 @@ router.get('/:id', verifyToken, async (req, res) => {
 });
 
 // POST /api/cp-test — create
-router.post('/', verifyToken, async (req, res) => {
+router.post('/', verifyToken, requireQuotaSlot('tests', countCurrentTests), async (req, res) => {
     try {
         const body = req.body || {};
         const athleteId = String(body.athleteId || req.user.userId);

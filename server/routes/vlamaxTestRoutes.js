@@ -3,6 +3,8 @@ const router = express.Router();
 const VLamaxTest = require('../models/vlamaxTest');
 const User = require('../models/UserModel');
 const verifyToken = require('../middleware/verifyToken');
+const { requireQuotaSlot } = require('../middleware/featureGate');
+const { countCurrentTests } = require('../utils/testQuota');
 
 async function userCanAccessAthlete(reqUserId, athleteId) {
     if (String(reqUserId) === String(athleteId)) return true;
@@ -47,7 +49,7 @@ router.get('/:id', verifyToken, async (req, res) => {
     }
 });
 
-router.post('/', verifyToken, async (req, res) => {
+router.post('/', verifyToken, requireQuotaSlot('tests', countCurrentTests), async (req, res) => {
     try {
         const body = req.body || {};
         const athleteId = String(body.athleteId || req.user.userId);
