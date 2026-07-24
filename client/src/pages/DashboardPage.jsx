@@ -829,9 +829,17 @@ export default function DashboardPage() {
 
   // Subset for "Training History" / TrainingGraph — only the user-curated
   // Training-collection records (manual entries + Strava/FIT activities the
-  // user explicitly exported via Add Lactate). Filter is intentionally
-  // identical to TrainingPage's filteredTrainings so both pages show the
-  // same dropdown.
+  // user explicitly exported via Add Lactate).
+  //
+  // Unlike TrainingPage, this page keeps raw Garmin/Apple activities in
+  // `trainings` (the calendar, PMC/form-fitness and heatmap need them). That
+  // means the plain "strava/fit only" exclusion TrainingPage relies on is NOT
+  // enough here: a synced Garmin ride is a persisted GarminActivity doc, so it
+  // carries a Mongo `_id` and sails through `!!t._id`. It then shows up in the
+  // Training History picker but has no laps/power, so TrainingGraph renders
+  // "No interval data for this training". So we explicitly drop every external
+  // source (garmin/apple_health too), matching what TrainingPage achieves by
+  // never ingesting them.
   //
   // Important: apply the filter to the FULL `trainings` array (not
   // recentTrainings, which is capped at 40 raw-imports-included). Then sort
@@ -843,9 +851,18 @@ export default function DashboardPage() {
     return [...trainings]
       .filter(t => {
         if (!t) return false;
-        if (t.source === 'strava' || t.source === 'fit') return false;
+        // Resolve an effective source even when the raw doc omits `source` but
+        // carries a provider id (Garmin/Apple summaries sometimes do).
+        const src = t.source || (
+          t.stravaId != null ? 'strava'
+          : t.garminId != null ? 'garmin'
+          : t.healthKitId != null ? 'apple_health'
+          : null
+        );
+        if (src === 'strava' || src === 'fit' || src === 'garmin' || src === 'apple_health') return false;
         const idStr = String(t.id || '');
-        if (idStr.startsWith('strava-') || idStr.startsWith('fit-')) return false;
+        if (idStr.startsWith('strava-') || idStr.startsWith('fit-')
+            || idStr.startsWith('garmin-') || idStr.startsWith('apple-')) return false;
         return !!t._id || !t.source;
       })
       .sort((a, b) => {
