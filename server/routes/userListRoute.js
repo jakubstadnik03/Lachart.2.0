@@ -439,7 +439,8 @@ router.post(
   // Team = 25, Enterprise = 60. Bypasses for admins / manual premium /
   // BETA_ALL_PREMIUM=true / SUBSCRIPTION_ENABLED=false via resolveUserPlan.
   requireQuotaSlot('athletes', async (req, user) =>
-    Array.isArray(user?.athletes) ? user.athletes.length : 0
+    (Array.isArray(user?.athletes) ? user.athletes.length : 0)
+    + (Array.isArray(user?.pendingAthleteIds) ? user.pendingAthleteIds.length : 0)
   ),
   async (req, res) => {
     try {

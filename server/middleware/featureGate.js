@@ -74,8 +74,10 @@ const QUOTA_LIMITS = {
   // Total lactate tests a free athlete can create (lifetime). The UI advertises
   // "1 lactate test" — we enforce the cap at create time.
   tests:    { free: 1, pro: -1, coach: -1, team: -1, enterprise: -1 },
-  // Linked athletes a coach can have. Pro is a solo athlete plan so it gets 0.
-  athletes: { free: 0, pro: 0,  coach: -1, team: 25, enterprise: 60 },
+  // Linked athletes a coach can have. Free gets 1 (a taste); Pro is a solo
+  // athlete plan so it gets 0; Coach is unlimited. Matches the client and the
+  // /coach/invite-athlete cap.
+  athletes: { free: 1, pro: 0,  coach: -1, team: 25, enterprise: 60 },
 };
 
 const KNOWN_PLANS = ['free', 'pro', 'coach', 'team', 'enterprise'];
