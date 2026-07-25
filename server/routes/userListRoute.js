@@ -2915,6 +2915,8 @@ router.get("/admin/users", verifyToken, async (req, res) => {
                 lastLogin: effectiveLastLogin,
                 loginCount: effectiveLoginCount,
                 stravaConnected: !!(user.strava && user.strava.athleteId),
+                garminConnected: !!(user.garmin && user.garmin.accessToken),
+                appleHealthConnected: !!(user.appleHealth && user.appleHealth.connectedAt),
                 strava: user.strava ? {
                     athleteId: user.strava.athleteId,
                     lastSyncDate: user.strava.lastSyncDate

@@ -1483,6 +1483,40 @@ const AdminDashboard = () => {
 
               <div className="bg-white rounded-lg shadow p-4 sm:p-6">
                 <div className="flex items-center">
+                  <div className="p-2 bg-blue-100 rounded-lg">
+                    <span className="text-xl sm:text-2xl">⌚</span>
+                  </div>
+                  <div className="ml-3 sm:ml-4">
+                    <p className="text-xs sm:text-sm font-medium text-gray-600">Garmin Connected</p>
+                    <p className="text-xl sm:text-2xl font-bold text-gray-900">
+                      {users.filter(u => u.garminConnected).length}
+                    </p>
+                    <p className="text-xs text-gray-500 mt-1">
+                      {users.length > 0 ? Math.round((users.filter(u => u.garminConnected).length / users.length) * 100) : 0}%
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-white rounded-lg shadow p-4 sm:p-6">
+                <div className="flex items-center">
+                  <div className="p-2 bg-rose-100 rounded-lg">
+                    <span className="text-xl sm:text-2xl">❤️</span>
+                  </div>
+                  <div className="ml-3 sm:ml-4">
+                    <p className="text-xs sm:text-sm font-medium text-gray-600">Apple Health Connected</p>
+                    <p className="text-xl sm:text-2xl font-bold text-gray-900">
+                      {users.filter(u => u.appleHealthConnected).length}
+                    </p>
+                    <p className="text-xs text-gray-500 mt-1">
+                      {users.length > 0 ? Math.round((users.filter(u => u.appleHealthConnected).length / users.length) * 100) : 0}%
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-white rounded-lg shadow p-4 sm:p-6">
+                <div className="flex items-center">
                   <div className="p-2 bg-slate-100 rounded-lg">
                     <span className="text-xl sm:text-2xl">📱</span>
                   </div>

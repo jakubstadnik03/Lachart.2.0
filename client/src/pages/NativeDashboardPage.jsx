@@ -11,6 +11,7 @@ import LastTestCard      from '../components/NativeDashboard/LastTestCard';
 import ZoneDistCard      from '../components/NativeDashboard/ZoneDistCard';
 import AppleHealthWellnessCard from '../components/NativeDashboard/AppleHealthWellnessCard';
 import WellnessDetailSheet from '../components/shared/WellnessDetailSheet';
+import OnboardingChecklist from '../components/NativeDashboard/OnboardingChecklist';
 import TrainingInsightsCard from '../components/DashboardPage/TrainingInsightsCard';
 import RaceCountdownCard from '../components/DashboardPage/RaceCountdownCard';
 import PostRaceFeedbackCard from '../components/DashboardPage/PostRaceFeedbackCard';
@@ -1345,6 +1346,18 @@ export default function NativeDashboardPage({
 
         {/* ── Cards (staggered fade-in) ── */}
         <div style={{ ...styles.body, ...bodyResponsive }}>
+
+          {/* Getting-started checklist — self-hides once complete/dismissed */}
+          <div style={{ ...cardEntry(0), ...snapStyle }}>
+            <OnboardingChecklist
+              user={user}
+              tests={tests}
+              plannedWorkouts={plannedWorkouts}
+              stravaConnected={stravaConnected}
+              onConnect={() => setShowStravaConnect(true)}
+              onPlanWorkout={onPlanWorkout}
+            />
+          </div>
 
           {/* 0 · Weekly summary carousel (swipeable) */}
           <div style={{ ...cardEntry(0), ...snapStyle }}>
