@@ -1260,7 +1260,10 @@ const SettingsPage = () => {
   // Sync all historical Garmin data (no date filter — downloads everything)
   const handleSyncGarminHistory = async () => {
     if (isSyncingGarminHistory || isSyncingGarmin) return;
-    const ok = window.confirm('This will download your full Garmin activity history (up to 5 years). This may take several minutes. Continue?');
+    // Garmin caps how far back this app may import (verified: 31 days). Promising
+    // "5 years" made a working import look broken — the server reports the real
+    // window back in res.maxHistoryDays / res.message.
+    const ok = window.confirm('This will import your recent Garmin activity history. Garmin currently allows apps to retrieve only about the last month of activities — older workouts cannot be imported. Continue?');
     if (!ok) return;
     let res;
     setGarminSyncError(null);
@@ -3655,7 +3658,8 @@ const SettingsPage = () => {
                   <p className={`${isMobile ? 'text-[9px] mb-2' : 'text-xs mb-3'} text-gray-500`}>
                     Import workouts from Garmin Connect. You can connect both Strava and Garmin — overlapping activities are merged automatically.
                     <strong> Sync now</strong> = recent activities.
-                    <strong> Import history</strong> = up to 2 years of past workouts.
+                    <strong> Import history</strong> = past workouts from roughly the last month —
+                    Garmin does not allow apps to retrieve activities older than that.
                   </p>
 
                   {garminConnected && garminLastSync && (
@@ -3731,7 +3735,7 @@ const SettingsPage = () => {
                       <button
                         onClick={handleSyncGarminHistory}
                         disabled={isSyncingGarminHistory || isSyncingGarmin}
-                        title="Download Garmin activity history (up to 2 years)"
+                        title="Import Garmin activity history (Garmin allows roughly the last month)"
                         className={`${isMobile ? 'px-2.5 py-1.5 text-[10px] w-full' : 'px-3 py-2'} bg-gray-100 text-gray-800 ${isMobile ? 'rounded-md' : 'rounded'} hover:bg-gray-200 disabled:opacity-60 disabled:cursor-not-allowed`}
                       >
                         {isSyncingGarminHistory ? 'Importing...' : 'Import History'}

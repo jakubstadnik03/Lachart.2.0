@@ -408,12 +408,60 @@ async function fetchGarminWellnessActivitiesByDay(user, tokenData, path, startSe
  */
 const garminBackfillJobs = new Map();
 
+/**
+ * How far back this consumer key may actually backfill.
+ *
+ * Verified against the live API (2026-08-03): a request starting earlier than
+ * `now - 31d` is rejected with HTTP 400 "start … before min start time of
+ * <ISO>", and direct pull (/rest/activities) is refused outright with
+ * InvalidPullTokenException — so backfill is the ONLY path and it is capped.
+ * Asking for 2 years therefore burned chunks of the 100 req/min quota that is
+ * shared across every LaChart user, just to collect 400s before the skip-ahead
+ * logic found the allowed window.
+ *
+ * Clamp the request to the permitted window instead. When Garmin grants
+ * production access, raise GARMIN_BACKFILL_MAX_DAYS (e.g. 730) — no code change.
+ */
+const GARMIN_BACKFILL_MAX_DAYS = Number(process.env.GARMIN_BACKFILL_MAX_DAYS || 31);
+/** Margin: Garmin's minimum moves forward in real time, so never sit exactly on it. */
+const GARMIN_BACKFILL_MIN_MARGIN_SEC = 600;
+
+function garminBackfillEarliestStartSec() {
+  return Math.floor(Date.now() / 1000)
+    - GARMIN_BACKFILL_MAX_DAYS * 24 * 3600
+    + GARMIN_BACKFILL_MIN_MARGIN_SEC;
+}
+
 function triggerGarminBackfillQueued(user, startSec, endSec) {
   const key = String(user._id);
   const existing = garminBackfillJobs.get(key);
   if (existing?.running) {
     console.log(`[Garmin backfill] job already running for user ${key} (${existing.requested}/${existing.total}) — not starting a duplicate`);
     return existing;
+  }
+
+  // Clamp to what the key allows. Callers still ask for 2 years (correct intent
+  // once we're on a production key); this keeps the wire request legal today.
+  const earliest = garminBackfillEarliestStartSec();
+  const requestedStartSec = startSec;
+  if (startSec < earliest) {
+    startSec = earliest;
+  }
+  const clampedByKeyLimit = startSec !== requestedStartSec;
+  if (clampedByKeyLimit) {
+    console.log(
+      `[Garmin backfill] requested history from ${new Date(requestedStartSec * 1000).toISOString().slice(0, 10)} ` +
+      `but this key only allows ${GARMIN_BACKFILL_MAX_DAYS}d — starting at ${new Date(startSec * 1000).toISOString().slice(0, 10)}`,
+    );
+  }
+  if (startSec >= endSec) {
+    const noop = {
+      running: false, total: 0, requested: 0, failed: 0, lastError: null,
+      startedAt: new Date(), finishedAt: new Date(),
+      clampedByKeyLimit, maxHistoryDays: GARMIN_BACKFILL_MAX_DAYS,
+    };
+    garminBackfillJobs.set(key, noop);
+    return noop;
   }
 
   const MAX_CHUNK = 90 * 24 * 3600;
@@ -426,6 +474,11 @@ function triggerGarminBackfillQueued(user, startSec, endSec) {
     lastError: null,
     startedAt: new Date(),
     finishedAt: null,
+    // Surfaced in /garmin/status so the UI can tell the user how much history
+    // is actually obtainable instead of implying a full 2-year import.
+    clampedByKeyLimit,
+    maxHistoryDays: GARMIN_BACKFILL_MAX_DAYS,
+    historyFrom: new Date(startSec * 1000),
   };
   garminBackfillJobs.set(key, job);
 
@@ -3590,16 +3643,27 @@ router.post('/garmin/sync-history', verifyToken, async (req, res) => {
       const job = triggerGarminBackfillQueued(user, startSec, nowSec);
 
       console.log(`Garmin history backfill: queued ${job.total} chunk(s) (running=${job.running}, already requested=${job.requested})`);
+      // Be honest about the cap: Garmin refuses backfill older than
+      // GARMIN_BACKFILL_MAX_DAYS for this key, so promising a 2-year import
+      // just makes a working sync look broken to the user.
+      const historyFromLabel = job.historyFrom
+        ? new Date(job.historyFrom).toISOString().slice(0, 10)
+        : null;
       return res.json({
         imported: 0,
         updated: 0,
         backfillChunks: job.total,
         backfillPending: true,
+        maxHistoryDays: job.maxHistoryDays,
+        historyLimited: !!job.clampedByKeyLimit,
+        historyFrom: historyFromLabel,
         status: 'backfill_started',
         message:
-          `Garmin is importing your activity history (${job.total} backfill chunk(s) queued, rate-limit aware). ` +
-          'Activities arrive via webhook over the next several minutes. ' +
-          'Progress is visible in GET /api/integrations/garmin/status → backfillJob.',
+          `Garmin is importing your activity history${historyFromLabel ? ` from ${historyFromLabel}` : ''} ` +
+          `(${job.total} chunk(s) queued, rate-limit aware). Activities arrive via webhook over the next several minutes.` +
+          (job.clampedByKeyLimit
+            ? ` Note: Garmin currently allows LaChart to import only the last ${job.maxHistoryDays} days of history — older activities cannot be retrieved.`
+            : ''),
       });
     }
 
