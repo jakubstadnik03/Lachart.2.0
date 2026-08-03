@@ -23,12 +23,23 @@ function startStravaAutoSyncScheduler() {
     console.log('[StravaAutoSyncScheduler] Disabled (set ENABLE_STRAVA_AUTO_SYNC_SCHEDULER=true to enable).');
     return;
   }
+
+  // Historical-import recovery MUST run independently of the polling tick.
+  // The in-tick resume (below) is gated behind budget/headroom early-returns,
+  // and the whole tick is skipped when STRAVA_DISABLE_POLL=true — so a user's
+  // stalled backfill (server restarted mid-import, in-memory setTimeout lost)
+  // used to only recover on the next full server boot. On a long-lived Render
+  // process that meant history stuck for days. This dedicated loop nudges any
+  // 'running' backfill that hasn't progressed, regardless of poll/budget state.
+  // Safe on the API budget: runBatch() throttles via stravaBudget internally.
+  startStravaBackfillResumeLoop();
+
   // Once the Strava webhook subscription is in place and proven reliable, set
   // STRAVA_DISABLE_POLL=true on the server to stop the periodic sync entirely.
   // Webhook will deliver new activities in real-time and skipping polling
   // keeps the rate-limit budget free for ad-hoc detail fetches.
   if (process.env.STRAVA_DISABLE_POLL === 'true') {
-    console.log('[StravaAutoSyncScheduler] STRAVA_DISABLE_POLL=true — polling skipped, webhook only.');
+    console.log('[StravaAutoSyncScheduler] STRAVA_DISABLE_POLL=true — polling skipped, webhook only (backfill resume loop still active).');
     return;
   }
 
@@ -139,6 +150,37 @@ function startStravaAutoSyncScheduler() {
     delayBetweenUsers,
     intervalMinutes: Math.round(intervalMs / 60000)
   });
+}
+
+/**
+ * Independent recovery loop for stalled/shallow Strava history backfills.
+ * Runs regardless of STRAVA_DISABLE_POLL and the polling tick's budget gates,
+ * so a user's historical import always finishes even if it was interrupted by
+ * a server restart. The heavy lifting (startStravaHistoricalBackfill) enforces
+ * its own concurrency cap and per-call budget checks.
+ */
+function startStravaBackfillResumeLoop() {
+  const resumeIntervalMs = Number(process.env.STRAVA_BACKFILL_RESUME_INTERVAL_MS || 10 * 60 * 1000);
+  const runResume = async () => {
+    try {
+      const {
+        resumeStaleStravaBackfills,
+        resumeShallowStravaBackfills,
+      } = require('../routes/integrationsRoutes');
+      if (typeof resumeStaleStravaBackfills === 'function') {
+        await resumeStaleStravaBackfills();
+      }
+      if (typeof resumeShallowStravaBackfills === 'function') {
+        await resumeShallowStravaBackfills();
+      }
+    } catch (e) {
+      console.warn('[StravaBackfillResume] loop error:', e?.message || e);
+    }
+  };
+  // First pass shortly after boot (after boot-time resume has run), then steady.
+  setTimeout(() => runResume(), 90 * 1000);
+  setInterval(() => runResume(), resumeIntervalMs);
+  console.log(`[StravaBackfillResume] Independent resume loop started (every ${Math.round(resumeIntervalMs / 60000)}min).`);
 }
 
 module.exports = { startStravaAutoSyncScheduler };
