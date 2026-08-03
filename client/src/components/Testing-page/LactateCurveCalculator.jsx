@@ -488,6 +488,29 @@ const storedXToChartX = (x, opts) => {
   return convertPaceToSpeed(v, opts.unitSystem, opts.isSwimming);
 };
 
+/** Chart speed (km/h or mph) → pace seconds — inverse of convertPaceToSpeed. */
+const convertSpeedToPace = (speed, unitSystem = 'metric', isSwimming = false) => {
+  const v = Number(speed);
+  if (!v || !Number.isFinite(v) || v <= 0) return 0;
+  if (isSwimming) {
+    const kmh = unitSystem === 'imperial' ? v / 0.621371 : v;
+    return kmh > 0 ? 360 / kmh : 0;
+  }
+  return 3600 / v;
+};
+
+/** Chart X coordinate → stored load units — inverse of storedXToChartX. */
+const chartXToStoredX = (x, opts) => {
+  const v = Number(x);
+  if (!Number.isFinite(v)) return NaN;
+  if (opts.dataIsSpeed) {
+    if (opts.displayIsSpeed && opts.unitSystem === 'imperial') return v / 0.621371;
+    return v;
+  }
+  if (!opts.displayIsSpeed) return v; // stored pace, displayed as pace → already in seconds
+  return convertSpeedToPace(v, opts.unitSystem, opts.isSwimming); // displayed as speed → back to pace seconds
+};
+
 /** Zóny + LT1/LT2 tooltipy — musí být v Chart.register + options.plugins (react-chartjs-2 ignoruje změny plugins z props po mountu). */
 const lactateZoneLtpOverlayPlugin = {
   id: 'lactateZoneLtpOverlay',
@@ -1571,8 +1594,15 @@ const LactateCurveCalculator = ({ mockData, athleteId: athleteIdProp = null, dem
   // Generate polynomial curve using the same method as TestComparison.jsx
   // Use filtered validResults for polynomial regression (excludes unrealistic spikes).
   // If regression fails (e.g. singular matrix with few/collinear points), use [] so chart still renders.
+  // The regression fits on STORED load units (validResults[].power). baseLactatePoint.x is a
+  // CHART coordinate (speed when displaying km/h) — feeding it raw mixes units and makes the fit
+  // sample down to tiny "pace seconds" that convertPaceToSpeed (3600/s) blows up to ~4500 km/h,
+  // wrecking the x-axis. Convert it back to stored units so all regression x share one unit.
+  const baseXForRegression = baseLactatePoint
+    ? (isPaceSport ? chartXToStoredX(baseLactatePoint.x, chartXOpts) : baseLactatePoint.x)
+    : null;
   const regressionInput = baseLactatePoint
-    ? [{ power: baseLactatePoint.x, lactate: baseLactatePoint.y }, ...validResults]
+    ? [{ power: baseXForRegression, lactate: baseLactatePoint.y }, ...validResults]
     : validResults;
   let polyPointsRaw = [];
   try {
