@@ -16,6 +16,10 @@ import { plannedDistanceMetres } from '../../utils/plannedWorkoutDistance';
 import {
   distanceInputUnitLabel,
   formatDistanceInputFromMetres,
+  formatPaceFromSpeedMps,
+  formatRunPace,
+  formatSpeed,
+  getPaceDisplay,
   parseDistanceInputToMetres,
   resolveDistanceUnitSystem,
 } from '../../utils/unitsConverter';
@@ -61,6 +65,33 @@ function hmToSecs(h, m) {
   const hh = Number(h) || 0;
   const mm = Number(m) || 0;
   return (hh * 60 + mm) * 60;
+}
+
+/**
+ * Average intensity implied by planned duration + planned distance.
+ * Run/swim → pace, bike → speed (run follows the athlete's paceDisplay
+ * preference, so a km/h-minded runner sees km/h here too).
+ * Returns null when either input is missing or the sport has no distance.
+ */
+function plannedPaceReadout({ sport, metres, seconds, unitSystem, user }) {
+  const m = Number(metres);
+  const s = Number(seconds);
+  if (!Number.isFinite(m) || !Number.isFinite(s) || m <= 0 || s <= 0) return null;
+  const mps = m / s;
+  if (sport === 'bike') {
+    return { label: 'Avg speed', value: formatSpeed(mps, unitSystem).formatted };
+  }
+  if (sport === 'swim') {
+    const value = formatPaceFromSpeedMps(mps, unitSystem, 'swim');
+    return value ? { label: 'Avg pace', value } : null;
+  }
+  if (sport === 'run') {
+    return {
+      label: getPaceDisplay(user) === 'kmh' ? 'Avg speed' : 'Avg pace',
+      value: formatRunPace(1000 / mps, user),
+    };
+  }
+  return null;
 }
 
 export default function PlannedWorkoutEditor({
@@ -236,6 +267,15 @@ export default function PlannedWorkoutEditor({
 
   const isCompleted = !!linkedActivity;
   const tint = SPORT_TINT[sport === 'strength' ? 'gym' : sport] || SPORT_TINT.other;
+
+  // Live readout under the duration/distance pair — recalculates as either edits.
+  const paceReadout = plannedPaceReadout({
+    sport,
+    metres: parseDistanceInputToMetres(plannedDist, unitSystem, { isSwim: sport === 'swim' }),
+    seconds: hmToSecs(durH, durM),
+    unitSystem,
+    user,
+  });
 
   // Build chart context: prefer freshly-fetched profile zones + test thresholds
   // so the wattage labels exactly match what the athlete sees on their Training
@@ -599,6 +639,30 @@ export default function PlannedWorkoutEditor({
               </div>
             </Field>
           </div>
+
+          {/* Derived planned intensity — pace for run/swim, speed for bike */}
+          {paceReadout && (
+            <div style={{
+              marginTop: -4,
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
+              padding: '9px 12px', borderRadius: 10,
+              background: `${tint}12`,
+              border: `1px solid ${tint}33`,
+            }}>
+              <span style={{
+                fontSize: 9.5, fontWeight: 800, color: '#6B7280',
+                letterSpacing: '0.08em', textTransform: 'uppercase',
+              }}>
+                Planned {paceReadout.label}
+              </span>
+              <span style={{
+                fontSize: 14, fontWeight: 800, color: tint,
+                fontVariantNumeric: 'tabular-nums',
+              }}>
+                {paceReadout.value}
+              </span>
+            </div>
+          )}
 
           <Field label="Target TSS">
             <input

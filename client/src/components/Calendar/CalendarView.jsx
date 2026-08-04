@@ -150,6 +150,38 @@ function fmtPlanDuration(s) {
   return `${m}m`;
 }
 
+/**
+ * Lap time in seconds, excluding stopped time.
+ * Devices record both a moving/timer clock and a wall clock per lap —
+ * FIT: totalTimerTime vs totalElapsedTime, Strava: moving_time vs
+ * elapsed_time. We always prefer the moving one so a coffee stop or an
+ * auto-paused Garmin doesn't stretch the lap. Falls back to the wall clock
+ * when the source has no timer field at all.
+ */
+function lapMovingSecs(lap) {
+  if (!lap) return 0;
+  const pick = (...keys) => {
+    for (const k of keys) {
+      const n = Number(lap[k]);
+      if (Number.isFinite(n) && n > 0) return n;
+    }
+    return 0;
+  };
+  return pick('moving_time', 'movingTime', 'totalMovingTime', 'totalTimerTime', 'total_timer_time')
+      || pick('elapsed_time', 'elapsedTime', 'totalElapsedTime', 'total_elapsed_time', 'duration');
+}
+
+/** Lap clock: h:mm:ss once past an hour, m:ss below it. */
+function fmtLapClock(secs) {
+  const total = Math.round(Number(secs) || 0);
+  if (total <= 0) return '—';
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
+
 /** Longhand borders only — avoids React warning when mixing border + borderLeft*. */
 function outlineBorder({ color, leftColor, leftWidth = 2, width = 1, style = 'solid' }) {
   const lc = leftColor ?? color;
@@ -876,19 +908,16 @@ function LapChart({ laps, color, isBike, isRun, isSwim, unitSystem = 'metric', s
   // below — just no longer compressed to a fake size.
 
   const entries = laps.map((lap) => {
-    const dur  = Number(lap.elapsed_time || lap.totalElapsedTime || lap.duration || 0);
-    // For pace: prefer moving_time (excludes stopped time) so paused laps
-    // don't show an artificially slow pace. Fall back to elapsed_time.
-    const movingDur = Number(
-      lap.moving_time || lap.movingTime || lap.totalMovingTime || 0
-    ) || dur;
+    // Moving time throughout: pace must not count stopped time, and the bike
+    // bar widths should match the durations printed in the laps table.
+    const dur  = lapMovingSecs(lap);
     const dist = Number(lap.distance || lap.totalDistance || 0);
     const pow  = Number(lap.average_watts || lap.avgPower || 0);
     const lactate = lap.lactate != null ? Number(lap.lactate) : null;
     let value = 0;
-    if (isBike)                                   value = pow;
-    else if (isRun  && dist > 0 && movingDur > 0) value = movingDur / (dist / 1000);
-    else if (isSwim && dist > 0 && movingDur > 0) value = movingDur / (dist / 100);
+    if (isBike)                             value = pow;
+    else if (isRun  && dist > 0 && dur > 0) value = dur / (dist / 1000);
+    else if (isSwim && dist > 0 && dur > 0) value = dur / (dist / 100);
     // weight = dist for swim/run (proportional to distance), dur for bike
     const weight = isBike ? Math.max(dur, 1) : Math.max(dist, 1);
     return { value, weight, dur, dist, isPause: !isBike && dist <= 0, lactate };
@@ -1221,9 +1250,8 @@ function LapChart({ laps, color, isBike, isRun, isSwim, unitSystem = 'metric', s
     ? formatDistance(selEnt.dist, unitSystem).formatted
     : null;
   const selDurStr = sel ? (() => {
-    const d = Number(sel.elapsed_time || sel.totalElapsedTime || sel.duration || 0);
-    const m = Math.floor(d / 60), s = Math.round(d % 60);
-    return d < 60 ? `${Math.round(d)}s` : `${m}:${String(s).padStart(2, '0')}`;
+    const d = lapMovingSecs(sel);
+    return d > 0 && d < 60 ? `${Math.round(d)}s` : fmtLapClock(d);
   })() : null;
 
   const handleChartScroll = () => {};
@@ -1645,8 +1673,7 @@ function CompareLapTable({ laps, isBike, isRun, isSwim, workOnly, unitSystem = '
     return formatDistance(d, unitSystem).formatted;
   };
   const fmtPace = lap => {
-    const elapsed = Number(lap.elapsed_time || lap.totalElapsedTime || lap.duration || 0);
-    const moving  = Number(lap.moving_time || lap.movingTime || lap.totalMovingTime || 0) || elapsed;
+    const moving = lapMovingSecs(lap);
     const dist = Number(lap.distance || lap.totalDistance || 0);
     const pow  = Number(lap.average_watts || lap.avgPower || 0);
     if (isBike) return pow > 0 ? `${Math.round(pow)} W` : '—';
@@ -1674,7 +1701,7 @@ function CompareLapTable({ laps, isBike, isRun, isSwim, workOnly, unitSystem = '
       <tbody>
         {rows.map(({ lap, i, type }) => {
           const hr = Number(lap.average_heartrate || lap.avgHeartRate || lap.heartRate || 0);
-          const dur = Number(lap.elapsed_time || lap.totalElapsedTime || lap.duration || 0);
+          const dur = lapMovingSecs(lap);
           const color  = COMPARE_STEP_COLORS[type] || '#6b7280';
           const bg     = COMPARE_STEP_BG[type]     || '#f9fafb';
           const txtCol = COMPARE_STEP_TEXT[type]   || '#374151';
@@ -1710,12 +1737,8 @@ function WorkLapCompareTable({ currentLaps, results, isBike, isRun, isSwim, unit
   ];
 
   const fmtTime = (lap) => {
-    const moving = Number(lap.moving_time || lap.movingTime || lap.totalMovingTime || 0);
-    const elapsed = Number(lap.elapsed_time || lap.totalElapsedTime || lap.duration || 0);
-    const s = moving || elapsed;
-    if (!s) return null;
-    const m = Math.floor(s / 60), sec = Math.round(s % 60);
-    return `${m}:${String(sec).padStart(2, '0')}`;
+    const s = lapMovingSecs(lap);
+    return s > 0 ? fmtLapClock(s) : null;
   };
   const fmtDist = (lap) => {
     const d = Number(lap.distance || lap.totalDistance || 0);
@@ -1723,9 +1746,7 @@ function WorkLapCompareTable({ currentLaps, results, isBike, isRun, isSwim, unit
     return formatDistance(d, unitSystem).formatted;
   };
   const fmtPace = (lap) => {
-    const moving  = Number(lap.moving_time || lap.movingTime || lap.totalMovingTime || 0);
-    const elapsed = Number(lap.elapsed_time || lap.totalElapsedTime || lap.duration || 0);
-    const dur  = moving || elapsed;
+    const dur  = lapMovingSecs(lap);
     const dist = Number(lap.distance || lap.totalDistance || 0);
     const pow  = Number(lap.average_watts || lap.avgPower || 0);
     if (isBike) return pow > 0 ? `${Math.round(pow)} W` : null;
@@ -3208,9 +3229,21 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
       }
       return i; // fallback: record index (assumes ~1 rec/s)
     };
-    const t0 = getT(segRecs[0], 0);
-    const t1 = getT(segRecs[segRecs.length - 1], segRecs.length - 1);
-    const dur = Math.max(1, t1 - t0 + 1);
+    // Duration = sum of sample-to-sample deltas, skipping recording gaps.
+    // A paused Garmin simply stops writing records, so the timestamps jump —
+    // (last − first) would bill the whole coffee stop to the lap. Anything
+    // longer than PAUSE_GAP_S is treated as a pause and contributes 1 s (the
+    // sample itself) instead of the gap.
+    const PAUSE_GAP_S = 10;
+    let dur = 0;
+    let prevT = getT(segRecs[0], 0);
+    for (let i = 1; i < segRecs.length; i++) {
+      const t = getT(segRecs[i], i);
+      const dt = t - prevT;
+      if (dt > 0) dur += dt <= PAUSE_GAP_S ? dt : 1;
+      prevT = t;
+    }
+    dur = Math.max(1, Math.round(dur) + 1);
     // Distance: prefer cumulative distance field diff, fallback to per-record deltas
     const d0 = Number(segRecs[0].distance ?? 0);
     const d1 = Number(segRecs[segRecs.length - 1].distance ?? 0);
@@ -3486,11 +3519,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
 
   // Laps
   const laps = Array.isArray(merged.laps) ? merged.laps : [];
-  const fmtLapDur = (s) => {
-    if (!s) return '—';
-    const m = Math.floor(s/60), sec = Math.floor(s%60);
-    return `${m}:${String(sec).padStart(2,'0')}`;
-  };
+  const fmtLapDur = (s) => fmtLapClock(s);
 
   // ── Auto-title from detected interval structure ──
   // When an activity still has a generic/auto-generated name ("Morning Ride",
@@ -5157,7 +5186,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                   const showLactate = hasLactate || !!onAddLactate || !!autoLaps;
                   const hasPower = isBike && displayLaps.some(l => Number(l.average_watts || l.avgPower || l.avg_power || 0) > 0);
                   const showSwimPace = isSwim && displayLaps.some(l => Number(l.distance || 0) > 0);
-                  const hasPace = (isRun || showSwimPace) && displayLaps.some(l => Number(l.distance || 0) > 0 && (l.elapsed_time || l.totalElapsedTime || l.duration || 0) > 0);
+                  const hasPace = (isRun || showSwimPace) && displayLaps.some(l => Number(l.distance || 0) > 0 && lapMovingSecs(l) > 0);
                   const hasCadence = displayLaps.some(l => Number(l.average_cadence || l.avgCadence || l.avg_cadence || 0) > 0);
                   const colTokens = ['1.5rem', '1fr', '1fr'];
                   if (hasPower || hasPace) colTokens.push('1fr');
@@ -5180,9 +5209,10 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                       </div>
                       <div className="divide-y divide-gray-50">
                         {displayLaps.map((lap, i) => {
-                          const lapElapsed = Number(lap.elapsed_time || lap.totalElapsedTime || lap.duration || 0);
-                          const lapMoving  = Number(lap.moving_time || lap.movingTime || lap.totalMovingTime || 0) || lapElapsed;
-                          const lapDur = lapElapsed; // used for display (time column)
+                          // Moving time for both the time column and pace —
+                          // paused/standing stretches never count.
+                          const lapMoving = lapMovingSecs(lap);
+                          const lapDur = lapMoving;
                           const lapDist = Number(lap.distance || lap.totalDistance || 0);
                           const lapSpeed = lap.average_speed || lap.avgSpeed || lap.avg_speed || null;
                           const lapHr = Number(lap.average_heartrate || lap.avgHeartRate || lap.averageHeartRate || lap.avgHR || 0);
@@ -5694,7 +5724,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                         // (snake_case) and FIT (camelCase, e.g. totalDistance,
                         // avgHeartRate) field names so FIT uploads don't
                         // render every column blank.
-                        const lapDur   = lap.elapsed_time || lap.totalElapsedTime || lap.duration || 0;
+                        const lapDur   = lapMovingSecs(lap);
                         const lapDist  = Number(lap.distance || lap.totalDistance || 0);
                         const lapSpeed = lap.average_speed || lap.avgSpeed || lap.avg_speed || null;
                         const lapPower = Number(lap.average_watts || lap.avgPower || 0);

@@ -338,7 +338,35 @@ function sortAndLimitCalendarActivities(combined) {
 }
 
 // ── Premium locked placeholder (shown in place of gated widgets) ──────────────
-function PremiumLockedCard({ title, description, onUpgrade }) {
+function PremiumLockedCard({ title, description, onUpgrade, preview = null }) {
+  // With `preview` (the real chart) we blur it behind a glass overlay so the
+  // user sees exactly what they're missing — a far stronger upsell than an
+  // empty lock card. Falls back to the plain lock when no preview is given.
+  if (preview) {
+    return (
+      <div className="relative bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden h-full min-h-[220px]">
+        <div aria-hidden className="absolute inset-0 pointer-events-none select-none" style={{ filter: 'blur(6px)', opacity: 0.5, transform: 'scale(1.02)' }}>
+          {preview}
+        </div>
+        <div className="absolute inset-0 bg-gradient-to-b from-white/50 via-white/70 to-white/90" />
+        <div className="relative z-10 h-full flex flex-col items-center justify-center gap-3 text-center p-8">
+          <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
+            <LockClosedIcon className="w-5 h-5 text-primary" />
+          </div>
+          <div>
+            <h3 className="font-semibold text-gray-900 text-sm mb-1">{title}</h3>
+            <p className="text-xs text-gray-500 max-w-[240px]">{description}</p>
+          </div>
+          <button
+            onClick={onUpgrade}
+            className="mt-1 px-4 py-1.5 bg-primary text-white text-xs font-semibold rounded-lg hover:bg-primary/90 transition-colors shadow-sm"
+          >
+            Unlock with Pro
+          </button>
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-8 flex flex-col items-center justify-center gap-3 text-center h-full min-h-[220px]">
       <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
@@ -2966,8 +2994,18 @@ export default function DashboardPage() {
             ) : (
               <PremiumLockedCard
                 title="Form & Fitness"
-                description="Track your fitness, fatigue and form trends over time."
+                description="See your Fitness, Fatigue and Form trend over your full history — unlock with Pro."
                 onUpgrade={() => gate('Form & Fitness', 'pro')}
+                preview={(
+                  <FormFitnessChart
+                    key={`ffc-preview-${dashboardDataAthleteId}`}
+                    athleteId={dashboardDataAthleteId}
+                    activities={calendarData}
+                    userProfile={fitnessProfile}
+                    activitiesLoading={dashboardFitnessLoading}
+                    headlineMetrics={todayMetrics}
+                  />
+                )}
               />
             )}
           </div>
