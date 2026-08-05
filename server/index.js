@@ -237,6 +237,7 @@ const { startStravaAutoSyncScheduler } = require('./services/stravaAutoSyncSched
 const { startLactateTestFollowUpScheduler } = require('./services/lactateTestFollowUpScheduler');
 const { startRetentionScheduler } = require('./services/retentionScheduler');
 const { startAppReengagementScheduler } = require('./services/appReengagementScheduler');
+const { startGarminTokenRefreshScheduler } = require('./services/garminTokenRefreshScheduler');
 const { startRaceReminderScheduler } = require('./services/raceReminderScheduler');
 const { startTrainingAlertScheduler } = require('./services/trainingAlertScheduler');
 const { startWeeklyDigestScheduler } = require('./services/weeklyDigestScheduler');
@@ -310,6 +311,9 @@ startRetentionScheduler();
 
 // Web-only 3-step drip: app download → Strava → workout planning (Zoho-safe auto pacing)
 startAppReengagementScheduler();
+
+// Garmin OAuth2 tokens expire silently for webhook-only users — refresh ahead of time.
+startGarminTokenRefreshScheduler();
 
 // Apply cache middleware to routes that can be cached (reduced cache time for better data freshness)
 app.use('/api/training', cacheMiddleware(60), trainingRoute);
