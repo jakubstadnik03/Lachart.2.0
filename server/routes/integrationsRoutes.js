@@ -133,9 +133,44 @@ function stripStravaActivityIdPrefix(id) {
 const cache = require('node-cache');
 const activitiesCache = new cache({ stdTTL: 120 }); // 2 minutes cache
 const stravaBackfillLocks = new Set();
+/**
+ * Liveness heartbeat per held backfill lock (userId -> epoch ms).
+ *
+ * A backfill that is merely *waiting* — 429 backoff or budget exhaustion can
+ * schedule the next batch up to 30 min out — writes no DB progress during the
+ * wait. Without a heartbeat the stale-resume scan (20 min) mistakes that for a
+ * dead job and force-steals the lock, so a SECOND batch chain starts for the
+ * same user: both walk the same cursor, double the API spend, exhaust the
+ * budget sooner, back off longer, and get force-stolen again. That feedback
+ * loop is what wedged history imports and starved everyone else behind
+ * MAX_CONCURRENT_BACKFILLS. The heartbeat lets us tell "waiting" from "dead".
+ */
+const stravaBackfillHeartbeat = new Map();
+/** Only a lock silent for this long may be stolen — longer than the 30 min max backoff. */
+const STRAVA_BACKFILL_LOCK_TTL_MS = Number(process.env.STRAVA_BACKFILL_LOCK_TTL_MS || 45 * 60 * 1000);
+
+/** Mark a held lock as still alive (call before every scheduled continuation). */
+function stravaBackfillTouch(lockKey) {
+  stravaBackfillHeartbeat.set(String(lockKey), Date.now());
+}
+/** Release a lock and its heartbeat together — never leak one without the other. */
+function stravaBackfillRelease(lockKey) {
+  const k = String(lockKey);
+  stravaBackfillLocks.delete(k);
+  stravaBackfillHeartbeat.delete(k);
+}
+/** True when a lock is held by a chain that is still heartbeating. */
+function stravaBackfillIsAlive(lockKey) {
+  const hb = stravaBackfillHeartbeat.get(String(lockKey));
+  return !!hb && (Date.now() - hb) < STRAVA_BACKFILL_LOCK_TTL_MS;
+}
+
 const stravaManualSyncLocks = new Set();
-// Max simultaneous historical backfills — keeps total API calls predictable
-const MAX_CONCURRENT_BACKFILLS = 2;
+// Max simultaneous historical backfills — keeps total API calls predictable.
+// Left at 2: the days-long stalls were caused by the lock fork above, not by
+// slot scarcity (a typical user's 2-year import is only a few batches). Tunable
+// via env if the recovery queue ever needs to drain faster.
+const MAX_CONCURRENT_BACKFILLS = Number(process.env.STRAVA_MAX_CONCURRENT_BACKFILLS || 2);
 const { STRAVA_BACKFILL_LOOKBACK_DAYS } = require('../config/stravaAutoSyncConfig');
 
 function stravaBackfillStopBeforeUnix(lookbackDays = STRAVA_BACKFILL_LOOKBACK_DAYS) {
@@ -962,16 +997,23 @@ async function startStravaHistoricalBackfill(userId, initialBefore = null, opts 
   const { force = false, immediate = false } = opts;
   const lockKey = String(userId);
   if (stravaBackfillLocks.has(lockKey)) {
-    if (!force) return;
-    stravaBackfillLocks.delete(lockKey);
+    // `force` means "this looked stale, take it over" — but a chain that is
+    // simply mid-backoff is NOT stale. Stealing from a live chain forks the
+    // import in two, so only take over once the heartbeat has genuinely died.
+    if (!force || stravaBackfillIsAlive(lockKey)) return;
+    console.warn(`[StravaBackfill] taking over dead lock for user ${lockKey} (no heartbeat for >${Math.round(STRAVA_BACKFILL_LOCK_TTL_MS / 60000)}min)`);
+    stravaBackfillRelease(lockKey);
   }
   // Global concurrency cap — prevent multiple simultaneous backfills from burning rate limits
   if (stravaBackfillLocks.size >= MAX_CONCURRENT_BACKFILLS) {
-    // Retry after a delay so the backfill eventually starts once a slot opens up
+    // Retry after a delay so the backfill eventually starts once a slot opens up.
+    // The 10-min stale-resume loop is the durable safety net if this timer is
+    // lost to a restart, so no user is stranded by a dropped in-memory timer.
     setTimeout(() => startStravaHistoricalBackfill(userId, initialBefore), 5 * 60 * 1000);
     return;
   }
   stravaBackfillLocks.add(lockKey);
+  stravaBackfillTouch(lockKey);
 
   // Determine the starting cursor: explicit param > persisted cursor > now.
   // Persisted cursor lets us pick up exactly where a previous (interrupted)
@@ -1021,7 +1063,7 @@ async function startStravaHistoricalBackfill(userId, initialBefore = null, opts 
     let reachedEnd = false;
 
     const finishBackfill = async (state, extra = {}) => {
-      stravaBackfillLocks.delete(lockKey);
+      stravaBackfillRelease(lockKey);
       try {
         await User.findByIdAndUpdate(userId, {
           'strava.backfillState': state,
@@ -1031,9 +1073,10 @@ async function startStravaHistoricalBackfill(userId, initialBefore = null, opts 
     };
 
     batchesRun += 1;
+    stravaBackfillTouch(lockKey); // this chain is demonstrably alive
     if (batchesRun > maxBatchesPerSession) {
       console.log(`[StravaBackfill] Session batch cap (${maxBatchesPerSession}) for user ${userId}; scheduling continuation.`);
-      stravaBackfillLocks.delete(lockKey);
+      stravaBackfillRelease(lockKey);
       setTimeout(() => startStravaHistoricalBackfill(userId, beforeCursor), 3 * 60 * 1000);
       return;
     }
@@ -1147,10 +1190,12 @@ async function startStravaHistoricalBackfill(userId, initialBefore = null, opts 
       if (error?.code === 'STRAVA_BUDGET_EXHAUSTED') {
         const retrySec = Math.max(30, Number(error.retryAfterSec) || 90);
         console.log(`[StravaBackfill] Local budget exhausted for user ${userId}, retry in ${retrySec}s (cursor preserved)`);
+        stravaBackfillTouch(lockKey); // waiting, not dead — keep the lock ours
         setTimeout(() => {
+          stravaBackfillTouch(lockKey);
           runBatch(nextCursor, Math.min(retryDelay * 2, 30 * 60 * 1000)).catch((e) => {
             console.error('[StravaBackfill] Budget retry error:', e?.message || e);
-            stravaBackfillLocks.delete(lockKey);
+            stravaBackfillRelease(lockKey);
           });
         }, retrySec * 1000);
         return;
@@ -1160,10 +1205,12 @@ async function startStravaHistoricalBackfill(userId, initialBefore = null, opts 
         // Rate limited — exponential backoff: double the delay each time, cap at 30 minutes
         const nextRetry = Math.min(retryDelay * 2, 30 * 60 * 1000);
         console.log(`[StravaBackfill] Rate limited for user ${userId}, backing off ${Math.round(nextRetry / 1000)}s`);
+        stravaBackfillTouch(lockKey); // waiting, not dead — keep the lock ours
         setTimeout(() => {
+          stravaBackfillTouch(lockKey);
           runBatch(nextCursor, nextRetry).catch((e) => {
             console.error('[StravaBackfill] Retry error:', e?.message || e);
-            stravaBackfillLocks.delete(lockKey);
+            stravaBackfillRelease(lockKey);
           });
         }, nextRetry);
         return; // don't fall through to the normal continue/stop logic below
@@ -1176,21 +1223,23 @@ async function startStravaHistoricalBackfill(userId, initialBefore = null, opts 
       } else {
         // Auth errors, 400s, etc. — pause and retry once; only stop if we truly can't continue
         console.warn(`[StravaBackfill] Non-retryable-looking error for user ${userId}; will retry once in 5 min`);
-        stravaBackfillLocks.delete(lockKey);
+        stravaBackfillRelease(lockKey);
         setTimeout(() => startStravaHistoricalBackfill(userId, nextCursor), 5 * 60 * 1000);
         return;
       }
     }
 
     if (shouldContinue) {
+      stravaBackfillTouch(lockKey);
       setTimeout(() => {
+        stravaBackfillTouch(lockKey);
         runBatch(nextCursor, delayBetweenBatchesMs).catch((e) => {
           console.error('[StravaBackfill] Unhandled async error:', e?.message || e);
-          stravaBackfillLocks.delete(lockKey);
+          stravaBackfillRelease(lockKey);
         });
       }, delayBetweenBatchesMs);
     } else if (reachedEnd) {
-      stravaBackfillLocks.delete(lockKey);
+      stravaBackfillRelease(lockKey);
       try {
         await User.findByIdAndUpdate(userId, {
           'strava.backfillState': 'done',
@@ -1201,7 +1250,7 @@ async function startStravaHistoricalBackfill(userId, initialBefore = null, opts 
       console.log(`[StravaBackfill] Completed history import for user ${userId} (lookback ${STRAVA_BACKFILL_LOOKBACK_DAYS}d)`);
     } else {
       // Should not happen — treat as retryable stall
-      stravaBackfillLocks.delete(lockKey);
+      stravaBackfillRelease(lockKey);
       setTimeout(() => startStravaHistoricalBackfill(userId, nextCursor), 5 * 60 * 1000);
     }
   };
@@ -1210,7 +1259,7 @@ async function startStravaHistoricalBackfill(userId, initialBefore = null, opts 
   setTimeout(() => {
     runBatch(initialBefore).catch((e) => {
       console.error('[StravaBackfill] Initial async error:', e?.message || e);
-      stravaBackfillLocks.delete(lockKey);
+      stravaBackfillRelease(lockKey);
     });
   }, kickoffDelayMs);
 }
