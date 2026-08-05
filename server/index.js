@@ -12,6 +12,15 @@ const swaggerUi = require('swagger-ui-express');
 const app = express();
 const PORT = process.env.PORT || 8000;
 
+// Render terminates TLS at its own proxy and forwards the caller in
+// X-Forwarded-For. Without this, express-rate-limit sees every request as
+// coming from the proxy: it logged ERR_ERL_UNEXPECTED_X_FORWARDED_FOR on every
+// hit and keyed all users into a single bucket, so the login limiter could lock
+// out the whole internet at once while doing nothing per-attacker. Trust one
+// hop only — trusting blindly would let a client forge the header and dodge
+// the limiter entirely.
+app.set('trust proxy', 1);
+
 // ✅ CORS configuration – allow local (both 3000 and 3001), Vercel preview, and production domain
 const allowedOrigins = [
   'http://localhost:3000',
@@ -235,6 +244,7 @@ const coachOutreachRoutes   = require('./routes/coachOutreachRoutes');
 const emailLoginRoutes      = require('./routes/emailLoginRoutes');
 const weeklyReviewRoutes    = require('./routes/weeklyReviewRoutes');
 const lactateAnalyticsRoutes = require('./routes/lactateAnalyticsRoutes');
+const healthRoutes          = require('./routes/healthRoutes');
 const { startWeeklyReportsScheduler } = require('./services/weeklyReportScheduler');
 const { startStravaAutoSyncScheduler } = require('./services/stravaAutoSyncScheduler');
 const { startLactateTestFollowUpScheduler } = require('./services/lactateTestFollowUpScheduler');
@@ -272,6 +282,7 @@ app.use('/api/email',             emailCampaignRoutes);
 app.use('/api/admin/coach-outreach', coachOutreachRoutes);
 app.use('/api/auth',              emailLoginRoutes);
 app.use('/api/weekly-reviews',    weeklyReviewRoutes);
+app.use('/api/health',            healthRoutes);
 
 // Weekly Strava summary emails (Mondays) - controlled by env
 startWeeklyReportsScheduler();

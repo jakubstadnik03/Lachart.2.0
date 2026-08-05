@@ -2756,21 +2756,22 @@ router.get("/admin/users", verifyToken, async (req, res) => {
             if (user.role === 'athlete') {
                 try {
                     const athleteIdStr = String(user._id);
-                    console.log(`[Admin Users] Counting data for athlete ${user._id} (${user.name} ${user.surname}), athleteIdStr: ${athleteIdStr}`);
-                    
-                    const trainings = await trainingDao.findByAthleteId(athleteIdStr);
-                    
-                    // Find tests - handle both ObjectId and String formats
-                    const tests = await Test.find({
-                        $or: [
-                            { athleteId: athleteIdStr },
-                            { athleteId: mongoose.Types.ObjectId.isValid(user._id) ? new mongoose.Types.ObjectId(user._id) : athleteIdStr }
-                        ]
-                    });
-                    
-                    trainingCount = trainings.length;
-                    testCount = tests.length;
-                    console.log(`[Admin Users] Found ${trainingCount} trainings and ${testCount} tests for ${user.name}`);
+                    // Count in the database rather than pulling the documents
+                    // back and reading .length. This runs inside Promise.all
+                    // over every user, so the old version held one full array
+                    // of trainings and one of tests per athlete in memory at
+                    // the same time — on a heap capped at 400MB
+                    // (--max-old-space-size=400) that is a needless risk, and
+                    // the endpoint only ever wanted the numbers.
+                    const Training = require('../models/training');
+                    const testIdMatch = mongoose.Types.ObjectId.isValid(user._id)
+                        ? [{ athleteId: athleteIdStr }, { athleteId: new mongoose.Types.ObjectId(user._id) }]
+                        : [{ athleteId: athleteIdStr }];
+
+                    [trainingCount, testCount] = await Promise.all([
+                        Training.countDocuments({ athleteId: athleteIdStr }),
+                        Test.countDocuments({ $or: testIdMatch }),
+                    ]);
                 } catch (error) {
                     console.error(`[Admin Users] Error counting data for user ${user._id}:`, error);
                 }
