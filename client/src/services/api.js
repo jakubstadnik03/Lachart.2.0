@@ -908,6 +908,23 @@ export const sendAppDownloadEmail = async (userId) => {
 
 // Send custom coach outreach email to arbitrary contact (admin only)
 // preview: true → delivers to admin's own email and skips lead tracking
+// ── Weekly reviews: an athlete's note about a training week, shown on that
+// week's Sunday in the calendar. weekStart is the Monday as YYYY-MM-DD.
+export const fetchWeeklyReviews = async ({ athleteId, from, to } = {}) => {
+  const qs = new URLSearchParams();
+  if (athleteId) qs.set('athleteId', athleteId);
+  if (from) qs.set('from', from);
+  if (to) qs.set('to', to);
+  const { data } = await api.get(`/api/weekly-reviews${qs.toString() ? `?${qs}` : ''}`);
+  return Array.isArray(data) ? data : [];
+};
+
+/** Upsert. Empty text with no rating deletes the note. */
+export const saveWeeklyReview = async (weekStart, { text, rating, athleteId } = {}) => {
+  const { data } = await api.put(`/api/weekly-reviews/${weekStart}`, { text, rating, athleteId });
+  return data;
+};
+
 // ── In-app coach leads: existing users already coaching 2+ athletes ─────────
 // Separate from sendCoachOutreachEmail below, which targets cold contacts who
 // have no account. Every send here is one explicit click on one named coach.

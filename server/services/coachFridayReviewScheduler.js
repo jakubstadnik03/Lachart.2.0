@@ -9,6 +9,22 @@ function fridayWeekKey(d = new Date()) {
   return x.toISOString().slice(0, 10);
 }
 
+/**
+ * Monday of the same week, 'YYYY-MM-DD'.
+ *
+ * fridayWeekKey() above returns the FRIDAY and is kept as-is because the
+ * per-athlete dedupe field already holds those values. The calendar and
+ * WeeklyReview key weeks by their Monday, so deep links must be converted or
+ * the notification opens the wrong week.
+ */
+function mondayOfWeek(d = new Date()) {
+  const x = new Date(d);
+  const day = x.getUTCDay();            // 0=Sun
+  const delta = day === 0 ? -6 : 1 - day;
+  x.setUTCDate(x.getUTCDate() + delta);
+  return x.toISOString().slice(0, 10);
+}
+
 function startCoachFridayReviewScheduler() {
   const enabled =
     process.env.ENABLE_COACH_FRIDAY_REVIEW_SCHEDULER === 'true' || process.env.NODE_ENV === 'production';
@@ -27,6 +43,7 @@ function startCoachFridayReviewScheduler() {
     if (hour < sendHourUtc || hour > sendHourUtc + 1) return;
 
     const weekKey = fridayWeekKey(now);
+    const mondayKey = mondayOfWeek(now);   // what the calendar keys weeks by
 
     const athletes = await User.find({
       isActive: { $ne: false },
@@ -57,8 +74,11 @@ function startCoachFridayReviewScheduler() {
         type: 'weekly_review_request',
         title: 'Weekly review',
         body: `${coachName} is waiting for your week — add a note or summary.`,
-        resourceType: 'dashboard',
-        pushData: { screen: 'dashboard' },
+        // Carry the week being reviewed so the tap lands on that Sunday's note
+        // instead of the dashboard, which had nowhere to write anything.
+        resourceId: mondayKey,
+        resourceType: 'weekly_review',
+        pushData: { screen: 'calendar', weeklyReview: mondayKey },
       });
 
       await User.updateOne(

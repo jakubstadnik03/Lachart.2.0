@@ -48,12 +48,29 @@ export function resolveNotificationTarget(input = {}) {
     return { path: `/dashboard?openActivity=${encodeURIComponent(openActivity)}` };
   }
 
-  if (
-    type === 'weekly_digest' ||
-    type === 'weekly_review_request' ||
-    rt === 'dashboard' ||
-    screen === 'dashboard'
-  ) {
+  // Week-scoped notifications carry the Monday of the week they describe.
+  // Without it these all landed on a bare /dashboard, so "your coach is waiting
+  // for your week" gave the athlete nowhere to actually write it.
+  const weeklyReview = data.weeklyReview || data.weekly_review
+    || (type === 'weekly_review_request' || rt === 'weekly_review' ? rid : null);
+  if (weeklyReview) {
+    return { path: `/training-calendar?weeklyReview=${encodeURIComponent(weeklyReview)}` };
+  }
+
+  const week = data.week || (rt === 'weekly_summary' ? rid : null);
+  if (week || type === 'weekly_digest') {
+    return week
+      ? { path: `/training-calendar?week=${encodeURIComponent(week)}` }
+      : { path: '/training-calendar' };
+  }
+
+  if (type === 'weekly_review_request') {
+    // Older notifications predate the week key — the calendar still beats the
+    // dashboard, since that is where the note lives.
+    return { path: '/training-calendar' };
+  }
+
+  if (rt === 'dashboard' || screen === 'dashboard') {
     return { path: '/dashboard' };
   }
 

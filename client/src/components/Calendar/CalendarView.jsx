@@ -28,7 +28,7 @@ import {
 } from '@heroicons/react/24/outline';
 import SportIcon from '../shared/SportIcon';
 import { DurationPickerField, DurationPickerSheet } from '../shared/DurationWheelPicker.jsx';
-import api, { getSimilarActivities, getRaceEvents } from '../../services/api';
+import api, { getSimilarActivities, getRaceEvents, fetchWeeklyReviews, saveWeeklyReview } from '../../services/api';
 import {
   formatDistance,
   formatDistanceFieldDisplay,
@@ -6773,6 +6773,97 @@ function AddCompletedSheet({ date, onClose, onSaved, athleteId, onPlanWorkout, i
 // ─── Richer Summary Column ────────────────────────────────────────────────────
 const SPORT_COLORS_CELL = { bike: '#767EB5', run: '#f97316', swim: '#599FD0', other: '#9ca3af' };
 
+
+/**
+ * The athlete's note about a training week, pinned under that week's Sunday.
+ *
+ * This is where the Friday "your coach is waiting for your week" notification
+ * lands. Before this the request had nowhere to go — it opened the dashboard
+ * and the athlete had no place to answer it.
+ */
+function WeeklyReviewNote({ weekKey, review, onSave, highlight, canEdit = true }) {
+  const [editing, setEditing] = React.useState(false);
+  const [text, setText] = React.useState(review?.text || '');
+  const [rating, setRating] = React.useState(review?.rating || null);
+  const [saving, setSaving] = React.useState(false);
+  const ref = React.useRef(null);
+
+  React.useEffect(() => { setText(review?.text || ''); setRating(review?.rating || null); }, [review]);
+
+  // Deep link from the notification: open this week straight into edit mode.
+  React.useEffect(() => {
+    if (!highlight) return;
+    setEditing(true);
+    ref.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, [highlight]);
+
+  const commit = async () => {
+    setSaving(true);
+    try { await onSave(weekKey, { text: text.trim(), rating }); setEditing(false); }
+    finally { setSaving(false); }
+  };
+
+  const hasContent = !!(review?.text?.trim() || review?.rating);
+
+  return (
+    <div ref={ref} className={`px-4 py-3 border-t border-primary/10 ${highlight ? 'bg-amber-50' : 'bg-white'}`}>
+      <div className="flex items-center justify-between mb-1.5">
+        <span className="text-xs font-bold uppercase tracking-wide text-gray-500">Week review</span>
+        {!editing && canEdit && (
+          <button
+            onClick={(e) => { e.stopPropagation(); setEditing(true); }}
+            className="text-xs font-semibold text-primary hover:underline"
+          >{hasContent ? 'Edit' : 'Add note'}</button>
+        )}
+      </div>
+
+      {editing ? (
+        <div onClick={(e) => e.stopPropagation()}>
+          <textarea
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            rows={3}
+            autoFocus
+            placeholder="How did the week go? Fatigue, sleep, anything your coach should know…"
+            className="w-full text-sm border border-gray-300 rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-primary/30"
+          />
+          <div className="flex items-center justify-between mt-2">
+            <div className="flex gap-1">
+              {[1, 2, 3, 4, 5].map((n) => (
+                <button
+                  key={n}
+                  onClick={() => setRating(rating === n ? null : n)}
+                  className={`w-7 h-7 rounded-full text-xs font-bold transition ${rating >= n ? 'bg-primary text-white' : 'bg-gray-100 text-gray-400'}`}
+                  title={`${n}/5`}
+                >{n}</button>
+              ))}
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => { setEditing(false); setText(review?.text || ''); setRating(review?.rating || null); }}
+                className="text-xs px-3 py-1.5 rounded-lg border border-gray-300 text-gray-600">Cancel</button>
+              <button onClick={commit} disabled={saving}
+                className="text-xs px-3 py-1.5 rounded-lg bg-primary text-white font-semibold disabled:opacity-50">
+                {saving ? 'Saving…' : 'Save'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : hasContent ? (
+        <div className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
+          {review.rating && (
+            <span className="inline-block mr-2 px-2 py-0.5 rounded-full bg-primary/10 text-primary text-xs font-bold align-middle">
+              {review.rating}/5
+            </span>
+          )}
+          {review.text}
+        </div>
+      ) : (
+        <div className="text-sm text-gray-400">No note for this week yet.</div>
+      )}
+    </div>
+  );
+}
+
 function WeekSummaryCell({ weekSummary, formatHours, formatKm, user, tab = 'done', weekPlannedWorkouts = [], large = false }) {
   if (!weekSummary) return <div className="bg-gray-50 p-2.5 min-h-[145px] min-w-[150px]" />;
 
@@ -7648,6 +7739,38 @@ export default function CalendarView({
   const [miniCalPanelHeight, setMiniCalPanelHeight] = useState(0);
   const miniCalScrollTimerRef = useRef(null);
   const [weekSummaryTab, setWeekSummaryTab] = useState('done');
+
+  // ── Weekly reviews (the note shown under each Sunday) ────────────────────
+  const [weeklyReviews, setWeeklyReviews] = useState({});   // weekKey -> review
+  // Week to open in edit mode, from ?weeklyReview=YYYY-MM-DD on a notification tap.
+  const [highlightReviewWeek, setHighlightReviewWeek] = useState(() => {
+    try { return new URLSearchParams(window.location.search).get('weeklyReview'); }
+    catch { return null; }
+  });
+
+  const loadWeeklyReviews = useCallback(async () => {
+    try {
+      const rows = await fetchWeeklyReviews({ athleteId: athleteId || undefined });
+      const map = {};
+      rows.forEach((r) => { map[r.weekStart] = r; });
+      setWeeklyReviews(map);
+    } catch (e) {
+      // A failed note fetch must never take the calendar down with it.
+      console.warn('[Calendar] weekly reviews unavailable:', e?.message || e);
+    }
+  }, [athleteId]);
+
+  useEffect(() => { loadWeeklyReviews(); }, [loadWeeklyReviews]);
+
+  const handleSaveWeeklyReview = useCallback(async (weekKey, payload) => {
+    const saved = await saveWeeklyReview(weekKey, { ...payload, athleteId: athleteId || undefined });
+    setWeeklyReviews((prev) => {
+      const next = { ...prev };
+      if (saved?.deleted) delete next[weekKey]; else next[weekKey] = saved;
+      return next;
+    });
+    setHighlightReviewWeek(null);
+  }, [athleteId]);
   // Day-theme editor — open by tapping the badge area in the day header
   // (or via the "+" menu when no theme is set yet). Holds the date string
   // that's being edited; null means closed.
@@ -9412,6 +9535,12 @@ export default function CalendarView({
                           if (!pw.date) return false;
                           return startOfWeek(new Date(pw.date)).toISOString().slice(0,10) === weekKey;
                         })}
+                      />
+                      <WeeklyReviewNote
+                        weekKey={weekKey}
+                        review={weeklyReviews[weekKey]}
+                        onSave={handleSaveWeeklyReview}
+                        highlight={highlightReviewWeek === weekKey}
                       />
                     </div>
                   )}

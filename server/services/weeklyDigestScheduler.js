@@ -122,8 +122,11 @@ function startWeeklyDigestScheduler() {
             type: 'weekly_digest',
             title: 'Weekly summary',
             body: `This week: ${tss} TSS${formPart}${overreach}.`,
-            resourceType: 'dashboard',
-            pushData: { screen: 'dashboard' },
+            // weekKey is the Monday — carry it so the tap opens that week in
+            // the calendar rather than a dashboard with no week context.
+            resourceId: weekKey,
+            resourceType: 'weekly_summary',
+            pushData: { screen: 'calendar', week: weekKey },
           });
 
           await User.updateOne(
