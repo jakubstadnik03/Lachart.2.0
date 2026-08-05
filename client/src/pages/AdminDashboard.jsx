@@ -2805,6 +2805,7 @@ const AdminDashboard = () => {
                         ))}
                         <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Location</th>
                         <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Strava</th>
+                        <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Garmin</th>
                         <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Mobile App</th>
                         <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
                         <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Thank You Email</th>
@@ -3025,6 +3026,37 @@ const AdminDashboard = () => {
                                     </button>
                                   )}
                                 </>
+                              )}
+                            </div>
+                          </td>
+                          <td className="p-2 text-sm">
+                            <div className="flex flex-col gap-1">
+                              <span
+                                className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full w-fit ${
+                                  user.garminConnected ? 'bg-sky-100 text-sky-800' : 'bg-gray-100 text-gray-600'
+                                }`}
+                              >
+                                {user.garminConnected ? 'Connected' : '—'}
+                              </span>
+                              {user.garminConnected && (
+                                <>
+                                  {user.garmin?.lastSyncDate && (
+                                    <div className="text-xs text-gray-400">
+                                      Sync: {new Date(user.garmin.lastSyncDate).toLocaleDateString()}
+                                    </div>
+                                  )}
+                                  {/* An expired token means every pull and backfill for this
+                                      user silently fails, so surface it rather than showing a
+                                      reassuring "Connected" on a dead link. */}
+                                  {user.garmin?.expiresAt && user.garmin.expiresAt * 1000 < Date.now() && (
+                                    <div className="text-[11px] font-semibold text-red-500">Token expired</div>
+                                  )}
+                                </>
+                              )}
+                              {user.appleHealthConnected && (
+                                <span className="inline-flex px-2 py-0.5 text-[10px] font-semibold rounded-full w-fit bg-rose-100 text-rose-700">
+                                  ❤️ Apple Health
+                                </span>
                               )}
                             </div>
                           </td>

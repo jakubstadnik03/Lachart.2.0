@@ -2923,6 +2923,13 @@ router.get("/admin/users", verifyToken, async (req, res) => {
                     athleteId: user.strava.athleteId,
                     lastSyncDate: user.strava.lastSyncDate
                 } : null,
+                // Same shape as strava above so the admin table can show when
+                // Garmin last delivered, not just that it is linked.
+                garmin: user.garmin ? {
+                    lastSyncDate: user.garmin.lastSyncDate,
+                    webhookLastEventAt: user.garmin.webhookLastEventAt,
+                    expiresAt: user.garmin.expiresAt
+                } : null,
                 units: user.units || { distance: 'metric', weight: 'kg', temperature: 'celsius' },
                 isActive: user.isActive !== false, // Default to true if not set
                 notifications: user.notifications || {
