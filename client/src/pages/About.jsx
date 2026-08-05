@@ -1428,7 +1428,9 @@ export default function About() {
                 </div>
                 <div ref={pushRef} className={`lc-reveal ${i % 2 === 1 ? 'left' : 'right'}`} style={{ direction: 'ltr' }}>
                   <BrowserFrame label={d.url}>
-                    <img src={`/about-design/${d.img}`} alt={d.title.replace(/<[^>]+>/g, '')} loading="lazy" style={{ display: 'block', width: '100%', height: 'auto' }} />
+                    {/* A leading "/" means the asset lives elsewhere in /public;
+                        bare filenames stay relative to /about-design as before. */}
+                    <img src={d.img.startsWith('/') ? d.img : `/about-design/${d.img}`} alt={d.title.replace(/<[^>]+>/g, '')} loading="lazy" style={{ display: 'block', width: '100%', height: 'auto' }} />
                   </BrowserFrame>
                 </div>
               </div>
@@ -2661,7 +2663,7 @@ function PriceCard({ name, price, badge, highlighted, features, ctaLabel, ctaTo,
 
 /* ─── Data tables ─────────────────────────────────────────────────────── */
 const DEEPDIVES = [
-  { eb: 'Core feature', title: 'Lactate Curve <em>Generation</em>', lead: 'Enter your test values — power, heart rate, lactate, pace — and instantly generate the lactate curve. Calculate all critical thresholds in one interactive graph.', bullets: ['Step or ramp protocol — any test design', 'LT1, LT2, OBLA, IAT, D-max, log-log calculated in parallel', 'Baseline adjusts for individual resting lactate'], tags: ['LT1 & LT2', 'OBLA 2.0–3.5', 'IAT', 'D-max', 'Log-log'], img: 'lactate-testing.png', url: 'lachart.net — Lactate Curve · Power vs Lactate' },
+  { eb: 'Core feature', title: 'Lactate Curve <em>Generation</em>', lead: 'Enter your test values — power, heart rate, lactate, pace — and instantly generate the lactate curve. Calculate all critical thresholds in one interactive graph.', bullets: ['Step or ramp protocol — any test design', 'LT1, LT2, OBLA, IAT, D-max, log-log calculated in parallel', 'Baseline adjusts for individual resting lactate'], tags: ['LT1 & LT2', 'OBLA 2.0–3.5', 'IAT', 'D-max', 'Log-log'], img: '/images/lactate_testing-1280.webp', url: 'lachart.net — Lactate Curve · Power vs Lactate' },
   { eb: 'Zones',         title: 'Train <em>inside your zones</em>, not someone else\'s', lead: 'Your zones are derived from your last lactate test — power, pace and heart rate side by side. Update the test, zones update everywhere.', bullets: ['5-zone or Seiler 3-zone models', 'Power, pace and HR per sport', 'Auto-updates when a new test is recorded'], img: 'zones-generator.png', url: 'lachart.net — Training Zones' },
   { eb: 'Progress tracking', title: 'Historical <em>test comparison</em>', lead: 'Overlay multiple lactate tests to visualize your progression. Watch your LT1 and LT2 move to higher intensities as your fitness improves.', bullets: ['Compare multiple test curves on one chart', 'Track zone shifts over training seasons', 'Visualize threshold improvements', 'Export comparison PDF reports'], img: 'lactate-testing-page.png', url: 'lachart.net — Lactate Testing' },
   { eb: 'Form & fitness', title: 'Read your <em>fitness, fatigue and form</em> at a glance', lead: 'CTL, ATL and TSB tracked every day. A plain-English status word — fresh, optimal, productive, overreaching — so you always know what today\'s training should be.', bullets: ['Auto-updated from every Strava or FIT activity', '14-day, 6-week and 3-month views', 'Plan race peaks around predicted form'], img: 'dashboard-home.png', url: 'lachart.net — Dashboard' },
