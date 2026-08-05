@@ -32,6 +32,7 @@ import { useAuth } from '../context/AuthProvider';
 import { isCapacitorNative } from '../utils/isNativeApp';
 import { trackEvent, trackCheckoutStarted } from '../utils/analytics';
 import { createCheckoutSession } from '../services/api';
+import SiteFooter from '../components/About/SiteFooter';
 import { ATHLETE_PLAN_PRICE_LABEL, COACH_PLAN_PRICE_LABEL } from '../constants/planPricing';
 
 const AboutGallerySection = React.lazy(() => import('../components/About/AboutGallerySection'));
@@ -2130,47 +2131,8 @@ export default function About() {
           <AboutGallerySection BrowserFrame={BrowserFrame} LazyImage={LazyImg} />
         </Suspense>
 
-        {/* ── 23. Footer ───────────────────────────────────────────────── */}
-        <footer style={{ background: '#fff', borderTop: '1px solid ' + LC.border, padding: '40px 24px 24px', marginTop: 40 }}>
-          <div style={{ maxWidth: 1280, margin: '0 auto', display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr', gap: 30 }} className="lc-footer-grid">
-            <div>
-              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-                <img src="/about-design/lachart-logo.png" alt="LaChart" style={{ height: 28 }} />
-                <span style={{ fontSize: 16, fontWeight: 700, color: LC.primaryDark }}>LaChart</span>
-              </div>
-              <p style={{ fontSize: 13, color: LC.muted, lineHeight: 1.6, maxWidth: 320 }}>Lactate testing for endurance athletes and coaches. Calculate thresholds, build zones, generate PDF reports.</p>
-            </div>
-            {[
-              { h: 'Product', l: [['Features','#features'], ['Pricing','#pricing'], ['Calculator','/lactate-curve-calculator'], ['Tutorials','/how-to-use']] },
-              { h: 'Learn',   l: [
-                ['Lactate Guide','/lactate-guide'],
-                ['Test at home','/blog/lactate-test-at-home'],
-                ['Read your curve','/blog/lactate-test-interpretation'],
-                ['LT1 vs LT2','/blog/lt1-vs-lt2-training-zones'],
-                ['FTP vs LT2','/blog/ftp-vs-lt2'],
-              ] },
-              { h: 'Company', l: [['About','#hero'], ['Blog','/lactate-guide'], ['Contact','/contact']] },
-              { h: 'Legal',   l: [['Privacy','/privacy'], ['Terms','/terms']] },
-            ].map(col => (
-              <div key={col.h}>
-                <h6 style={{ fontSize: 11.5, fontWeight: 800, color: LC.primaryDark, textTransform: 'uppercase', letterSpacing: '0.12em', margin: '0 0 12px' }}>{col.h}</h6>
-                <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {col.l.map(([label, href]) => (
-                    <li key={label}>
-                      {href.startsWith('/') ? <Link to={href} style={{ fontSize: 13.5, color: LC.muted, textDecoration: 'none' }}>{label}</Link>
-                                            : <a href={href} style={{ fontSize: 13.5, color: LC.muted, textDecoration: 'none' }}>{label}</a>}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ))}
-          </div>
-          <div style={{ maxWidth: 1280, margin: '24px auto 0', paddingTop: 18, borderTop: '1px solid ' + LC.border, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
-            <span style={{ fontSize: 12, color: LC.muted }}>© {new Date().getFullYear()} LaChart. All rights reserved.</span>
-            <span style={{ fontSize: 12, color: LC.muted }}>Made for athletes who measure.</span>
-          </div>
-          <style>{`@media (max-width: 720px) { .lc-footer-grid { grid-template-columns: 1fr 1fr !important; } } @media (max-width: 480px) { .lc-footer-grid { grid-template-columns: 1fr !important; } }`}</style>
-        </footer>
+        {/* ── 23. Footer — shared with /privacy and /terms ─────────────── */}
+        <SiteFooter />
 
         {/* Back-to-top floating button with a scroll-progress ring around
             the edge. Shows as soon as the user scrolls past ~120 px. The
