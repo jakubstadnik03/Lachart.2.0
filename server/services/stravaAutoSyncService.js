@@ -131,7 +131,9 @@ async function syncStravaForUser(user, opts = {}) {
 
     while (page <= maxPages) {
       try {
-        await stravaBudget.take();
+        // Periodic polling is bulk — webhooks deliver anything urgent, so this
+        // must yield to interactive traffic rather than drain the window.
+        await stravaBudget.take({ priority: 'bulk' });
         const resp = await axios.get('https://www.strava.com/api/v3/athlete/activities', {
           headers: { Authorization: `Bearer ${token}` },
           params: { ...params, page },

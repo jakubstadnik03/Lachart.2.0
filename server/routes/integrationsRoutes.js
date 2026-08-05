@@ -1130,7 +1130,10 @@ async function startStravaHistoricalBackfill(userId, initialBefore = null, opts 
       }
 
       for (let page = 1; page <= maxPagesPerBatch; page += 1) {
-        await stravaBudget.take();
+        // History backfill is bulk: a page of 2024 rides is just as useful ten
+        // minutes later, so it must never spend the quota a webhook bootstrap
+        // or a "Sync now" click needs right now.
+        await stravaBudget.take({ priority: 'bulk' });
         const resp = await axios.get('https://www.strava.com/api/v3/athlete/activities', {
           headers: { Authorization: `Bearer ${token}` },
           params: { per_page: perPage, page: 1, before: nextCursor },

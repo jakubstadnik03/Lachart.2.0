@@ -75,6 +75,23 @@ let observedDayLimit = null;
 const RESERVE_WINDOW = Number(process.env.STRAVA_QUOTA_RESERVE_15MIN || 20);
 const RESERVE_DAY = Number(process.env.STRAVA_QUOTA_RESERVE_DAILY || 200);
 
+/**
+ * Headroom that bulk work may never touch.
+ *
+ * Backfill and the periodic scheduler are not time-critical — a page of
+ * history is just as useful ten minutes later. A webhook bootstrap or a user
+ * pressing "Sync now" is. Measured 2026-08-05: history backfills finally
+ * unblocked and pulled 3453 activities in six hours, which drained Strava's
+ * application-wide read limit and left the webhook bootstrap failing with
+ * HTTP 429 while 1080 scheduler attempts were refused. Everything competed as
+ * equals, so the least urgent work won by sheer volume.
+ *
+ * Bulk callers stop short of these reserves; interactive callers get the full
+ * allowance.
+ */
+const INTERACTIVE_RESERVE_WINDOW = Number(process.env.STRAVA_INTERACTIVE_RESERVE_15MIN || 40);
+const INTERACTIVE_RESERVE_DAY = Number(process.env.STRAVA_INTERACTIVE_RESERVE_DAILY || 400);
+
 /** Limit we actually enforce: Strava's reported allowance when known. */
 function effectiveWindowLimit() {
   return observedWindowLimit ? Math.max(1, observedWindowLimit - RESERVE_WINDOW) : MAX_PER_WINDOW;
@@ -112,8 +129,29 @@ function rollWindowsIfDue() {
  *           The window/day counters still increment so the bucket reflects
  *           reality on the next non-bypass call.
  */
+/**
+ * Ceilings for a caller. 'bulk' keeps clear of the interactive reserve.
+ * @param {'interactive'|'bulk'} priority
+ */
+function ceilingsFor(priority) {
+  const win = effectiveWindowLimit();
+  const day = effectiveDayLimit();
+  if (priority === 'bulk') {
+    return {
+      window: Math.max(1, win - INTERACTIVE_RESERVE_WINDOW),
+      day: Math.max(1, day - INTERACTIVE_RESERVE_DAY),
+    };
+  }
+  return { window: win, day };
+}
+
+/**
+ * @param {{bypass?: boolean, priority?: 'interactive'|'bulk'}} opts
+ *   priority defaults to 'interactive' so an un-annotated caller is never
+ *   accidentally starved; bulk work opts in explicitly.
+ */
 async function take(opts = {}) {
-  const { bypass = false } = opts;
+  const { bypass = false, priority = 'interactive' } = opts;
   if (bypass) {
     rollWindowsIfDue();
     windowUsed += 1;
@@ -124,8 +162,7 @@ async function take(opts = {}) {
   // eslint-disable-next-line no-constant-condition
   while (true) {
     rollWindowsIfDue();
-    const winLimit = effectiveWindowLimit();
-    const dayLimit = effectiveDayLimit();
+    const { window: winLimit, day: dayLimit } = ceilingsFor(priority);
     if (windowUsed < winLimit && dayUsed < dayLimit) {
       windowUsed += 1;
       dayUsed += 1;
@@ -135,8 +172,13 @@ async function take(opts = {}) {
     const dayResetIn = dayStart + DAY_MS - Date.now();
     const waitMs = windowUsed >= winLimit ? windowResetIn : dayResetIn;
     if (Date.now() - startedAt + waitMs > MAX_WAIT_MS) {
-      const err = new Error('Strava local budget exhausted');
+      const err = new Error(
+        priority === 'bulk'
+          ? 'Strava budget reserved for interactive traffic'
+          : 'Strava local budget exhausted',
+      );
       err.code = 'STRAVA_BUDGET_EXHAUSTED';
+      err.priority = priority;
       err.retryAfterSec = Math.ceil(waitMs / 1000);
       err.snapshot = snapshot();
       throw err;
@@ -221,6 +263,8 @@ function snapshot() {
     // Null until the first Strava response teaches us the real allowance.
     stravaReportedWindowLimit: observedWindowLimit,
     stravaReportedDayLimit: observedDayLimit,
+    bulkWindowLimit: ceilingsFor('bulk').window,
+    bulkDayLimit: ceilingsFor('bulk').day,
   };
 }
 
