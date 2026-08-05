@@ -107,6 +107,19 @@ class RegisterAbl {
                 { expiresIn: "24h" }
             );
 
+            // Registration hands back a token and the client is signed in from
+            // here — so this IS a login. Without this, anyone who registers and
+            // then just uses the app never gets a lastLogin at all, which is why
+            // 437 users had run a test while only 369 had ever "logged in".
+            try {
+                await this.userDao.update(newUser._id, {
+                    $set: { lastLogin: new Date() },
+                    $inc: { loginCount: 1 },
+                });
+            } catch (e) {
+                console.warn("[Register] could not stamp lastLogin:", e?.message);
+            }
+
             res.status(201).json({
                 message: "Account created successfully",
                 token,

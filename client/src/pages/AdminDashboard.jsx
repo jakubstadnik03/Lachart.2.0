@@ -70,7 +70,9 @@ function CoachLeadsPanel({ addNotification }) {
     if (!selected) return;
     const what = segment === 'coach'
       ? `They coach ${selected.athleteCount} athletes.`
-      : `Strava connected, ${selected.testCount} lactate test(s).`;
+      : segment === 'untested'
+        ? `${(selected.sources || []).join(' + ') || 'A source'} connected, no test yet.`
+        : `Strava connected, ${selected.testCount} lactate test(s).`;
     const ok = window.confirm(
       `Send this email to ${selected.name || 'this person'} <${selected.email}>?\n\n` +
       `${what} This is a real email to a real customer.`,
@@ -107,6 +109,7 @@ function CoachLeadsPanel({ addNotification }) {
       {[
         { id: 'coach', label: '🏆 Coaches (2+ athletes)' },
         { id: 'athlete', label: '🏃 Athletes (Strava + test)' },
+        { id: 'untested', label: '🧪 Connected, never tested' },
       ].map((s) => (
         <button key={s.id} onClick={() => setSegment(s.id)}
           className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${
@@ -128,15 +131,21 @@ function CoachLeadsPanel({ addNotification }) {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {[
             {
-              label: segment === 'coach' ? 'Qualified coaches' : 'Qualified athletes',
+              label: segment === 'coach' ? 'Qualified coaches'
+                : segment === 'untested' ? 'Connected, no test'
+                : 'Qualified athletes',
               value: stats.qualified,
-              hint: segment === 'coach' ? `${stats.minAthletes}+ athletes, not paying` : 'Strava + test, not paying',
+              hint: segment === 'coach' ? `${stats.minAthletes}+ athletes, not paying`
+                : segment === 'untested' ? 'wired up but never tested'
+                : 'Strava + test, not paying',
             },
             { label: 'Not contacted yet', value: stats.remaining, hint: 'ready to email' },
             { label: 'Already contacted', value: stats.alreadySent, hint: 'one email each' },
             segment === 'coach'
               ? { label: 'Athletes covered', value: stats.totalAthletesCovered, hint: 'across all leads' }
-              : { label: 'Tests logged', value: stats.totalTests, hint: 'across all leads' },
+              : segment === 'untested'
+                ? { label: 'Sources connected', value: stats.connectedSources, hint: 'Strava / Garmin / Apple' }
+                : { label: 'Tests logged', value: stats.totalTests, hint: 'across all leads' },
           ].map((c) => (
             <div key={c.label} className="bg-white rounded-xl border border-gray-200 p-4">
               <div className="text-2xl font-bold text-gray-900">{c.value}</div>
@@ -152,7 +161,9 @@ function CoachLeadsPanel({ addNotification }) {
           <div className="px-4 py-3 border-b border-gray-100 text-sm font-semibold text-gray-700">
             {segment === 'coach'
               ? 'Coaches past the free limit — most athletes first'
-              : 'Athletes with Strava + a lactate test — most engaged first'}
+              : segment === 'untested'
+                ? 'Connected a data source but never ran a test — most recently active first'
+                : 'Athletes with Strava + a lactate test — most engaged first'}
           </div>
           <div className="max-h-[520px] overflow-y-auto divide-y divide-gray-100">
             {coaches.map((c) => {
@@ -174,10 +185,12 @@ function CoachLeadsPanel({ addNotification }) {
                     <div className="flex items-center gap-2 shrink-0">
                       {c.optedOut && <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">opted out</span>}
                       {c.alreadySentAt && <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">sent</span>}
-                      {segment === 'coach'
-                        ? <span className="text-xs font-semibold text-indigo-600">{c.athleteCount} athletes</span>
-                        : <span className="text-xs font-semibold text-orange-600">Strava</span>}
-                      <span className="text-xs text-gray-400">{c.testCount} tests</span>
+                      {segment === 'coach' && <span className="text-xs font-semibold text-indigo-600">{c.athleteCount} athletes</span>}
+                      {segment === 'athlete' && <span className="text-xs font-semibold text-orange-600">Strava</span>}
+                      {segment === 'untested' && (
+                        <span className="text-xs font-semibold text-teal-600">{(c.sources || []).join(' + ') || 'connected'}</span>
+                      )}
+                      {segment !== 'untested' && <span className="text-xs text-gray-400">{c.testCount} tests</span>}
                     </div>
                   </div>
                 </button>
@@ -185,7 +198,7 @@ function CoachLeadsPanel({ addNotification }) {
             })}
             {coaches.length === 0 && (
               <div className="px-4 py-6 text-gray-500 text-sm">
-                No qualifying {segment === 'coach' ? 'coaches' : 'athletes'}.
+                No qualifying {segment === 'coach' ? 'coaches' : segment === 'untested' ? 'accounts' : 'athletes'}.
               </div>
             )}
           </div>
@@ -194,7 +207,7 @@ function CoachLeadsPanel({ addNotification }) {
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden flex flex-col">
           <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between gap-2">
             <span className="text-sm font-semibold text-gray-700">
-              {selected ? `To: ${selected.email}` : `Select ${segment === 'coach' ? 'a coach' : 'an athlete'} to preview`}
+              {selected ? `To: ${selected.email}` : `Select ${segment === 'coach' ? 'a coach' : segment === 'untested' ? 'an account' : 'an athlete'} to preview`}
             </span>
             {selected && (
               <div className="flex gap-2">
@@ -224,7 +237,7 @@ function CoachLeadsPanel({ addNotification }) {
             )}
             {!preview && !previewLoading && (
               <div className="p-6 text-gray-400 text-sm">
-                Pick {segment === 'coach' ? 'a coach' : 'an athlete'} on the left to see the exact email they would receive.
+                Pick {segment === 'coach' ? 'a coach' : segment === 'untested' ? 'an account' : 'an athlete'} on the left to see the exact email they would receive.
               </div>
             )}
           </div>

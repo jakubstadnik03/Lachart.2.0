@@ -63,6 +63,14 @@ const FEATURES = {
     ['🫀', 'Readiness & wellness', 'Resting HR, HRV and sleep turned into a daily readiness signal.'],
     ['🏁', 'Race countdown & CTL target', 'See whether your fitness is tracking toward race day.'],
   ],
+  // Not a sales list — these people have not tested yet, so the email explains
+  // what a test gives them rather than what a plan unlocks.
+  untested: [
+    ['🧪', 'A step test you can actually run', 'The wizard builds the stage ladder — start pace/power and increment, that is it.'],
+    ['📐', 'Real zones, not a formula', 'LT1, LT2, LTP1/2, IAT and log-log from your own blood values.'],
+    ['🚴', 'Field or lab', 'Track, treadmill, trainer or road — anywhere you can take a sample between stages.'],
+    ['📄', 'A report you can keep', 'Curve, thresholds and zones exported as a PDF.'],
+  ],
 };
 
 function escapeHtml(s) {
@@ -182,11 +190,61 @@ async function findQualifiedAthletes() {
   return rows;
 }
 
+/**
+ * Connected a data source but never ran a lactate test. Small, high intent:
+ * they wired up Strava/Garmin/Apple Health, so they meant to use this — they
+ * just never did the one thing the product exists for. The ask is a first
+ * test, not a plan.
+ */
+async function findUntestedConnected() {
+  const [users, premium, testedIds] = await Promise.all([
+    User.find({
+      $or: [
+        { 'strava.accessToken': { $exists: true, $ne: null } },
+        { 'garmin.accessToken': { $exists: true, $ne: null } },
+        { 'appleHealth.connectedAt': { $exists: true, $ne: null } },
+      ],
+    })
+      .select('_id name email role createdAt lastLogin lastSeenAt notifications outreach strava garmin appleHealth')
+      .lean(),
+    premiumUserIdSet(),
+    Test.distinct('athleteId'),
+  ]);
+  const tested = new Set(testedIds.map(String));
+
+  return users
+    .filter((u) => !premium.has(String(u._id)) && !tested.has(String(u._id)))
+    .map((u) => ({
+      segment: 'untested',
+      userId: String(u._id),
+      name: u.name || '',
+      email: u.email,
+      role: u.role || 'athlete',
+      testCount: 0,
+      sources: [
+        u.strava?.accessToken && 'Strava',
+        u.garmin?.accessToken && 'Garmin',
+        u.appleHealth?.connectedAt && 'Apple Health',
+      ].filter(Boolean),
+      createdAt: u.createdAt || null,
+      lastLogin: u.lastSeenAt || u.lastLogin || null,
+      alreadySentAt: u.outreach?.untestedOutreachSentAt || null,
+      optedOut: u.notifications?.marketingEmails === false,
+    }))
+    .sort((a, b) => new Date(b.lastLogin || 0) - new Date(a.lastLogin || 0));
+}
+
 async function findCandidates(segment = 'coach', opts = {}) {
-  return segment === 'athlete' ? findQualifiedAthletes() : findQualifiedCoaches(opts);
+  if (segment === 'athlete') return findQualifiedAthletes();
+  if (segment === 'untested') return findUntestedConnected();
+  return findQualifiedCoaches(opts);
 }
 
 function subjectFor(person) {
+  if (person.segment === 'untested') {
+    const src = person.sources?.[0] || 'your training';
+    return `${firstNameOf(person) || 'Hi'} — you've got ${src} in LaChart, but no lactate test yet`;
+  }
   if (person.segment === 'athlete') {
     const first = firstNameOf(person);
     return `${first || 'Hi'} — your lactate test deserves more than 30 days of history`;
@@ -208,6 +266,12 @@ function featureRows(segment) {
 
 /** Opening paragraph — the part that must feel written, not generated. */
 function openingFor(person) {
+  if (person.segment === 'untested') {
+    const src = person.sources?.length ? person.sources.join(' and ') : 'a data source';
+    return `I'm Jakub, I build LaChart. You connected <strong>${escapeHtml(src)}</strong>, so your
+      training is flowing in — but you haven't run a lactate test yet, and that's the part
+      that turns the numbers into zones that are actually yours.`;
+  }
   if (person.segment === 'athlete') {
     const t = person.testCount;
     return `I'm Jakub, I build LaChart. You've got Strava connected and
@@ -242,7 +306,9 @@ function renderOutreachHtml(person, { unsubscribeUrl, loginUrl }) {
   const greet = firstNameOf(person) ? `Hi ${escapeHtml(firstNameOf(person))},` : 'Hi,';
   // Names must match PLAN_DETAILS in client/src/components/UpgradeModal.jsx —
   // the `pro` plan is presented to users as "Athlete", never as "Pro".
-  const planName = person.segment === 'coach' ? 'Coach plan' : 'Athlete plan';
+  const planName = person.segment === 'coach' ? 'Coach plan'
+    : person.segment === 'untested' ? 'a first test'
+    : 'Athlete plan';
   const scale = person.segment === 'coach'
     ? `Coaching ${escapeHtml(String(person.athleteCount))} athlete${person.athleteCount === 1 ? '' : 's'} is real work`
     : 'Testing properly takes effort';
@@ -316,7 +382,9 @@ function renderOutreachHtml(person, { unsubscribeUrl, loginUrl }) {
 
 /** Rendered preview for the admin dashboard — never sends. */
 async function renderPreview(segment, userId) {
-  const all = segment === 'athlete'
+  const all = segment === 'untested'
+    ? await findUntestedConnected()
+    : segment === 'athlete'
     ? await findQualifiedAthletes()
     : await findQualifiedCoaches({ minAthletes: 1 });
   const person = all.find((c) => c.userId === String(userId));
@@ -366,7 +434,9 @@ async function sendOutreach(segment, userId, { force = false, overrideEmail = nu
 
   // Only record real sends, so a test to your own inbox can't mark someone done.
   if (!overrideEmail) {
-    const field = segment === 'athlete'
+    const field = segment === 'untested'
+      ? 'outreach.untestedOutreachSentAt'
+      : segment === 'athlete'
       ? 'outreach.athleteOutreachSentAt'
       : 'outreach.coachOutreachSentAt';
     const update = { [field]: new Date() };
@@ -386,7 +456,9 @@ async function getOutreachStats(segment = 'coach') {
     optedOut: list.filter((c) => c.optedOut).length,
     remaining: list.filter((c) => !c.alreadySentAt && !c.optedOut).length,
   };
-  if (segment === 'coach') {
+  if (segment === 'untested') {
+    base.connectedSources = list.reduce((s2, c) => s2 + (c.sources?.length || 0), 0);
+  } else if (segment === 'coach') {
     base.minAthletes = MIN_ATHLETES;
     base.totalAthletesCovered = list.reduce((s, c) => s + c.athleteCount, 0);
   } else {
@@ -397,6 +469,7 @@ async function getOutreachStats(segment = 'coach') {
 
 module.exports = {
   findCandidates,
+  findUntestedConnected,
   findQualifiedCoaches,
   findQualifiedAthletes,
   renderPreview,

@@ -368,10 +368,16 @@ const userSchema = new mongoose.Schema({
   // Retention email tracking (sent dates prevent duplicates)
   /** Manual, human-triggered outreach (admin dashboard) — not a drip campaign.
    *  Recorded so the same coach is never contacted twice by accident. */
+  /** Last authenticated request, stamped by verifyToken (throttled hourly).
+   *  Unlike lastLogin this reflects actual usage, including long sessions and
+   *  users who registered and never typed a password again. */
+  lastSeenAt: { type: Date, default: null },
+
   outreach: {
     coachOutreachSentAt:        { type: Date, default: null },
     coachOutreachAthleteCount:  { type: Number, default: null },
     athleteOutreachSentAt:      { type: Date, default: null },
+    untestedOutreachSentAt:     { type: Date, default: null },
   },
 
   retentionEmails: {

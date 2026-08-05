@@ -26,9 +26,11 @@ async function requireAdmin(req, res) {
   return me;
 }
 
-/** 'coach' | 'athlete' — anything else falls back to coach. */
+const SEGMENTS = ['coach', 'athlete', 'untested'];
+/** Anything unrecognised falls back to coach. */
 function segmentOf(req) {
-  return String(req.query.segment || req.body?.segment || 'coach') === 'athlete' ? 'athlete' : 'coach';
+  const s = String(req.query.segment || req.body?.segment || 'coach');
+  return SEGMENTS.includes(s) ? s : 'coach';
 }
 
 // GET /api/admin/coach-outreach/candidates?segment=coach|athlete
