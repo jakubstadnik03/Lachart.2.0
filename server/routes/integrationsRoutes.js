@@ -337,6 +337,28 @@ function getGarminActivityApiBaseUrl() {
   return `${getGarminApiBaseUrl()}/activity-api`;
 }
 
+/**
+ * Garmin's pull endpoints require a "pull token" alongside the user's bearer
+ * token — the Health API spec documents the `token` query parameter as
+ * "Pull token required for OAuth2 integrations". We were never sending it, so
+ * every direct pull failed with InvalidPullTokenException and fell back to
+ * backfill. Verified 2026-08-05: identical request with `token` returns HTTP
+ * 200 and real activities; without it, HTTP 400.
+ *
+ * The token is minted in the developer portal (API Pull Token) and is
+ * short-lived, so it lives in env rather than code. Without it we simply omit
+ * the parameter and behave exactly as before.
+ */
+function garminPullToken() {
+  return process.env.GARMIN_PULL_TOKEN || null;
+}
+
+/** Merge the pull token into a pull request's query params when configured. */
+function withGarminPullToken(params = {}) {
+  const token = garminPullToken();
+  return token ? { ...params, token } : params;
+}
+
 function isGarminPullTokenError(bodyOrMessage) {
   const s = typeof bodyOrMessage === 'string' ? bodyOrMessage : JSON.stringify(bodyOrMessage || '');
   return s.includes('InvalidPullTokenException')
@@ -392,10 +414,10 @@ async function fetchGarminWellnessActivitiesByDay(user, tokenData, path, startSe
     try {
       resp = await axios.get(activitiesUrl, {
         headers: { Authorization: `${tokenData.tokenType} ${tokenData.accessToken}` },
-        params: {
+        params: withGarminPullToken({
           uploadStartTimeInSeconds: cursor,
           uploadEndTimeInSeconds: windowEnd,
-        },
+        }),
         timeout: 20000,
       });
     } catch (apiErr) {
@@ -404,13 +426,18 @@ async function fetchGarminWellnessActivitiesByDay(user, tokenData, path, startSe
       const bodyStr = typeof body === 'object' ? JSON.stringify(body) : (body || '');
       console.error(`Garmin activity API error ${status} (${path}):`, body || apiErr.message);
       if (isGarminPullTokenError(bodyStr)) {
+        // This is NOT a user consent problem — the old wording sent people off
+        // to reconnect and toggle permissions that were already granted. Pull
+        // needs the server-side pull token from the developer portal; nothing
+        // the user can do from their side changes it.
         throw new Error(
-          'InvalidPullTokenException: your Garmin OAuth token does not have activity pull permission. ' +
-          'Please disconnect and reconnect your Garmin account, and make sure to enable the ' +
-          '"Activities" and "Historical Data" toggles on the Garmin consent screen. ' +
-          'If this persists, your Garmin Health API app may need SUMMARY_PULL permission enabled ' +
-          'in the Garmin developer portal (health.developer.garmin.com), or configure Push/Ping ' +
-          'webhooks to https://lachart.onrender.com/api/integrations/garmin/webhook'
+          garminPullToken()
+            ? 'Garmin rejected our pull token (GARMIN_PULL_TOKEN). It is short-lived — '
+              + 'generate a new one in the Garmin developer portal (API Pull Token) and update '
+              + 'the server environment. Activities still arrive via Push/Ping webhooks meanwhile.'
+            : 'Garmin pull is not configured on the server: the Health API requires a pull token '
+              + '(query parameter "token") for OAuth2 integrations, and GARMIN_PULL_TOKEN is not set. '
+              + 'Activities still arrive via Push/Ping webhooks; this only affects on-demand pulls.',
         );
       }
       if (status === 401 || status === 403) {
@@ -640,7 +667,7 @@ async function fetchGarminActivitiesForSync(user, since = null) {
       backfillChunks: job.total,
       backfillError: job.lastError,
       message:
-        'Garmin cannot pull activities directly (missing pull permission). ' +
+        'Garmin direct pull is not configured on the server (Health API needs a pull token). ' +
         `Queued a backfill of ${job.total} chunk(s) in the background (rate-limit aware) — ` +
         'data arrives via Garmin Push/Ping within minutes. ' +
         'Ensure Push or Ping is configured in the Garmin developer portal to ' +
@@ -3190,7 +3217,7 @@ async function getGarminActivities(user, since = null) {
 
     const job = triggerGarminBackfillQueued(user, startSec, nowSec);
     const err = new Error(
-      'Garmin cannot pull activities directly (missing pull permission). ' +
+      'Garmin direct pull is not configured on the server (Health API needs a pull token). ' +
       `Queued a backfill of ${job.total} chunk(s) in the background (rate-limit aware) — ` +
       'data arrives via Garmin Push/Ping within minutes. ' +
       'Ensure Push or Ping is configured in the Garmin developer portal to ' +
@@ -3912,10 +3939,10 @@ router.get('/garmin/test-connection', verifyToken, async (req, res) => {
       try {
         const r = await axios.get(activitiesUrl, {
           headers: authHeader,
-          params: {
+          params: withGarminPullToken({
             uploadStartTimeInSeconds: nowSec - 86400,
             uploadEndTimeInSeconds: nowSec
-          },
+          }),
           timeout: 15000
         });
         const count = Array.isArray(r.data) ? r.data.length
