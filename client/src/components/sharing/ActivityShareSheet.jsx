@@ -534,18 +534,33 @@ export default function ActivityShareSheet({
     inflightRef.current = true;
     setBusy(true);
     try {
-      const { blob, dataUrl } = await captureActive();
-      // The async Clipboard image API is unreliable inside the iOS WKWebView
-      // (it either throws or copies a partial image), so only use it on web.
-      // On native we go straight to the share sheet, where "Copy" copies the
-      // full PNG correctly.
-      if (!Capacitor.isNativePlatform() && navigator.clipboard && window.ClipboardItem) {
+      // Safari and the iOS WKWebView only honour a clipboard write that is
+      // issued synchronously inside the user gesture. Awaiting the capture
+      // first spends that gesture, which is why the image write "threw or
+      // copied a partial image" here and Copy was quietly downgraded to
+      // opening the share sheet instead.
+      //
+      // ClipboardItem accepts a Promise<Blob> precisely for this case: the
+      // write is registered during the gesture and the bitmap is filled in
+      // when the capture resolves. Note write() must be reached with no
+      // await before it.
+      let capturePromise = null;
+      if (navigator.clipboard && window.ClipboardItem) {
         try {
-          await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+          capturePromise = captureActive();
+          const blobPromise = capturePromise.then((r) => r.blob);
+          await navigator.clipboard.write([new ClipboardItem({ 'image/png': blobPromise })]);
           showToast('Copied to clipboard');
           return;
-        } catch (_) { /* fall back to the share sheet below */ }
+        } catch (err) {
+          // Genuinely unsupported (older iOS, permissions) — fall through to
+          // the share sheet, which can still put the PNG on the pasteboard.
+          console.warn('[copy] clipboard image write unavailable:', err?.message || err);
+        }
       }
+
+      // Reuse the capture if we already started one, so Copy never renders twice.
+      const { blob, dataUrl } = await (capturePromise || captureActive());
       const fileName = `lachart-${Date.now()}.png`;
       try {
         const res = await shareBlob(blob, dataUrl, fileName);
