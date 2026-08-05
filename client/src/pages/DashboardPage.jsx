@@ -591,22 +591,6 @@ export default function DashboardPage() {
   /** Atletes never had `selectedAthleteId` set (it stayed null); charts used `athleteId` and bailed out. Coaches use selection. */
   const dashboardDataAthleteId = selectedAthleteId || user?._id || null;
 
-  // ?openActivity=<kind-id> — tapping an activity notification. Only
-  // NativeDashboardPage handled this, so on desktop the click just landed on
-  // the dashboard and nothing opened. Hand off to the calendar route, which
-  // already auto-opens the activity modal for /training-calendar/:activityId
-  // — reusing that path rather than growing a second modal here.
-  useEffect(() => {
-    if (isCapacitorNative()) return;          // native page consumes it itself
-    const param = searchParams.get('openActivity');
-    if (!param) return;
-    const next = new URLSearchParams(searchParams);
-    next.delete('openActivity');
-    setSearchParams(next, { replace: true });
-    const qs = dashboardDataAthleteId ? `?athleteId=${dashboardDataAthleteId}` : '';
-    navigate(`/training-calendar/${encodeURIComponent(param)}${qs}`, { replace: true });
-  }, [searchParams, setSearchParams, navigate, dashboardDataAthleteId]);
-
   /** Guards async loaders — ignore responses that belong to a previous athlete selection. */
   const activeDataAthleteRef = useRef(dashboardDataAthleteId);
   const dataLoadGenRef = useRef(0);
@@ -754,6 +738,22 @@ export default function DashboardPage() {
    */
   const [coachAthletesCount, setCoachAthletesCount] = useState(null);
   const navigate = useNavigate();  /** Avoid flashing the empty-state hero while API/cache is still settling */
+
+  // ?openActivity=<kind-id> — tapping an activity notification. Only
+  // NativeDashboardPage handled this, so on desktop the click just landed on
+  // the dashboard and nothing opened. Hand off to the calendar route, which
+  // already auto-opens the activity modal for /training-calendar/:activityId
+  // — reusing that path rather than growing a second modal here.
+  useEffect(() => {
+    if (isCapacitorNative()) return;          // native page consumes it itself
+    const param = searchParams.get('openActivity');
+    if (!param) return;
+    const next = new URLSearchParams(searchParams);
+    next.delete('openActivity');
+    setSearchParams(next, { replace: true });
+    const qs = dashboardDataAthleteId ? `?athleteId=${dashboardDataAthleteId}` : '';
+    navigate(`/training-calendar/${encodeURIComponent(param)}${qs}`, { replace: true });
+  }, [searchParams, setSearchParams, navigate, dashboardDataAthleteId]);
   const [showEmptyWelcomeDelayed, setShowEmptyWelcomeDelayed] = useState(false);
   /** True once trainings + calendar have been fetched at least once (avoids flash on initial load) */
   const [trainingsInitialized, setTrainingsInitialized] = useState(false);
