@@ -11,6 +11,12 @@ export function normalizeNotificationActivityId(resourceType, resourceId) {
   if (rt === 'strava' || rt === 'strava_import') {
     return rid.startsWith('strava-') ? rid : `strava-${rid.replace(/^strava-/, '')}`;
   }
+  // Garmin was missing here, so a Garmin activity notification resolved to a
+  // bare id with no prefix and matched nothing — the rest of the app keys
+  // these as `garmin-<id>` (see buildActivityMatcher / activity id builders).
+  if (rt === 'garmin' || rt === 'garmin_import') {
+    return rid.startsWith('garmin-') ? rid : `garmin-${rid.replace(/^garmin-/, '')}`;
+  }
   if (rt === 'fit') {
     return rid.startsWith('fit-') ? rid : `fit-${rid}`;
   }
