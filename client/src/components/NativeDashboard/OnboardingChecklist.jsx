@@ -21,6 +21,8 @@ export default function OnboardingChecklist({
   tests = [],
   plannedWorkouts = [],
   stravaConnected = false,
+  /** True while the parent is still fetching tests / planned workouts. */
+  dataLoading = false,
   onConnect,
   onPlanWorkout,
 }) {
@@ -31,6 +33,11 @@ export default function OnboardingChecklist({
   });
   const [connected, setConnected] = useState(Boolean(stravaConnected));
   const [hasAthlete, setHasAthlete] = useState(null); // null = unknown yet
+  // getIntegrationStatus is async, so `connected` starts false even for people
+  // who connected long ago. Rendering before it answers flashed a "Connect a
+  // data source" step at users who already had one, then yanked the whole card
+  // away when the real status arrived.
+  const [integrationChecked, setIntegrationChecked] = useState(false);
 
   // Live-check integration status (Strava OR Garmin OR Apple Health) and, for
   // coaches, whether they already have an athlete. Re-checks after a sync.
@@ -38,8 +45,14 @@ export default function OnboardingChecklist({
     let cancelled = false;
     const check = () => {
       getIntegrationStatus()
-        .then((s) => { if (!cancelled) setConnected(Boolean(s?.stravaConnected || s?.garminConnected || s?.appleHealthConnected)); })
-        .catch(() => {});
+        .then((s) => {
+          if (cancelled) return;
+          setConnected(Boolean(s?.stravaConnected || s?.garminConnected || s?.appleHealthConnected));
+          setIntegrationChecked(true);
+        })
+        // Mark checked on failure too — otherwise an offline start hides the
+        // checklist permanently instead of falling back to the prop.
+        .catch(() => { if (!cancelled) setIntegrationChecked(true); });
     };
     check();
     window.addEventListener('appleHealth:synced', check);
@@ -103,8 +116,12 @@ export default function OnboardingChecklist({
   const doneCount = steps.filter((s) => s.done).length;
   const allDone = doneCount === steps.length;
 
-  // Wait for the coach athlete check before deciding "all done" to avoid a flash.
-  const pending = isCoach && hasAthlete === null;
+  // Render nothing until every source of truth has answered. Any step whose
+  // data is still loading would otherwise show as not-done for a moment, and a
+  // checklist that appears half-empty and then vanishes reads as a bug.
+  const pending = !integrationChecked
+    || (isCoach && hasAthlete === null)
+    || dataLoading;
   if (dismissed || allDone || pending) return null;
 
   const dismiss = () => {

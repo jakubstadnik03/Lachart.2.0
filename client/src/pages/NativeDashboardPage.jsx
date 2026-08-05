@@ -1367,6 +1367,7 @@ export default function NativeDashboardPage({
               tests={tests}
               plannedWorkouts={plannedWorkouts}
               stravaConnected={stravaConnected}
+              dataLoading={loading}
               onConnect={() => setShowStravaConnect(true)}
               onPlanWorkout={onPlanWorkout}
             />
