@@ -234,7 +234,15 @@ export default function RaceCountdownCard({
         borderRadius: 16,
         padding: '12px 16px 12px',
         boxShadow: '0 1px 2px rgba(15,23,42,.04)',
-        overflow: 'hidden',
+        // The hint pills ("+26 CTL to target", "Week 620 TSS → taper") sit last
+        // and were being sliced in half by the card's bottom edge on desktop.
+        // This card is a flex child of a `flex flex-col` column, so it inherits
+        // flex-shrink:1 and gets squeezed when the column is short on room —
+        // and overflow:hidden then cut the overflowing pills off rather than
+        // letting them show. Refuse to shrink, and clip nothing: the rounded
+        // corners have no square-cornered children to contain.
+        overflow: 'visible',
+        flexShrink: 0,
         minWidth: 0,
       }}
     >
