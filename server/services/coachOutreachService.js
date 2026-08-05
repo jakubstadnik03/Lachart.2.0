@@ -240,7 +240,9 @@ function secondParagraphFor(person) {
  */
 function renderOutreachHtml(person, { unsubscribeUrl, loginUrl }) {
   const greet = firstNameOf(person) ? `Hi ${escapeHtml(firstNameOf(person))},` : 'Hi,';
-  const planName = person.segment === 'coach' ? 'Coach plan' : 'Pro';
+  // Names must match PLAN_DETAILS in client/src/components/UpgradeModal.jsx —
+  // the `pro` plan is presented to users as "Athlete", never as "Pro".
+  const planName = person.segment === 'coach' ? 'Coach plan' : 'Athlete plan';
   const scale = person.segment === 'coach'
     ? `Coaching ${escapeHtml(String(person.athleteCount))} athlete${person.athleteCount === 1 ? '' : 's'} is real work`
     : 'Testing properly takes effort';

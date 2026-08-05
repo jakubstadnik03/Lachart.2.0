@@ -17,6 +17,44 @@ const {
 } = require('../services/subscriptionLifecycleEmailService');
 
 // Available subscription plans (exported for use in middleware)
+/**
+ * Keep the account role in step with the plan that was just paid for.
+ *
+ * Buying the Coach plan while holding an athlete role left people paying for
+ * a coach seat with no way to add athletes — the capability is gated on role,
+ * not on plan. Promote them automatically instead of making them ask.
+ *
+ * The reverse (coach -> athlete on the Athlete plan) only happens when the
+ * coach manages nobody. Demoting a coach who has athletes assigned would strip
+ * access to real people's data, which is not something a plan change should
+ * ever do silently; those accounts keep the coach role and are left alone.
+ *
+ * Mutates `user` — the caller saves.
+ * @returns {string|null} the new role, or null if nothing changed.
+ */
+async function syncRoleWithPlan(user, planId) {
+  const role = String(user?.role || '').toLowerCase();
+
+  if (planId === 'coach' && role !== 'coach') {
+    user.role = 'coach';
+    console.log(`[Subscription] role ${role || '(none)'} -> coach for ${user.email} (Coach plan)`);
+    return 'coach';
+  }
+
+  if (planId === 'pro' && role === 'coach') {
+    const managed = await User.countDocuments({ coachId: user._id });
+    if (managed > 0) {
+      console.log(`[Subscription] keeping coach role for ${user.email}: manages ${managed} athlete(s)`);
+      return null;
+    }
+    user.role = 'athlete';
+    console.log(`[Subscription] role coach -> athlete for ${user.email} (Athlete plan, no athletes managed)`);
+    return 'athlete';
+  }
+
+  return null;
+}
+
 const PLANS = {
   free: {
     id: 'free',
@@ -480,6 +518,8 @@ async function handleCheckoutCompleted(session) {
   }
 
   user.subscriptionId = userSubscription._id;
+  // A paid Coach seat is useless while the account still holds an athlete role.
+  await syncRoleWithPlan(user, planId);
   await user.save();
 
   // Fire-and-forget confirmation email on a real free→paid transition.
@@ -738,7 +778,10 @@ exports.syncSubscriptionFromStripe = async (req, res) => {
       await userSubscription.save();
     }
 
-    if (!user.subscriptionId) {
+    // Same role sync as the webhook path: /sync is the fallback that runs when
+    // a webhook was missed, so it has to leave the account in the same state.
+    const roleChanged = await syncRoleWithPlan(user, planId);
+    if (!user.subscriptionId || roleChanged) {
       user.subscriptionId = userSubscription._id;
       await user.save();
     }
