@@ -26,7 +26,7 @@ async function requireAdmin(req, res) {
   return me;
 }
 
-const SEGMENTS = ['coach', 'athlete', 'untested'];
+const SEGMENTS = ['coach', 'coach-solo', 'athlete', 'untested'];
 /** Anything unrecognised falls back to coach. */
 function segmentOf(req) {
   const s = String(req.query.segment || req.body?.segment || 'coach');
@@ -89,6 +89,37 @@ router.post('/send/:userId', verifyToken, async (req, res) => {
   } catch (e) {
     console.error('[CoachOutreach] send failed:', e);
     res.status(500).json({ error: 'Send failed', message: e.message });
+  }
+});
+
+// POST /api/admin/coach-outreach/send-batch — { segment, userIds[] }
+// Sends to an explicitly chosen list, spaced out, server-side so it keeps
+// going after the admin closes the tab. One run at a time.
+router.post('/send-batch', verifyToken, async (req, res) => {
+  try {
+    if (!(await requireAdmin(req, res))) return;
+    const ids = Array.isArray(req.body?.userIds) ? req.body.userIds : [];
+    if (!ids.length) return res.status(400).json({ error: 'No recipients selected' });
+    const job = outreach.startBatch(segmentOf(req), ids, {
+      gapMs: req.body?.gapMs ? Number(req.body.gapMs) : undefined,
+    });
+    if (job.error === 'already_running') {
+      return res.status(409).json({ error: 'A batch is already running', ...job });
+    }
+    res.json(job);
+  } catch (e) {
+    console.error('[CoachOutreach] batch start failed:', e);
+    res.status(500).json({ error: 'Failed to start batch', message: e.message });
+  }
+});
+
+// GET /api/admin/coach-outreach/batch-status — progress of the current run.
+router.get('/batch-status', verifyToken, async (req, res) => {
+  try {
+    if (!(await requireAdmin(req, res))) return;
+    res.json(outreach.batchSnapshot());
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to read batch status', message: e.message });
   }
 });
 

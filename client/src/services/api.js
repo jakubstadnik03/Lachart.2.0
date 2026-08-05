@@ -945,6 +945,17 @@ export const sendCoachLeadTest = async (userId, segment = 'coach') => {
   return data;
 };
 
+/** Paced batch to an explicitly chosen list. Runs server-side; poll for progress. */
+export const startCoachLeadBatch = async (userIds, { segment = 'coach', gapMs } = {}) => {
+  const { data } = await api.post(`/api/admin/coach-outreach/send-batch?segment=${segment}`, { userIds, segment, gapMs });
+  return data;
+};
+
+export const fetchCoachLeadBatchStatus = async () => {
+  const { data } = await api.get('/api/admin/coach-outreach/batch-status');
+  return data;
+};
+
 export const sendCoachLeadEmail = async (userId, { force = false, segment = 'coach' } = {}) => {
   const { data } = await api.post(`/api/admin/coach-outreach/send/${userId}?segment=${segment}`, { force, segment });
   return data;

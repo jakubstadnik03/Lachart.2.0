@@ -111,8 +111,15 @@ async function premiumUserIdSet() {
   return new Set(subs.map((s) => String(s.userId)));
 }
 
-/** Coaches already past the free athlete allowance, richest first. */
-async function findQualifiedCoaches({ minAthletes = MIN_ATHLETES } = {}) {
+/**
+ * Coaches, filtered by how many athletes they manage.
+ *
+ * maxAthletes exists for the "exactly one athlete" segment: the free plan
+ * allows a single athlete, so those coaches are sitting precisely on the wall
+ * — inviting their second one is the moment they hit it. Different pitch from
+ * someone already running six.
+ */
+async function findQualifiedCoaches({ minAthletes = MIN_ATHLETES, maxAthletes = null } = {}) {
   const [coaches, premium] = await Promise.all([
     User.find({ role: 'coach' })
       .select('_id name email createdAt lastLogin notifications outreach')
@@ -125,13 +132,14 @@ async function findQualifiedCoaches({ minAthletes = MIN_ATHLETES } = {}) {
     if (premium.has(String(c._id))) continue;
     const athleteCount = await User.countDocuments({ coachId: c._id });
     if (athleteCount < minAthletes) continue;
+    if (maxAthletes != null && athleteCount > maxAthletes) continue;
 
     const athletes = await User.find({ coachId: c._id }).select('_id name').lean();
     const athleteIds = athletes.map((a) => String(a._id));
     const testCount = await Test.countDocuments({ athleteId: { $in: [...athleteIds, String(c._id)] } });
 
     rows.push({
-      segment: 'coach',
+      segment: athleteCount <= 1 ? 'coach-solo' : 'coach',
       userId: String(c._id),
       name: c.name || '',
       email: c.email,
@@ -237,10 +245,14 @@ async function findUntestedConnected() {
 async function findCandidates(segment = 'coach', opts = {}) {
   if (segment === 'athlete') return findQualifiedAthletes();
   if (segment === 'untested') return findUntestedConnected();
+  if (segment === 'coach-solo') return findQualifiedCoaches({ minAthletes: 1, maxAthletes: 1 });
   return findQualifiedCoaches(opts);
 }
 
 function subjectFor(person) {
+  if (person.segment === 'coach-solo') {
+    return `${firstNameOf(person) || 'Hi'} — adding your second athlete in LaChart`;
+  }
   if (person.segment === 'untested') {
     const src = person.sources?.[0] || 'your training';
     return `${firstNameOf(person) || 'Hi'} — you've got ${src} in LaChart, but no lactate test yet`;
@@ -254,7 +266,8 @@ function subjectFor(person) {
 }
 
 function featureRows(segment) {
-  return (FEATURES[segment] || FEATURES.athlete).map(([icon, title, body]) => `
+  const key = segment === 'coach-solo' ? 'coach' : segment;
+  return (FEATURES[key] || FEATURES.athlete).map(([icon, title, body]) => `
     <tr>
       <td valign="top" style="width:30px;padding:9px 0;font-size:18px;line-height:1.3;">${icon}</td>
       <td valign="top" style="padding:9px 0;font-size:14px;line-height:1.55;color:${BRAND.text};">
@@ -266,6 +279,13 @@ function featureRows(segment) {
 
 /** Opening paragraph — the part that must feel written, not generated. */
 function openingFor(person) {
+  if (person.segment === 'coach-solo') {
+    const who = person.athleteNames?.[0] ? escapeHtml(person.athleteNames[0]) : 'one athlete';
+    const testLine = person.testCount > 0
+      ? ` You've logged <strong>${person.testCount} lactate test${person.testCount === 1 ? '' : 's'}</strong> between you.`
+      : '';
+    return `I'm Jakub, I build LaChart. You're coaching <strong>${who}</strong> here.${testLine}`;
+  }
   if (person.segment === 'untested') {
     const src = person.sources?.length ? person.sources.join(' and ') : 'a data source';
     return `I'm Jakub, I build LaChart. You connected <strong>${escapeHtml(src)}</strong>, so your
@@ -306,10 +326,10 @@ function renderOutreachHtml(person, { unsubscribeUrl, loginUrl }) {
   const greet = firstNameOf(person) ? `Hi ${escapeHtml(firstNameOf(person))},` : 'Hi,';
   // Names must match PLAN_DETAILS in client/src/components/UpgradeModal.jsx —
   // the `pro` plan is presented to users as "Athlete", never as "Pro".
-  const planName = person.segment === 'coach' ? 'Coach plan'
+  const planName = (person.segment === 'coach' || person.segment === 'coach-solo') ? 'Coach plan'
     : person.segment === 'untested' ? 'a first test'
     : 'Athlete plan';
-  const scale = person.segment === 'coach'
+  const scale = (person.segment === 'coach' || person.segment === 'coach-solo')
     ? `Coaching ${escapeHtml(String(person.athleteCount))} athlete${person.athleteCount === 1 ? '' : 's'} is real work`
     : 'Testing properly takes effort';
 
@@ -354,7 +374,7 @@ function renderOutreachHtml(person, { unsubscribeUrl, loginUrl }) {
       <tr><td style="padding:18px 30px 6px;">
         <p style="margin:0 0 18px;font-size:16px;line-height:1.6;">
           If it's useful, reply to this email and I'll set it up for you — and if something's
-          missing for how you ${person.segment === 'coach' ? 'coach' : 'train'}, tell me and I'll look at building it.
+          missing for how you ${person.segment.startsWith('coach') ? 'coach' : 'train'}, tell me and I'll look at building it.
         </p>
         <div style="text-align:center;padding:6px 0 6px;">
           <!-- Signs them straight in and lands on their subscription page: a
@@ -384,7 +404,9 @@ function renderOutreachHtml(person, { unsubscribeUrl, loginUrl }) {
 async function renderPreview(segment, userId) {
   const all = segment === 'untested'
     ? await findUntestedConnected()
-    : segment === 'athlete'
+    : segment === 'coach-solo'
+      ? await findQualifiedCoaches({ minAthletes: 1, maxAthletes: 1 })
+      : segment === 'athlete'
     ? await findQualifiedAthletes()
     : await findQualifiedCoaches({ minAthletes: 1 });
   const person = all.find((c) => c.userId === String(userId));
@@ -440,11 +462,83 @@ async function sendOutreach(segment, userId, { force = false, overrideEmail = nu
       ? 'outreach.athleteOutreachSentAt'
       : 'outreach.coachOutreachSentAt';
     const update = { [field]: new Date() };
-    if (segment === 'coach') update['outreach.coachOutreachAthleteCount'] = person.athleteCount;
+    if (segment.startsWith('coach')) update['outreach.coachOutreachAthleteCount'] = person.athleteCount;
     await User.findByIdAndUpdate(person.userId, update).catch(() => {});
   }
 
   return { sent: true, to: overrideEmail || person.email, subject: preview.subject };
+}
+
+
+/**
+ * Paced batch send.
+ *
+ * Still an explicit human choice — the admin ticks specific people and presses
+ * send — but the sending itself is spaced out so a run of 30 doesn't arrive as
+ * one burst that Zoho throttles or that reads as a blast. Runs server-side so
+ * it survives the admin closing the tab.
+ *
+ * One job at a time on purpose: two overlapping runs would race on the
+ * already-sent guard and could double-email someone.
+ */
+const BATCH_GAP_MS = Number(process.env.COACH_OUTREACH_BATCH_GAP_MS || 20_000);
+let batchJob = null;
+
+function batchSnapshot() {
+  if (!batchJob) return { running: false, total: 0, sent: 0, failed: 0, skipped: 0, results: [] };
+  const { timer, ...rest } = batchJob;
+  return rest;
+}
+
+function startBatch(segment, userIds, { gapMs = BATCH_GAP_MS } = {}) {
+  if (batchJob?.running) return { error: 'already_running', ...batchSnapshot() };
+  const ids = [...new Set((userIds || []).map(String))].filter(Boolean);
+  if (!ids.length) return { error: 'empty_selection', ...batchSnapshot() };
+
+  batchJob = {
+    running: true,
+    segment,
+    total: ids.length,
+    sent: 0,
+    failed: 0,
+    skipped: 0,
+    current: null,
+    gapMs,
+    startedAt: new Date(),
+    finishedAt: null,
+    results: [],
+  };
+
+  (async () => {
+    for (let i = 0; i < ids.length; i++) {
+      const id = ids[i];
+      batchJob.current = id;
+      try {
+        const r = await sendOutreach(segment, id, {});
+        if (r.sent) batchJob.sent += 1;
+        else if (r.reason === 'send_failed') batchJob.failed += 1;
+        else batchJob.skipped += 1;
+        batchJob.results.push({ userId: id, ...r });
+      } catch (e) {
+        batchJob.failed += 1;
+        batchJob.results.push({ userId: id, sent: false, reason: 'error', error: e?.message });
+      }
+      // Space out only between real sends; skips cost nothing on the wire.
+      const lastSent = batchJob.results[batchJob.results.length - 1]?.sent;
+      if (i < ids.length - 1 && lastSent) {
+        await new Promise((r) => setTimeout(r, gapMs));
+      }
+    }
+    batchJob.running = false;
+    batchJob.current = null;
+    batchJob.finishedAt = new Date();
+    console.log(`[CoachOutreach] batch done: sent=${batchJob.sent} skipped=${batchJob.skipped} failed=${batchJob.failed}`);
+  })().catch((e) => {
+    console.error('[CoachOutreach] batch crashed:', e);
+    if (batchJob) { batchJob.running = false; batchJob.finishedAt = new Date(); }
+  });
+
+  return batchSnapshot();
 }
 
 async function getOutreachStats(segment = 'coach') {
@@ -468,6 +562,8 @@ async function getOutreachStats(segment = 'coach') {
 }
 
 module.exports = {
+  startBatch,
+  batchSnapshot,
   findCandidates,
   findUntestedConnected,
   findQualifiedCoaches,

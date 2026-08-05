@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getEventStats } from '../utils/eventLogger';
-import { fetchCoachLeads, fetchCoachLeadPreview, sendCoachLeadTest, sendCoachLeadEmail } from '../services/api';
+import { fetchCoachLeads, fetchCoachLeadPreview, sendCoachLeadTest, sendCoachLeadEmail, startCoachLeadBatch, fetchCoachLeadBatchStatus } from '../services/api';
 import { getAdminUsers, getAdminStats, getAdminHealth, getCoachAthletesPage, updateUserAdmin, deleteUserAdmin, deleteAthleteWithTests, sendReactivationEmail, sendThankYouEmail, sendThankYouEmailToAll, sendFeatureAnnouncementEmail, sendStravaReminderEmail, sendAppDownloadEmail, sendCoachOutreachEmail, getCoachOutreachLeads, updateCoachOutreachLead, importCoachOutreachLeads, startBulkOutreachCampaign, stopBulkCampaign, listBulkCampaigns, getDefaultOutreachTemplate, impersonateUser, sendRetentionEmailPreview, fetchWhatsNewMay2026Status, sendWhatsNewMay2026Preview, runWhatsNewMay2026Campaign, resetWhatsNewMay2026, fetchIosLaunchJun2026Status, sendIosLaunchJun2026Preview, runIosLaunchJun2026Campaign, resetIosLaunchJun2026, fetchPaidLaunchJul2026Status, sendPaidLaunchJul2026Preview, runPaidLaunchJul2026Campaign, resetPaidLaunchJul2026, fetchCampaignRecipients } from '../services/api';
 import { useAuth } from '../context/AuthProvider';
 import { useNotification } from '../context/NotificationContext';
@@ -24,6 +24,53 @@ function CoachLeadsPanel({ addNotification }) {
   const [preview, setPreview] = useState(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [sending, setSending] = useState(false);
+  // Checkbox selection for the batch send — distinct from `selected`, which is
+  // the row currently shown in the preview pane.
+  const [checkedIds, setCheckedIds] = useState(() => new Set());
+  const [batch, setBatch] = useState(null);
+
+  const toggleChecked = (id) => setCheckedIds((prev) => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
+
+  // Contacted and opted-out rows are never selectable — the server would skip
+  // them anyway, and showing them as queued would misreport what will happen.
+  const selectableIds = coaches.filter((c) => !c.alreadySentAt && !c.optedOut).map((c) => c.userId);
+  const allChecked = selectableIds.length > 0 && selectableIds.every((id) => checkedIds.has(id));
+
+  const startBatch = async () => {
+    const ids = selectableIds.filter((id) => checkedIds.has(id));
+    if (!ids.length) return;
+    const ok = window.confirm(
+      `Send to ${ids.length} recipient${ids.length === 1 ? '' : 's'}?\n\n` +
+      'These are real emails to real customers. They go out spaced apart, ' +
+      'and anyone already contacted is skipped automatically.',
+    );
+    if (!ok) return;
+    try {
+      const job = await startCoachLeadBatch(ids, { segment });
+      setBatch(job);
+      setCheckedIds(new Set());
+    } catch (e) {
+      addNotification?.(e?.response?.data?.error || 'Could not start batch', 'error');
+    }
+  };
+
+  // Poll while a run is in flight; refresh the list once it finishes so the
+  // "sent" badges appear.
+  useEffect(() => {
+    if (!batch?.running) return undefined;
+    const t = setInterval(async () => {
+      try {
+        const st = await fetchCoachLeadBatchStatus();
+        setBatch(st);
+        if (!st.running) { clearInterval(t); load(); }
+      } catch { /* keep polling */ }
+    }, 4000);
+    return () => clearInterval(t);
+  }, [batch?.running]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -38,7 +85,7 @@ function CoachLeadsPanel({ addNotification }) {
     }
   }, [addNotification, segment]);
 
-  useEffect(() => { setSelected(null); setPreview(null); load(); }, [load]);
+  useEffect(() => { setSelected(null); setCheckedIds(new Set()); setPreview(null); load(); }, [load]);
 
   const openPreview = async (coach) => {
     setSelected(coach);
@@ -68,8 +115,8 @@ function CoachLeadsPanel({ addNotification }) {
 
   const sendReal = async () => {
     if (!selected) return;
-    const what = segment === 'coach'
-      ? `They coach ${selected.athleteCount} athletes.`
+    const what = segment.startsWith('coach')
+      ? `They coach ${selected.athleteCount} athlete(s).`
       : segment === 'untested'
         ? `${(selected.sources || []).join(' + ') || 'A source'} connected, no test yet.`
         : `Strava connected, ${selected.testCount} lactate test(s).`;
@@ -108,6 +155,7 @@ function CoachLeadsPanel({ addNotification }) {
     <div className="flex gap-2">
       {[
         { id: 'coach', label: '🏆 Coaches (2+ athletes)' },
+        { id: 'coach-solo', label: '🥇 Coaches (1 athlete)' },
         { id: 'athlete', label: '🏃 Athletes (Strava + test)' },
         { id: 'untested', label: '🧪 Connected, never tested' },
       ].map((s) => (
@@ -132,10 +180,12 @@ function CoachLeadsPanel({ addNotification }) {
           {[
             {
               label: segment === 'coach' ? 'Qualified coaches'
+                : segment === 'coach-solo' ? 'Coaches with 1 athlete'
                 : segment === 'untested' ? 'Connected, no test'
                 : 'Qualified athletes',
               value: stats.qualified,
               hint: segment === 'coach' ? `${stats.minAthletes}+ athletes, not paying`
+                : segment === 'coach-solo' ? 'exactly at the free limit'
                 : segment === 'untested' ? 'wired up but never tested'
                 : 'Strava + test, not paying',
             },
@@ -143,6 +193,8 @@ function CoachLeadsPanel({ addNotification }) {
             { label: 'Already contacted', value: stats.alreadySent, hint: 'one email each' },
             segment === 'coach'
               ? { label: 'Athletes covered', value: stats.totalAthletesCovered, hint: 'across all leads' }
+              : segment === 'coach-solo'
+                ? { label: 'Athletes covered', value: stats.totalAthletesCovered, hint: 'one each' }
               : segment === 'untested'
                 ? { label: 'Sources connected', value: stats.connectedSources, hint: 'Strava / Garmin / Apple' }
                 : { label: 'Tests logged', value: stats.totalTests, hint: 'across all leads' },
@@ -156,10 +208,52 @@ function CoachLeadsPanel({ addNotification }) {
         </div>
       )}
 
+      {batch && (
+        <div className={`rounded-xl border p-3 text-sm ${batch.running ? 'bg-amber-50 border-amber-200' : 'bg-emerald-50 border-emerald-200'}`}>
+          <div className="flex items-center justify-between gap-3">
+            <span className="font-semibold text-gray-800">
+              {batch.running ? 'Sending…' : 'Batch finished'}
+            </span>
+            <span className="text-gray-600">
+              {batch.sent} sent · {batch.skipped} skipped · {batch.failed} failed · of {batch.total}
+            </span>
+          </div>
+          <div className="mt-2 h-1.5 bg-white rounded-full overflow-hidden">
+            <div className="h-full bg-primary transition-all"
+              style={{ width: `${batch.total ? Math.round(((batch.sent + batch.skipped + batch.failed) / batch.total) * 100) : 0}%` }} />
+          </div>
+          {batch.running && (
+            <div className="mt-1.5 text-xs text-gray-500">
+              Spaced ~{Math.round((batch.gapMs || 20000) / 1000)}s apart — this keeps running if you close the tab.
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <div className="px-4 py-2.5 border-b border-gray-100 flex items-center justify-between gap-2">
+            <label className="flex items-center gap-2 text-xs font-medium text-gray-600 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={allChecked}
+                onChange={() => setCheckedIds(allChecked ? new Set() : new Set(selectableIds))}
+                className="rounded border-gray-300"
+              />
+              Select all not contacted ({selectableIds.length})
+            </label>
+            <button
+              onClick={startBatch}
+              disabled={checkedIds.size === 0 || batch?.running}
+              className="text-xs px-3 py-1.5 rounded-lg bg-primary text-white font-semibold disabled:opacity-40"
+            >
+              Send to {checkedIds.size} selected
+            </button>
+          </div>
           <div className="px-4 py-3 border-b border-gray-100 text-sm font-semibold text-gray-700">
-            {segment === 'coach'
+            {segment === 'coach-solo'
+              ? 'Coaches with exactly one athlete — the free plan covers one, so their second hits the wall'
+              : segment === 'coach'
               ? 'Coaches past the free limit — most athletes first'
               : segment === 'untested'
                 ? 'Connected a data source but never ran a test — most recently active first'
@@ -169,11 +263,22 @@ function CoachLeadsPanel({ addNotification }) {
             {coaches.map((c) => {
               const seen = lastSeen(c.lastLogin);
               return (
-                <button
+                <div
                   key={c.userId}
-                  onClick={() => openPreview(c)}
-                  className={`w-full text-left px-4 py-3 hover:bg-gray-50 transition ${selected?.userId === c.userId ? 'bg-indigo-50' : ''}`}
+                  className={`flex items-start gap-2 px-4 py-3 hover:bg-gray-50 transition ${selected?.userId === c.userId ? 'bg-indigo-50' : ''}`}
                 >
+                  <input
+                    type="checkbox"
+                    className="mt-1 rounded border-gray-300 shrink-0"
+                    checked={checkedIds.has(c.userId)}
+                    disabled={!!c.alreadySentAt || c.optedOut}
+                    onChange={() => toggleChecked(c.userId)}
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                  <button
+                    onClick={() => openPreview(c)}
+                    className="flex-1 min-w-0 text-left"
+                  >
                   <div className="flex items-center justify-between gap-2">
                     <div className="min-w-0">
                       <div className="font-medium text-gray-900 truncate">{c.name || '(no name)'}</div>
@@ -185,7 +290,7 @@ function CoachLeadsPanel({ addNotification }) {
                     <div className="flex items-center gap-2 shrink-0">
                       {c.optedOut && <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">opted out</span>}
                       {c.alreadySentAt && <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">sent</span>}
-                      {segment === 'coach' && <span className="text-xs font-semibold text-indigo-600">{c.athleteCount} athletes</span>}
+                      {segment.startsWith('coach') && <span className="text-xs font-semibold text-indigo-600">{c.athleteCount} athlete{c.athleteCount === 1 ? '' : 's'}</span>}
                       {segment === 'athlete' && <span className="text-xs font-semibold text-orange-600">Strava</span>}
                       {segment === 'untested' && (
                         <span className="text-xs font-semibold text-teal-600">{(c.sources || []).join(' + ') || 'connected'}</span>
@@ -193,7 +298,8 @@ function CoachLeadsPanel({ addNotification }) {
                       {segment !== 'untested' && <span className="text-xs text-gray-400">{c.testCount} tests</span>}
                     </div>
                   </div>
-                </button>
+                  </button>
+                </div>
               );
             })}
             {coaches.length === 0 && (
