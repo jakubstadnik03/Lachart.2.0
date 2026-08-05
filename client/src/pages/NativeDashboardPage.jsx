@@ -1031,6 +1031,19 @@ export default function NativeDashboardPage({
     setSearchParams(next, { replace: true });
   }, [searchParams, setSearchParams]);
 
+  // ?openRace=<id> — "Fitness vs. race target" notification. iOS renders this
+  // page rather than DashboardPage, so the handling has to exist here too or
+  // the tap does nothing on the device the notification was sent to.
+  const [raceFocusId, setRaceFocusId] = useState(null);
+  useEffect(() => {
+    const param = searchParams.get('openRace');
+    if (!param) return;
+    setRaceFocusId(param);
+    const next = new URLSearchParams(searchParams);
+    next.delete('openRace');
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams]);
+
   // Races (incl. past ones) — shown as flags in the WeekStrip and as a card
   // in the day view, with the saved post-race reflection. getRaceEvents has a
   // 60s client cache shared with RaceCountdownCard, so this is cheap.
@@ -1465,6 +1478,8 @@ export default function NativeDashboardPage({
                 activities={activities}
                 userProfile={fitnessProfile}
                 onTaperApplied={onTaperApplied}
+                focusRaceId={raceFocusId}
+                onFocusHandled={() => setRaceFocusId(null)}
               />
             </PremiumLock>
           </div>

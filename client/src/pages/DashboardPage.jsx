@@ -434,6 +434,19 @@ export default function DashboardPage() {
     setSearchParams(next, { replace: true });
   }, [searchParams, setSearchParams]);
 
+  // ?openRace=<id> — from the "Fitness vs. race target" notification. Held in
+  // state and stripped from the URL straight away so a refresh (or a later
+  // back-navigation) doesn't reopen the modal.
+  const [raceFocusId, setRaceFocusId] = useState(null);
+  useEffect(() => {
+    const param = searchParams.get('openRace');
+    if (!param) return;
+    setRaceFocusId(param);
+    const next = new URLSearchParams(searchParams);
+    next.delete('openRace');
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams]);
+
   // Build & schedule the queue once when the user is known.
   useEffect(() => {
     if (!isAuthenticated || !user?._id) return;
@@ -2964,6 +2977,8 @@ export default function DashboardPage() {
               activities={calendarData}
               userProfile={fitnessProfile}
               onTaperApplied={loadDashboardPlannedWorkouts}
+              focusRaceId={raceFocusId}
+              onFocusHandled={() => setRaceFocusId(null)}
             />
             <PostRaceFeedbackCard
               athleteId={dashboardDataAthleteId}

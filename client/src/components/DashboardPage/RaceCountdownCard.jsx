@@ -3,7 +3,7 @@
  * Shows the countdown to the next race, its fitness (CTL) target vs the
  * athlete's current fitness, taper hints, and a list of upcoming races.
  */
-import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { XMarkIcon } from '@heroicons/react/24/outline';
 import { getRaceEvents, createRaceEvent, deleteRaceEvent, updateRaceEvent, getRaceTaperPreview, applyRaceTaper } from '../../services/api';
 import { useAuth } from '../../context/AuthProvider';
@@ -67,6 +67,11 @@ export default function RaceCountdownCard({
   userProfile = null,
   editable = true,
   onTaperApplied = null,
+  /** Race to open on mount — set from ?openRace= when a "Fitness vs. race
+   *  target" notification is tapped, so the tap lands on the numbers the
+   *  notification was about instead of a dashboard the user has to search. */
+  focusRaceId = null,
+  onFocusHandled = null,
 }) {
   const { user } = useAuth();
   const [races, setRaces] = useState([]);
@@ -98,6 +103,18 @@ export default function RaceCountdownCard({
     setLoading(true);
     load();
   }, [load]);
+
+  // Open the deep-linked race once its data has arrived. Guarded by a ref so
+  // closing the modal doesn't immediately reopen it.
+  const focusHandledRef = useRef(null);
+  useEffect(() => {
+    if (!focusRaceId || loading || !races.length) return;
+    if (focusHandledRef.current === String(focusRaceId)) return;
+    const match = races.find((r) => String(r._id) === String(focusRaceId));
+    focusHandledRef.current = String(focusRaceId);
+    if (match) setSelectedRace(match);
+    onFocusHandled?.(!!match);
+  }, [focusRaceId, loading, races, onFocusHandled]);
 
   const next = races[0] || null;
   const rest = races.slice(1, 5);
