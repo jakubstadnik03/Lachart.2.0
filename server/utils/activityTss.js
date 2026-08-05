@@ -376,4 +376,7 @@ module.exports = {
   dedupeActivitiesForLoad,
   effectiveDailyTss,
   mapActivityForTss,
+  normalizeSportBucket,
+  localDateKey,
+  activityDurationSec,
 };
