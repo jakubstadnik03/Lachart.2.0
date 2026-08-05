@@ -366,6 +366,13 @@ const userSchema = new mongoose.Schema({
   /** Friday ISO week key for coach weekly-review request. */
   fridayReviewLastSentWeekStart: { type: String, default: null },
   // Retention email tracking (sent dates prevent duplicates)
+  /** Manual, human-triggered outreach (admin dashboard) — not a drip campaign.
+   *  Recorded so the same coach is never contacted twice by accident. */
+  outreach: {
+    coachOutreachSentAt:        { type: Date, default: null },
+    coachOutreachAthleteCount:  { type: Number, default: null },
+  },
+
   retentionEmails: {
     weeklyProgressLastSent:  { type: Date, default: null },
     monthlyReportLastSent:   { type: Date, default: null },
@@ -380,6 +387,10 @@ const userSchema = new mongoose.Schema({
     appReengagementStep1Sent: { type: Date, default: null },
     appReengagementStep2Sent: { type: Date, default: null },
     appReengagementStep3Sent: { type: Date, default: null },
+    /** One-time win-back email (Pro upsell for test-runners / activation for
+     *  dormant accounts). Sent once ever; segment recorded for analytics. */
+    winBackSent:              { type: Date, default: null },
+    winBackSegment:           { type: String, default: null },
     milestones: {
       firstTestSent:              { type: Boolean, default: false },
       fiveTestsSent:              { type: Boolean, default: false },

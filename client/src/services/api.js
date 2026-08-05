@@ -908,6 +908,30 @@ export const sendAppDownloadEmail = async (userId) => {
 
 // Send custom coach outreach email to arbitrary contact (admin only)
 // preview: true → delivers to admin's own email and skips lead tracking
+// ── In-app coach leads: existing users already coaching 2+ athletes ─────────
+// Separate from sendCoachOutreachEmail below, which targets cold contacts who
+// have no account. Every send here is one explicit click on one named coach.
+export const fetchCoachLeads = async () => {
+  const { data } = await api.get('/api/admin/coach-outreach/candidates');
+  return data;
+};
+
+export const fetchCoachLeadPreview = async (userId) => {
+  const { data } = await api.get(`/api/admin/coach-outreach/preview/${userId}`);
+  return data;
+};
+
+/** Send that coach's exact email to the admin's own inbox. Does not mark them contacted. */
+export const sendCoachLeadTest = async (userId) => {
+  const { data } = await api.post(`/api/admin/coach-outreach/test/${userId}`);
+  return data;
+};
+
+export const sendCoachLeadEmail = async (userId, { force = false } = {}) => {
+  const { data } = await api.post(`/api/admin/coach-outreach/send/${userId}`, { force });
+  return data;
+};
+
 export const sendCoachOutreachEmail = async ({ name, email, subject, body, preview = false }) => {
   try {
     const response = await api.post('/user/admin/send-coach-outreach-email', { name, email, subject, body, preview });

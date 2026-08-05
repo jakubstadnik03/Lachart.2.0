@@ -1,12 +1,182 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getEventStats } from '../utils/eventLogger';
+import { fetchCoachLeads, fetchCoachLeadPreview, sendCoachLeadTest, sendCoachLeadEmail } from '../services/api';
 import { getAdminUsers, getAdminStats, getAdminHealth, getCoachAthletesPage, updateUserAdmin, deleteUserAdmin, deleteAthleteWithTests, sendReactivationEmail, sendThankYouEmail, sendThankYouEmailToAll, sendFeatureAnnouncementEmail, sendStravaReminderEmail, sendAppDownloadEmail, sendCoachOutreachEmail, getCoachOutreachLeads, updateCoachOutreachLead, importCoachOutreachLeads, startBulkOutreachCampaign, stopBulkCampaign, listBulkCampaigns, getDefaultOutreachTemplate, impersonateUser, sendRetentionEmailPreview, fetchWhatsNewMay2026Status, sendWhatsNewMay2026Preview, runWhatsNewMay2026Campaign, resetWhatsNewMay2026, fetchIosLaunchJun2026Status, sendIosLaunchJun2026Preview, runIosLaunchJun2026Campaign, resetIosLaunchJun2026, fetchPaidLaunchJul2026Status, sendPaidLaunchJul2026Preview, runPaidLaunchJul2026Campaign, resetPaidLaunchJul2026, fetchCampaignRecipients } from '../services/api';
 import { useAuth } from '../context/AuthProvider';
 import { useNotification } from '../context/NotificationContext';
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { OUTREACH_CONTACTS, buildOutreachEmail, ALL_COUNTRIES } from '../data/outreachContacts';
 import { PageSkeleton } from '../components/common/Skeleton';
+
+/**
+ * Coach leads — existing users already coaching 2+ athletes, i.e. already past
+ * what the free plan covers. One coach, one preview, one deliberate click:
+ * there is no "send to all" here on purpose, because this is the most
+ * qualified list in the database and a blast would waste it.
+ */
+function CoachLeadsPanel({ addNotification }) {
+  const [loading, setLoading] = useState(true);
+  const [stats, setStats] = useState(null);
+  const [coaches, setCoaches] = useState([]);
+  const [selected, setSelected] = useState(null);
+  const [preview, setPreview] = useState(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [sending, setSending] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await fetchCoachLeads();
+      setStats(data.stats);
+      setCoaches(data.coaches || []);
+    } catch (e) {
+      addNotification?.(e?.response?.data?.error || 'Failed to load coach leads', 'error');
+    } finally {
+      setLoading(false);
+    }
+  }, [addNotification]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const openPreview = async (coach) => {
+    setSelected(coach);
+    setPreview(null);
+    setPreviewLoading(true);
+    try {
+      setPreview(await fetchCoachLeadPreview(coach.userId));
+    } catch (e) {
+      addNotification?.(e?.response?.data?.error || 'Failed to render preview', 'error');
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
+
+  const sendTest = async () => {
+    if (!selected) return;
+    setSending(true);
+    try {
+      const r = await sendCoachLeadTest(selected.userId);
+      addNotification?.(r.sent ? `Test sent to ${r.testTo}` : `Not sent: ${r.reason}`, r.sent ? 'success' : 'warning');
+    } catch (e) {
+      addNotification?.(e?.response?.data?.message || 'Test send failed', 'error');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const sendReal = async () => {
+    if (!selected) return;
+    const ok = window.confirm(
+      `Send this email to ${selected.name || 'this coach'} <${selected.email}>?\n\n` +
+      `They coach ${selected.athleteCount} athletes. This is a real email to a real customer.`,
+    );
+    if (!ok) return;
+    setSending(true);
+    try {
+      const r = await sendCoachLeadEmail(selected.userId);
+      addNotification?.(`Sent to ${r.to}`, 'success');
+      await load();
+      setSelected((s) => (s ? { ...s, alreadySentAt: new Date().toISOString() } : s));
+    } catch (e) {
+      const d = e?.response?.data;
+      addNotification?.(d?.reason === 'already_sent' ? 'Already contacted' : (d?.message || 'Send failed'), 'error');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  if (loading) return <div className="p-6 text-gray-500">Loading coach leads…</div>;
+
+  return (
+    <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
+      {stats && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {[
+            { label: 'Qualified coaches', value: stats.qualified, hint: `${stats.minAthletes}+ athletes` },
+            { label: 'Not contacted yet', value: stats.remaining, hint: 'ready to email' },
+            { label: 'Already contacted', value: stats.alreadySent, hint: 'one email each' },
+            { label: 'Athletes covered', value: stats.totalAthletesCovered, hint: 'across all leads' },
+          ].map((c) => (
+            <div key={c.label} className="bg-white rounded-xl border border-gray-200 p-4">
+              <div className="text-2xl font-bold text-gray-900">{c.value}</div>
+              <div className="text-sm font-medium text-gray-700">{c.label}</div>
+              <div className="text-xs text-gray-400">{c.hint}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <div className="px-4 py-3 border-b border-gray-100 text-sm font-semibold text-gray-700">
+            Coaches past the free limit — most athletes first
+          </div>
+          <div className="max-h-[520px] overflow-y-auto divide-y divide-gray-100">
+            {coaches.map((c) => (
+              <button
+                key={c.userId}
+                onClick={() => openPreview(c)}
+                className={`w-full text-left px-4 py-3 hover:bg-gray-50 transition ${selected?.userId === c.userId ? 'bg-indigo-50' : ''}`}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="font-medium text-gray-900 truncate">{c.name || '(no name)'}</div>
+                    <div className="text-xs text-gray-500 truncate">{c.email}</div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {c.optedOut && <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">opted out</span>}
+                    {c.alreadySentAt && <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">sent</span>}
+                    <span className="text-xs font-semibold text-indigo-600">{c.athleteCount} athletes</span>
+                    <span className="text-xs text-gray-400">{c.testCount} tests</span>
+                  </div>
+                </div>
+              </button>
+            ))}
+            {coaches.length === 0 && <div className="px-4 py-6 text-gray-500 text-sm">No qualifying coaches.</div>}
+          </div>
+        </div>
+
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden flex flex-col">
+          <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between gap-2">
+            <span className="text-sm font-semibold text-gray-700">
+              {selected ? `To: ${selected.email}` : 'Select a coach to preview'}
+            </span>
+            {selected && (
+              <div className="flex gap-2">
+                <button onClick={sendTest} disabled={sending}
+                  className="text-xs px-3 py-1.5 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-50">
+                  Send test to me
+                </button>
+                <button onClick={sendReal} disabled={sending || selected.optedOut}
+                  className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 text-white font-semibold hover:bg-indigo-700 disabled:opacity-50">
+                  {selected.alreadySentAt ? 'Send again' : 'Send to coach'}
+                </button>
+              </div>
+            )}
+          </div>
+          {preview && (
+            <div className="px-4 py-2 text-xs text-gray-500 border-b border-gray-100 truncate">
+              <strong className="text-gray-700">Subject:</strong> {preview.subject}
+            </div>
+          )}
+          <div className="flex-1 min-h-[420px] bg-gray-50">
+            {previewLoading && <div className="p-6 text-gray-500 text-sm">Rendering…</div>}
+            {preview && !previewLoading && (
+              // srcDoc + sandbox: render the real email HTML without letting it
+              // touch the admin page.
+              <iframe title="Email preview" srcDoc={preview.html} sandbox=""
+                className="w-full h-[520px] border-0 bg-white" />
+            )}
+            {!preview && !previewLoading && (
+              <div className="p-6 text-gray-400 text-sm">Pick a coach on the left to see the exact email they would receive.</div>
+            )}
+          </div>
+        </div>
+      </div>
+    </motion.div>
+  );
+}
 
 function formatAdminHealthTime(value) {
   if (!value) return 'Never';
@@ -1305,6 +1475,9 @@ const AdminDashboard = () => {
     { id: 'marketing',  name: 'Marketing',  icon: '📧' },
     { id: 'retention',  name: 'Retention',  icon: '🔁' },
     { id: 'outreach',   name: 'Outreach',   icon: '🎯' },
+    // Existing users who coach 2+ athletes — distinct from the cold-lead
+    // Outreach tab above, which targets contacts who aren't signed up yet.
+    { id: 'coaches',    name: 'Coach leads', icon: '🏆' },
     { id: 'analytics',  name: 'Analytics',  icon: '📈' },
   ];
 
@@ -4110,6 +4283,8 @@ const AdminDashboard = () => {
             </>
           )}
         </AnimatePresence>
+
+        {activeTab === 'coaches' && <CoachLeadsPanel addNotification={addNotification} />}
 
         {activeTab === 'analytics' && (
           <motion.div
