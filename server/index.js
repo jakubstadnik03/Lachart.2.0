@@ -12,6 +12,27 @@ const swaggerUi = require('swagger-ui-express');
 const app = express();
 const PORT = process.env.PORT || 8000;
 
+// Every outbound email builds its links from CLIENT_URL — verification,
+// password reset, receipts, campaigns, the one-click sign-in — and 15 modules
+// read it independently at call time. Production was running with
+// CLIENT_URL=http://localhost:3000, so every one of those links pointed at the
+// recipient's own machine and did nothing. It is very likely why only 93 of
+// 650 accounts ever verified their email.
+//
+// A developer value must never survive into production: refuse it here, once,
+// and every module that reads process.env.CLIENT_URL later gets the real host.
+if (process.env.NODE_ENV === 'production') {
+  const configured = String(process.env.CLIENT_URL || '');
+  if (!configured || /localhost|127\.0\.0\.1/i.test(configured)) {
+    const fallback = process.env.PUBLIC_CLIENT_URL || 'https://lachart.net';
+    console.error(
+      `[Config] CLIENT_URL is "${configured || '(unset)'}" in production — every emailed link ` +
+      `would be dead. Overriding with ${fallback}. Set CLIENT_URL properly on the host.`
+    );
+    process.env.CLIENT_URL = fallback;
+  }
+}
+
 // Render terminates TLS at its own proxy and forwards the caller in
 // X-Forwarded-For. Without this, express-rate-limit sees every request as
 // coming from the proxy: it logged ERR_ERL_UNEXPECTED_X_FORWARDED_FOR on every
@@ -257,6 +278,7 @@ const emailLoginRoutes      = require('./routes/emailLoginRoutes');
 const weeklyReviewRoutes    = require('./routes/weeklyReviewRoutes');
 const lactateAnalyticsRoutes = require('./routes/lactateAnalyticsRoutes');
 const healthRoutes          = require('./routes/healthRoutes');
+const atpRoutes             = require('./routes/atpRoutes');
 const { startWeeklyReportsScheduler } = require('./services/weeklyReportScheduler');
 const { startStravaAutoSyncScheduler } = require('./services/stravaAutoSyncScheduler');
 const { startLactateTestFollowUpScheduler } = require('./services/lactateTestFollowUpScheduler');
@@ -295,6 +317,7 @@ app.use('/api/admin/coach-outreach', coachOutreachRoutes);
 app.use('/api/auth',              emailLoginRoutes);
 app.use('/api/weekly-reviews',    weeklyReviewRoutes);
 app.use('/api/health',            healthRoutes);
+app.use('/api/atp',               atpRoutes);
 
 // Weekly Strava summary emails (Mondays) - controlled by env
 startWeeklyReportsScheduler();
