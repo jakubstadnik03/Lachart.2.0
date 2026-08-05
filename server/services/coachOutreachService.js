@@ -242,7 +242,73 @@ async function findUntestedConnected() {
     .sort((a, b) => new Date(b.lastLogin || 0) - new Date(a.lastLogin || 0));
 }
 
+/**
+ * Everyone else who is not paying: 368 accounts the four targeted segments
+ * never reach. Two thirds of them ran a lactate test and then never connected
+ * a data source, so the curve they produced has nothing to sit against.
+ *
+ * The email adapts to what each person actually has — claiming "you ran a
+ * test" to someone who never did would be both wrong and obvious.
+ */
+async function findOthers() {
+  const [users, premium, testedIds] = await Promise.all([
+    User.find({ email: { $exists: true, $ne: null } })
+      .select('_id name email role createdAt lastLogin lastSeenAt notifications outreach strava garmin appleHealth coachId')
+      .lean(),
+    premiumUserIdSet(),
+    Test.distinct('athleteId'),
+  ]);
+  const tested = new Set(testedIds.map(String));
+
+  // Whoever a targeted segment already claims should be reached with that
+  // segment's sharper pitch, not this catch-all. Derived with two aggregate
+  // queries rather than by running the other finders — those loop several
+  // queries per coach, and re-running all four here made this segment take
+  // long enough to time out.
+  const mongooseRef = require('mongoose');
+  const coachedBy = await mongooseRef.connection.db.collection('users')
+    .aggregate([{ $match: { coachId: { $ne: null } } }, { $group: { _id: '$coachId' } }])
+    .toArray();
+  const claimed = new Set(coachedBy.map((r) => String(r._id)));   // coach + coach-solo
+  users.forEach((u) => {
+    const id = String(u._id);
+    const integ = !!(u.strava?.accessToken || u.garmin?.accessToken || u.appleHealth?.connectedAt);
+    // athlete segment: Strava + a test.  untested segment: any source, no test.
+    if (u.strava?.accessToken && tested.has(id)) claimed.add(id);
+    if (integ && !tested.has(id)) claimed.add(id);
+  });
+
+  return users
+    .filter((u) => !premium.has(String(u._id)) && !claimed.has(String(u._id)))
+    .map((u) => {
+      const id = String(u._id);
+      const sources = [
+        u.strava?.accessToken && 'Strava',
+        u.garmin?.accessToken && 'Garmin',
+        u.appleHealth?.connectedAt && 'Apple Health',
+      ].filter(Boolean);
+      return {
+        segment: 'others',
+        userId: id,
+        name: u.name || '',
+        email: u.email,
+        role: u.role || 'athlete',
+        hasTest: tested.has(id),
+        testCount: tested.has(id) ? 1 : 0,   // exact count is not worth N queries here
+        sources,
+        createdAt: u.createdAt || null,
+        lastLogin: u.lastSeenAt || u.lastLogin || null,
+        alreadySentAt: u.outreach?.othersOutreachSentAt || null,
+        optedOut: u.notifications?.marketingEmails === false,
+      };
+    })
+    // Most recently seen first — a dormant account from last year is the
+    // least likely to come back.
+    .sort((a, b) => new Date(b.lastLogin || 0) - new Date(a.lastLogin || 0));
+}
+
 async function findCandidates(segment = 'coach', opts = {}) {
+  if (segment === 'others') return findOthers();
   if (segment === 'athlete') return findQualifiedAthletes();
   if (segment === 'untested') return findUntestedConnected();
   if (segment === 'coach-solo') return findQualifiedCoaches({ minAthletes: 1, maxAthletes: 1 });
@@ -250,6 +316,11 @@ async function findCandidates(segment = 'coach', opts = {}) {
 }
 
 function subjectFor(person) {
+  if (person.segment === 'others') {
+    return person.hasTest
+      ? `${firstNameOf(person) || 'Hi'} — your lactate test is sitting on its own`
+      : `${firstNameOf(person) || 'Hi'} — your training zones are one test away`;
+  }
   if (person.segment === 'coach-solo') {
     return `${firstNameOf(person) || 'Hi'} — adding your second athlete in LaChart`;
   }
@@ -265,8 +336,11 @@ function subjectFor(person) {
   return `${firstNameOf(person) || 'Hi'} — a Coach plan for the ${n} athlete${n === 1 ? '' : 's'} you're running in LaChart`;
 }
 
-function featureRows(segment) {
-  const key = segment === 'coach-solo' ? 'coach' : segment;
+function featureRows(segment, person = null) {
+  let key = segment === 'coach-solo' ? 'coach' : segment;
+  // The catch-all covers two very different situations; show whichever list
+  // matches what this person is actually missing.
+  if (segment === 'others') key = person?.hasTest ? 'athlete' : 'untested';
   return (FEATURES[key] || FEATURES.athlete).map(([icon, title, body]) => `
     <tr>
       <td valign="top" style="width:30px;padding:9px 0;font-size:18px;line-height:1.3;">${icon}</td>
@@ -279,6 +353,15 @@ function featureRows(segment) {
 
 /** Opening paragraph — the part that must feel written, not generated. */
 function openingFor(person) {
+  if (person.segment === 'others') {
+    return person.hasTest
+      ? `I'm Jakub, I build LaChart. You've run a lactate test here — that's the hard part, and
+         most people never get to it. What's missing is your training: nothing is feeding in, so
+         the curve has nothing to sit against.`
+      : `I'm Jakub, I build LaChart. You signed up but haven't run a lactate test yet, and that's
+         the one thing the whole app is built around — real zones from your own blood values
+         instead of a percentage of max heart rate.`;
+  }
   if (person.segment === 'coach-solo') {
     const who = person.athleteNames?.[0] ? escapeHtml(person.athleteNames[0]) : 'one athlete';
     const testLine = person.testCount > 0
@@ -355,7 +438,7 @@ function renderOutreachHtml(person, { unsubscribeUrl, loginUrl }) {
         <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:${BRAND.primaryTint};border-radius:14px;">
           <tr><td style="padding:18px 20px;">
             <div style="font-size:12px;font-weight:800;letter-spacing:0.08em;text-transform:uppercase;color:${BRAND.primaryDark};margin-bottom:6px;">What ${escapeHtml(planName)} unlocks</div>
-            <table role="presentation" width="100%" cellspacing="0" cellpadding="0">${featureRows(person.segment)}</table>
+            <table role="presentation" width="100%" cellspacing="0" cellpadding="0">${featureRows(person.segment, person)}</table>
           </td></tr>
         </table>
       </td></tr>
@@ -402,7 +485,9 @@ function renderOutreachHtml(person, { unsubscribeUrl, loginUrl }) {
 
 /** Rendered preview for the admin dashboard — never sends. */
 async function renderPreview(segment, userId) {
-  const all = segment === 'untested'
+  const all = segment === 'others'
+    ? await findOthers()
+    : segment === 'untested'
     ? await findUntestedConnected()
     : segment === 'coach-solo'
       ? await findQualifiedCoaches({ minAthletes: 1, maxAthletes: 1 })
@@ -456,7 +541,9 @@ async function sendOutreach(segment, userId, { force = false, overrideEmail = nu
 
   // Only record real sends, so a test to your own inbox can't mark someone done.
   if (!overrideEmail) {
-    const field = segment === 'untested'
+    const field = segment === 'others'
+      ? 'outreach.othersOutreachSentAt'
+      : segment === 'untested'
       ? 'outreach.untestedOutreachSentAt'
       : segment === 'athlete'
       ? 'outreach.athleteOutreachSentAt'
@@ -550,7 +637,10 @@ async function getOutreachStats(segment = 'coach') {
     optedOut: list.filter((c) => c.optedOut).length,
     remaining: list.filter((c) => !c.alreadySentAt && !c.optedOut).length,
   };
-  if (segment === 'untested') {
+  if (segment === 'others') {
+    base.withTest = list.filter((c) => c.hasTest).length;
+    base.withoutTest = list.filter((c) => !c.hasTest).length;
+  } else if (segment === 'untested') {
     base.connectedSources = list.reduce((s2, c) => s2 + (c.sources?.length || 0), 0);
   } else if (segment === 'coach') {
     base.minAthletes = MIN_ATHLETES;
@@ -562,6 +652,7 @@ async function getOutreachStats(segment = 'coach') {
 }
 
 module.exports = {
+  findOthers,
   startBatch,
   batchSnapshot,
   findCandidates,

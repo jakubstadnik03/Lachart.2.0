@@ -26,7 +26,7 @@ async function requireAdmin(req, res) {
   return me;
 }
 
-const SEGMENTS = ['coach', 'coach-solo', 'athlete', 'untested'];
+const SEGMENTS = ['coach', 'coach-solo', 'athlete', 'untested', 'others'];
 /** Anything unrecognised falls back to coach. */
 function segmentOf(req) {
   const s = String(req.query.segment || req.body?.segment || 'coach');

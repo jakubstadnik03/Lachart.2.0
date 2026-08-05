@@ -378,6 +378,7 @@ const userSchema = new mongoose.Schema({
     coachOutreachAthleteCount:  { type: Number, default: null },
     athleteOutreachSentAt:      { type: Date, default: null },
     untestedOutreachSentAt:     { type: Date, default: null },
+    othersOutreachSentAt:       { type: Date, default: null },
   },
 
   retentionEmails: {

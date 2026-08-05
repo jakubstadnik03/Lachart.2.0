@@ -158,6 +158,7 @@ function CoachLeadsPanel({ addNotification }) {
         { id: 'coach-solo', label: '🥇 Coaches (1 athlete)' },
         { id: 'athlete', label: '🏃 Athletes (Strava + test)' },
         { id: 'untested', label: '🧪 Connected, never tested' },
+        { id: 'others', label: '📋 Others' },
       ].map((s) => (
         <button key={s.id} onClick={() => setSegment(s.id)}
           className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${
@@ -180,11 +181,13 @@ function CoachLeadsPanel({ addNotification }) {
           {[
             {
               label: segment === 'coach' ? 'Qualified coaches'
+                : segment === 'others' ? 'Everyone else'
                 : segment === 'coach-solo' ? 'Coaches with 1 athlete'
                 : segment === 'untested' ? 'Connected, no test'
                 : 'Qualified athletes',
               value: stats.qualified,
               hint: segment === 'coach' ? `${stats.minAthletes}+ athletes, not paying`
+                : segment === 'others' ? `${stats.withTest || 0} ran a test, ${stats.withoutTest || 0} never did`
                 : segment === 'coach-solo' ? 'exactly at the free limit'
                 : segment === 'untested' ? 'wired up but never tested'
                 : 'Strava + test, not paying',
@@ -251,7 +254,9 @@ function CoachLeadsPanel({ addNotification }) {
             </button>
           </div>
           <div className="px-4 py-3 border-b border-gray-100 text-sm font-semibold text-gray-700">
-            {segment === 'coach-solo'
+            {segment === 'others'
+              ? 'Everyone the targeted segments miss — the email adapts to whether they ever ran a test'
+              : segment === 'coach-solo'
               ? 'Coaches with exactly one athlete — the free plan covers one, so their second hits the wall'
               : segment === 'coach'
               ? 'Coaches past the free limit — most athletes first'
@@ -2804,8 +2809,7 @@ const AdminDashboard = () => {
                           </th>
                         ))}
                         <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Location</th>
-                        <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Strava</th>
-                        <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Garmin</th>
+                        <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Sources</th>
                         <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Mobile App</th>
                         <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
                         <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Thank You Email</th>
@@ -2987,16 +2991,35 @@ const AdminDashboard = () => {
                           </td>
                           <td className="p-2 text-sm">
                             <div className="flex flex-col gap-1">
-                              <span
-                                className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full w-fit ${
-                                  user.stravaConnected ? 'bg-orange-100 text-orange-800' : 'bg-gray-100 text-gray-600'
-                                }`}
-                              >
-                                {user.stravaConnected ? 'Connected' : '—'}
-                              </span>
-                              {user.stravaConnected && user.strava?.lastSyncDate && (
+                              {/* One cell per user, one badge per source. A row with no
+                                  badges has nothing connected — clearer than three
+                                  columns of em-dashes. */}
+                              {!user.stravaConnected && !user.garminConnected && !user.appleHealthConnected && (
+                                <span className="text-xs text-gray-400">—</span>
+                              )}
+                              <div className="flex flex-wrap gap-1">
+                                {user.stravaConnected && (
+                                  <span className="inline-flex px-2 py-0.5 text-[11px] font-semibold rounded-full bg-orange-100 text-orange-800">Strava</span>
+                                )}
+                                {user.garminConnected && (
+                                  <span className={`inline-flex px-2 py-0.5 text-[11px] font-semibold rounded-full ${
+                                    user.garmin?.expiresAt && user.garmin.expiresAt * 1000 < Date.now()
+                                      ? 'bg-red-100 text-red-700'
+                                      : 'bg-sky-100 text-sky-800'
+                                  }`}>
+                                    Garmin{user.garmin?.expiresAt && user.garmin.expiresAt * 1000 < Date.now() ? ' · expired' : ''}
+                                  </span>
+                                )}
+                                {user.appleHealthConnected && (
+                                  <span className="inline-flex px-2 py-0.5 text-[11px] font-semibold rounded-full bg-rose-100 text-rose-700">Apple</span>
+                                )}
+                              </div>
+                              {(user.strava?.lastSyncDate || user.garmin?.lastSyncDate) && (
                                 <div className="text-xs text-gray-400">
-                                  Sync: {new Date(user.strava.lastSyncDate).toLocaleDateString()}
+                                  Sync: {new Date(Math.max(
+                                    user.strava?.lastSyncDate ? new Date(user.strava.lastSyncDate).getTime() : 0,
+                                    user.garmin?.lastSyncDate ? new Date(user.garmin.lastSyncDate).getTime() : 0,
+                                  )).toLocaleDateString()}
                                 </div>
                               )}
                               {!user.stravaConnected && (
@@ -3026,37 +3049,6 @@ const AdminDashboard = () => {
                                     </button>
                                   )}
                                 </>
-                              )}
-                            </div>
-                          </td>
-                          <td className="p-2 text-sm">
-                            <div className="flex flex-col gap-1">
-                              <span
-                                className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full w-fit ${
-                                  user.garminConnected ? 'bg-sky-100 text-sky-800' : 'bg-gray-100 text-gray-600'
-                                }`}
-                              >
-                                {user.garminConnected ? 'Connected' : '—'}
-                              </span>
-                              {user.garminConnected && (
-                                <>
-                                  {user.garmin?.lastSyncDate && (
-                                    <div className="text-xs text-gray-400">
-                                      Sync: {new Date(user.garmin.lastSyncDate).toLocaleDateString()}
-                                    </div>
-                                  )}
-                                  {/* An expired token means every pull and backfill for this
-                                      user silently fails, so surface it rather than showing a
-                                      reassuring "Connected" on a dead link. */}
-                                  {user.garmin?.expiresAt && user.garmin.expiresAt * 1000 < Date.now() && (
-                                    <div className="text-[11px] font-semibold text-red-500">Token expired</div>
-                                  )}
-                                </>
-                              )}
-                              {user.appleHealthConnected && (
-                                <span className="inline-flex px-2 py-0.5 text-[10px] font-semibold rounded-full w-fit bg-rose-100 text-rose-700">
-                                  ❤️ Apple Health
-                                </span>
                               )}
                             </div>
                           </td>
