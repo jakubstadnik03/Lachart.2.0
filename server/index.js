@@ -12,26 +12,24 @@ const swaggerUi = require('swagger-ui-express');
 const app = express();
 const PORT = process.env.PORT || 8000;
 
-// Every outbound email builds its links from CLIENT_URL — verification,
-// password reset, receipts, campaigns, the one-click sign-in — and 15 modules
-// read it independently at call time. Production was running with
-// CLIENT_URL=http://localhost:3000, so every one of those links pointed at the
-// recipient's own machine and did nothing. It is very likely why only 93 of
-// 650 accounts ever verified their email.
+// Public web address used to build every link we email out — verification,
+// password reset, receipts, weekly digests, campaigns, one-click sign-in.
 //
-// A developer value must never survive into production: refuse it here, once,
-// and every module that reads process.env.CLIENT_URL later gets the real host.
-if (process.env.NODE_ENV === 'production') {
-  const configured = String(process.env.CLIENT_URL || '');
-  if (!configured || /localhost|127\.0\.0\.1/i.test(configured)) {
-    const fallback = process.env.PUBLIC_CLIENT_URL || 'https://lachart.net';
-    console.error(
-      `[Config] CLIENT_URL is "${configured || '(unset)'}" in production — every emailed link ` +
-      `would be dead. Overriding with ${fallback}. Set CLIENT_URL properly on the host.`
-    );
-    process.env.CLIENT_URL = fallback;
-  }
+// Hardcoded on purpose. Fifteen modules read process.env.CLIENT_URL at call
+// time, and production was running with http://localhost:3000, so every link
+// LaChart had ever emailed pointed at the recipient's own machine and did
+// nothing — almost certainly why 551 of 650 accounts never verified their
+// email. Emails only ever go to real people, so there is no situation where
+// the correct target is anything other than the live site. Taking it out of
+// configuration removes the whole class of mistake.
+//
+// Trade-off accepted: a link in a locally-sent test email opens production,
+// not localhost.
+const PUBLIC_CLIENT_URL = 'https://lachart.net';
+if (process.env.CLIENT_URL && process.env.CLIENT_URL !== PUBLIC_CLIENT_URL) {
+  console.warn(`[Config] Ignoring CLIENT_URL="${process.env.CLIENT_URL}" — emailed links always use ${PUBLIC_CLIENT_URL}.`);
 }
+process.env.CLIENT_URL = PUBLIC_CLIENT_URL;
 
 // Render terminates TLS at its own proxy and forwards the caller in
 // X-Forwarded-For. Without this, express-rate-limit sees every request as
