@@ -431,6 +431,43 @@ router.post('/campaigns/app-reengagement/reset', verifyToken, async (req, res) =
   }
 });
 
+// ─── Win-back campaign (admin) — status, preview, test-send ──────────────────
+const winBack = require('../services/winBackCampaignService');
+
+// GET /api/email/winback/status — how many already sent + how many ready, by segment.
+router.get('/winback/status', verifyToken, async (req, res) => {
+  try {
+    if (!(await requireAdmin(req, res))) return;
+    const stats = await winBack.getCampaignStats();
+    res.json({
+      enabled: process.env.ENABLE_WINBACK_SCHEDULER === 'true',
+      dailyCap: Number(process.env.WINBACK_DAILY_CAP || 20),
+      ...stats,
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/email/winback/preview?segment=test-runner|inactive — rendered HTML.
+router.get('/winback/preview', verifyToken, async (req, res) => {
+  try {
+    const me = await requireAdmin(req, res);
+    if (!me) return;
+    const segment = winBack.SEGMENTS[req.query.segment] ? req.query.segment : 'test-runner';
+    res.set('Content-Type', 'text/html').send(winBack.renderPreview(segment, me));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/email/winback/test — send ONE real win-back to the admin's own inbox.
+router.post('/winback/test', verifyToken, async (req, res) => {
+  try {
+    const me = await requireAdmin(req, res);
+    if (!me) return;
+    const segment = winBack.SEGMENTS[req.body?.segment] ? req.body.segment : 'test-runner';
+    const result = await winBack.sendWinBack({ _id: me._id, email: me.email, name: me.name }, segment, { preview: true, track: false });
+    res.json({ ...result, to: me.email });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ─── Public unsubscribe — no auth, only the signed token. ────────────────────
 //
 // Both GET (clickable link in the email body) and POST (Gmail / Apple Mail

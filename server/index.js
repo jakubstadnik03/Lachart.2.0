@@ -240,6 +240,7 @@ const { startLactateTestFollowUpScheduler } = require('./services/lactateTestFol
 const { startRetentionScheduler } = require('./services/retentionScheduler');
 const { startAppReengagementScheduler } = require('./services/appReengagementScheduler');
 const { startGarminTokenRefreshScheduler } = require('./services/garminTokenRefreshScheduler');
+const { startWinBackScheduler } = require('./services/winBackScheduler');
 const { startRaceReminderScheduler } = require('./services/raceReminderScheduler');
 const { startTrainingAlertScheduler } = require('./services/trainingAlertScheduler');
 const { startWeeklyDigestScheduler } = require('./services/weeklyDigestScheduler');
@@ -318,6 +319,10 @@ startAppReengagementScheduler();
 
 // Garmin OAuth2 tokens expire silently for webhook-only users — refresh ahead of time.
 startGarminTokenRefreshScheduler();
+
+// One-time win-back to lapsed free accounts. OFF unless ENABLE_WINBACK_SCHEDULER=true
+// — a 435-person campaign is a deliberate decision, not a deploy side effect.
+startWinBackScheduler();
 
 // Apply cache middleware to routes that can be cached (reduced cache time for better data freshness)
 app.use('/api/training', cacheMiddleware(60), trainingRoute);
