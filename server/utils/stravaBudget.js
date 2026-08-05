@@ -55,6 +55,34 @@ let dayStart = (() => {
 let windowUsed = 0;
 let dayUsed = 0;
 
+/**
+ * Strava's OWN read limits, learned from `X-ReadRateLimit-Limit` (e.g. "200,2000").
+ *
+ * The hardcoded MAX_PER_* above are only a cold-start guess, and they guessed
+ * low: Strava's read allowance is 200/15min and 2000/day, not 100/1000. That
+ * mismatch used to be fatal because reconcile clamped Strava's reported usage
+ * with Math.min(reported, MAX_PER_DAY) — so the moment Strava's daily read
+ * count passed 900 (less than half of what it actually allows) our counter
+ * pinned to exactly the limit and read as "exhausted", locking out every sync
+ * and backfill until midnight UTC. Observed in production: 727 refusals with
+ * durationMs 0 against only 25 calls that ever reached Strava.
+ *
+ * Track the real limits and measure usage against those instead.
+ */
+let observedWindowLimit = null;
+let observedDayLimit = null;
+/** Headroom kept below Strava's real limit so a burst can't tip us over. */
+const RESERVE_WINDOW = Number(process.env.STRAVA_QUOTA_RESERVE_15MIN || 20);
+const RESERVE_DAY = Number(process.env.STRAVA_QUOTA_RESERVE_DAILY || 200);
+
+/** Limit we actually enforce: Strava's reported allowance when known. */
+function effectiveWindowLimit() {
+  return observedWindowLimit ? Math.max(1, observedWindowLimit - RESERVE_WINDOW) : MAX_PER_WINDOW;
+}
+function effectiveDayLimit() {
+  return observedDayLimit ? Math.max(1, observedDayLimit - RESERVE_DAY) : MAX_PER_DAY;
+}
+
 function rollWindowsIfDue() {
   const now = Date.now();
   const currentWindow = Math.floor(now / WINDOW_MS) * WINDOW_MS;
@@ -96,14 +124,16 @@ async function take(opts = {}) {
   // eslint-disable-next-line no-constant-condition
   while (true) {
     rollWindowsIfDue();
-    if (windowUsed < MAX_PER_WINDOW && dayUsed < MAX_PER_DAY) {
+    const winLimit = effectiveWindowLimit();
+    const dayLimit = effectiveDayLimit();
+    if (windowUsed < winLimit && dayUsed < dayLimit) {
       windowUsed += 1;
       dayUsed += 1;
       return;
     }
     const windowResetIn = windowStart + WINDOW_MS - Date.now();
     const dayResetIn = dayStart + DAY_MS - Date.now();
-    const waitMs = windowUsed >= MAX_PER_WINDOW ? windowResetIn : dayResetIn;
+    const waitMs = windowUsed >= winLimit ? windowResetIn : dayResetIn;
     if (Date.now() - startedAt + waitMs > MAX_WAIT_MS) {
       const err = new Error('Strava local budget exhausted');
       err.code = 'STRAVA_BUDGET_EXHAUSTED';
@@ -153,16 +183,29 @@ function reconcileFromHeaders(headers = {}) {
   const parts = readUsage.split(',').map((s) => Number(s.trim()));
   if (parts.length < 2 || !Number.isFinite(parts[0]) || !Number.isFinite(parts[1])) return;
   const [stravaWindowUsed, stravaDayUsed] = parts;
+
+  // Learn Strava's actual allowance so we measure usage against the real
+  // ceiling rather than our cold-start guess.
+  const readLimit = headers['x-readratelimit-limit'] || headers['X-ReadRateLimit-Limit'];
+  if (typeof readLimit === 'string') {
+    const lim = readLimit.split(',').map((s) => Number(s.trim()));
+    if (lim.length >= 2 && Number.isFinite(lim[0]) && Number.isFinite(lim[1]) && lim[0] > 0 && lim[1] > 0) {
+      observedWindowLimit = lim[0];
+      observedDayLimit = lim[1];
+    }
+  }
+
   rollWindowsIfDue();
   // Snap UP if Strava knows about more usage than we counted. Never snap DOWN
   // — our counter might have just bumped for a request still in flight that
-  // Strava hasn't logged yet. Cap to our local limits (Strava read cap is 200).
-  if (stravaWindowUsed > windowUsed) {
-    windowUsed = Math.min(stravaWindowUsed, MAX_PER_WINDOW);
-  }
-  if (stravaDayUsed > dayUsed) {
-    dayUsed = Math.min(stravaDayUsed, MAX_PER_DAY);
-  }
+  // Strava hasn't logged yet.
+  //
+  // Record Strava's number as-is. Clamping it to our own cap used to write
+  // exactly MAX_PER_DAY into dayUsed, which is indistinguishable from
+  // "exhausted" and wedged every sync until midnight UTC even though Strava
+  // still had well over a thousand read calls left.
+  if (stravaWindowUsed > windowUsed) windowUsed = stravaWindowUsed;
+  if (stravaDayUsed > dayUsed) dayUsed = stravaDayUsed;
 }
 
 /** Snapshot for /strava/status diagnostics. */
@@ -170,11 +213,14 @@ function snapshot() {
   rollWindowsIfDue();
   return {
     windowUsed,
-    windowLimit: MAX_PER_WINDOW,
+    windowLimit: effectiveWindowLimit(),
     windowResetIn: Math.max(0, windowStart + WINDOW_MS - Date.now()),
     dayUsed,
-    dayLimit: MAX_PER_DAY,
+    dayLimit: effectiveDayLimit(),
     dayResetIn: Math.max(0, dayStart + DAY_MS - Date.now()),
+    // Null until the first Strava response teaches us the real allowance.
+    stravaReportedWindowLimit: observedWindowLimit,
+    stravaReportedDayLimit: observedDayLimit,
   };
 }
 
