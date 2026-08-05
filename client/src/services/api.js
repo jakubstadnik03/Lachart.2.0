@@ -911,24 +911,25 @@ export const sendAppDownloadEmail = async (userId) => {
 // ── In-app coach leads: existing users already coaching 2+ athletes ─────────
 // Separate from sendCoachOutreachEmail below, which targets cold contacts who
 // have no account. Every send here is one explicit click on one named coach.
-export const fetchCoachLeads = async () => {
-  const { data } = await api.get('/api/admin/coach-outreach/candidates');
+// segment: 'coach' (2+ athletes) | 'athlete' (Strava connected + has a test)
+export const fetchCoachLeads = async (segment = 'coach') => {
+  const { data } = await api.get(`/api/admin/coach-outreach/candidates?segment=${segment}`);
   return data;
 };
 
-export const fetchCoachLeadPreview = async (userId) => {
-  const { data } = await api.get(`/api/admin/coach-outreach/preview/${userId}`);
+export const fetchCoachLeadPreview = async (userId, segment = 'coach') => {
+  const { data } = await api.get(`/api/admin/coach-outreach/preview/${userId}?segment=${segment}`);
   return data;
 };
 
-/** Send that coach's exact email to the admin's own inbox. Does not mark them contacted. */
-export const sendCoachLeadTest = async (userId) => {
-  const { data } = await api.post(`/api/admin/coach-outreach/test/${userId}`);
+/** Send that person's exact email to the admin's own inbox. Does not mark them contacted. */
+export const sendCoachLeadTest = async (userId, segment = 'coach') => {
+  const { data } = await api.post(`/api/admin/coach-outreach/test/${userId}?segment=${segment}`);
   return data;
 };
 
-export const sendCoachLeadEmail = async (userId, { force = false } = {}) => {
-  const { data } = await api.post(`/api/admin/coach-outreach/send/${userId}`, { force });
+export const sendCoachLeadEmail = async (userId, { force = false, segment = 'coach' } = {}) => {
+  const { data } = await api.post(`/api/admin/coach-outreach/send/${userId}?segment=${segment}`, { force, segment });
   return data;
 };
 

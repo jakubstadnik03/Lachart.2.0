@@ -16,6 +16,7 @@ import { PageSkeleton } from '../components/common/Skeleton';
  * qualified list in the database and a blast would waste it.
  */
 function CoachLeadsPanel({ addNotification }) {
+  const [segment, setSegment] = useState('coach');
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState(null);
   const [coaches, setCoaches] = useState([]);
@@ -27,24 +28,24 @@ function CoachLeadsPanel({ addNotification }) {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await fetchCoachLeads();
+      const data = await fetchCoachLeads(segment);
       setStats(data.stats);
-      setCoaches(data.coaches || []);
+      setCoaches(data.people || data.coaches || []);
     } catch (e) {
-      addNotification?.(e?.response?.data?.error || 'Failed to load coach leads', 'error');
+      addNotification?.(e?.response?.data?.error || 'Failed to load leads', 'error');
     } finally {
       setLoading(false);
     }
-  }, [addNotification]);
+  }, [addNotification, segment]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { setSelected(null); setPreview(null); load(); }, [load]);
 
   const openPreview = async (coach) => {
     setSelected(coach);
     setPreview(null);
     setPreviewLoading(true);
     try {
-      setPreview(await fetchCoachLeadPreview(coach.userId));
+      setPreview(await fetchCoachLeadPreview(coach.userId, segment));
     } catch (e) {
       addNotification?.(e?.response?.data?.error || 'Failed to render preview', 'error');
     } finally {
@@ -56,7 +57,7 @@ function CoachLeadsPanel({ addNotification }) {
     if (!selected) return;
     setSending(true);
     try {
-      const r = await sendCoachLeadTest(selected.userId);
+      const r = await sendCoachLeadTest(selected.userId, segment);
       addNotification?.(r.sent ? `Test sent to ${r.testTo}` : `Not sent: ${r.reason}`, r.sent ? 'success' : 'warning');
     } catch (e) {
       addNotification?.(e?.response?.data?.message || 'Test send failed', 'error');
@@ -67,14 +68,17 @@ function CoachLeadsPanel({ addNotification }) {
 
   const sendReal = async () => {
     if (!selected) return;
+    const what = segment === 'coach'
+      ? `They coach ${selected.athleteCount} athletes.`
+      : `Strava connected, ${selected.testCount} lactate test(s).`;
     const ok = window.confirm(
-      `Send this email to ${selected.name || 'this coach'} <${selected.email}>?\n\n` +
-      `They coach ${selected.athleteCount} athletes. This is a real email to a real customer.`,
+      `Send this email to ${selected.name || 'this person'} <${selected.email}>?\n\n` +
+      `${what} This is a real email to a real customer.`,
     );
     if (!ok) return;
     setSending(true);
     try {
-      const r = await sendCoachLeadEmail(selected.userId);
+      const r = await sendCoachLeadEmail(selected.userId, { segment });
       addNotification?.(`Sent to ${r.to}`, 'success');
       await load();
       setSelected((s) => (s ? { ...s, alreadySentAt: new Date().toISOString() } : s));
@@ -86,17 +90,53 @@ function CoachLeadsPanel({ addNotification }) {
     }
   };
 
-  if (loading) return <div className="p-6 text-gray-500">Loading coach leads…</div>;
+  // lastLogin is only set on ~57% of accounts, so say "unknown" rather than
+  // implying someone never signed in.
+  const lastSeen = (v) => {
+    if (!v) return { label: 'unknown', stale: false };
+    const days = Math.floor((Date.now() - new Date(v).getTime()) / 86400000);
+    if (days <= 0) return { label: 'today', stale: false };
+    if (days === 1) return { label: 'yesterday', stale: false };
+    if (days < 30) return { label: `${days}d ago`, stale: false };
+    if (days < 365) return { label: `${Math.floor(days / 30)}mo ago`, stale: true };
+    return { label: `${Math.floor(days / 365)}y ago`, stale: true };
+  };
+
+  const segmentTabs = (
+    <div className="flex gap-2">
+      {[
+        { id: 'coach', label: '🏆 Coaches (2+ athletes)' },
+        { id: 'athlete', label: '🏃 Athletes (Strava + test)' },
+      ].map((s) => (
+        <button key={s.id} onClick={() => setSegment(s.id)}
+          className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${
+            segment === s.id ? 'bg-indigo-600 text-white' : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
+          }`}>
+          {s.label}
+        </button>
+      ))}
+    </div>
+  );
+
+  if (loading) return <div className="space-y-4">{segmentTabs}<div className="p-6 text-gray-500">Loading leads…</div></div>;
 
   return (
     <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
+      {segmentTabs}
+
       {stats && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {[
-            { label: 'Qualified coaches', value: stats.qualified, hint: `${stats.minAthletes}+ athletes` },
+            {
+              label: segment === 'coach' ? 'Qualified coaches' : 'Qualified athletes',
+              value: stats.qualified,
+              hint: segment === 'coach' ? `${stats.minAthletes}+ athletes, not paying` : 'Strava + test, not paying',
+            },
             { label: 'Not contacted yet', value: stats.remaining, hint: 'ready to email' },
             { label: 'Already contacted', value: stats.alreadySent, hint: 'one email each' },
-            { label: 'Athletes covered', value: stats.totalAthletesCovered, hint: 'across all leads' },
+            segment === 'coach'
+              ? { label: 'Athletes covered', value: stats.totalAthletesCovered, hint: 'across all leads' }
+              : { label: 'Tests logged', value: stats.totalTests, hint: 'across all leads' },
           ].map((c) => (
             <div key={c.label} className="bg-white rounded-xl border border-gray-200 p-4">
               <div className="text-2xl font-bold text-gray-900">{c.value}</div>
@@ -110,37 +150,51 @@ function CoachLeadsPanel({ addNotification }) {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
           <div className="px-4 py-3 border-b border-gray-100 text-sm font-semibold text-gray-700">
-            Coaches past the free limit — most athletes first
+            {segment === 'coach'
+              ? 'Coaches past the free limit — most athletes first'
+              : 'Athletes with Strava + a lactate test — most engaged first'}
           </div>
           <div className="max-h-[520px] overflow-y-auto divide-y divide-gray-100">
-            {coaches.map((c) => (
-              <button
-                key={c.userId}
-                onClick={() => openPreview(c)}
-                className={`w-full text-left px-4 py-3 hover:bg-gray-50 transition ${selected?.userId === c.userId ? 'bg-indigo-50' : ''}`}
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <div className="min-w-0">
-                    <div className="font-medium text-gray-900 truncate">{c.name || '(no name)'}</div>
-                    <div className="text-xs text-gray-500 truncate">{c.email}</div>
+            {coaches.map((c) => {
+              const seen = lastSeen(c.lastLogin);
+              return (
+                <button
+                  key={c.userId}
+                  onClick={() => openPreview(c)}
+                  className={`w-full text-left px-4 py-3 hover:bg-gray-50 transition ${selected?.userId === c.userId ? 'bg-indigo-50' : ''}`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="font-medium text-gray-900 truncate">{c.name || '(no name)'}</div>
+                      <div className="text-xs text-gray-500 truncate">{c.email}</div>
+                      <div className={`text-[11px] mt-0.5 ${seen.stale ? 'text-amber-600' : 'text-gray-400'}`}>
+                        Last login: {seen.label}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      {c.optedOut && <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">opted out</span>}
+                      {c.alreadySentAt && <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">sent</span>}
+                      {segment === 'coach'
+                        ? <span className="text-xs font-semibold text-indigo-600">{c.athleteCount} athletes</span>
+                        : <span className="text-xs font-semibold text-orange-600">Strava</span>}
+                      <span className="text-xs text-gray-400">{c.testCount} tests</span>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    {c.optedOut && <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">opted out</span>}
-                    {c.alreadySentAt && <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">sent</span>}
-                    <span className="text-xs font-semibold text-indigo-600">{c.athleteCount} athletes</span>
-                    <span className="text-xs text-gray-400">{c.testCount} tests</span>
-                  </div>
-                </div>
-              </button>
-            ))}
-            {coaches.length === 0 && <div className="px-4 py-6 text-gray-500 text-sm">No qualifying coaches.</div>}
+                </button>
+              );
+            })}
+            {coaches.length === 0 && (
+              <div className="px-4 py-6 text-gray-500 text-sm">
+                No qualifying {segment === 'coach' ? 'coaches' : 'athletes'}.
+              </div>
+            )}
           </div>
         </div>
 
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden flex flex-col">
           <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between gap-2">
             <span className="text-sm font-semibold text-gray-700">
-              {selected ? `To: ${selected.email}` : 'Select a coach to preview'}
+              {selected ? `To: ${selected.email}` : `Select ${segment === 'coach' ? 'a coach' : 'an athlete'} to preview`}
             </span>
             {selected && (
               <div className="flex gap-2">
@@ -169,7 +223,9 @@ function CoachLeadsPanel({ addNotification }) {
                 className="w-full h-[520px] border-0 bg-white" />
             )}
             {!preview && !previewLoading && (
-              <div className="p-6 text-gray-400 text-sm">Pick a coach on the left to see the exact email they would receive.</div>
+              <div className="p-6 text-gray-400 text-sm">
+                Pick {segment === 'coach' ? 'a coach' : 'an athlete'} on the left to see the exact email they would receive.
+              </div>
             )}
           </div>
         </div>

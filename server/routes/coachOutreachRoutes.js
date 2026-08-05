@@ -26,16 +26,23 @@ async function requireAdmin(req, res) {
   return me;
 }
 
-// GET /api/admin/coach-outreach/candidates — who qualifies, richest first.
+/** 'coach' | 'athlete' — anything else falls back to coach. */
+function segmentOf(req) {
+  return String(req.query.segment || req.body?.segment || 'coach') === 'athlete' ? 'athlete' : 'coach';
+}
+
+// GET /api/admin/coach-outreach/candidates?segment=coach|athlete
 router.get('/candidates', verifyToken, async (req, res) => {
   try {
     if (!(await requireAdmin(req, res))) return;
+    const segment = segmentOf(req);
     const minAthletes = req.query.minAthletes ? Number(req.query.minAthletes) : undefined;
-    const [coaches, stats] = await Promise.all([
-      outreach.findQualifiedCoaches(minAthletes ? { minAthletes } : {}),
-      outreach.getOutreachStats(),
+    const [people, stats] = await Promise.all([
+      outreach.findCandidates(segment, minAthletes ? { minAthletes } : {}),
+      outreach.getOutreachStats(segment),
     ]);
-    res.json({ stats, coaches });
+    // `coaches` kept alongside `people` so an older cached bundle keeps working.
+    res.json({ segment, stats, people, coaches: people });
   } catch (e) {
     console.error('[CoachOutreach] candidates failed:', e);
     res.status(500).json({ error: 'Failed to load candidates', message: e.message });
@@ -46,8 +53,8 @@ router.get('/candidates', verifyToken, async (req, res) => {
 router.get('/preview/:userId', verifyToken, async (req, res) => {
   try {
     if (!(await requireAdmin(req, res))) return;
-    const preview = await outreach.renderPreview(req.params.userId);
-    if (!preview) return res.status(404).json({ error: 'Not a qualified coach' });
+    const preview = await outreach.renderPreview(segmentOf(req), req.params.userId);
+    if (!preview) return res.status(404).json({ error: 'Not a qualified recipient' });
     res.json(preview);
   } catch (e) {
     console.error('[CoachOutreach] preview failed:', e);
@@ -62,7 +69,7 @@ router.post('/test/:userId', verifyToken, async (req, res) => {
   try {
     const me = await requireAdmin(req, res);
     if (!me) return;
-    const result = await outreach.sendOutreach(req.params.userId, { overrideEmail: me.email, force: true });
+    const result = await outreach.sendOutreach(segmentOf(req), req.params.userId, { overrideEmail: me.email, force: true });
     res.json({ ...result, testTo: me.email });
   } catch (e) {
     console.error('[CoachOutreach] test send failed:', e);
@@ -74,7 +81,7 @@ router.post('/test/:userId', verifyToken, async (req, res) => {
 router.post('/send/:userId', verifyToken, async (req, res) => {
   try {
     if (!(await requireAdmin(req, res))) return;
-    const result = await outreach.sendOutreach(req.params.userId, { force: req.body?.force === true });
+    const result = await outreach.sendOutreach(segmentOf(req), req.params.userId, { force: req.body?.force === true });
     if (!result.sent) return res.status(409).json(result);
     res.json(result);
   } catch (e) {
