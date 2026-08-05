@@ -1308,6 +1308,13 @@ async function resumeStaleStravaBackfills() {
       ],
     })
       .select('_id strava.backfillCursorBefore')
+      // Longest-stalled first. Unordered, this scan kept handing the only two
+      // concurrency slots to whoever sat earliest in natural order, so the same
+      // pair was re-nudged every pass while others starved for over a week
+      // (observed: 8.8 days). Users who hit the cap return before their
+      // timestamps are touched, so they stay at the front of this sort until
+      // they actually get a slot.
+      .sort({ 'strava.backfillLastProgressAt': 1 })
       .limit(5)
       .lean();
     if (!users.length) return;
