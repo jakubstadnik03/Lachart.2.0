@@ -51,3 +51,7 @@ client/App\ */
 
 # Claude Code worktrees
 .claude/worktrees/
+
+# Cordova leftovers: byte-identical copies of config.xml that Capacitor
+# regenerates as "config 1.xml", "config 2.xml"... The real one is tracked.
+client/ios/App/App/config [0-9]*.xml
