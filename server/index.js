@@ -161,7 +161,17 @@ mongoose
   .catch((err) => console.error("MongoDB connection error:", err));
 
 // Initialize cache
-const cache = new NodeCache({ stdTTL: 60 }); // Cache for 1 minute (reduced from 10 minutes for better data freshness)
+// Response-body cache. Two defaults here were expensive on a 400MB heap:
+//   useClones (default true) deep-clones every value on BOTH set and get, so
+//     each cached training payload was stored twice and copied again per hit;
+//   no maxKeys meant one entry per distinct URL, unbounded — every athlete and
+//     query-string combination held a full response body for the whole TTL.
+// Bodies are written once and only read, so cloning buys nothing.
+const cache = new NodeCache({
+  stdTTL: 60,
+  useClones: false,
+  maxKeys: Number(process.env.RESPONSE_CACHE_MAX_KEYS || 500),
+});
 
 // Rate limiting — strict for anonymous traffic; authenticated SPA users get
 // much higher headroom (dashboard + coach athlete switch can fire 20–40 GETs).
@@ -212,7 +222,9 @@ const cacheMiddleware = (duration) => {
     } else {
       res.originalSend = res.send;
       res.send = (body) => {
-        cache.set(key, body, duration);
+        // maxKeys makes set() throw once the cache is full — a full cache must
+        // never turn into a failed response.
+        try { cache.set(key, body, duration); } catch { /* cache full: serve uncached */ }
         res.originalSend(body);
       };
       next();

@@ -2715,7 +2715,8 @@ router.get("/admin/users", verifyToken, async (req, res) => {
             return res.status(403).json({ error: "Access denied. Admin privileges required." });
         }
 
-        const users = await userDao.findAll();
+        // Read-only: rendered straight into the admin response, never saved.
+        const users = await userDao.findAllLean();
         const Event = require('../models/Event');
         const Subscription = require('../models/SubscriptionModel');
         const { resolvePremiumAccess } = require('../utils/premiumAccess');
@@ -3119,27 +3120,22 @@ router.get("/admin/stats", verifyToken, async (req, res) => {
             return res.status(403).json({ error: "Access denied. Admin privileges required." });
         }
 
-        const users = await userDao.findAll();
-        
-        // Get test statistics by sport
-        const allTests = await Test.find({});
+        const users = await userDao.findAllLean();
+
+        // Count by sport in the database. This used to pull every test document
+        // back just to tally three numbers and read .length.
+        const sportAgg = await Test.aggregate([
+            { $group: { _id: '$sport', n: { $sum: 1 } } },
+        ]);
+        // Exact-match buckets, same as the per-document loop this replaced —
+        // 'running' must not fall into 'run'.
+        const exact = (name) => sportAgg.find((r) => r._id === name)?.n || 0;
         const testsBySport = {
-            run: 0,
-            bike: 0,
-            swim: 0,
-            total: allTests.length
+            run: exact('run'),
+            bike: exact('bike'),
+            swim: exact('swim'),
+            total: sportAgg.reduce((a, r) => a + r.n, 0),
         };
-        
-        allTests.forEach(test => {
-            const sport = test.sport || '';
-            if (sport === 'run') {
-                testsBySport.run++;
-            } else if (sport === 'bike') {
-                testsBySport.bike++;
-            } else if (sport === 'swim') {
-                testsBySport.swim++;
-            }
-        });
         
         // Build country breakdown from registrationLocation
         const usersByCountry = {};
@@ -3578,7 +3574,8 @@ router.post("/admin/send-thank-you-email/all", verifyToken, async (req, res) => 
         }
 
         // Get all active users with email notifications enabled
-        const allUsers = await userDao.findAll();
+        // Read-only: filtered for email eligibility, never saved.
+        const allUsers = await userDao.findAllLean();
         if (!Array.isArray(allUsers)) {
             console.error("userDao.findAll() did not return an array:", allUsers);
             return res.status(500).json({ error: "Failed to fetch users" });
