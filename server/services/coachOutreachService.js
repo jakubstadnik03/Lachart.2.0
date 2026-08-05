@@ -112,7 +112,7 @@ function subjectFor(coach) {
  * Personal-letter layout on purpose: light branding, no feature grid, no
  * countdown. It should read like the founder wrote it, because he did.
  */
-function renderOutreachHtml(coach, { unsubscribeUrl }) {
+function renderOutreachHtml(coach, { unsubscribeUrl, loginUrl }) {
   const greet = firstNameOf(coach) ? `Hi ${escapeHtml(firstNameOf(coach))},` : 'Hi,';
   const n = coach.athleteCount;
   const athleteLine = coach.athleteNames?.length
@@ -161,14 +161,31 @@ function renderOutreachHtml(coach, { unsubscribeUrl }) {
         </table>
       </td></tr>
 
-      <tr><td style="padding:20px 30px 6px;">
+      <tr><td style="padding:16px 30px 4px;">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border:1px dashed ${BRAND.accent};border-radius:14px;background:#FFF6F3;">
+          <tr><td style="padding:16px 20px;text-align:center;">
+            <div style="font-size:17px;font-weight:800;color:${BRAND.ink};margin-bottom:4px;">2 months free</div>
+            <div style="font-size:14px;color:${BRAND.muted};line-height:1.6;">
+              Coaching ${escapeHtml(String(n))} athlete${n === 1 ? '' : 's'} is real work — take the first two months on me,
+              and only keep it if it earns its place.
+            </div>
+          </td></tr>
+        </table>
+      </td></tr>
+
+      <tr><td style="padding:18px 30px 6px;">
         <p style="margin:0 0 18px;font-size:16px;line-height:1.6;">
           If it's useful, reply to this email and I'll set it up for you — and if something's
           missing for how you coach, tell me and I'll look at building it.
         </p>
         <div style="text-align:center;padding:6px 0 6px;">
-          <a href="${escapeHtml(getClientUrl())}/settings?tab=subscription" style="display:inline-block;background:${BRAND.accent};color:#fff;text-decoration:none;padding:15px 30px;border-radius:12px;font-weight:700;font-size:16px;box-shadow:0 2px 8px rgba(255,107,74,0.35);">See the Coach plan</a>
+          <!-- Signs them straight in and lands on their subscription page: a
+               login wall here is exactly where a warm click goes cold. -->
+          <a href="${escapeHtml(loginUrl)}" style="display:inline-block;background:${BRAND.accent};color:#fff;text-decoration:none;padding:15px 30px;border-radius:12px;font-weight:700;font-size:16px;box-shadow:0 2px 8px rgba(255,107,74,0.35);">See the Coach plan — 2 months free</a>
         </div>
+        <p style="margin:14px 0 0;font-size:12px;color:${BRAND.muted};text-align:center;">
+          That link signs you in automatically — no password needed.
+        </p>
       </td></tr>
 
       <tr><td style="padding:14px 30px 30px;">
@@ -190,10 +207,14 @@ async function renderPreview(userId) {
   const all = await findQualifiedCoaches({ minAthletes: 1 });
   const coach = all.find((c) => c.userId === String(userId));
   if (!coach) return null;
+  const { buildEmailLoginUrl } = require('../routes/emailLoginRoutes');
   return {
     to: coach.email,
     subject: subjectFor(coach),
-    html: renderOutreachHtml(coach, { unsubscribeUrl: unsubscribeUrlFor(coach.userId) }),
+    html: renderOutreachHtml(coach, {
+      unsubscribeUrl: unsubscribeUrlFor(coach.userId),
+      loginUrl: buildEmailLoginUrl(coach.userId, '/settings?tab=subscription'),
+    }),
     coach,
   };
 }

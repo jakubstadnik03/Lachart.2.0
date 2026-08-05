@@ -648,6 +648,40 @@ async function sendMilestoneEmail(user, milestone) {
 
   const totalTests = await Test.countDocuments({ athleteId: String(user._id) });
 
+  // The milestone email lands at the peak moment of value — the user has just
+  // seen their own curve for the first time — and until now it said nothing
+  // about Pro. Measured 2026-08-05: 437 users ran a test, 316 received this
+  // email, and only 85 ever got a subscription record at all. Ask here, once,
+  // and only of people who are not already paying.
+  let upgradeBlock = '';
+  try {
+    const { resolvePremiumForUserDocument } = require('../utils/premiumAccess');
+    // Returns { isPremium, source } — not a boolean.
+    const premium = await resolvePremiumForUserDocument(user);
+    if (!premium?.isPremium && milestone === 'firstTest') {
+      upgradeBlock = `
+    <div style="border:1px solid #e5e7eb;border-radius:12px;padding:20px 22px;margin:20px 0 4px;background:#fafafa;">
+      <div style="font-size:12px;font-weight:800;color:${PRIMARY};text-transform:uppercase;letter-spacing:0.8px;margin-bottom:10px;">One test is a snapshot. Two is a trend.</div>
+      <p style="margin:0 0 14px;font-size:15px;color:${GRAY};line-height:1.7;">
+        A single curve tells you where you are today. The value compounds when you
+        re-test and watch LT1 and LT2 move — that is the whole point of testing.
+        The free plan keeps one test, so your next one is where Pro starts to matter.
+      </p>
+      <div style="font-size:14px;color:${GRAY};line-height:1.8;">
+        • Unlimited tests, with every curve overlaid for comparison<br/>
+        • Your full training history instead of the last 30 days<br/>
+        • Workout planning built from the zones this test just produced
+      </div>
+      <div style="margin-top:16px;">
+        <a href="${CLIENT_URL}/settings?tab=subscription" style="display:inline-block;background:${PRIMARY};color:#fff;text-decoration:none;padding:12px 22px;border-radius:10px;font-weight:700;font-size:15px;">See what Pro adds</a>
+      </div>
+    </div>`;
+    }
+  } catch (e) {
+    // Never let an upsell block break a milestone email.
+    console.warn('[Retention] milestone upgrade block skipped:', e?.message);
+  }
+
   const body = `
     <div style="text-align:center;padding:10px 0 24px;">
       <div style="font-size:52px;line-height:1;">${m.emoji}</div>
@@ -661,6 +695,8 @@ async function sendMilestoneEmail(user, milestone) {
     </div>
 
     <p style="margin:0 0 20px;font-size:15px;color:${GRAY};line-height:1.7;text-align:center;">${esc(m.message)}</p>
+
+    ${upgradeBlock}
 
     <div style="border-top:1px solid #e5e7eb;padding-top:16px;margin-top:4px;">
       <p style="margin:0;font-size:13px;color:#9ca3af;text-align:center;">

@@ -20,6 +20,7 @@ import './App.css';
 
 // Lazy load all pages for code splitting and faster initial load
 const LoginPage = lazy(() => import('./pages/LoginPage'));
+const EmailLoginPage = lazy(() => import('./pages/EmailLoginPage'));
 const Dashboard = lazy(() => import('./pages/DashboardPage'));
 const Testing = lazy(() => import('./pages/TestingPage'));
 const Training = lazy(() => import('./pages/TrainingPage'));
@@ -288,6 +289,9 @@ function AppRoutes() {
         <Route path="/privacy" element={<Privacy />} />
         <Route path="/terms" element={<Terms />} />
         <Route path="/login" element={<LoginPage />} />
+        {/* One-click sign-in landing for email CTAs — reads the token from the
+            URL fragment, then forwards to the page the email promised. */}
+        <Route path="/auth/email-login" element={<EmailLoginPage />} />
         <Route path="/signup" element={<SignUpPage />} />
         <Route path="/lactate-curve-calculator" element={<TestingWithoutLogin />} />
         <Route path="/ftp-calculator" element={<TestingWithoutLogin />} />

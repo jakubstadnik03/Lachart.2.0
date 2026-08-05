@@ -232,6 +232,7 @@ const cpTestRoutes          = require('./routes/cpTestRoutes');
 const vlamaxTestRoutes      = require('./routes/vlamaxTestRoutes');
 const emailCampaignRoutes   = require('./routes/emailCampaignRoutes');
 const coachOutreachRoutes   = require('./routes/coachOutreachRoutes');
+const emailLoginRoutes      = require('./routes/emailLoginRoutes');
 const lactateAnalyticsRoutes = require('./routes/lactateAnalyticsRoutes');
 const { startWeeklyReportsScheduler } = require('./services/weeklyReportScheduler');
 const { startStravaAutoSyncScheduler } = require('./services/stravaAutoSyncScheduler');
@@ -267,6 +268,7 @@ app.use('/api/field-lactate',     fieldLactateRoutes);
 app.use('/api/lactate-analytics', lactateAnalyticsRoutes);
 app.use('/api/email',             emailCampaignRoutes);
 app.use('/api/admin/coach-outreach', coachOutreachRoutes);
+app.use('/api/auth',              emailLoginRoutes);
 
 // Weekly Strava summary emails (Mondays) - controlled by env
 startWeeklyReportsScheduler();

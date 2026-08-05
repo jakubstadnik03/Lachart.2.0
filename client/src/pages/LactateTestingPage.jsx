@@ -126,6 +126,25 @@ const LactateTestingPage = () => {
   const [showTrainerModal, setShowTrainerModal] = useState(false);
   const [showProtocolEdit, setShowProtocolEdit] = useState(false);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const [upgradeReason, setUpgradeReason] = useState('Unlimited Tests');
+
+  /**
+   * Offer Pro once, just after the user's first saved test — the point where
+   * they have seen their own curve and the idea of re-testing actually means
+   * something. Silent for paying users, and remembered so it never nags.
+   */
+  const maybeOfferProAfterFirstTest = useCallback(() => {
+    try {
+      if (user?.isPremium === true) return;
+      if (localStorage.getItem('firstTestProOffered') === '1') return;
+      localStorage.setItem('firstTestProOffered', '1');
+      // Let the success toast land first, then make the ask.
+      setTimeout(() => {
+        setUpgradeReason('Comparing tests over time');
+        setShowUpgradeModal(true);
+      }, 1800);
+    } catch { /* localStorage unavailable — skip the offer rather than break saving */ }
+  }, [user]);
 
   // ── Test state ────────────────────────────────────────────
   const [testState,     setTestState]     = useState('idle');
@@ -928,11 +947,18 @@ const LactateTestingPage = () => {
               lactateSessionId: sessionId,   // link back to raw session
             });
             addNotification('Test saved & added to Testing', 'success');
+            // Ask at the moment of value. Until now the only upgrade prompt in
+            // this flow fired when someone hit the quota on their SECOND test —
+            // but most people never start a second one, so 437 users ran a test
+            // and only 85 ever saw a subscription screen at all. Show it once,
+            // right after the first curve exists, and never to a paying user.
+            maybeOfferProAfterFirstTest();
           } catch (testErr) {
             console.warn('[LactateTest] addTest failed (non-critical):', testErr?.message || testErr);
             const d = testErr?.response?.data;
             if (testErr?.response?.status === 403 && (d?.code === 'QUOTA_EXCEEDED' || d?.error === 'FREE_PLAN_LIMIT')) {
               addNotification('Free plan limit reached — upgrade to Pro to save unlimited tests', 'error');
+              setUpgradeReason('Unlimited Tests');
               setShowUpgradeModal(true);
             } else {
               addNotification('Test saved (Testing DB link failed)', 'warning');
@@ -1064,7 +1090,7 @@ const LactateTestingPage = () => {
       <UpgradeModal
         isOpen={showUpgradeModal}
         onClose={() => setShowUpgradeModal(false)}
-        feature="Unlimited Tests"
+        feature={upgradeReason}
         requiredPlan="pro"
       />
 
