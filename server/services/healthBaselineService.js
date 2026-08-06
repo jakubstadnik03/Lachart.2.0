@@ -1,10 +1,10 @@
 /**
- * healthBaselineService.js — what "normal" looked like before an episode.
+ * healthBaselineService.js - what "normal" looked like before an episode.
  *
  * Captured once, when the episode is created, and then frozen. Everything the
  * return protocol says is a percentage of these numbers ("40% of pre-injury
  * running volume"), so they must not drift as the athlete's rolling averages
- * collapse during the layoff — which is exactly what would happen if we
+ * collapse during the layoff - which is exactly what would happen if we
  * recomputed them live.
  *
  * Sources are the same five the calendar and CTL use, deduped the same way, so
@@ -48,6 +48,20 @@ function speedOf(activity) {
   const dist = Number(activity.distance || 0);
   const dur = Number(activity.movingTime || activity.totalElapsedTime || activity.elapsedTime || 0);
   return dist > 0 && dur > 0 ? dist / dur : 0;
+}
+
+/**
+ * Sport the caps and the baseline are expressed in: running for anything below
+ * the waist, swimming for a shoulder. Lives here rather than in the route
+ * because the progress series has to bucket activities the same way the gate
+ * does; two copies of this rule would let the two views disagree.
+ */
+function primarySportFor(entry) {
+  if (!entry) return 'run';
+  if ((entry.sports || []).includes('run')) return 'run';
+  if ((entry.sports || []).includes('swim')) return 'swim';
+  if ((entry.sports || []).includes('bike')) return 'bike';
+  return 'run';
 }
 
 /**
@@ -167,7 +181,7 @@ async function collectActivities(athleteId, from, to, profile) {
 
 /**
  * Weekly means per sport bucket over the window, plus the fastest single
- * session. Returns metres, seconds and m/s — the client formats.
+ * session. Returns metres, seconds and m/s - the client formats.
  */
 function aggregate(activities, weeks) {
   const totals = {};
@@ -182,7 +196,7 @@ function aggregate(activities, weeks) {
     totals[sport].sessions += 1;
 
     const speed = speedOf(a);
-    // Ignore very short efforts — a 4-minute activity is usually a bad upload,
+    // Ignore very short efforts - a 4-minute activity is usually a bad upload,
     // and it should not become the reference a speed cap is derived from.
     if (speed > 0 && (Number(a.movingTime) || 0) >= 300) {
       peak[sport] = Math.max(peak[sport] || 0, speed);
@@ -216,7 +230,7 @@ function aggregate(activities, weeks) {
 
 /**
  * Build the frozen baseline for an episode starting on `startDate`.
- * Never throws — a baseline we could not compute is better stored as nulls than
+ * Never throws - a baseline we could not compute is better stored as nulls than
  * blocking episode creation, and the UI degrades to "no baseline yet".
  */
 async function captureBaseline(athleteId, startDate) {
@@ -284,7 +298,7 @@ async function captureBaseline(athleteId, startDate) {
 }
 
 /**
- * Where the athlete actually is right now, against the frozen baseline —
+ * Where the athlete actually is right now, against the frozen baseline -
  * the input to the "you are at 38% of pre-injury volume" readout and to the
  * over-the-ceiling caution.
  */
@@ -329,7 +343,7 @@ function buildLoadSummary(caps, actual) {
   const capM = caps.weeklyDistanceCapM;
   const capS = caps.weeklyDurationCapS;
 
-  // Prefer distance where we have it — runners think in kilometres.
+  // Prefer distance where we have it - runners think in kilometres.
   let overCapPct = 0;
   let capLabel = null;
   let actualLabel = null;
@@ -352,7 +366,7 @@ function buildLoadSummary(caps, actual) {
     sessionsOverCap: caps.maxSessionsPerWeek != null
       ? Math.max(0, actual.sessions - caps.maxSessionsPerWeek)
       : 0,
-    /** Set when a session went faster than the stage's speed ceiling — the
+    /** Set when a session went faster than the stage's speed ceiling - the
         muscle-strain gate that verifies itself from activity data. */
     speedBreach: caps.speedCapMps != null && actual.fastestSpeedMps != null
       && actual.fastestSpeedMps > caps.speedCapMps
@@ -370,5 +384,7 @@ module.exports = {
   currentWeekLoad,
   buildLoadSummary,
   collectActivities,
+  primarySportFor,
+  speedOf,
   BASELINE_WEEKS,
 };

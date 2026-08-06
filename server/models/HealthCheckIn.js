@@ -1,7 +1,7 @@
 const mongoose = require('mongoose');
 
 /**
- * HealthCheckIn — one symptom report against an episode.
+ * HealthCheckIn - one symptom report against an episode.
  *
  * Designed to be answerable in about ten seconds, because a check-in nobody
  * fills in is worse than none at all: the gate then reasons from stale data.
@@ -11,9 +11,9 @@ const mongoose = require('mongoose');
  *
  * The three pain fields are deliberately separate because they answer different
  * questions:
- *   painNow             — how it is right this moment
- *   painDuringSession   — how it behaved under load
- *   painNextMorning     — the 24 h response, which is what actually decides
+ *   painNow             - how it is right this moment
+ *   painDuringSession   - how it behaved under load
+ *   painNextMorning     - the 24 h response, which is what actually decides
  *                         whether a tendon tolerated yesterday's dose
  *
  * One check-in per (athlete, episode, date, trigger): the morning report and the
@@ -25,6 +25,14 @@ const functionalTestResultSchema = new mongoose.Schema({
   test: { type: String, required: true },       // key in FUNCTIONAL_TESTS
   left: { type: Number, default: null },
   right: { type: Number, default: null },
+  /**
+   * The single number for a test that has no left/right to compare: minutes of
+   * pain-free walking, or reps done on the affected side only. left/right exist
+   * for symmetry, which needs both limbs; `value` exists because a one-sided
+   * measurement has nowhere else to live, and without it a minValue gate on such
+   * a test could never be satisfied.
+   */
+  value: { type: Number, default: null },
   /** Single-sided tests (hop pain, decline squat) report pain instead. */
   painDuring: { type: Number, min: 0, max: 10, default: null },
   /** Injured-vs-healthy ratio, computed on save when both sides are present. */
@@ -42,7 +50,7 @@ const healthCheckInSchema = new mongoose.Schema({
     default: 'manual',
   },
 
-  /** The catalogue's hallmark question for this injury — e.g.
+  /** The catalogue's hallmark question for this injury - e.g.
       morningStiffnessMinutes, timeToPainMinutes, painScore, symptomSeverity. */
   hallmarkKey: { type: String, default: null },
   hallmarkValue: { type: Number, default: null },
@@ -51,7 +59,7 @@ const healthCheckInSchema = new mongoose.Schema({
   painDuringSession: { type: Number, min: 0, max: 10, default: null },
   painNextMorning: { type: Number, min: 0, max: 10, default: null },
 
-  /** Minutes of stiffness on waking — the headline metric for tendons. */
+  /** Minutes of stiffness on waking - the headline metric for tendons. */
   stiffnessMinutes: { type: Number, default: null },
 
   // Red flags. `limping` is under-reported as pain but predicts trouble better.
@@ -59,7 +67,7 @@ const healthCheckInSchema = new mongoose.Schema({
   swelling: { type: Boolean, default: false },
   nightPain: { type: Boolean, default: false },
   painAtRest: { type: Boolean, default: false },
-  /** Any catalogue redFlag ids the athlete ticked — each one shows a "see a
+  /** Any catalogue redFlag ids the athlete ticked - each one shows a "see a
       clinician" screen rather than a training suggestion. */
   redFlagsReported: { type: [String], default: [] },
 
@@ -79,7 +87,7 @@ const healthCheckInSchema = new mongoose.Schema({
   /** Neck check: true when everything is above the neck and there is no fever. */
   aboveNeckOnly: { type: Boolean, default: null },
 
-  /** Training the athlete did on this date, if any — links the symptom report to
+  /** Training the athlete did on this date, if any - links the symptom report to
       the dose that produced it. */
   trainingId: { type: String, default: null },
   note: { type: String, default: '' },
@@ -91,7 +99,7 @@ healthCheckInSchema.index({ athleteId: 1, episodeId: 1, date: 1, trigger: 1 }, {
 healthCheckInSchema.index({ episodeId: 1, date: -1 });
 
 /**
- * Fill in symmetry so the gate never has to know which side is injured — it
+ * Fill in symmetry so the gate never has to know which side is injured - it
  * just reads symmetryPct. Injured side is passed by the route as `injuredSide`
  * on the doc; when it is unknown we take the weaker side as injured, which is
  * the safe assumption.

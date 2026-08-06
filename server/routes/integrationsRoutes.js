@@ -478,9 +478,13 @@ async function fetchGarminWellnessActivitiesByDay(user, tokenData, path, startSe
  * trainings and an empty Form & Fitness while the athlete's own view was fine.
  */
 function userIdMatch(id) {
+  // mongoose is not required at module scope in this file (only inside a
+  // couple of functions), so pull it in here — referencing the outer name
+  // threw ReferenceError and turned every query using this helper into a 500.
+  const mongooseRef = require('mongoose');
   const str = String(id);
   const forms = [str];
-  if (mongoose.Types.ObjectId.isValid(str)) forms.push(new mongoose.Types.ObjectId(str));
+  if (mongooseRef.Types.ObjectId.isValid(str)) forms.push(new mongooseRef.Types.ObjectId(str));
   return forms.length > 1 ? { $in: forms } : str;
 }
 

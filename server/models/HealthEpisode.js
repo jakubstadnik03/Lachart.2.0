@@ -1,7 +1,7 @@
 const mongoose = require('mongoose');
 
 /**
- * HealthEpisode — one injury or illness, from onset to a settled return.
+ * HealthEpisode - one injury or illness, from onset to a settled return.
  *
  * Distinct from CalendarPeriod('Illness'), which is just a coloured band on the
  * calendar with no behaviour. An episode carries the return protocol, the frozen
@@ -32,7 +32,7 @@ const baselineSchema = new mongoose.Schema({
   /** Fastest sustained speed (m/s) seen in the 8 weeks before onset, per sport.
       Muscle-strain protocols cap return speed as a % of this. */
   peakSpeedBySport: { type: mongoose.Schema.Types.Mixed, default: null },
-  /** Thresholds at onset. After a long layoff these are stale — the app says so
+  /** Thresholds at onset. After a long layoff these are stale - the app says so
       and prompts a retest rather than silently training to old zones. */
   lt1: { type: Number, default: null },
   lt2: { type: Number, default: null },
@@ -41,7 +41,7 @@ const baselineSchema = new mongoose.Schema({
 }, { _id: false });
 
 /** Sport the athlete may still do, and how much. Derived from the catalogue at
-    creation, then editable — a physio may allow or forbid something specific. */
+    creation, then editable - a physio may allow or forbid something specific. */
 const restrictionSchema = new mongoose.Schema({
   sport: { type: String, required: true },
   allowed: { type: Boolean, default: true },
@@ -50,11 +50,33 @@ const restrictionSchema = new mongoose.Schema({
   note: { type: String, default: '' },
 }, { _id: false });
 
+/**
+ * One completed or ongoing spell in a protocol stage.
+ *
+ * The episode already knows which stage it is in *today*, but a progress chart
+ * has to answer "was I over the ceiling that week?" for weeks that are already
+ * in the past, and the ceiling is a percentage of baseline that changes with
+ * every stage. Without a log of when each stage started and ended, a week from
+ * six weeks ago would be judged against today's cap, which is both wrong and
+ * flattering. So each transition is recorded here instead of being overwritten.
+ *
+ * The range is half-open: the stage was in force from `from` up to but not
+ * including `to`, and the currently open entry has `to: null`. Episodes created
+ * before this field existed have an empty array; readers fall back to
+ * attributing the whole episode to its current stage.
+ */
+const stageHistorySchema = new mongoose.Schema({
+  stageId: { type: String, default: null },
+  stageIndex: { type: Number, default: 0 },
+  from: { type: String, required: true, match: /^\d{4}-\d{2}-\d{2}$/ },
+  to: { type: String, default: null },
+}, { _id: false });
+
 const healthEpisodeSchema = new mongoose.Schema({
   athleteId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
   createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
 
-  /** Entry in data/injuryCatalog.js — supplies tissue rules and stages. */
+  /** Entry in data/injuryCatalog.js - supplies tissue rules and stages. */
   catalogId: { type: String, required: true },
   kind: { type: String, enum: ['injury', 'illness', 'other'], required: true },
 
@@ -102,7 +124,7 @@ const healthEpisodeSchema = new mongoose.Schema({
     },
   },
 
-  // Inclusive local-date range, 'YYYY-MM-DD' — same convention as CalendarPeriod.
+  // Inclusive local-date range, 'YYYY-MM-DD' - same convention as CalendarPeriod.
   startDate: { type: String, required: true, match: /^\d{4}-\d{2}-\d{2}$/, index: true },
   expectedReturnDate: { type: String, default: null },
   endDate: { type: String, default: null },
@@ -118,6 +140,8 @@ const healthEpisodeSchema = new mongoose.Schema({
   currentStageId: { type: String, default: null },
   currentStageIndex: { type: Number, default: 0 },
   stageStartedAt: { type: String, default: null }, // 'YYYY-MM-DD'
+  /** Every stage this episode has passed through. See stageHistorySchema. */
+  stageHistory: { type: [stageHistorySchema], default: [] },
   /** How many times the gate pulled the athlete back a stage. High = too eager. */
   stepBackCount: { type: Number, default: 0 },
   /** Muscle protocols only: highest % of pre-injury peak speed cleared so far. */
@@ -126,7 +150,7 @@ const healthEpisodeSchema = new mongoose.Schema({
   restrictions: { type: [restrictionSchema], default: [] },
   baseline: { type: baselineSchema, default: () => ({}) },
 
-  /** Previous episode at the same site — recurrence is the strongest predictor
+  /** Previous episode at the same site - recurrence is the strongest predictor
       of the next one, so the gate applies tighter caps when this is set. */
   previousEpisodeId: { type: mongoose.Schema.Types.ObjectId, ref: 'HealthEpisode', default: null },
   isRecurrence: { type: Boolean, default: false },
@@ -140,7 +164,7 @@ const healthEpisodeSchema = new mongoose.Schema({
   notesPrivate: { type: String, default: '' },
   /** Notes the athlete is happy for a coach to read. */
   notes: { type: String, default: '' },
-  /** Health data is sensitive — coaches see nothing unless the athlete opts in. */
+  /** Health data is sensitive - coaches see nothing unless the athlete opts in. */
   isVisibleToCoach: { type: Boolean, default: false },
 
   /** Calendar band created alongside, so deleting the episode can clean it up. */

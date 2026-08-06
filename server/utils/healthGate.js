@@ -1,5 +1,5 @@
 /**
- * healthGate.js — the daily verdict for an open health episode.
+ * healthGate.js - the daily verdict for an open health episode.
  *
  * Pure functions over (episode, catalogue entry, check-ins, load, wellness) so
  * the same logic can run in a route, in a scheduler, or in a unit test without
@@ -7,11 +7,11 @@
  *
  * Three layers, in priority order:
  *
- *  1. Hard stops — a fixed list that overrides everything else and never gets
+ *  1. Hard stops - a fixed list that overrides everything else and never gets
  *     traded off against "but the plan says". Night pain, a limp, pain over the
  *     tissue's cap, fever. These produce `light: 'red'` and a step-back.
- *  2. Cautions — things that hold progression without reversing it.
- *  3. Advancement — only when the current stage's gate is fully met.
+ *  2. Cautions - things that hold progression without reversing it.
+ *  3. Advancement - only when the current stage's gate is fully met.
  *
  * The design intent is that a red light REWRITES the plan rather than merely
  * warning about it: warnings get dismissed, a smaller number in the plan does
@@ -19,6 +19,8 @@
  */
 
 'use strict';
+
+const { FUNCTIONAL_TESTS } = require('../data/injuryCatalog');
 
 const DAY_MS = 86400000;
 
@@ -73,7 +75,7 @@ function painFreeStreak(checkIns, painRule) {
   let streak = 0;
   let expected = days.length ? days[0][0] : null;
   for (const [dateKey, dayCheckIns] of days) {
-    // A gap in reporting breaks the streak — we cannot claim days we never saw.
+    // A gap in reporting breaks the streak - we cannot claim days we never saw.
     if (expected && dateKey !== expected) break;
     if (!isPainFreeDay(dayCheckIns, painRule)) break;
     streak += 1;
@@ -128,6 +130,36 @@ function latestTest(checkIns, testKey) {
     }
   }
   return null;
+}
+
+/**
+ * Read a functional test result back in the athlete's own words. The catalogue
+ * owns the unit, so a gate on minutes never gets described as reps.
+ */
+function formatTestValue(value, unit) {
+  const shown = value == null ? '-' : value;
+  if (unit === 'cm') return `${shown} cm`;
+  if (unit === 'minutes') return `${shown} min`;
+  if (unit === 'pain') return `${shown}/10`;
+  if (unit === 'reps') return `${shown} reps`;
+  return `${shown}`;
+}
+
+/**
+ * The one number a minValue gate compares against.
+ *
+ * `value` wins whenever it is present: a single-sided measurement is
+ * unambiguous, so there is nothing to reconcile. Otherwise a bilateral test
+ * falls back to the weaker side, which is the safe reading when we do not know
+ * which limb is injured. A one-sided test with no `value` has simply not been
+ * measured, and a missing measurement must never open a gate.
+ */
+function measuredTestValue(result, spec) {
+  const single = num(result.value);
+  if (single != null) return single;
+  if (spec && spec.bilateral === false) return null;
+  const sides = [num(result.left), num(result.right)].filter((v) => v != null);
+  return sides.length ? Math.min(...sides) : null;
 }
 
 function symptomFreeStreak(checkIns) {
@@ -215,12 +247,12 @@ function hardStops(episode, entry, checkIns) {
         severity: 'stop',
         title: `Pain ${worstDuring}/10 during training`,
         body: painRule.zeroTolerance
-          ? 'Bone stress injuries have no acceptable pain level — that session was too much load.'
+          ? 'Bone stress injuries have no acceptable pain level - that session was too much load.'
           : `Above the ${painRule.duringMax}/10 ceiling for this tissue. Back off a step.`,
       });
     }
 
-    // The 24 h response — for a tendon this is the decisive signal, more than
+    // The 24 h response - for a tendon this is the decisive signal, more than
     // anything felt during the session itself.
     if (painRule.morningMustNotWorsen) {
       const morning = today.map((c) => num(c.painNextMorning)).filter((v) => v != null);
@@ -235,7 +267,7 @@ function hardStops(episode, entry, checkIns) {
           severity: 'stop',
           title: 'Worse the morning after',
           body: `Morning pain ${worstMorning}/10 against ${prevWorst}/10 yesterday. `
-            + 'The tissue did not tolerate that dose — repeat the previous week instead of progressing.',
+            + 'The tissue did not tolerate that dose - repeat the previous week instead of progressing.',
         });
       }
     }
@@ -250,7 +282,7 @@ function hardStops(episode, entry, checkIns) {
     out.push({
       id: 'fever',
       severity: 'stop',
-      title: 'Fever — no training',
+      title: 'Fever - no training',
       body: 'Do not train with a fever. Wait until you have been fever-free for 24-48 h without medication.',
       medical: true,
     });
@@ -274,7 +306,7 @@ function cautions(episode, entry, checkIns, { wellness = [], loadSummary = null 
   const days = byDateDesc(checkIns);
 
   // Hallmark stalled: not worse, but not better either. Suppressed once the
-  // reading already clears the current stage gate — "not improving" is not a
+  // reading already clears the current stage gate - "not improving" is not a
   // useful thing to say to someone sitting at their target.
   const hallmark = entry?.hallmark;
   const stageGateOut = currentStage(episode, entry)?.gateOut;
@@ -300,7 +332,7 @@ function cautions(episode, entry, checkIns, { wellness = [], loadSummary = null 
           id: 'hallmark_worsening',
           severity: 'warning',
           title: 'Trending the wrong way',
-          body: `${hallmark.prompt} — worse than three days ago. Hold this week's load where it is.`,
+          body: `${hallmark.prompt} - worse than three days ago. Hold this week's load where it is.`,
         });
       } else if (!improving && !alreadyAtTarget) {
         out.push({
@@ -325,7 +357,7 @@ function cautions(episode, entry, checkIns, { wellness = [], loadSummary = null 
     });
   }
 
-  // Systemic recovery — reuses the same wellness rows the training alerts read.
+  // Systemic recovery - reuses the same wellness rows the training alerts read.
   const hrvVals = wellness.map((w) => num(w.hrvMs)).filter((v) => v != null && v > 0);
   if (hrvVals.length >= 4) {
     const base = hrvVals.slice(0, -1).reduce((a, b) => a + b, 0) / (hrvVals.length - 1);
@@ -335,7 +367,7 @@ function cautions(episode, entry, checkIns, { wellness = [], loadSummary = null 
         id: 'hrv_suppressed',
         severity: 'watch',
         title: 'HRV below baseline',
-        body: 'Recovery is lagging. Tissue heals on recovery days — keep today easy.',
+        body: 'Recovery is lagging. Tissue heals on recovery days - keep today easy.',
       });
     }
   }
@@ -366,7 +398,7 @@ function cautions(episode, entry, checkIns, { wellness = [], loadSummary = null 
 
   // Muscle strains are re-torn by a single fast segment at the end of an
   // otherwise easy run, not by weekly volume. This is the one gate we can check
-  // without asking the athlete anything — the pace is already in the activity.
+  // without asking the athlete anything - the pace is already in the activity.
   if (loadSummary?.speedBreach) {
     const b = loadSummary.speedBreach;
     out.push({
@@ -384,7 +416,7 @@ function cautions(episode, entry, checkIns, { wellness = [], loadSummary = null 
       id: 'sessions_over_cap',
       severity: 'watch',
       title: `${loadSummary.sessionsOverCap} session(s) over the weekly count`,
-      body: 'Frequency is a separate variable from volume — add one or the other, never both in the same week.',
+      body: 'Frequency is a separate variable from volume - add one or the other, never both in the same week.',
     });
   }
 
@@ -490,6 +522,7 @@ function evaluateStageGate(episode, entry, checkIns, opts = {}) {
   }
 
   for (const req of gate.tests || []) {
+    const spec = FUNCTIONAL_TESTS[req.test] || null;
     const result = latestTest(checkIns, req.test);
     let met = false;
     let detail = 'Not tested yet';
@@ -497,21 +530,30 @@ function evaluateStageGate(episode, entry, checkIns, opts = {}) {
       const checks = [];
       if (req.symmetryPct != null) {
         checks.push(num(result.symmetryPct) != null && result.symmetryPct >= req.symmetryPct);
-        detail = `${result.symmetryPct ?? '—'}% symmetry (need ${req.symmetryPct}%)`;
+        detail = `${result.symmetryPct ?? '-'}% symmetry (need ${req.symmetryPct}%)`;
       }
       if (req.minValue != null) {
-        const weakest = [num(result.left), num(result.right)].filter((v) => v != null);
-        const worst = weakest.length ? Math.min(...weakest) : null;
-        checks.push(worst != null && worst >= req.minValue);
-        detail = `${worst ?? '—'} reps (need ${req.minValue})`;
+        const measured = measuredTestValue(result, spec);
+        checks.push(measured != null && measured >= req.minValue);
+        detail = `${formatTestValue(measured, spec?.unit)} (need ${req.minValue})`;
       }
       if (req.maxPain != null) {
         checks.push(num(result.painDuring) != null && result.painDuring <= req.maxPain);
-        detail = `pain ${result.painDuring ?? '—'}/10 (need ≤ ${req.maxPain})`;
+        detail = `pain ${result.painDuring ?? '-'}/10 (need ≤ ${req.maxPain})`;
       }
       met = checks.length > 0 && checks.every(Boolean);
     }
-    conditions.push({ id: `test_${req.test}`, label: req.test, met, detail });
+    conditions.push({
+      id: `test_${req.test}`,
+      // A raw catalogue key in a checklist is a bug the athlete has to read.
+      label: spec?.label || req.test,
+      met,
+      detail,
+      // Passed through so the client can pick the right input without having to
+      // fetch and re-derive the catalogue itself.
+      unit: spec?.unit ?? null,
+      bilateral: spec?.bilateral ?? null,
+    });
   }
 
   if (gate.speedPctReached != null) {
@@ -564,7 +606,7 @@ function evaluateStageGate(episode, entry, checkIns, opts = {}) {
     });
   }
 
-  // Conditions we could not evaluate (no data supplied) count as unmet — the
+  // Conditions we could not evaluate (no data supplied) count as unmet - the
   // gate should never open on missing evidence.
   const met = conditions.length > 0 && conditions.every((c) => c.met);
   return { met, conditions, isFinalStage: false };
@@ -638,7 +680,7 @@ function evaluateHealthGate(episode, entry, checkIns = [], opts = {}) {
       light: 'red',
       reasons: [...stops, ...warns],
       hardStop: true,
-      // A medical red flag is not a plan problem — do not silently rewrite the
+      // A medical red flag is not a plan problem - do not silently rewrite the
       // week and imply a smaller dose is the answer.
       stepBack: !stops.every((s) => s.medical),
       requiresMedicalAttention: stops.some((s) => s.medical),
