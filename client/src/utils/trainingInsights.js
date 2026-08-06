@@ -444,11 +444,16 @@ export function computeAllInsights({
 
   if (readiness?.level === 'high') {
     insights.push({
-      headline: 'Body signals overload',
+      // `kind` lets the sheet render this one as a proper explainer with
+      // meters instead of another one-line row — it is the signal that most
+      // often needs acting on today.
+      kind: 'readiness',
+      headline: 'Your body is asking for an easier day',
       detail: readiness.reasons?.length
         ? readiness.reasons.join(' · ')
         : 'HRV/RHR off baseline or very negative Form.',
       severity: 'warning',
+      metrics: readiness.metrics || null,
     });
   }
 

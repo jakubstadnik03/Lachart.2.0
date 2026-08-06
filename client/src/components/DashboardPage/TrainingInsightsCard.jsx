@@ -343,6 +343,9 @@ function InsightSheet({ insight, weekly, style, onClose, onDismiss }) {
               </h3>
               <ul className="space-y-2">
                 {weekly.insights.map((item) => {
+                  if (item.kind === 'readiness') {
+                    return <ReadinessSignal key={`${item.headline}-${item.detail}`} item={item} />;
+                  }
                   const sev = SEVERITY[item.severity] || SEVERITY.ok;
                   return (
                     <li
@@ -363,6 +366,94 @@ function InsightSheet({ insight, weekly, style, onClose, onDismiss }) {
         </div>
       </motion.div>
     </div>
+  );
+}
+
+
+/**
+ * Readiness explainer.
+ *
+ * "Body signals overload · resting HR 12% above baseline · HRV 31% below
+ * baseline" is accurate and almost useless at a glance: it states two
+ * measurements and leaves the reader to work out whether that is bad and what
+ * to do. This says the conclusion first, shows each signal as a bar against
+ * the reader's own baseline, and ends with the action.
+ */
+function ReadinessSignal({ item }) {
+  const m = item.metrics || {};
+  const rhr = Number.isFinite(m.rhrPct) ? m.rhrPct : null;   // + = worse
+  const hrv = Number.isFinite(m.hrvPct) ? m.hrvPct : null;   // − = worse
+
+  // Fill is "how far off baseline", capped so one wild reading can't peg both
+  // bars and flatten the difference between them.
+  const bar = (pct, worseWhenNegative) => {
+    if (pct == null) return null;
+    const off = worseWhenNegative ? -pct : pct;
+    const bad = off > 0;
+    return { pct, bad, fill: Math.min(100, Math.max(6, Math.abs(off) * 4)) };
+  };
+  const rows = [
+    { key: 'rhr', icon: '💓', label: 'Resting heart rate',
+      now: m.rhrNow != null ? `${Math.round(m.rhrNow)} bpm` : null,
+      base: m.rhrBase != null ? `${Math.round(m.rhrBase)} bpm` : null,
+      meter: bar(rhr, false), hint: 'up = working harder at rest' },
+    { key: 'hrv', icon: '🫀', label: 'Heart rate variability',
+      now: m.hrvNow != null ? `${Math.round(m.hrvNow)} ms` : null,
+      base: m.hrvBase != null ? `${Math.round(m.hrvBase)} ms` : null,
+      meter: bar(hrv, true), hint: 'down = less recovered' },
+  ].filter((r) => r.meter);
+
+  return (
+    <li className="rounded-2xl border-2 px-4 py-4" style={{ borderColor: '#FCA5A5', background: '#FEF2F2' }}>
+      <div className="flex items-start gap-3">
+        <span aria-hidden className="text-3xl leading-none">🛑</span>
+        <div className="min-w-0">
+          <div className="text-[17px] font-extrabold text-gray-900 leading-tight">
+            Take today easy
+          </div>
+          <div className="text-[13px] text-gray-700 mt-1 leading-snug">
+            Your recovery numbers are off your own normal. That usually means yesterday&apos;s
+            training isn&apos;t absorbed yet — training hard on top of it adds fatigue without fitness.
+          </div>
+        </div>
+      </div>
+
+      {rows.length > 0 && (
+        <div className="mt-3.5 space-y-2.5">
+          {rows.map((r) => (
+            <div key={r.key}>
+              <div className="flex items-center justify-between gap-2 text-[12px]">
+                <span className="font-semibold text-gray-800">
+                  <span aria-hidden className="mr-1">{r.icon}</span>{r.label}
+                </span>
+                <span className="tabular-nums font-bold" style={{ color: r.meter.bad ? '#DC2626' : '#059669' }}>
+                  {r.meter.pct > 0 ? '+' : ''}{r.meter.pct}%
+                </span>
+              </div>
+              <div className="mt-1 h-2.5 rounded-full bg-white/80 overflow-hidden border border-red-100">
+                <div
+                  className="h-full rounded-full transition-all"
+                  style={{ width: `${r.meter.fill}%`, background: r.meter.bad ? '#EF4444' : '#10B981' }}
+                />
+              </div>
+              <div className="flex items-center justify-between text-[11px] text-gray-500 mt-0.5">
+                <span>{r.hint}</span>
+                {r.now && r.base && <span className="tabular-nums">{r.now} · normal {r.base}</span>}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="mt-3.5 rounded-xl bg-white/70 border border-red-100 px-3 py-2.5">
+        <div className="text-[11px] font-bold uppercase tracking-wide text-red-700 mb-1">What to do today</div>
+        <ul className="text-[12.5px] text-gray-700 leading-relaxed space-y-0.5">
+          <li>🚶 Easy Z1–Z2 only, or a full rest day</li>
+          <li>😴 Sleep is the fastest lever — protect tonight</li>
+          <li>🔁 Re-check tomorrow; one off day is normal, three in a row is not</li>
+        </ul>
+      </div>
+    </li>
   );
 }
 

@@ -38,13 +38,24 @@ export function assessReadiness(days, { tsb = null } = {}) {
   let rhrFlag = false;
   let hrvFlag = false;
   const reasons = [];
+  // Numbers, not just sentences: the UI draws meters from these, and a
+  // percentage the reader can see is far easier to act on than a label.
+  const metrics = {
+    rhrPct: null, hrvPct: null,
+    rhrNow: latest?.restingHeartRate ?? null, rhrBase: rhrBase ?? null,
+    hrvNow: latest?.hrvMs ?? null, hrvBase: hrvBase ?? null,
+    sleepMinutes: latest?.sleepMinutes ?? null,
+    tsb: tsb ?? null,
+  };
 
   if (rhrBase && latest?.restingHeartRate > 0) {
     const delta = (latest.restingHeartRate - rhrBase) / rhrBase;
+    metrics.rhrPct = Math.round(delta * 100);
     if (delta > 0.05) { rhrFlag = true; reasons.push(`resting HR ${Math.round(delta * 100)}% above baseline`); }
   }
   if (hrvBase && latest?.hrvMs > 0) {
     const delta = (latest.hrvMs - hrvBase) / hrvBase;
+    metrics.hrvPct = Math.round(delta * 100);
     if (delta < -0.10) { hrvFlag = true; reasons.push(`HRV ${Math.round(Math.abs(delta) * 100)}% below baseline`); }
   }
 
@@ -71,7 +82,7 @@ export function assessReadiness(days, { tsb = null } = {}) {
   }
 
   const c = READINESS_COLORS[level];
-  return { level, label: c.label, color: c.key, hex: c.hex, reasons };
+  return { level, label: c.label, color: c.key, hex: c.hex, reasons, metrics };
 }
 
 /**
