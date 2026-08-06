@@ -41,6 +41,7 @@ const TrainingHistory = lazy(() => import('./components/TrainingHistory'));
 const AcceptCoachInvitation = lazy(() => import('./pages/AcceptCoachInvitation'));
 const TestingWithoutLogin = lazy(() => import('./pages/TestingWithoutLogin'));
 const About = lazy(() => import('./pages/About'));
+const ForCoaches = lazy(() => import('./pages/ForCoaches'));
 const Tutorials = lazy(() => import('./pages/Tutorials'));
 const Documentation = lazy(() => import('./pages/Documentation'));
 const LactateGuide = lazy(() => import('./pages/LactateGuide'));
@@ -286,6 +287,7 @@ function AppRoutes() {
         {/* Veřejné routy */}
         <Route path="/" element={<RootRoute />} />
         <Route path="/about" element={<About />} />
+        <Route path="/for-coaches" element={<ForCoaches />} />
         <Route path="/how-to-use" element={<Tutorials />} />
         <Route path="/tutorials" element={<Tutorials />} />
         <Route path="/privacy" element={<Privacy />} />

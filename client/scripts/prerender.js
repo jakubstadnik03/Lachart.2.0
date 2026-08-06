@@ -43,6 +43,7 @@ const PORT = 4321;
 const PRERENDER_ROUTES = [
   '/',
   '/about',
+  '/for-coaches',
   '/how-to-use',
   '/tutorials',
   '/privacy',

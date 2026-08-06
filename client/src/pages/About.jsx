@@ -695,7 +695,7 @@ export default function About() {
             <div className="lc-nav-links" style={{ display: 'flex', gap: 4 }}>
               {[
                 ['solutions',   'For whom'],
-                ['workspaces',  'For coaches'],   // anchors to the Athlete/Coach/Tester tabs
+                ['/for-coaches', 'For coaches'],
                 ['features',    'Features'],
                 ['methodology', 'Science'],
                 ['download',    'App'],           // iOS launch hero section
@@ -769,7 +769,7 @@ export default function About() {
             >
               {[
                 ['solutions',   'For whom'],
-                ['workspaces',  'For coaches'],
+                ['/for-coaches', 'For coaches'],
                 ['features',    'Features'],
                 ['methodology', 'Science'],
                 ['download',    'App'],
@@ -2004,10 +2004,10 @@ export default function About() {
           <div className="lc-sectpad" style={{ paddingTop: 36 }}>
             <div ref={pushRef} className="lc-reveal" style={{ textAlign: 'center', maxWidth: 760, margin: '0 auto 28px' }}>
               <Eyebrow>Pricing</Eyebrow>
-              <h2 className="lc-big" style={{ margin: '14px 0 12px' }}>Everything is <em>free right now</em></h2>
+              <h2 className="lc-big" style={{ margin: '14px 0 12px' }}>Start free. Go Pro when you're ready.</h2>
               <p className="lc-lead" style={{ margin: '0 auto' }}>
-                LaChart is in launch mode — every feature on every plan is unlocked at <b style={{ color: LC.text }}>€0</b>.
-                Paid tiers go live later in 2026; we'll email you at least 30 days before that happens.
+                Test lactate and see your curve for free. Unlock unlimited tests, full history and analytics on Athlete —
+                or run your whole roster on Coach with <b style={{ color: LC.text }}>2 months free</b>. Cancel anytime.
               </p>
             </div>
             <div ref={pushRef} className="lc-reveal lc-card" style={{ padding: 20, marginBottom: 22, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 16, background: 'linear-gradient(135deg, ' + LC.primaryTint + ', #fff)', border: '1px solid ' + LC.primary + '33' }}>
@@ -2015,9 +2015,9 @@ export default function About() {
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={LC.primary} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 12v9H4v-9M2 7h20v5H2zM12 22V7M12 7H8a2 2 0 1 1 0-4 4 4 0 0 1 4 4M12 7h4a2 2 0 1 0 0-4 4 4 0 0 0-4 4" /></svg>
               </div>
               <div style={{ flex: 1, minWidth: 240 }}>
-                <p style={{ fontWeight: 700, color: LC.ink, margin: 0 }}>🎁 All features included — no card needed</p>
+                <p style={{ fontWeight: 700, color: LC.ink, margin: 0 }}>🎁 Coaches: 2 months free — no charge today</p>
                 <p style={{ fontSize: 13, color: LC.muted, margin: '4px 0 0', lineHeight: 1.5 }}>
-                  Free, Athlete and Coach features are all unlocked during the launch period. Sign up with an email and you're in — no payment screen.
+                  Run your full roster of athletes on the Coach plan free for 2 months. Cancel anytime before it ends and you pay nothing.
                 </p>
               </div>
               <Link to="/signup" onClick={() => track('pricing_signup_banner')} className="lc-btn-primary" style={{ flexShrink: 0 }}>Start free →</Link>
