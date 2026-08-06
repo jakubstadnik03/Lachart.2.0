@@ -74,6 +74,10 @@ function RaceDayChartLabel({ viewBox, fill = '#dc2626' }) {
 }
 
 export default function RaceDetailModal({
+  /** Fitness / Form as the server computes them — preferred over the local
+   *  derivation so this modal agrees with the dashboard it opened from. */
+  serverCtl = null,
+  serverForm = null,
   race,
   activities = [],
   plannedWorkouts = [],
@@ -307,8 +311,8 @@ export default function RaceDetailModal({
     return {
       chartData,
       metrics: {
-        currentForm: todayPoint?.Form ?? todayMetrics?.form,
-        currentCtl: todayPoint?.Fitness ?? todayMetrics?.fitness,
+        currentForm: Number.isFinite(Number(serverForm)) ? Number(serverForm) : (todayPoint?.Form ?? todayMetrics?.form),
+        currentCtl: Number.isFinite(Number(serverCtl)) ? Number(serverCtl) : (todayPoint?.Fitness ?? todayMetrics?.fitness),
         raceForm: racePoint?.FormProj ?? racePoint?.Form,
         raceCtl: racePoint?.FitnessProj ?? racePoint?.Fitness,
         hasProjection: chartData.some((p) => p.projected),

@@ -133,12 +133,16 @@ export default function PerformanceInsightsSlide({
   }, [activities, profile, user]);
 
   const effTodayMetrics = useMemo(() => {
-    if (derived?.todayMetrics && activities?.length) return derived.todayMetrics;
-    if (todayMetrics.fitness != null || todayMetrics.form != null || todayMetrics.fatigue != null) {
+    // Server first. This used to prefer the locally derived numbers whenever
+    // activities were loaded, so the same athlete read differently here than
+    // on the dashboard — Form differed by 29 points on a real account. The
+    // server's calculateFormFitnessData is the agreed truth; the local
+    // derivation is only a fallback for when it hasn't answered.
+    if (todayMetrics?.fitness != null || todayMetrics?.form != null || todayMetrics?.fatigue != null) {
       return todayMetrics;
     }
     return derived?.todayMetrics || todayMetrics;
-  }, [todayMetrics, derived, activities]);
+  }, [todayMetrics, derived]);
 
   const effSparkline = useMemo(() => {
     if (derived?.series?.length && activities?.length) return derived.series;

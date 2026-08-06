@@ -632,6 +632,8 @@ export default function RaceCountdownCard({
         <RaceDetailModal
           race={selectedRace}
           activities={activities}
+          serverCtl={currentCTL}
+          serverForm={currentForm}
           plannedWorkouts={plannedWorkouts}
           userProfile={userProfile}
           user={user}
