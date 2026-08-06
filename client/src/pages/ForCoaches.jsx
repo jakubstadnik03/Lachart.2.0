@@ -1,7 +1,7 @@
 import React, { useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { Helmet } from 'react-helmet';
-import { LC, STYLE, Eyebrow, useReveal } from '../components/About/marketingKit';
+import { LC, STYLE, Eyebrow, BrowserFrame, useReveal } from '../components/About/marketingKit';
 import SiteNav from '../components/About/SiteNav';
 import SiteFooter from '../components/About/SiteFooter';
 
@@ -74,20 +74,28 @@ const ForCoaches = () => {
 
       {/* Hero */}
       <header className="lc-sectpad" style={{ paddingBottom: 32 }}>
-        <div ref={pushRef} className="lc-reveal" style={{ maxWidth: 780 }}>
-          <Eyebrow>For coaches &amp; testing studios</Eyebrow>
-          <h1 className="lc-huge" style={{ margin: '18px 0 18px' }}>Coach a team. <em>Without spreadsheets.</em></h1>
-          <p className="lc-lead" style={{ maxWidth: 620 }}>
-            You already test lactate. LaChart is the software that stores every test, turns it into a
-            <strong style={{ color: LC.text }}> branded PDF report with your logo</strong>, evaluates LT1 &amp; LT2, and
-            lets you plan and analyse your athletes&rsquo; training — all in one workspace.
-          </p>
-          <div style={{ display: 'flex', gap: 12, marginTop: 28, flexWrap: 'wrap', alignItems: 'center' }}>
-            <Link to="/signup?plan=coach" className="lc-btn-primary">🎁 Start your 2-month free trial</Link>
-            <a href="#pricing" className="lc-btn-ghost">See pricing</a>
+        <div className="lc-fc-hero" style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.05fr) minmax(0,1fr)', gap: 48, alignItems: 'center' }}>
+          <div ref={pushRef} className="lc-reveal">
+            <Eyebrow>For coaches &amp; testing studios</Eyebrow>
+            <h1 className="lc-huge" style={{ margin: '18px 0 18px' }}>Coach a team. <em>Without spreadsheets.</em></h1>
+            <p className="lc-lead" style={{ maxWidth: 560 }}>
+              You already test lactate. LaChart is the software that stores every test, turns it into a
+              <strong style={{ color: LC.text }}> branded PDF report with your logo</strong>, evaluates LT1 &amp; LT2, and
+              lets you plan and analyse your athletes&rsquo; training — all in one workspace.
+            </p>
+            <div style={{ display: 'flex', gap: 12, marginTop: 28, flexWrap: 'wrap', alignItems: 'center' }}>
+              <Link to="/signup?plan=coach" className="lc-btn-primary">🎁 Start your 2-month free trial</Link>
+              <a href="#pricing" className="lc-btn-ghost">See pricing</a>
+            </div>
+            <p style={{ color: LC.muted, fontSize: 13.5, marginTop: 14 }}>No charge today · cancel anytime · unlimited athletes</p>
           </div>
-          <p style={{ color: LC.muted, fontSize: 13.5, marginTop: 14 }}>No charge today · cancel anytime · unlimited athletes</p>
+          <div ref={pushRef} className="lc-reveal right lc-float">
+            <BrowserFrame label="lachart.net · coach dashboard">
+              <img src="/about-design/dashboard-home.png" alt="LaChart coach dashboard showing an athlete's lactate curve, training zones and form & fitness" loading="eager" style={{ display: 'block', width: '100%' }} />
+            </BrowserFrame>
+          </div>
         </div>
+        <style>{`@media (max-width: 900px){ .lc-fc-hero { grid-template-columns: 1fr !important; gap: 32px !important; } }`}</style>
       </header>
 
       {/* Workflow */}
@@ -103,6 +111,29 @@ const ForCoaches = () => {
               <div style={{ width: 30, height: 30, borderRadius: 9, background: LC.primary, color: '#fff', fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14 }}>{s.n}</div>
               <h3 style={{ margin: '12px 0 6px', fontSize: 17, color: LC.ink }}>{s.t}</h3>
               <p style={{ margin: 0, fontSize: 14, color: LC.muted, lineHeight: 1.5 }}>{s.d}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* Product gallery */}
+      <section className="lc-sectpad" style={{ paddingTop: 24 }}>
+        <div ref={pushRef} className="lc-reveal" style={{ marginBottom: 30 }}>
+          <Eyebrow>Inside the workspace</Eyebrow>
+          <h2 className="lc-big" style={{ margin: '14px 0 8px' }}>See what your athletes get</h2>
+          <p className="lc-lead">Lactate testing, a full training calendar and auto-generated zones — one tool for the whole coaching relationship.</p>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 20 }}>
+          {[
+            { img: '/about-design/lactate-testing-page.png', label: 'Lactate testing', cap: 'Enter a step test — the curve, LT1, LT2 and zones compute instantly.' },
+            { img: '/about-design/training-calendar.png', label: 'Training calendar', cap: 'Plan, log and review each athlete’s week in one place.' },
+            { img: '/about-design/zones-generator.png', label: 'Training zones', cap: 'Power, heart-rate and pace zones straight from the test.' },
+          ].map((g, i) => (
+            <div key={g.label} ref={pushRef} className={`lc-reveal d${i + 1}`}>
+              <BrowserFrame label={g.label}>
+                <img src={g.img} alt={`LaChart ${g.label}`} loading="lazy" style={{ display: 'block', width: '100%' }} />
+              </BrowserFrame>
+              <p style={{ color: LC.muted, fontSize: 13.5, margin: '12px 4px 0', lineHeight: 1.5 }}>{g.cap}</p>
             </div>
           ))}
         </div>
@@ -144,10 +175,13 @@ const ForCoaches = () => {
       {/* Testimonial */}
       <section className="lc-sectpad" style={{ paddingTop: 12 }}>
         <div ref={pushRef} className="lc-reveal lc-card" style={{ textAlign: 'center', padding: 'clamp(28px, 5vw, 48px)', background: 'linear-gradient(135deg, ' + LC.primaryTint + ', #fff)' }}>
-          <p style={{ fontSize: 'clamp(19px, 2.6vw, 26px)', lineHeight: 1.4, fontWeight: 600, letterSpacing: '-.01em', margin: '0 auto 16px', maxWidth: 720, color: LC.ink }}>
+          <p style={{ fontSize: 'clamp(19px, 2.6vw, 26px)', lineHeight: 1.4, fontWeight: 600, letterSpacing: '-.01em', margin: '0 auto 20px', maxWidth: 720, color: LC.ink }}>
             &ldquo;I coach 14 triathletes. The athlete switcher and the &lsquo;ready for lactate&rsquo; filter saved me two hours a week. Status dots are pure gold.&rdquo;
           </p>
-          <div style={{ color: LC.muted, fontSize: 14, fontWeight: 600 }}>Markus B. · Triathlon coach · Innsbruck</div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
+            <img src="/images/coach-avatar.webp" alt="Markus B." loading="lazy" style={{ width: 44, height: 44, borderRadius: '50%', objectFit: 'cover', border: '2px solid #fff', boxShadow: '0 2px 8px rgba(15,23,41,.15)' }} />
+            <div style={{ color: LC.muted, fontSize: 14, fontWeight: 600, textAlign: 'left' }}>Markus B.<br /><span style={{ fontWeight: 500 }}>Triathlon coach · Innsbruck</span></div>
+          </div>
         </div>
       </section>
 
