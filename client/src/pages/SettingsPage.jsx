@@ -1516,12 +1516,29 @@ const SettingsPage = () => {
     }
   };
 
+  // Set when a save succeeded only after dropping the logo, so the success
+  // toast doesn't contradict the warning the user just saw.
+  const brandingPartialRef = useRef(false);
+
   const handleSaveBranding = async () => {
     setBrandingSaving(true);
     brandingSavingRef.current = true;
     try {
       console.log('[BRANDING] Sending to server:', JSON.stringify(coachBranding));
-      const res = await updateUserProfile({ coachBranding });
+      let res;
+      try {
+        res = await updateUserProfile({ coachBranding });
+      } catch (logoErr) {
+        // A bad logo must not cost the user the title, colours and contact
+        // details they just typed. Retry once without it and say so plainly,
+        // rather than failing the whole form over one field.
+        if (!coachBranding.logoUrl) throw logoErr;
+        console.warn('[BRANDING] save failed with logo, retrying without it:', logoErr?.message);
+        res = await updateUserProfile({ coachBranding: { ...coachBranding, logoUrl: '' } });
+        setCoachBranding(prev => ({ ...prev, logoUrl: '' }));
+        brandingPartialRef.current = true;
+        addNotification('Saved everything except the logo — that image was rejected. Try a smaller PNG.', 'warning');
+      }
       // Propagate updated user (with coachBranding) to AuthProvider + localStorage
       const updatedUser = res?.data ?? res;
       console.log('[BRANDING] Server returned coachBranding:', JSON.stringify(updatedUser?.coachBranding));
@@ -1545,9 +1562,10 @@ const SettingsPage = () => {
           });
         }
       }
-      addNotification('Branding saved successfully', 'success');
+      if (!brandingPartialRef.current) addNotification('Branding saved successfully', 'success');
+      brandingPartialRef.current = false;
     } catch (e) {
-      addNotification('Failed to save branding', 'error');
+      addNotification(`Failed to save branding: ${e?.response?.data?.message || e?.message || 'unknown error'}`, 'error');
     } finally {
       setBrandingSaving(false);
       // Allow the user→coachBranding sync effect to run again after save
@@ -3954,28 +3972,51 @@ const SettingsPage = () => {
                       className="sr-only"
                       onChange={(e) => {
                         const file = e.target.files?.[0];
+                        // Reset immediately so the same file can be re-picked after a failure.
+                        e.target.value = '';
                         if (!file) return;
-                        // Resize to max 256×256 via canvas, then convert to base64
+
+                        // Every failure below used to be silent: a corrupt file
+                        // left img.onload un-fired and the picker simply did
+                        // nothing, and an oversized one produced a base64 string
+                        // big enough to fail the save for the whole form.
+                        if (!/^image\//.test(file.type)) {
+                          addNotification('That file is not an image — the rest of your branding is untouched.', 'error');
+                          return;
+                        }
+                        if (file.size > 5 * 1024 * 1024) {
+                          addNotification('Logo is over 5 MB. Pick a smaller image — nothing else was changed.', 'error');
+                          return;
+                        }
+
+                        const fail = (why) => addNotification(`Could not read that image (${why}). Your other branding fields are unchanged.`, 'error');
+
                         const reader = new FileReader();
+                        reader.onerror = () => fail('file unreadable');
                         reader.onload = (ev) => {
                           const img = new Image();
+                          img.onerror = () => fail('not a valid image file');
                           img.onload = () => {
-                            const MAX = 256;
-                            const scale = Math.min(MAX / img.width, MAX / img.height, 1);
-                            const w = Math.round(img.width  * scale);
-                            const h = Math.round(img.height * scale);
-                            const canvas = document.createElement('canvas');
-                            canvas.width  = w;
-                            canvas.height = h;
-                            canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-                            const dataUrl = canvas.toDataURL(file.type === 'image/svg+xml' ? 'image/png' : file.type, 0.9);
-                            setCoachBranding(prev => ({ ...prev, logoUrl: dataUrl }));
+                            try {
+                              if (!img.width || !img.height) return fail('image has no dimensions');
+                              const MAX = 256;
+                              const scale = Math.min(MAX / img.width, MAX / img.height, 1);
+                              const w = Math.max(1, Math.round(img.width  * scale));
+                              const h = Math.max(1, Math.round(img.height * scale));
+                              const canvas = document.createElement('canvas');
+                              canvas.width  = w;
+                              canvas.height = h;
+                              canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+                              const dataUrl = canvas.toDataURL(file.type === 'image/svg+xml' ? 'image/png' : file.type, 0.9);
+                              if (!dataUrl || dataUrl.length < 32) return fail('conversion produced nothing');
+                              setCoachBranding(prev => ({ ...prev, logoUrl: dataUrl }));
+                            } catch (err) {
+                              fail(err?.message || 'conversion failed');
+                            }
                           };
                           img.src = ev.target.result;
                         };
                         reader.readAsDataURL(file);
-                        // Reset input so the same file can be re-selected
-                        e.target.value = '';
                       }}
                     />
                     <label
