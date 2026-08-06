@@ -106,6 +106,26 @@ export default function About() {
     return () => document.removeEventListener('keydown', onKey);
   }, [mobileNavOpen]);
 
+  // Cross-page hash landing — e.g. arriving at /about#pricing from the header
+  // or footer of /for-coaches, /privacy, /terms. The browser's native hash
+  // scroll is unreliable here because sections are lazy-loaded and start with a
+  // reveal transform, so we scroll to the target ourselves once it exists
+  // (retrying briefly while lazy content mounts).
+  useEffect(() => {
+    const hash = window.location.hash;
+    if (!hash || hash.length < 2) return;
+    const id = decodeURIComponent(hash.slice(1));
+    let tries = 0;
+    let timer;
+    const tick = () => {
+      const el = document.getElementById(id);
+      if (el) { el.scrollIntoView({ behavior: 'auto', block: 'start' }); return; }
+      if (tries++ < 25) timer = setTimeout(tick, 100);
+    };
+    timer = setTimeout(tick, 60);
+    return () => clearTimeout(timer);
+  }, []);
+
   // Roles tab
   const [role, setRole] = useState('athlete');
 
