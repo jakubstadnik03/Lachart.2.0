@@ -456,7 +456,9 @@ function getLogoBase64() {
 async function resolveBrandingLogo(logoUrl) {
   const url = String(logoUrl || '').trim();
   if (!url) return null;
-  if (url.startsWith('data:image/')) return url;
+  if (url.startsWith('data:image/')) {
+    return /^data:image\/(png|jpe?g)[;,]/i.test(url) ? url : null;   // WebP/SVG/GIF: jsPDF can't draw them
+  }
   if (!/^https:\/\//i.test(url)) return null;   // no http, no file paths
 
   try {
@@ -468,7 +470,7 @@ async function resolveBrandingLogo(logoUrl) {
       validateStatus: (st) => st === 200,
     });
     const type = String(resp.headers['content-type'] || '');
-    if (!/^image\/(png|jpe?g|webp)$/i.test(type)) return null;   // jsPDF can't take SVG
+    if (!/^image\/(png|jpe?g)$/i.test(type)) return null;   // jsPDF draws neither SVG nor WebP
     return `data:${type};base64,${Buffer.from(resp.data).toString('base64')}`;
   } catch {
     return null;   // unreachable or too big — the report still prints
@@ -484,8 +486,9 @@ function drawHeader(doc, title, pageW, branding = null) {
   // so a coach who uploaded their own never saw it on a server-made report.
   let logoAdded = false;
   if (branding?.logoData) {
-    const fmt = /jpe?g/i.test(branding.logoData.slice(0, 30)) ? 'JPEG'
-      : /webp/i.test(branding.logoData.slice(0, 30)) ? 'WEBP' : 'PNG';
+    // PNG keeps the alpha channel (jsPDF emits it as an /SMask), so a transparent
+    // coach logo stays transparent instead of arriving as a solid block.
+    const fmt = /^data:image\/jpe?g/i.test(branding.logoData) ? 'JPEG' : 'PNG';
     try { doc.addImage(branding.logoData, fmt, 10, 4, 20, 20); logoAdded = true; } catch { /* fall through */ }
   }
   if (!logoAdded) {

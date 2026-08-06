@@ -3687,10 +3687,13 @@ const LactateCurveCalculator = ({ mockData, athleteId: athleteIdProp = null, dem
 
       {/* ── PDF Preview Modal — rendered via portal to escape overflow:auto on iOS ── */}
       {showPdfPreview && createPortal(
-        <div className="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center p-0 sm:p-4">
+        <div className="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center p-0 sm:p-4"
+          style={{ height: '100dvh' }}>
           <div className="absolute inset-0 bg-black/60" onClick={() => setShowPdfPreview(false)} />
+          {/* height:100% (not 100dvh) — the wrapper adds sm:p-4, so a 100dvh box
+              overflowed the viewport and pushed the action bar off-screen. */}
           <div className="relative w-full max-w-6xl bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl border border-gray-200 flex flex-col overflow-hidden"
-            style={{ height: '100dvh', maxHeight: '100dvh' }}>
+            style={{ height: '100%', maxHeight: '100%' }}>
 
             {/* Modal header — always visible, sticky at top; safe-area-top ensures notch is covered */}
             <div className="flex items-center justify-between px-4 sm:px-6 py-3 border-b border-gray-100 flex-shrink-0 bg-white z-10"
@@ -3751,11 +3754,13 @@ const LactateCurveCalculator = ({ mockData, athleteId: athleteIdProp = null, dem
                         </button>
                       </div>
                     </div>
-                    {/* Desktop: regular iframe */}
+                    {/* Desktop: fill the column absolutely. h-full on a flex item
+                        resolves against a height the flex algorithm sets later,
+                        which can leave the embedded viewer with nothing to scroll. */}
                     <iframe
                       src={pdfPreviewUrl}
                       title="PDF Preview"
-                      className="hidden md:block w-full h-full border-0"
+                      className="hidden md:block absolute inset-0 w-full h-full border-0"
                     />
                   </>
                 )}
@@ -3911,6 +3916,13 @@ const LactateCurveCalculator = ({ mockData, athleteId: athleteIdProp = null, dem
                   >
                     <ArrowDownTrayIcon className="w-4 h-4 flex-shrink-0" />
                     {downloadingPdf ? 'Downloading…' : 'Download PDF'}
+                  </button>
+                  <button
+                    onClick={handleOpenInBrowser}
+                    className="hidden md:flex items-center justify-center gap-2 min-h-[36px] px-3 py-1.5 text-xs rounded-lg text-gray-500 hover:text-gray-700 hover:bg-gray-50 transition-colors"
+                  >
+                    <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                    Open in new tab
                   </button>
                   {athleteProfile?.email && (
                     <div className="hidden md:block text-[11px] text-gray-400 text-center leading-snug px-1">

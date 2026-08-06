@@ -3989,6 +3989,9 @@ const SettingsPage = () => {
                           return;
                         }
 
+                        // SVG data URLs come through either percent-encoded or
+                        // base64 depending on the browser; try both.
+                        const atobSafe = (v) => { try { return atob(v); } catch { return null; } };
                         const fail = (why) => addNotification(`Could not read that image (${why}). Your other branding fields are unchanged.`, 'error');
 
                         const reader = new FileReader();
@@ -3998,16 +4001,32 @@ const SettingsPage = () => {
                           img.onerror = () => fail('not a valid image file');
                           img.onload = () => {
                             try {
-                              if (!img.width || !img.height) return fail('image has no dimensions');
+                              // An SVG that carries only a viewBox has no intrinsic
+                              // size, so Chrome reports 0x0 and the upload used to be
+                              // rejected outright — which is most brand logos.
+                              let iw = img.naturalWidth  || img.width;
+                              let ih = img.naturalHeight || img.height;
+                              if ((!iw || !ih) && file.type === 'image/svg+xml') {
+                                const box = decodeURIComponent(String(ev.target.result).split(',')[1] || '');
+                                const vb = (atobSafe(box) || box).match(/viewBox\s*=\s*["']\s*[-\d.]+[\s,]+[-\d.]+[\s,]+([\d.]+)[\s,]+([\d.]+)/i);
+                                if (vb) { iw = parseFloat(vb[1]); ih = parseFloat(vb[2]); }
+                                if (!iw || !ih) { iw = 256; ih = 256; }
+                              }
+                              if (!iw || !ih) return fail('image has no dimensions');
                               const MAX = 256;
-                              const scale = Math.min(MAX / img.width, MAX / img.height, 1);
-                              const w = Math.max(1, Math.round(img.width  * scale));
-                              const h = Math.max(1, Math.round(img.height * scale));
+                              const scale = Math.min(MAX / iw, MAX / ih, 1);
+                              const w = Math.max(1, Math.round(iw * scale));
+                              const h = Math.max(1, Math.round(ih * scale));
                               const canvas = document.createElement('canvas');
                               canvas.width  = w;
                               canvas.height = h;
                               canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-                              const dataUrl = canvas.toDataURL(file.type === 'image/svg+xml' ? 'image/png' : file.type, 0.9);
+                              // Always re-encode to PNG unless the source is a JPEG.
+                              // JPEG has no alpha channel at all, and jsPDF (server-side
+                              // reports) draws neither WebP nor SVG — PNG is the only
+                              // format in which a transparent logo survives end to end.
+                              const outType = file.type === 'image/jpeg' ? 'image/jpeg' : 'image/png';
+                              const dataUrl = canvas.toDataURL(outType, 0.9);
                               if (!dataUrl || dataUrl.length < 32) return fail('conversion produced nothing');
                               setCoachBranding(prev => ({ ...prev, logoUrl: dataUrl }));
                             } catch (err) {
@@ -4031,10 +4050,21 @@ const SettingsPage = () => {
 
                     {coachBranding.logoUrl ? (
                       <>
+                        {/* Checkerboard, not a flat fill — otherwise a transparent
+                            logo and one with a white background look identical here. */}
                         <img
                           src={coachBranding.logoUrl}
                           alt="Logo preview"
-                          className="h-12 w-12 object-contain rounded-lg border border-gray-200 bg-gray-50 p-1"
+                          title="Checkered squares show where the logo is transparent"
+                          className="h-12 w-12 object-contain rounded-lg border border-gray-200 p-1"
+                          style={{
+                            backgroundImage:
+                              'linear-gradient(45deg,#e5e7eb 25%,transparent 25%,transparent 75%,#e5e7eb 75%),' +
+                              'linear-gradient(45deg,#e5e7eb 25%,transparent 25%,transparent 75%,#e5e7eb 75%)',
+                            backgroundSize: '10px 10px',
+                            backgroundPosition: '0 0, 5px 5px',
+                            backgroundColor: '#fff',
+                          }}
                           onError={(e) => { e.target.style.display = 'none'; }}
                         />
                         <button
