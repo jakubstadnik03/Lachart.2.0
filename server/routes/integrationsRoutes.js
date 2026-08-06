@@ -468,6 +468,22 @@ async function fetchGarminWellnessActivitiesByDay(user, tokenData, path, startSe
  *   - retries 429s after the rate-limit window instead of dropping the chunk.
  * Keyed by userId; exposed in /garmin/status for debugging.
  */
+/**
+ * Match a user id however it happens to be stored.
+ *
+ * stravaactivities.userId is an ObjectId for some users and a string for
+ * others, so a query fixed on one form silently returns zero rows instead of
+ * erroring. Measured: athlete 67ee3f1a… has 6229 activities as ObjectId and 0
+ * as a string, which is why a coach opening that athlete saw no completed
+ * trainings and an empty Form & Fitness while the athlete's own view was fine.
+ */
+function userIdMatch(id) {
+  const str = String(id);
+  const forms = [str];
+  if (mongoose.Types.ObjectId.isValid(str)) forms.push(new mongoose.Types.ObjectId(str));
+  return forms.length > 1 ? { $in: forms } : str;
+}
+
 const garminBackfillJobs = new Map();
 
 /**
@@ -4001,7 +4017,7 @@ router.get('/strava/pending-lactate', verifyToken, async (req, res) => {
     const since = new Date(Date.now() - days * 86400000);
 
     const rows = await StravaActivity.find({
-      userId: targetUserId.toString(),
+      userId: userIdMatch(targetUserId),
       startDate: { $gte: since },
     })
       .sort({ startDate: -1 })
@@ -4573,7 +4589,7 @@ router.get('/activities', verifyToken, activitiesCacheMiddleware, async (req, re
     
     const [stravaActs, garminActs, appleHealthActs] = await Promise.all([
       StravaActivity.find({
-        userId: targetUserId.toString(),
+        userId: userIdMatch(targetUserId),
         startDate: dateFilter
       })
       .sort({ startDate: -1 })
@@ -4581,7 +4597,7 @@ router.get('/activities', verifyToken, activitiesCacheMiddleware, async (req, re
       .select(stravaSelect)
         .lean(),
       GarminActivity.find({
-        userId: targetUserId.toString(),
+        userId: userIdMatch(targetUserId),
         startDate: dateFilter
       })
         .sort({ startDate: -1 })
@@ -4589,14 +4605,14 @@ router.get('/activities', verifyToken, activitiesCacheMiddleware, async (req, re
         .select(garminSelect)
         .lean(),
       (appleSelect ? AppleHealthActivity.find({
-        userId: targetUserId,
+        userId: userIdMatch(targetUserId),
         startDate: dateFilter,
       })
         .sort({ startDate: -1 })
         .limit(activityLimit)
         .select(appleSelect)
         .lean() : AppleHealthActivity.find({
-          userId: targetUserId,
+          userId: userIdMatch(targetUserId),
           startDate: dateFilter,
         })
           .sort({ startDate: -1 })
@@ -4936,7 +4952,7 @@ router.delete('/garmin/activities/:id', verifyToken, async (req, res) => {
     }
 
     const [actDel, streamDel] = await Promise.all([
-      GarminActivity.deleteOne({ userId: targetUserId.toString(), garminId: String(id) }),
+      GarminActivity.deleteOne({ userId: userIdMatch(targetUserId), garminId: String(id) }),
       GarminStream.deleteOne({ userId: targetUserId, garminId: String(id) }).catch(() => ({ deletedCount: 0 })),
     ]);
 
@@ -5560,7 +5576,7 @@ router.put('/strava/activities/:id', verifyToken, async (req, res) => {
     const { title, description, category, movingTime, duration, elapsedTime, distance, calories, tss, rpe, lactate, tssDisplayMode, savedAutoLaps, startDate } = req.body;
 
     const activity = await StravaActivity.findOne({
-      userId: targetUserId,
+      userId: userIdMatch(targetUserId),
       stravaId: stravaId
     });
 
@@ -7521,7 +7537,7 @@ router.get('/apple-health/wellness', verifyToken, async (req, res) => {
     const sinceKey = since.toISOString().slice(0, 10);
 
     const rows = await AppleHealthWellness.find({
-      userId: targetUserId,
+      userId: userIdMatch(targetUserId),
       date: { $gte: sinceKey },
     })
       .sort({ date: 1 })
@@ -7566,7 +7582,7 @@ router.get('/garmin/wellness', verifyToken, async (req, res) => {
     const sinceKey = since.toISOString().slice(0, 10);
 
     const rows = await GarminWellness.find({
-      userId: targetUserId,
+      userId: userIdMatch(targetUserId),
       date: { $gte: sinceKey },
     })
       .sort({ date: 1 })
