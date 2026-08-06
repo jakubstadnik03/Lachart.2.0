@@ -593,7 +593,7 @@ export default function DashboardPage() {
       persistOnboardingFlag({ iosLaunchDone: true });
     }
     advanceModalQueue();
-  }, [user?._id, advanceModalQueue]);
+  }, [user?._id, advanceModalQueue, persistOnboardingFlag]);
 
   /**
    * One-shot self-healing sync on dashboard mount.

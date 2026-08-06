@@ -318,7 +318,7 @@ export default function RaceDetailModal({
         hasProjection: chartData.some((p) => p.projected),
       },
     };
-  }, [activities, profile, user, plannedWorkouts, raceDateStr, daysUntil, isFuture]);
+  }, [activities, profile, user, plannedWorkouts, raceDateStr, daysUntil, isFuture, serverCtl, serverForm]);
 
   const { chartData, metrics } = chartBundle;
   const axisDomains = useMemo(() => pmcAxisDomainsFromPoints(chartData), [chartData]);

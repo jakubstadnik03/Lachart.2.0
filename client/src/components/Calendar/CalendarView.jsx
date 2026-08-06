@@ -3560,6 +3560,11 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
         autoStructTitleRef.current = false; // allow retry on next open
       }
     })();
+    // Deliberately keyed on identity + the fields that should retrigger a
+    // re-title. merged.name/sport/type/etc. are read for the payload only;
+    // listing them would re-run this auto-title effect every time the very
+    // fields it writes change. Pre-existing behaviour — not widened here.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [merged?.id, merged?._id, merged?.laps, merged?.titleManual, merged?.title, merged?.category, getCategory]);
 
   // Planned workout data
