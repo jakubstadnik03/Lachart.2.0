@@ -270,7 +270,9 @@ const userSchema = new mongoose.Schema({
      *  here rather than localStorage because logout wipes local storage
      *  wholesale, so the modal came back on every single sign-in. */
     whatsNewSeenTag: { type: String, default: null },
-    featureTourDone: { type: Boolean, default: false }
+    featureTourDone: { type: Boolean, default: false },
+    welcomePaywallDone: { type: Boolean, default: false },
+    iosLaunchDone: { type: Boolean, default: false }
   },
   // User preferences for units
   units: {

@@ -477,7 +477,11 @@ export default function DashboardPage() {
     }
 
     // 1. Welcome paywall — free users, first time only
-    if (!isPremium && !localStorage.getItem(`welcomePaywall_seen_${uid}`)) {
+    // Server flag first — localStorage is wiped on logout, so checking it
+    // alone brought this back on every sign-in.
+    const paywallSeen = user?.onboarding?.welcomePaywallDone === true
+      || !!localStorage.getItem(`welcomePaywall_seen_${uid}`);
+    if (!isPremium && !paywallSeen) {
       queue.push('welcomePaywall');
     }
 
@@ -494,15 +498,18 @@ export default function DashboardPage() {
       queue.push('whatsNew');
     }
 
-    // 3. iOS launch announcement — not native Capacitor, not already dismissed
-    //    (or "just logged in" session flag overrides the persistent dismiss)
-    let justLoggedIn = false;
-    try { justLoggedIn = sessionStorage.getItem('iosLaunch_justLoggedIn') === '1'; } catch {}
-    if (justLoggedIn || !localStorage.getItem(iosLaunchSeenKey(uid))) {
+    // 3. iOS launch announcement.
+    //
+    // This used to re-queue on a 'iosLaunch_justLoggedIn' session flag that
+    // AuthProvider sets on EVERY login, deliberately overriding the persistent
+    // dismiss — so the announcement came back forever, however many times it
+    // had been closed. A dismissal now wins outright; the flag is still
+    // cleared so it can't leak into the next session.
+    try { sessionStorage.removeItem('iosLaunch_justLoggedIn'); } catch {}
+    const iosSeen = user?.onboarding?.iosLaunchDone === true
+      || !!localStorage.getItem(iosLaunchSeenKey(uid));
+    if (!iosSeen) {
       queue.push('iosLaunch');
-      if (justLoggedIn) {
-        try { sessionStorage.removeItem('iosLaunch_justLoggedIn'); } catch {}
-      }
     }
 
     if (!queue.length) return;
@@ -565,9 +572,12 @@ export default function DashboardPage() {
   }, [user?._id, advanceModalQueue, persistOnboardingFlag]);
 
   const dismissWelcomePaywall = useCallback(() => {
-    if (user?._id) localStorage.setItem(`welcomePaywall_seen_${user._id}`, '1');
+    if (user?._id) {
+      localStorage.setItem(`welcomePaywall_seen_${user._id}`, '1');
+      persistOnboardingFlag({ welcomePaywallDone: true });
+    }
     advanceModalQueue();
-  }, [user?._id, advanceModalQueue]);
+  }, [user?._id, advanceModalQueue, persistOnboardingFlag]);
 
   const dismissWhatsNew = useCallback(() => {
     if (user?._id) {
@@ -578,7 +588,10 @@ export default function DashboardPage() {
   }, [user?._id, advanceModalQueue, persistOnboardingFlag]);
 
   const dismissIOSLaunch = useCallback(() => {
-    if (user?._id) localStorage.setItem(iosLaunchSeenKey(user._id), '1');
+    if (user?._id) {
+      localStorage.setItem(iosLaunchSeenKey(user._id), '1');
+      persistOnboardingFlag({ iosLaunchDone: true });
+    }
     advanceModalQueue();
   }, [user?._id, advanceModalQueue]);
 
