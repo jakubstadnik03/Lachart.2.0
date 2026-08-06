@@ -160,10 +160,28 @@ Reddit nadpis = zní jako redditor, ne značka. První osoba, konkrétní, špet
 - Text: Built this for my own testing — multiple threshold methods at once instead of eyeballing the deflection. Free to try on your data.
 - CTA: **Learn More**
 
-## Reklamy pro trenéry (landing = /for-coaches) — druhá kampaň, později
+## Coach kampaň (samostatná, landing = /for-coaches)
 
-- *Coaches: turn your lactate tests into branded PDF reports with your own logo*
-- *Stop running your athletes' lactate tests in spreadsheets — one workspace for the whole roster*
+> Realita: trenéři na Redditu nejsou koncentrovaní v jednom subu. Cílíš do stejných vytrvalostních komunit (část členů jsou trenéři/testeři) s coach sdělením. Menší rozpočet, přísně hlídat cost-per-signup. Pozn.: trenéry líp chytneš přes FB trenérské skupiny + přímý outreach na tvůj seznam 165 labů/trenérů — Reddit ber jako doplněk.
+
+**Nastavení:**
+- Samostatná kampaň, cíl **Conversions → SignUp**, rozpočet **$5/den** (menší než athlete)
+- Targeting communities: `r/triathlon`, `r/Velo`, `r/AdvancedRunning`, `r/running`, `r/trainerroad` + zkus přidat `r/coaching`, `r/personaltraining`
+- Landing: **`/for-coaches`** · CTA **Learn More**
+
+**Ad 1 — branded reporty (nejsilnější coach hook):**
+- Nadpis: *Coaches: turn your lactate tests into branded PDF reports — your logo, not the app's*
+- Text: If you test lactate for clients, the report is the product. This gives you LT1/LT2, zones and a clean PDF with your studio's logo + name — plus every athlete's history in one place. 2 months free.
+
+**Ad 2 — proti-spreadsheet:**
+- Nadpis: *Still running your athletes' lactate tests in a spreadsheet?*
+- Text: Built a coach workspace — test each athlete, store the curves over time, export a branded PDF, plan their training. One tool instead of five tabs. Free for 2 months.
+
+**Ad 3 — celý workflow:**
+- Nadpis: *Lactate testing software for coaches — test, brand the report, plan the training*
+- Text: Switch between your whole roster, generate branded lactate reports, and plan workouts into each athlete's calendar. Try the Coach plan free for 2 months.
+
+**Obrázky pro coach kampaň:** `/images/lactate-pdf-report.jpg` (branded report — nejsilnější), `/about-design/dashboard-home.png` (coach dashboard). Ideálně screenshot reportu s tvým vlastním logem, ať je vidět „tvoje značka".
 
 ## Obrázky (co použít)
 
