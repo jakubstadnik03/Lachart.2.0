@@ -74,6 +74,7 @@ const PRERENDER_ROUTES = [
   '/blog/best-lactate-analyzer-2026',
   '/blog/zone-2-training-lactate',
   '/blog/lactate-threshold-heart-rate',
+  '/blog/lactate-testing-software-for-coaches',
 ];
 
 async function startServer() {

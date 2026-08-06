@@ -1,6 +1,17 @@
 // Blog posts metadata — single source of truth for index cards, related posts, and SEO
 export const blogPosts = [
   {
+    slug:     'lactate-testing-software-for-coaches',
+    title:    'Lactate Testing Software for Coaches: What to Look For (and Why Spreadsheets Cost You)',
+    excerpt:  'If you test lactate for clients, the analyzer is only half the job. Branded reports, per-athlete history and training planning are where the right software pays for itself — here\'s the buying checklist.',
+    date:     '2026-07-12',
+    readTime: '10 min',
+    category: 'Testing Protocol',
+    tags:     ['lactate testing software', 'coaches', 'branded report', 'testing studio', 'athlete management', 'LT1', 'LT2'],
+    image:    '/images/lactate-pdf-report.jpg',
+    featured: true,
+  },
+  {
     slug:     'lactate-threshold-heart-rate',
     title:    'Lactate Threshold Heart Rate (LTHR): How to Find Yours and Train By It',
     excerpt:  'Your LTHR is the most useful heart-rate number in endurance training — and almost nobody\'s is what the %-of-max formulas say. What it is, the three ways to measure it, and how to build your HR zones around it.',
