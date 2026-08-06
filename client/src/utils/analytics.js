@@ -81,10 +81,12 @@ export function initAnalytics(measurementId) {
 }
 
 // ── Reddit Pixel (paid-ads conversion tracking) ────────────────────────────
-// Inert until REACT_APP_REDDIT_PIXEL_ID is set in the build env (same pattern
-// as GA). Once set, Reddit Ads can optimise for real conversions because we
-// fire SignUp on registration and Purchase on checkout success — not just clicks.
-const REDDIT_PIXEL_ID = process.env.REACT_APP_REDDIT_PIXEL_ID;
+// The pixel ID is public (it ships in the client bundle, exactly like the GA
+// measurement ID), so we hardcode it as the default — no build-env dependency,
+// works on the next deploy. An env var can still override it if needed. Once
+// live, Reddit Ads can optimise for real conversions because we fire SignUp on
+// registration and Purchase on checkout success — not just clicks.
+const REDDIT_PIXEL_ID = process.env.REACT_APP_REDDIT_PIXEL_ID || 'a2_iuvlnwg8sdrk';
 let redditInitialized = false;
 
 export function initRedditPixel() {
