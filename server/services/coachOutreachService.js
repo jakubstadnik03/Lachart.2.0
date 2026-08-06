@@ -446,7 +446,7 @@ function renderOutreachHtml(person, { unsubscribeUrl, loginUrl }) {
       <tr><td style="padding:16px 30px 4px;">
         <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border:1px dashed ${BRAND.accent};border-radius:14px;background:#FFF6F3;">
           <tr><td style="padding:16px 20px;text-align:center;">
-            <div style="font-size:17px;font-weight:800;color:${BRAND.ink};margin-bottom:4px;">2 months free</div>
+            <div style="font-size:17px;font-weight:800;color:${BRAND.ink};margin-bottom:4px;">2 weeks free</div>
             <div style="font-size:14px;color:${BRAND.muted};line-height:1.6;">
               ${escapeHtml(scale)} — take the first two months on me, and only keep it if it earns its place.
             </div>
@@ -462,7 +462,7 @@ function renderOutreachHtml(person, { unsubscribeUrl, loginUrl }) {
         <div style="text-align:center;padding:6px 0 6px;">
           <!-- Signs them straight in and lands on their subscription page: a
                login wall here is exactly where a warm click goes cold. -->
-          <a href="${escapeHtml(loginUrl)}" style="display:inline-block;background:${BRAND.accent};color:#fff;text-decoration:none;padding:15px 30px;border-radius:12px;font-weight:700;font-size:16px;box-shadow:0 2px 8px rgba(255,107,74,0.35);">See ${escapeHtml(planName)} — 2 months free</a>
+          <a href="${escapeHtml(loginUrl)}" style="display:inline-block;background:${BRAND.accent};color:#fff;text-decoration:none;padding:15px 30px;border-radius:12px;font-weight:700;font-size:16px;box-shadow:0 2px 8px rgba(255,107,74,0.35);">See ${escapeHtml(planName)} — 2 weeks free</a>
         </div>
         <p style="margin:14px 0 0;font-size:12px;color:${BRAND.muted};text-align:center;">
           That link signs you in automatically — no password needed.

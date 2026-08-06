@@ -332,10 +332,10 @@ exports.createCheckoutSession = async (req, res) => {
       // Let customers add their VAT/DIČ at checkout — useful for B2B coach
       // accounts; flows straight into the Stripe invoice.
       tax_id_collection: { enabled: process.env.STRIPE_AUTOMATIC_TAX === 'true' },
-      // 60-day (2 months) free trial for first-time subscribers.
+      // 14-day (2 weeks) free trial for first-time subscribers.
       // Overridable per-deploy via STRIPE_TRIAL_DAYS env var.
       subscription_data: alreadyTrialed ? undefined : {
-        trial_period_days: Number(process.env.STRIPE_TRIAL_DAYS) || 60,
+        trial_period_days: Number(process.env.STRIPE_TRIAL_DAYS) || 14,
       },
       // Require card upfront even during trial
       payment_method_collection: 'always',

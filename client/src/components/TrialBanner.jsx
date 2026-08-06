@@ -4,7 +4,7 @@ import { usePremium } from '../hooks/usePremium';
 import { isCapacitorNative } from '../utils/isNativeApp';
 
 /**
- * Slim, dismissible reminder that the 60-day free trial exists.
+ * Slim, dismissible reminder that the 2-week free trial exists.
  *
  * The welcome paywall fires once per user and is then gone forever, leaving
  * returning free users with no ambient nudge. This banner fills that gap:
@@ -38,7 +38,7 @@ const TrialBanner = () => {
     >
       <span className="text-lg shrink-0" aria-hidden>🎁</span>
       <div className="min-w-0 flex-1">
-        <p className="text-sm font-semibold text-gray-900">Try LaChart Pro free for 2 months</p>
+        <p className="text-sm font-semibold text-gray-900">Try LaChart Pro free for 2 weeks</p>
         <p className="text-xs text-gray-500">Unlimited tests, advanced analytics, PDF reports & more — cancel anytime.</p>
       </div>
       <span className="hidden sm:inline-flex items-center px-3 py-1.5 rounded-lg bg-primary text-white text-xs font-semibold shrink-0">

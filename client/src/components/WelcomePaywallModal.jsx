@@ -11,7 +11,7 @@ import { ATHLETE_PLAN_PRICE_LABEL, COACH_PLAN_PRICE_LABEL } from '../constants/p
  *
  * Shown to a freshly-registered or first-logged-in user on the dashboard.
  * Lets them either:
- *   - Start a 2-month free trial of Pro or Coach (direct Stripe Checkout), or
+ *   - Start a 2-week free trial of Pro or Coach (direct Stripe Checkout), or
  *   - Continue on the Free plan.
  *
  * Suppressed on native iOS (App Store guideline 3.1.1: no external paywalls).
@@ -119,7 +119,7 @@ export default function WelcomePaywallModal({ open, onClose, userName }) {
             Welcome to LaChart{userName ? `, ${userName}` : ''}!
           </h2>
           <p className="mt-2 text-sm text-gray-600 max-w-lg mx-auto">
-            Pick a plan to get started. Try Athlete or Coach <strong>free for 2 months</strong> — no charge today, cancel anytime.
+            Pick a plan to get started. Try Athlete or Coach <strong>free for 2 weeks</strong> — no charge today, cancel anytime.
           </p>
         </div>
 
@@ -146,7 +146,7 @@ export default function WelcomePaywallModal({ open, onClose, userName }) {
                 <div className="mb-4">
                   <div className="flex items-baseline gap-1">
                     <span className="text-2xl font-bold text-gray-900">Free</span>
-                    <span className="text-xs text-gray-500">for 2 months</span>
+                    <span className="text-xs text-gray-500">for 2 weeks</span>
                   </div>
                   <p className="text-xs text-gray-400 mt-0.5">then {plan.price} / month</p>
                 </div>
@@ -165,7 +165,7 @@ export default function WelcomePaywallModal({ open, onClose, userName }) {
                   disabled={loadingPlan !== null}
                   className={`w-full py-2.5 rounded-xl text-sm font-semibold transition-colors shadow-sm disabled:opacity-60 disabled:cursor-wait text-white bg-gradient-to-br ${plan.accent} hover:opacity-90`}
                 >
-                  {isLoading ? 'Redirecting…' : `Try ${plan.name} free for 2 months`}
+                  {isLoading ? 'Redirecting…' : `Try ${plan.name} free for 2 weeks`}
                 </button>
               </div>
             );

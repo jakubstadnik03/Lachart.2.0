@@ -39,7 +39,7 @@ const SEGMENTS = {
     heroTitle: 'You ran a lactate test. See the whole story.',
     heroBody:
       'Your test gave you thresholds and zones. Pro turns those into a complete training system — your full history, unlimited tests, and daily Form / Fitness / Fatigue.',
-    cta: 'Start your 60-day free trial',
+    cta: 'Start your 2-week free trial',
     ctaPath: '/settings?tab=subscription',
     secondaryCta: 'See your dashboard',
     secondaryPath: '/dashboard',

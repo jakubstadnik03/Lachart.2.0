@@ -124,7 +124,7 @@ const LactateTestingSoftwareForCoaches = () => (
       and exports a <strong>branded PDF with your logo and studio name</strong>. Every
       test is stored per athlete with curve-over-time history, and you can plan and
       analyse each athlete&apos;s training against those zones — all from one coach
-      workspace. There&apos;s a <strong>2-month free trial</strong> on the Coach plan,
+      workspace. There&apos;s a <strong>2-week free trial</strong> on the Coach plan,
       so you can run a full testing-and-training cycle with real clients before you
       pay anything.
     </p>

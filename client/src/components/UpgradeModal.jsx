@@ -334,14 +334,14 @@ export default function UpgradeModal({ isOpen, onClose, feature = 'This feature'
           </div>
 
           <p className="text-white/80 text-sm">
-            Unlock this with <span className="font-semibold text-white">LaChart {plan.name}</span> — start with 2 months free, no charge today.
+            Unlock this with <span className="font-semibold text-white">LaChart {plan.name}</span> — start with 2 weeks free, no charge today.
           </p>
         </div>
 
         <div className="px-6 py-4 overflow-y-auto">
           <div className="flex items-end gap-1 mb-3">
             <span className="text-3xl font-bold text-gray-900">{plan.price}</span>
-            <span className="text-gray-400 text-sm mb-1">/ month after 2-month free trial</span>
+            <span className="text-gray-400 text-sm mb-1">/ month after 2-week free trial</span>
           </div>
 
           <ul className="space-y-1.5 mb-5">
@@ -359,7 +359,7 @@ export default function UpgradeModal({ isOpen, onClose, feature = 'This feature'
             disabled={loading}
             className="w-full py-3 rounded-xl bg-primary text-white font-semibold text-sm hover:bg-primary/90 transition-colors shadow-sm disabled:opacity-60 disabled:cursor-wait"
           >
-            {loading ? 'Redirecting to checkout…' : `🎁 Try ${plan.name} free for 2 months`}
+            {loading ? 'Redirecting to checkout…' : `🎁 Try ${plan.name} free for 2 weeks`}
           </button>
           {error && (
             <p className="mt-2 text-xs text-red-600 text-center">

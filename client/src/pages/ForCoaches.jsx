@@ -45,12 +45,12 @@ const ForCoaches = () => {
     <div className="lc-page lc-page-in">
       <Helmet>
         <title>Lactate Testing Software for Coaches — Branded Reports & Athlete Management | LaChart</title>
-        <meta name="description" content="LaChart is lactate testing software built for coaches and testing studios: store every test, generate branded PDF reports with your logo, evaluate LT1/LT2, and plan & analyse your athletes' training. 2 months free." />
+        <meta name="description" content="LaChart is lactate testing software built for coaches and testing studios: store every test, generate branded PDF reports with your logo, evaluate LT1/LT2, and plan & analyse your athletes' training. 2 weeks free." />
         <meta name="keywords" content="lactate testing software, lactate testing software for coaches, lactate test report, branded lactate report, lactate testing studio software, coaching platform, LT1 LT2 software, athlete management software, endurance coaching software" />
         <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large" />
         <link rel="canonical" href={CANONICAL} />
         <meta property="og:title" content="Lactate Testing Software for Coaches | LaChart" />
-        <meta property="og:description" content="Store tests, generate branded PDF reports with your logo, evaluate LT1/LT2, plan & analyse your athletes' training. 2 months free." />
+        <meta property="og:description" content="Store tests, generate branded PDF reports with your logo, evaluate LT1/LT2, plan & analyse your athletes' training. 2 weeks free." />
         <meta property="og:type" content="website" />
         <meta property="og:url" content={CANONICAL} />
         <meta property="og:image" content="https://lachart.net/images/lactate-pdf-report.jpg" />
@@ -63,7 +63,7 @@ const ForCoaches = () => {
           applicationCategory: 'SportsApplication',
           operatingSystem: 'Web, iOS, Android',
           description: 'Lactate testing and endurance-coaching software: store tests, generate branded PDF reports, evaluate LT1/LT2, plan and analyse athlete training.',
-          offers: { '@type': 'Offer', price: '14.99', priceCurrency: 'EUR', description: 'Coach plan — 2-month free trial' },
+          offers: { '@type': 'Offer', price: '14.99', priceCurrency: 'EUR', description: 'Coach plan — 2-week free trial' },
           url: CANONICAL,
         })}</script>
       </Helmet>
@@ -84,7 +84,7 @@ const ForCoaches = () => {
               lets you plan and analyse your athletes&rsquo; training — all in one workspace.
             </p>
             <div style={{ display: 'flex', gap: 12, marginTop: 28, flexWrap: 'wrap', alignItems: 'center' }}>
-              <Link to="/signup?plan=coach" className="lc-btn-primary">🎁 Start your 2-month free trial</Link>
+              <Link to="/signup?plan=coach" className="lc-btn-primary">🎁 Start your 2-week free trial</Link>
               <a href="#pricing" className="lc-btn-ghost">See pricing</a>
             </div>
             <p style={{ color: LC.muted, fontSize: 13.5, marginTop: 14 }}>No charge today · cancel anytime · unlimited athletes</p>
@@ -189,10 +189,10 @@ const ForCoaches = () => {
       <section id="pricing" className="lc-sectpad" style={{ paddingTop: 12 }}>
         <div ref={pushRef} className="lc-reveal" style={{ textAlign: 'center', marginBottom: 28 }}>
           <Eyebrow>Coach plan</Eyebrow>
-          <h2 className="lc-big" style={{ margin: '14px 0 0' }}>Run your whole roster — 2 months free</h2>
+          <h2 className="lc-big" style={{ margin: '14px 0 0' }}>Run your whole roster — 2 weeks free</h2>
         </div>
         <div ref={pushRef} className="lc-reveal scale lc-card" style={{ maxWidth: 460, margin: '0 auto', border: '2px solid ' + LC.primary, textAlign: 'center', padding: 32 }}>
-          <span style={{ display: 'inline-block', background: LC.primaryTint, color: LC.primaryDark, fontWeight: 700, fontSize: 13, padding: '5px 12px', borderRadius: 20, marginBottom: 14 }}>🎁 2-month free trial</span>
+          <span style={{ display: 'inline-block', background: LC.primaryTint, color: LC.primaryDark, fontWeight: 700, fontSize: 13, padding: '5px 12px', borderRadius: 20, marginBottom: 14 }}>🎁 2-week free trial</span>
           <div style={{ fontSize: 46, fontWeight: 800, letterSpacing: '-.03em', color: LC.ink }}>€14.99<span style={{ fontSize: 17, color: LC.muted, fontWeight: 600 }}> / month</span></div>
           <p style={{ color: LC.muted, fontSize: 14, margin: '6px 0 0' }}>No charge today · cancel anytime</p>
           <ul style={{ listStyle: 'none', padding: 0, margin: '20px 0 24px', textAlign: 'left', display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -200,7 +200,7 @@ const ForCoaches = () => {
               <li key={li} style={{ display: 'flex', gap: 10, fontSize: 14.5, color: LC.text }}><Check />{li}</li>
             ))}
           </ul>
-          <Link to="/signup?plan=coach" className="lc-btn-primary" style={{ width: '100%', justifyContent: 'center' }}>Start your 2-month free trial</Link>
+          <Link to="/signup?plan=coach" className="lc-btn-primary" style={{ width: '100%', justifyContent: 'center' }}>Start your 2-week free trial</Link>
         </div>
       </section>
 

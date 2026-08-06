@@ -3165,8 +3165,8 @@ const SettingsPage = () => {
               <div className="bg-gradient-to-r from-primary/10 to-primary/5 border border-primary/20 rounded-2xl p-4 flex items-center gap-3">
                 <span className="text-2xl">🎁</span>
                 <div>
-                  <p className="font-semibold text-gray-900 text-sm">2 months free — no charge today</p>
-                  <p className="text-xs text-gray-500 mt-0.5">Start any paid plan with a 60-day free trial. Cancel anytime before it ends and you won't be billed.</p>
+                  <p className="font-semibold text-gray-900 text-sm">2 weeks free — no charge today</p>
+                  <p className="text-xs text-gray-500 mt-0.5">Start any paid plan with a 2-week free trial. Cancel anytime before it ends and you won't be billed.</p>
                 </div>
               </div>
             )}
@@ -3209,7 +3209,7 @@ const SettingsPage = () => {
                           {showTrialOnCard ? (
                             <>
                               <span className={`${isMobile ? 'text-2xl' : 'text-3xl'} font-bold text-primary`}>Free</span>
-                              <span className="text-sm text-gray-400 mb-1">for 2 months</span>
+                              <span className="text-sm text-gray-400 mb-1">for 2 weeks</span>
                             </>
                           ) : (
                             <>
@@ -3258,7 +3258,7 @@ const SettingsPage = () => {
                             {subActionLoading
                               ? 'Loading…'
                               : showTrialOnCard
-                              ? `Try ${plan.name} free for 2 months`
+                              ? `Try ${plan.name} free for 2 weeks`
                               : isUpgrade
                               ? `Upgrade to ${plan.name}`
                               : `Switch to ${plan.name}`}

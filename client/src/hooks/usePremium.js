@@ -45,7 +45,7 @@ export function usePremium() {
    *
    * isPremium is `user != null && user.isPremium === true`, so during the
    * moment before the profile resolves it reads exactly like "free" — which
-   * made the sidebar flash a "Start 60-day free trial" button at paying users
+   * made the sidebar flash a "Start 2-week free trial" button at paying users
    * on every navigation. Anything that renders only for non-premium users must
    * wait for this rather than trusting !isPremium.
    */

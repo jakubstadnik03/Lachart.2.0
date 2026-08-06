@@ -178,7 +178,7 @@ const samples = [
     args: {
       title: "Your free trial ends in 3 days",
       content: `
-        <p>Quick heads-up — your 60-day LaChart trial wraps up on <strong>July 31, 2026</strong>.</p>
+        <p>Quick heads-up — your 14-day LaChart trial wraps up on <strong>July 31, 2026</strong>.</p>
         <p>You've logged <strong>14 lactate tests</strong> and built <strong>22 training-zone profiles</strong> on the trial. Nice work.</p>
         <p>Upgrade today and you keep:</p>
         <ul>
