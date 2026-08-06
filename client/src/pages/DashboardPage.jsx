@@ -426,6 +426,8 @@ export default function DashboardPage() {
   const [activeModal, setActiveModal] = useState(null);
   // Ref so timer callbacks always see the latest queue without stale closure
   const modalQueueRef = useRef([]);
+  // The queue is built once per user; a later profile refresh must not re-queue.
+  const modalQueueBuiltFor = useRef(null);
 
   useEffect(() => {
     const param = searchParams.get('openRaceFeedback');
@@ -452,6 +454,16 @@ export default function DashboardPage() {
   // Build & schedule the queue once when the user is known.
   useEffect(() => {
     if (!isAuthenticated || !user?._id) return;
+
+    // Wait for a user that actually carries the dismissal flags. The login
+    // response used to omit `onboarding` entirely, so straight after sign-in
+    // every flag read as undefined and each already-dismissed modal was queued
+    // again — /user/profile filled them in a moment later, but by then the
+    // queue was built and the timer running. Both ends are fixed; this guard
+    // also covers any older cached user still in localStorage.
+    if (!user.onboarding) return;
+    if (modalQueueBuiltFor.current === user._id) return;
+    modalQueueBuiltFor.current = user._id;
 
     const uid = user._id;
     const queue = [];
@@ -521,7 +533,7 @@ export default function DashboardPage() {
     }, MODAL_FIRST_DELAY);
     return () => clearTimeout(t);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAuthenticated, user?._id, isPremium]);
+  }, [isAuthenticated, user?._id, user?.onboarding, isPremium]);
 
   // Advance to the next queued modal after the current one is dismissed.
   const advanceModalQueue = useCallback(() => {

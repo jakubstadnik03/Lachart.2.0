@@ -81,7 +81,12 @@ class LoginAbl {
                     premium: user.premium === true,
                     isPremium: premiumState.isPremium,
                     premiumSource: premiumState.source,
-                    athletes: user.athletes || []
+                    athletes: user.athletes || [],
+                    // Without this the client caches a user whose dismissal flags
+                    // are all undefined, and every "seen once" modal reopens on
+                    // the next sign-in. /user/profile returns it too, but that
+                    // lands after the dashboard has already queued them.
+                    onboarding: user.onboarding || {}
                 }
             });
 
