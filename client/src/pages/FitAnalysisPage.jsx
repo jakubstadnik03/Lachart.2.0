@@ -22,6 +22,13 @@ import WorkoutCompareModal from '../components/WorkoutPlanner/WorkoutCompareModa
 import TrainingStats from '../components/FitAnalysis/TrainingStats';
 import CalendarPeriodStats from '../components/FitAnalysis/CalendarPeriodStats';
 import LapsTable from '../components/FitAnalysis/LapsTable';
+import useHealthEpisodes from '../components/Health/useHealthEpisodes';
+import HealthCalendarStrip from '../components/Health/HealthCalendarStrip';
+import HealthCalendarPanels, { panelDomId } from '../components/Health/HealthCalendarPanels';
+import HealthCheckInModal from '../components/Health/HealthCheckInModal';
+import NewEpisodeModal from '../components/Health/NewEpisodeModal';
+import NativeCheckInSheet from '../components/Health/NativeCheckInSheet';
+import NativeNewEpisodeSheet from '../components/Health/NativeNewEpisodeSheet';
 import { useAuth } from '../context/AuthProvider';
 import { useNotification } from '../context/NotificationContext';
 import UpgradeModal from '../components/UpgradeModal';
@@ -1460,6 +1467,15 @@ const FitAnalysisPage = () => {
   const { activityId, athleteId: athleteIdParam } = useParams();
   const [selectedAthleteId, setSelectedAthleteId] = useState(null);
   const [pendingAthleteIds, setPendingAthleteIds] = useState([]);
+  // Health & injury lives on the calendar rather than its own nav entry. null
+  // means "me" - the server infers the athlete from the token in that case.
+  const healthAthleteId = selectedAthleteId && String(selectedAthleteId) !== String(user?._id || '') ? selectedAthleteId : null;
+  const {
+    items: healthItems, catalog: healthCatalog, checkInsByEpisode: healthCheckIns,
+    past: healthPast, loading: healthLoading, error: healthError, reload: reloadHealth,
+  } = useHealthEpisodes(healthAthleteId);
+  const [healthCheckInTarget, setHealthCheckInTarget] = useState(null);
+  const [healthShowNew, setHealthShowNew] = useState(false);
   const [trainings, setTrainings] = useState([]);
   const [commentCounts, setCommentCounts] = useState({});
   const [regularTrainings, setRegularTrainings] = useState([]); // Trainings from /training route
@@ -4476,6 +4492,17 @@ const FitAnalysisPage = () => {
 
         {/* Calendar Section - hidden on mobile when training detail is open */}
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, delay: 0.1 }} className={`${isMobile && (selectedTraining || selectedStrava) ? 'hidden' : ''} ${isMobile ? 'flex-1 min-h-0' : ''}`}>
+        <div className="mb-3">
+          <HealthCalendarStrip
+            items={healthItems}
+            loading={healthLoading}
+            error={healthError}
+            canLog={(healthCatalog?.bodySites?.length || 0) > 0}
+            onLogNew={() => setHealthShowNew(true)}
+            onCheckIn={setHealthCheckInTarget}
+            onOpenEpisode={(item) => document.getElementById(panelDomId(item?.episode?._id))?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+          />
+        </div>
         {externalActivitiesLoading && calendarMergedActivities.length === 0 && (
           <div className="mb-3 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm" aria-busy="true">
             <div className="mb-4 flex items-center justify-between">
@@ -4651,6 +4678,19 @@ const FitAnalysisPage = () => {
           ) : null}
         />
         </motion.div>
+
+        {/* Health windows sit directly under the calendar, and follow it out of
+            the way when a training detail takes over the mobile screen. */}
+        {!(isMobile && (selectedTraining || selectedStrava)) && (
+          <HealthCalendarPanels
+            items={healthItems}
+            catalog={healthCatalog}
+            checkInsByEpisode={healthCheckIns}
+            past={healthPast}
+            onCheckIn={setHealthCheckInTarget}
+            onChanged={reloadHealth}
+          />
+        )}
 
         {!isMobile && !selectedTraining && !selectedStrava && !detailLoading && calendarPeriod && (
           <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, delay: 0.15 }}>
@@ -6881,6 +6921,54 @@ const FitAnalysisPage = () => {
           <span>{calendarLactateError}</span>
           <button onClick={() => setCalendarLactateError(null)} className="rounded-lg border border-red-300 bg-white px-3 py-1 text-xs font-medium text-red-900 hover:bg-red-100">✕</button>
         </div>
+      )}
+
+      {/* Health check-in / new episode. Both modals close themselves on save. */}
+      {isCapacitorNative() ? (
+        <>
+          <NativeNewEpisodeSheet
+            open={healthShowNew}
+            onClose={() => setHealthShowNew(false)}
+            onCreated={reloadHealth}
+            catalog={healthCatalog.catalog}
+            bodySites={healthCatalog.bodySites}
+            athleteId={healthAthleteId}
+          />
+          {/* Keyed on the episode so switching targets starts from a clean form. */}
+          {healthCheckInTarget && (
+            <NativeCheckInSheet
+              key={healthCheckInTarget.episode._id}
+              open
+              onClose={() => setHealthCheckInTarget(null)}
+              onSaved={reloadHealth}
+              episode={healthCheckInTarget.episode}
+              catalogEntry={healthCheckInTarget.catalogEntry}
+              functionalTests={healthCatalog.functionalTests}
+            />
+          )}
+        </>
+      ) : (
+        <>
+          {healthShowNew && (
+            <NewEpisodeModal
+              catalog={healthCatalog.catalog}
+              bodySites={healthCatalog.bodySites}
+              onClose={() => setHealthShowNew(false)}
+              onCreated={reloadHealth}
+              athleteId={healthAthleteId}
+            />
+          )}
+          {healthCheckInTarget && (
+            <HealthCheckInModal
+              key={healthCheckInTarget.episode._id}
+              episode={healthCheckInTarget.episode}
+              catalogEntry={healthCheckInTarget.catalogEntry}
+              functionalTests={healthCatalog.functionalTests}
+              onClose={() => setHealthCheckInTarget(null)}
+              onSaved={reloadHealth}
+            />
+          )}
+        </>
       )}
 
     </motion.div>

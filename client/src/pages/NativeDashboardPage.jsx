@@ -10,6 +10,7 @@ import WeeklySummaryCarousel from '../components/NativeDashboard/WeeklySummaryCa
 import LastTestCard      from '../components/NativeDashboard/LastTestCard';
 import ZoneDistCard      from '../components/NativeDashboard/ZoneDistCard';
 import AppleHealthWellnessCard from '../components/NativeDashboard/AppleHealthWellnessCard';
+import HealthEpisodeCard from '../components/NativeDashboard/HealthEpisodeCard';
 import WellnessDetailSheet from '../components/shared/WellnessDetailSheet';
 import OnboardingChecklist from '../components/NativeDashboard/OnboardingChecklist';
 import TrainingInsightsCard from '../components/DashboardPage/TrainingInsightsCard';
@@ -1372,6 +1373,18 @@ export default function NativeDashboardPage({
               onPlanWorkout={onPlanWorkout}
             />
           </div>
+
+          {/* 0a · Open injury or illness, self-hiding when nothing is open.
+              It sits above everything else because an athlete with something
+              open needs today's ceiling before they read today's suggestion.
+              No wrapper div: the card renders nothing at all when healthy, and
+              an empty wrapper would still cost a gap and a dead snap point. */}
+          <HealthEpisodeCard
+            key={`nhec-${athleteId || user?._id || user?.id || 'self'}`}
+            athleteId={athleteId || user?._id || user?.id}
+            loading={loading}
+            style={{ ...cardEntry(0), ...snapStyle }}
+          />
 
           {/* 0 · Weekly summary carousel (swipeable) */}
           <div style={{ ...cardEntry(0), ...snapStyle }}>

@@ -57,6 +57,8 @@ const Zone2TrainingLactate = lazy(() => import('./pages/blog/Zone2TrainingLactat
 const LactateThresholdHeartRate = lazy(() => import('./pages/blog/LactateThresholdHeartRate'));
 const AdminDashboard = lazy(() => import('./pages/AdminDashboard'));
 const WorkoutPlannerPage = lazy(() => import('./pages/WorkoutPlannerPage'));
+const HealthPage = lazy(() => import('./pages/HealthPage'));
+const AtpPage = lazy(() => import('./pages/AtpPage'));
 const WorkoutExecutionPage = lazy(() => import('./pages/WorkoutExecutionPage'));
 const FitAnalysisPage = lazy(() => import('./pages/FitAnalysisPage'));
 const LactateTestingPage = lazy(() => import('./pages/LactateTestingPage'));
@@ -381,7 +383,16 @@ function AppRoutes() {
             element={<LactateStatisticsPage />}
           />
           <Route path="/workout-planner" element={<WorkoutPlannerPage />} />
+          <Route
+            path="/annual-training-plan"
+            element={(
+              <ProtectedRoute allowedRoles={['admin']}>
+                <AtpPage />
+              </ProtectedRoute>
+            )}
+          />
           <Route path="/workout-execution/:plannedWorkoutId" element={<WorkoutExecutionPage />} />
+          <Route path="/health" element={<HealthPage />} />
           <Route path="/athletes" element={<Athletes />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/support" element={<Support />} />
