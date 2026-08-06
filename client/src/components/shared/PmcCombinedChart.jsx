@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import EChartsModule from 'echarts-for-react';
 import { ArrowPathIcon } from '@heroicons/react/24/outline';
-import api from '../../services/api';
+import api, { getTodayMetrics } from '../../services/api';
 import { getPlannedWorkouts } from '../../services/workoutPlannerApi';
 import {
   computePmcFromActivities,
@@ -52,6 +52,31 @@ export default function PmcCombinedChart({
   const [tssTick, setTssTick] = useState(0);
   const [plannedWorkouts, setPlannedWorkouts] = useState([]);
   const [showProjection, setShowProjection] = useState(true);
+  /**
+   * Fitness / Form / Fatigue as the server computes them.
+   *
+   * This chart used to headline its own numbers from computePmcFromActivities
+   * while the dashboard headlines the server's calculateFormFitnessData — two
+   * implementations of one metric, so the same athlete read differently on two
+   * pages. The server is the agreed source of truth; the local series still
+   * draws the curve (it has the full zoom range and feeds the planned-TSS
+   * projection, neither of which the metrics endpoint provides).
+   */
+  const [serverMetrics, setServerMetrics] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const target = athleteId || user?._id || null;
+    if (!target) { setServerMetrics(null); return undefined; }
+    getTodayMetrics(target)
+      .then((res) => {
+        const d = res?.data ?? res;
+        if (!cancelled && d && Number.isFinite(Number(d.fitness))) setServerMetrics(d);
+      })
+      // Fall back to the local numbers rather than showing nothing.
+      .catch(() => { if (!cancelled) setServerMetrics(null); });
+    return () => { cancelled = true; };
+  }, [athleteId, user?._id]);
 
   const profile = useMemo(
     () => mergeProfileZones(userProfile, user) || userProfile || user,
@@ -201,7 +226,7 @@ export default function PmcCombinedChart({
   }, [chartSeries, viewDays]);
 
   const displayPoint = hoverIndex >= 0 ? chartSeries[hoverIndex] : null;
-  const headline = todayMetrics || {
+  const headline = serverMetrics || todayMetrics || {
     fitness: displayPoint?.Fitness ?? 0,
     fatigue: displayPoint?.Fatigue ?? 0,
     form: displayPoint?.Form ?? 0,
