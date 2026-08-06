@@ -23,6 +23,7 @@ import SpiderChart from "../components/DashboardPage/SpiderChart";
 import FormFitnessChart from "../components/DashboardPage/FormFitnessChart";
 import WeeklyTrainingLoad from "../components/DashboardPage/WeeklyTrainingLoad";
 import WellnessCard from "../components/DashboardPage/WellnessCard";
+import HealthStatusCard from "../components/DashboardPage/HealthStatusCard";
 import TrainingInsightsCard from "../components/DashboardPage/TrainingInsightsCard";
 import RaceCountdownCard from "../components/DashboardPage/RaceCountdownCard";
 import PostRaceFeedbackCard from "../components/DashboardPage/PostRaceFeedbackCard";
@@ -31,7 +32,8 @@ import { computePmcFromActivities } from '../utils/formFitnessFromActivities';
 import { PMC_MAX_VIEW_DAYS } from '../utils/pmcChartAxes';
 import { mergeProfileZones } from '../utils/inferThresholdsFromActivities';
 import { maybePromptTrainingZonesSetup } from '../utils/trainingZonesSetup';
-import api, { getFitTrainings, listExternalActivities, autoSyncStravaActivities, getIntegrationStatus, getStravaAuthUrl, addTraining, updateTraining, getStravaActivityDetail, getFormFitnessData, getTodayMetrics } from '../services/api';
+import api, { getFitTrainings, listExternalActivities, autoSyncStravaActivities, getIntegrationStatus, getStravaAuthUrl, addTraining, updateTraining, getStravaActivityDetail, getFormFitnessData, getTodayMetrics, updateUserProfile } from '../services/api';
+import { RELEASE_TAG } from '../content/whatsNewSlides';
 import { dedupeMergedCalendarActivities } from '../utils/dedupeMergedCalendarActivities';
 import { notifyCalendarDataUpdated } from '../utils/calendarActivitiesForPmc';
 import { maybeNotifyStravaActivitiesImported } from '../utils/stravaImportLocalNotification';
@@ -481,7 +483,14 @@ export default function DashboardPage() {
 
     // 2. What's new — web only, once per release tag. Skipped when the tour
     //    is queued this session (identical deck — never show it twice).
-    if (!tourQueued && !localStorage.getItem(whatsNewSeenKey(uid))) {
+    // Server flag first: it survives logout and reaches the native app, which
+    // has its own storage. localStorage stays as the fast local check so the
+    // modal can't flash before the profile loads.
+    const seenTagOnServer = user?.onboarding?.whatsNewSeenTag;
+    const alreadySeen = seenTagOnServer === RELEASE_TAG
+      || user?.onboarding?.featureTourDone === true
+      || !!localStorage.getItem(whatsNewSeenKey(uid));
+    if (!tourQueued && !alreadySeen) {
       queue.push('whatsNew');
     }
 
@@ -521,17 +530,39 @@ export default function DashboardPage() {
   const showIOSLaunch      = activeModal === 'iosLaunch';
   const showFeatureTour    = activeModal === 'featureTour';
 
+  /**
+   * Mirror a modal dismissal into the user document.
+   *
+   * localStorage alone was not enough: logout does a wholesale wipe (KEEP_KEYS
+   * is just 'cookiesAccepted'), so "What's new" reappeared on every sign-in,
+   * and the native app has its own storage so it never knew about the web
+   * dismissal either. onboarding.* already exists for exactly this — "persisted
+   * in DB so it syncs across devices".
+   */
+  const persistOnboardingFlag = useCallback((patch) => {
+    if (!user?._id) return;
+    updateUserProfile({ onboarding: patch })
+      .then((res) => {
+        const updated = res?.data ?? res;
+        if (updated?._id) window.dispatchEvent(new CustomEvent('userUpdated', { detail: updated }));
+      })
+      // Local storage still carries this session — a failed sync must not
+      // block closing a modal.
+      .catch((e) => console.warn('[Modals] could not persist dismissal:', e?.message));
+  }, [user?._id]);
+
   const dismissFeatureTour = useCallback(() => {
     if (user?._id) {
       localStorage.setItem(featureTourSeenKey(user._id), '1');
       // The tour IS the What's New deck — don't show the same slides again.
       localStorage.setItem(whatsNewSeenKey(user._id), '1');
+      persistOnboardingFlag({ featureTourDone: true, whatsNewSeenTag: RELEASE_TAG });
     }
     import('../utils/analytics')
       .then(({ trackFeatureTourClosed }) => trackFeatureTourClosed())
       .catch(() => {});
     advanceModalQueue();
-  }, [user?._id, advanceModalQueue]);
+  }, [user?._id, advanceModalQueue, persistOnboardingFlag]);
 
   const dismissWelcomePaywall = useCallback(() => {
     if (user?._id) localStorage.setItem(`welcomePaywall_seen_${user._id}`, '1');
@@ -539,9 +570,12 @@ export default function DashboardPage() {
   }, [user?._id, advanceModalQueue]);
 
   const dismissWhatsNew = useCallback(() => {
-    if (user?._id) localStorage.setItem(whatsNewSeenKey(user._id), '1');
+    if (user?._id) {
+      localStorage.setItem(whatsNewSeenKey(user._id), '1');
+      persistOnboardingFlag({ whatsNewSeenTag: RELEASE_TAG });
+    }
     advanceModalQueue();
-  }, [user?._id, advanceModalQueue]);
+  }, [user?._id, advanceModalQueue, persistOnboardingFlag]);
 
   const dismissIOSLaunch = useCallback(() => {
     if (user?._id) localStorage.setItem(iosLaunchSeenKey(user._id), '1');
@@ -2974,6 +3008,13 @@ export default function DashboardPage() {
             transition={{ delay: 0.23 }}
             className="lg:col-span-5 md:col-span-2 flex flex-col gap-4"
           >
+            {/* Above the insights card on purpose: when something is injured,
+                the ceiling matters more than the suggestion. Renders nothing
+                when there is no open episode. */}
+            <HealthStatusCard
+              key={`hsc-${dashboardDataAthleteId}`}
+              athleteId={dashboardDataAthleteId}
+            />
             <TrainingInsightsCard
               key={`tic-${dashboardDataAthleteId}`}
               athleteId={dashboardDataAthleteId}

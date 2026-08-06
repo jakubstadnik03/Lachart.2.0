@@ -265,7 +265,12 @@ const userSchema = new mongoose.Schema({
     basicProfileDone: { type: Boolean, default: false },
     unitsDone: { type: Boolean, default: false },
     trainingZonesDone: { type: Boolean, default: false },
-    walkthroughDone: { type: Boolean, default: false }
+    walkthroughDone: { type: Boolean, default: false },
+    /** Release tag of the last "What's new" deck the user dismissed. Stored
+     *  here rather than localStorage because logout wipes local storage
+     *  wholesale, so the modal came back on every single sign-in. */
+    whatsNewSeenTag: { type: String, default: null },
+    featureTourDone: { type: Boolean, default: false }
   },
   // User preferences for units
   units: {

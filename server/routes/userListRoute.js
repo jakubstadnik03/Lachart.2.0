@@ -849,13 +849,17 @@ router.put("/edit-profile", verifyToken, async (req, res) => {
             const existing = await userDao.findById(userId);
             const current = existing?.onboarding
                 ? (typeof existing.onboarding.toObject === 'function' ? existing.onboarding.toObject() : { ...existing.onboarding })
-                : { basicProfileDone: false, unitsDone: false, trainingZonesDone: false, walkthroughDone: false };
+                : { basicProfileDone: false, unitsDone: false, trainingZonesDone: false, walkthroughDone: false, whatsNewSeenTag: null, featureTourDone: false };
             const ob = req.body.onboarding;
             updateData.onboarding = {
                 basicProfileDone: ob.basicProfileDone === true || current.basicProfileDone === true,
                 unitsDone: ob.unitsDone === true || current.unitsDone === true,
                 trainingZonesDone: ob.trainingZonesDone === true || current.trainingZonesDone === true,
-                walkthroughDone: ob.walkthroughDone === true || current.walkthroughDone === true
+                walkthroughDone: ob.walkthroughDone === true || current.walkthroughDone === true,
+                featureTourDone: ob.featureTourDone === true || current.featureTourDone === true,
+                // A tag, not a boolean: dismissing the January deck must not
+                // suppress the next release's deck.
+                whatsNewSeenTag: ob.whatsNewSeenTag || current.whatsNewSeenTag || null
             };
         }
 

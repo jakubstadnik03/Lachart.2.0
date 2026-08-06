@@ -12,6 +12,19 @@ const swaggerUi = require('swagger-ui-express');
 const app = express();
 const PORT = process.env.PORT || 8000;
 
+// Heap headroom check. The process died with "Reached heap limit" while the
+// Render instance was only ~20% used: --max-old-space-size was 400MB against
+// 2GB of available RAM, so Node refused memory the box was happy to give.
+// Log the actual ceiling at boot — next time the number is in the log rather
+// than being inferred from a crash.
+try {
+  const heapCapMb = Math.round(require('v8').getHeapStatistics().heap_size_limit / 1048576);
+  console.log(`[Config] Node heap limit: ${heapCapMb} MB`);
+  if (heapCapMb < 900) {
+    console.warn(`[Config] Heap limit is only ${heapCapMb} MB — raise --max-old-space-size in the start script if the host has more RAM.`);
+  }
+} catch { /* v8 stats unavailable — not worth failing boot over */ }
+
 // Public web address used to build every link we email out — verification,
 // password reset, receipts, weekly digests, campaigns, one-click sign-in.
 //
