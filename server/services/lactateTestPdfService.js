@@ -443,20 +443,56 @@ function getLogoBase64() {
   return _logoBase64;
 }
 
+/**
+ * Turn a coach's stored logo into something jsPDF can draw.
+ *
+ * Settings stores uploads as a base64 data URL, which jsPDF accepts directly;
+ * a pasted https:// address has to be fetched here because the PDF is built
+ * server-side. Guarded on scheme, size and content type — a report must never
+ * hang or blow up over a decorative image.
+ *
+ * @returns {Promise<string|null>} data URL, or null to fall back to LaChart's logo
+ */
+async function resolveBrandingLogo(logoUrl) {
+  const url = String(logoUrl || '').trim();
+  if (!url) return null;
+  if (url.startsWith('data:image/')) return url;
+  if (!/^https:\/\//i.test(url)) return null;   // no http, no file paths
+
+  try {
+    const axios = require('axios');
+    const resp = await axios.get(url, {
+      responseType: 'arraybuffer',
+      timeout: 6000,
+      maxContentLength: 3 * 1024 * 1024,
+      validateStatus: (st) => st === 200,
+    });
+    const type = String(resp.headers['content-type'] || '');
+    if (!/^image\/(png|jpe?g|webp)$/i.test(type)) return null;   // jsPDF can't take SVG
+    return `data:${type};base64,${Buffer.from(resp.data).toString('base64')}`;
+  } catch {
+    return null;   // unreachable or too big — the report still prints
+  }
+}
+
 function drawHeader(doc, title, pageW, branding = null) {
   doc.setFillColor(...BRAND.primary);
   doc.rect(0, 0, pageW, 28, 'F');
 
-  // Use coach's logo URL if provided, otherwise fall back to built-in LaChart logo
-  const logoB64 = getLogoBase64();
-  const brandLogoUrl = branding?.logoUrl;
+  // The coach's logo, resolved to a data URL before rendering, falls back to
+  // LaChart's. Both branches here used to draw the built-in logo regardless,
+  // so a coach who uploaded their own never saw it on a server-made report.
   let logoAdded = false;
-
-  // Try coach logo first (it's a URL — skip for server-side; use built-in only)
-  if (!brandLogoUrl && logoB64) {
-    try { doc.addImage(logoB64, 'PNG', 10, 4, 20, 20); logoAdded = true; } catch { /* ignore */ }
-  } else if (logoB64) {
-    try { doc.addImage(logoB64, 'PNG', 10, 4, 20, 20); logoAdded = true; } catch { /* ignore */ }
+  if (branding?.logoData) {
+    const fmt = /jpe?g/i.test(branding.logoData.slice(0, 30)) ? 'JPEG'
+      : /webp/i.test(branding.logoData.slice(0, 30)) ? 'WEBP' : 'PNG';
+    try { doc.addImage(branding.logoData, fmt, 10, 4, 20, 20); logoAdded = true; } catch { /* fall through */ }
+  }
+  if (!logoAdded) {
+    const logoB64 = getLogoBase64();
+    if (logoB64) {
+      try { doc.addImage(logoB64, 'PNG', 10, 4, 20, 20); logoAdded = true; } catch { /* ignore */ }
+    }
   }
 
   const brandName = branding?.title || 'LaChart';
@@ -538,8 +574,11 @@ async function generateTestReportPdf(requesterUserId, testId, overrides = {}) {
     let branding = null;
     try {
       const requesterUser = await User.findById(requesterUserId).select('coachBranding').lean();
-      if (requesterUser?.coachBranding?.title || requesterUser?.coachBranding?.trademark) {
-        branding = requesterUser.coachBranding;
+      const cb = requesterUser?.coachBranding;
+      // Previously required title or trademark, so a coach who had set only a
+      // logo (or only contact details) got no branding at all.
+      if (cb && (cb.title || cb.trademark || cb.logoUrl || cb.subtitle || cb.email || cb.web || cb.phone)) {
+        branding = { ...cb, logoData: await resolveBrandingLogo(cb.logoUrl) };
       }
     } catch { /* non-fatal — fall back to LaChart default */ }
 
