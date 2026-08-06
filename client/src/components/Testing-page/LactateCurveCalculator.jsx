@@ -851,6 +851,7 @@ const LactateCurveCalculator = ({ mockData, athleteId: athleteIdProp = null, dem
   const [showEmailModal, setShowEmailModal] = useState(false);
   const [emailTo, setEmailTo] = useState('');
   const [downloadingPdf, setDownloadingPdf] = useState(false);
+  const [emailingPdf, setEmailingPdf] = useState(false);
   const [pdfStatus, setPdfStatus] = useState(null); // { type: 'success'|'error', message: string }
   const [showPdfPreview, setShowPdfPreview]   = useState(false);
   const [pdfPreviewUrl, setPdfPreviewUrl]     = useState(null);
@@ -1232,6 +1233,41 @@ const LactateCurveCalculator = ({ mockData, athleteId: athleteIdProp = null, dem
       setPdfStatus({ type: 'error', message: e?.message || 'Failed to generate PDF.' });
     } finally {
       setDownloadingPdf(false);
+    }
+  };
+
+  // Email the report straight from the preview. The PDF is rebuilt from the
+  // current params rather than reusing the preview blob, so an edit made without
+  // pressing "Update Preview" still reaches the athlete — same rule as Download.
+  const handleEmailPdf = async () => {
+    const testId = mockData?._id;
+    if (!testId) { setPdfStatus({ type: 'error', message: 'Missing test id.' }); return; }
+    try {
+      setEmailingPdf(true);
+      setPdfStatus(null);
+      const blob = await generatePdfBlob(buildPdfParams());
+      const pdfBase64 = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onerror = () => reject(new Error('Could not read the generated PDF.'));
+        reader.onload = () => resolve(String(reader.result).split(',')[1] || '');
+        reader.readAsDataURL(blob);
+      });
+      const { data } = await api.post(`/test/${testId}/email-pdf`, { pdfBase64 });
+      const to = data?.recipients?.[0];
+      setPdfStatus({ type: 'success', message: to ? `Report sent to ${to}.` : 'Report sent.' });
+      setShowPdfPreview(false);
+    } catch (e) {
+      const reason = e?.response?.data?.reason;
+      const msg =
+        reason === 'email_not_configured' ? 'Email is not configured on the server.' :
+        reason === 'email_notifications_disabled' ? 'This athlete has turned email notifications off.' :
+        reason === 'no_recipient_email' ? 'This athlete has no email address on file.' :
+        reason === 'forbidden' ? 'You do not have access to send this report.' :
+        reason === 'pdf_too_large' ? 'The PDF is too large to email.' :
+        (e?.response?.data?.error || e?.message || 'Failed to send the report.');
+      setPdfStatus({ type: 'error', message: msg });
+    } finally {
+      setEmailingPdf(false);
     }
   };
 
@@ -3860,13 +3896,27 @@ const LactateCurveCalculator = ({ mockData, athleteId: athleteIdProp = null, dem
                     {pdfPreviewLoading ? 'Updating…' : 'Update Preview'}
                   </button>
                   <button
+                    onClick={handleEmailPdf}
+                    disabled={emailingPdf || downloadingPdf || pdfPreviewLoading}
+                    title={athleteProfile?.email ? `Send this PDF to ${athleteProfile.email}` : 'Send this PDF to the athlete'}
+                    className="flex-1 md:flex-none min-h-[44px] px-3 py-2 text-sm rounded-lg border border-gray-200 bg-white hover:bg-gray-50 active:bg-gray-100 disabled:opacity-50 transition-colors touch-manipulation flex items-center justify-center gap-2"
+                  >
+                    <EnvelopeIcon className={`w-4 h-4 flex-shrink-0 ${emailingPdf ? 'animate-pulse' : ''}`} />
+                    {emailingPdf ? 'Sending…' : 'Email to athlete'}
+                  </button>
+                  <button
                     onClick={handleFinalDownload}
-                    disabled={downloadingPdf || pdfPreviewLoading}
+                    disabled={downloadingPdf || pdfPreviewLoading || emailingPdf}
                     className="flex-1 md:flex-none min-h-[44px] px-3 py-2 text-sm rounded-lg border border-primary bg-primary text-white hover:opacity-90 active:opacity-80 disabled:opacity-50 transition-colors font-medium touch-manipulation flex items-center justify-center gap-2"
                   >
                     <ArrowDownTrayIcon className="w-4 h-4 flex-shrink-0" />
                     {downloadingPdf ? 'Downloading…' : 'Download PDF'}
                   </button>
+                  {athleteProfile?.email && (
+                    <div className="hidden md:block text-[11px] text-gray-400 text-center leading-snug px-1">
+                      Email goes to<br /><span className="text-gray-500 break-all">{athleteProfile.email}</span>
+                    </div>
+                  )}
                 </div>
               </div>
 

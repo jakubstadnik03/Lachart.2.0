@@ -223,6 +223,12 @@ router.post('/:id/send-report-email', verifyToken, testController.sendTestReport
  * Download lactate test report as PDF (same content as email, incl. previous test comparison)
  * GET /test/:id/report-pdf
  */
+/**
+ * Email the previewed PDF to the athlete
+ * POST /test/:id/email-pdf   body: { pdfBase64, toEmail?, note? }
+ */
+router.post('/:id/email-pdf', verifyToken, testController.emailTestReportPdf);
+
 router.get('/:id/report-pdf', verifyToken, testController.getTestReportPdf);
 // Supports overrides payload (thresholds/zones from current UI view)
 router.post('/:id/report-pdf', verifyToken, testController.getTestReportPdf);

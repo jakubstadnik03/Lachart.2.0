@@ -1,5 +1,5 @@
 const testAbl = require('../abl/testAbl');
-const { sendLactateTestReportEmail } = require('../services/lactateTestReportEmailService');
+const { sendLactateTestReportEmail, sendLactateTestPdfEmail } = require('../services/lactateTestReportEmailService');
 const { sendDemoTestEmail } = require('../services/demoTestEmailService');
 const { generateTestReportPdf } = require('../services/lactateTestPdfService');
 const { athleteHasCoachUser } = require('../utils/athleteCoachAccess');
@@ -185,6 +185,35 @@ const testController = {
             return res.json({ sent: true });
         } catch (error) {
             console.error('[TestController] sendTestReportEmail error:', error);
+            return res.status(500).json({ sent: false, error: 'Failed to send email' });
+        }
+    },
+
+    // Email the PDF the coach just previewed, as an attachment
+    emailTestReportPdf: async (req, res) => {
+        try {
+            const { id } = req.params;
+            const result = await sendLactateTestPdfEmail({
+                requesterUserId: req.user.userId,
+                testId: id,
+                pdfBase64: req.body?.pdfBase64,
+                toEmail: req.body?.toEmail || null,
+                note: req.body?.note || null
+            });
+
+            if (!result.sent) {
+                const reason = result.reason || 'send_failed';
+                const status =
+                    reason === 'forbidden' ? 403 :
+                    reason === 'test_not_found' || reason === 'athlete_not_found' ? 404 :
+                    reason === 'email_not_configured' ? 503 :
+                    reason === 'pdf_too_large' ? 413 :
+                    400;
+                return res.status(status).json({ sent: false, reason });
+            }
+            return res.json({ sent: true, recipients: result.recipients });
+        } catch (error) {
+            console.error('[TestController] emailTestReportPdf error:', error);
             return res.status(500).json({ sent: false, error: 'Failed to send email' });
         }
     },

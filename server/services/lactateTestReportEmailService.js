@@ -663,10 +663,129 @@ async function sendLactateTestReportEmail({ requesterUserId, testId, toEmail = n
   }
 }
 
+/**
+ * Email the exact PDF the coach previewed, as an attachment.
+ *
+ * The report is rendered in the browser (@react-pdf), so the finished file is
+ * uploaded here rather than re-rendered on the server: a server-side re-render
+ * would silently drop the custom note, the analysis text and the chosen
+ * comparison tests, and the athlete would get a different document from the one
+ * the coach approved on screen.
+ *
+ * @param {string} params.pdfBase64  the previewed PDF, base64 (no data: prefix needed)
+ * @returns {Promise<{sent: boolean, reason?: string, recipients?: string[]}>}
+ */
+async function sendLactateTestPdfEmail({ requesterUserId, testId, pdfBase64, toEmail = null, note = null }) {
+  if (!process.env.EMAIL_USER || !process.env.EMAIL_APP_PASSWORD) {
+    return { sent: false, reason: 'email_not_configured' };
+  }
+
+  // ── Validate the upload before touching the database ──────────────────────
+  const raw = String(pdfBase64 || '').replace(/^data:application\/pdf;base64,/, '').trim();
+  if (!raw) return { sent: false, reason: 'pdf_missing' };
+  if (raw.length > 14 * 1024 * 1024) return { sent: false, reason: 'pdf_too_large' };   // ~10MB decoded
+  let pdf;
+  try {
+    pdf = Buffer.from(raw, 'base64');
+  } catch {
+    return { sent: false, reason: 'pdf_invalid' };
+  }
+  // Buffer.from never throws on bad base64 — it just gives garbage, so check the
+  // file signature instead. Keeps us from mailing anything that isn't a PDF.
+  if (pdf.length < 1000 || pdf.subarray(0, 5).toString('latin1') !== '%PDF-') {
+    return { sent: false, reason: 'pdf_invalid' };
+  }
+  if (pdf.length > 10 * 1024 * 1024) return { sent: false, reason: 'pdf_too_large' };
+
+  // ── Access: same rule as the HTML report, plus the newer coachIds[] link ───
+  const requester = await User.findById(requesterUserId).select('email role athletes admin name surname');
+  if (!requester) return { sent: false, reason: 'requester_not_found' };
+  const test = await Test.findById(testId).select('athleteId sport date title');
+  if (!test) return { sent: false, reason: 'test_not_found' };
+
+  const athleteId = String(test.athleteId);
+  const athlete = await User.findById(athleteId).select('name surname email notifications coachId coachIds');
+  if (!athlete) return { sent: false, reason: 'athlete_not_found' };
+
+  const role = String(requester.role || '').toLowerCase();
+  const isSelf = String(requester._id) === athleteId;
+  const isAdmin = role === 'admin' || requester.admin === true;
+  const isCoachLike = role === 'coach' || role === 'tester' || role === 'testing';
+  const linked =
+    (requester.athletes || []).some(a => String(a) === athleteId) ||
+    (athlete.coachId && String(athlete.coachId) === String(requester._id)) ||
+    (athlete.coachIds || []).some(c => String(c) === String(requester._id));
+  if (!isSelf && !isAdmin && !(isCoachLike && linked)) {
+    return { sent: false, reason: 'forbidden' };
+  }
+
+  // ── Recipient ─────────────────────────────────────────────────────────────
+  // Default target is the athlete — that is what the button promises. A coach
+  // may redirect it (parent, second address); an athlete emailing their own
+  // report can only ever reach their own inbox.
+  let recipient = null;
+  if (isSelf && !isAdmin) recipient = requester.email;
+  else recipient = (toEmail && String(toEmail).trim()) || athlete.email || requester.email;
+  if (!recipient || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(recipient).trim())) {
+    return { sent: false, reason: 'no_recipient_email' };
+  }
+  recipient = String(recipient).trim();
+
+  if (!isSelf && recipient === athlete.email && athlete?.notifications?.emailNotifications === false) {
+    return { sent: false, reason: 'email_notifications_disabled' };
+  }
+
+  const transporter = createTransporter();
+  if (!transporter) return { sent: false, reason: 'transporter_not_created' };
+
+  const athleteName = [athlete.name, athlete.surname].filter(Boolean).join(' ') || 'there';
+  const senderName = [requester.name, requester.surname].filter(Boolean).join(' ') || 'Your coach';
+  const testLabel = test.title || `${test.sport || 'Lactate'} test`;
+  const dateLabel = formatDateShort(test.date, 'en-GB');
+  const clientUrl = getClientUrl();
+
+  const safeNote = note ? escapeHtml(String(note).slice(0, 2000)).replace(/\n/g, '<br/>') : null;
+  const content = `
+    <p style="margin:0 0 14px;">Hi ${escapeHtml(athleteName)},</p>
+    <p style="margin:0 0 14px;">
+      ${isSelf ? 'Here is your' : `${escapeHtml(senderName)} has sent you the`} lactate test report
+      <strong>${escapeHtml(testLabel)}</strong> from ${escapeHtml(dateLabel)}. The full PDF is attached.
+    </p>
+    ${safeNote ? `<div style="margin:0 0 14px;padding:12px 14px;background:#f8fafc;border-left:3px solid #1f8f55;border-radius:6px;font-size:14px;color:#374151;">${safeNote}</div>` : ''}
+    <p style="margin:0 0 6px;font-size:14px;color:#6b7280;">
+      Thresholds, training zones and the lactate curve are all in the attachment — keep it for your next re-test comparison.
+    </p>
+  `.trim();
+
+  const subject = `${testLabel} — lactate test report (${dateLabel})`;
+  const filename = `lactate-report-${(test.sport || 'test')}-${dateLabel.replace(/[^\w-]+/g, '-')}.pdf`;
+
+  try {
+    await transporter.sendMail({
+      from: { name: 'LaChart', address: process.env.EMAIL_USER },
+      to: recipient,
+      replyTo: !isSelf && requester.email ? requester.email : undefined,
+      subject,
+      html: generateEmailTemplate({
+        title: subject,
+        content,
+        buttonText: 'Open in LaChart',
+        buttonUrl: `${clientUrl}/testing`,
+        footerText: 'Tip: re-test under similar conditions (fatigue, temperature, time of day) so the comparison stays honest.'
+      }),
+      attachments: [{ filename, content: pdf, contentType: 'application/pdf' }]
+    });
+    return { sent: true, recipients: [recipient] };
+  } catch (err) {
+    return { sent: false, reason: (err && (err.message || String(err))) || 'send_mail_failed' };
+  }
+}
+
 module.exports = {
   getReportData,
   getReportHtml,
-  sendLactateTestReportEmail
+  sendLactateTestReportEmail,
+  sendLactateTestPdfEmail
 };
 
 
