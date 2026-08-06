@@ -31,7 +31,7 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
   const menuRef = useRef(null);
   const navigate = useNavigate();
   const location = useLocation();
-  const { isPremium } = usePremium();
+  const { isPremium, premiumResolved } = usePremium();
   const currentPath = location.pathname.split('/')[1];
   const currentAthleteIdFromUrl = location.pathname.split('/')[2];
 
@@ -162,6 +162,13 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
         return;
       }
 
+      // These take no :athleteId segment, so navigating would hit the catch-all
+      // redirect. Both read the athlete from AthleteSelectionContext, which
+      // setGlobalAthleteId above already updated - staying put is enough.
+      if (currentPath === 'health' || currentPath === 'annual-training-plan') {
+        return;
+      }
+
       // Pokud klikneme na stejného atleta, zrušíme výběr
       if (currentAthleteIdFromUrl === athleteId) {
         navigate(`/${currentPath}`, { replace: true });
@@ -233,6 +240,15 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
       icon: "/icon/calendar.svg",
       iconWhite: "/icon/calendar-white.svg",
       showFor: ["coach", "tester", "testing"]
+    },
+    {
+      name: "Annual Plan",
+      path: "/annual-training-plan",
+      icon: "/icon/calendar.svg",
+      iconWhite: "/icon/calendar-white.svg",
+      // Admin-only while the ATP is still being shaped — same soft launch the
+      // Lactate Testing page got. Widen `showFor` to open it up.
+      showFor: ["admin"]
     },
     // {
     //   name: "Lactate Statistics",
@@ -577,7 +593,10 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
               {/* Persistent upgrade nudge for free web users — the only ambient
                   reminder that the 60-day trial exists (welcome modal is one-shot).
                   Hidden on native iOS (App Store 3.1.1: no external purchase CTA). */}
-              {!isPremium && !isCapacitorNative() && (
+              {/* premiumResolved gates this: before the profile loads isPremium
+                  is false, so this used to flash at paying users on every
+                  navigation. Say nothing until we actually know. */}
+              {premiumResolved && !isPremium && !isCapacitorNative() && (
                 <button
                   type="button"
                   onClick={() => { navigate('/settings?tab=subscription'); setIsMenuOpen?.(false); }}

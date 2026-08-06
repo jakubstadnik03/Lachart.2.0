@@ -40,6 +40,17 @@ export function usePremium() {
     : (user != null && user.isPremium === true);
   const isCoach = isPremium;
 
+  /**
+   * False until the user object exists.
+   *
+   * isPremium is `user != null && user.isPremium === true`, so during the
+   * moment before the profile resolves it reads exactly like "free" — which
+   * made the sidebar flash a "Start 60-day free trial" button at paying users
+   * on every navigation. Anything that renders only for non-premium users must
+   * wait for this rather than trusting !isPremium.
+   */
+  const premiumResolved = user != null;
+
   const [modalState, setModalState] = useState({
     isOpen: false,
     feature: '',
@@ -72,5 +83,5 @@ export function usePremium() {
     requiredPlan: modalState.requiredPlan,
   };
 
-  return { isPremium, isCoach, gate, UpgradeModalProps };
+  return { isPremium, premiumResolved, isCoach, gate, UpgradeModalProps };
 }
