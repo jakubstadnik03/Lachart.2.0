@@ -370,6 +370,33 @@ function InsightSheet({ insight, weekly, style, onClose, onDismiss }) {
 }
 
 
+
+/** Stroke icons matching the rest of this file (24x24, stroke-width 2). */
+const RS_ICONS = {
+  // Header: "ease off" — a pause, not a hazard sign. The tone is guidance,
+  // not alarm, and a red triangle would read as something broke.
+  pause: 'M10 9v6M14 9v6M12 21a9 9 0 100-18 9 9 0 000 18z',
+  heart: 'M20.8 8.6a5.5 5.5 0 00-9.3-2.4l-.5.5-.5-.5a5.5 5.5 0 10-7.8 7.8l8.3 8.3 8.3-8.3a5.5 5.5 0 001.5-5.4z',
+  pulse: 'M2 12h4l2.5-7 4 14L15.5 12H22',
+  trendDown: 'M3 7l6 6 4-4 8 8M21 17v-5m0 5h-5',
+  moon: 'M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z',
+  refresh: 'M3 12a9 9 0 0115.5-6.2M21 12a9 9 0 01-15.5 6.2M18 3v4h-4M6 21v-4h4',
+};
+
+function RsIcon({ name, size = 16, className = '', style }) {
+  const d = RS_ICONS[name];
+  if (!d) return null;
+  return (
+    <svg
+      aria-hidden="true" width={size} height={size} viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+      className={className} style={style}
+    >
+      <path d={d} />
+    </svg>
+  );
+}
+
 /**
  * Readiness explainer.
  *
@@ -393,11 +420,11 @@ function ReadinessSignal({ item }) {
     return { pct, bad, fill: Math.min(100, Math.max(6, Math.abs(off) * 4)) };
   };
   const rows = [
-    { key: 'rhr', icon: '💓', label: 'Resting heart rate',
+    { key: 'rhr', icon: 'heart', label: 'Resting heart rate',
       now: m.rhrNow != null ? `${Math.round(m.rhrNow)} bpm` : null,
       base: m.rhrBase != null ? `${Math.round(m.rhrBase)} bpm` : null,
       meter: bar(rhr, false), hint: 'up = working harder at rest' },
-    { key: 'hrv', icon: '🫀', label: 'Heart rate variability',
+    { key: 'hrv', icon: 'pulse', label: 'Heart rate variability',
       now: m.hrvNow != null ? `${Math.round(m.hrvNow)} ms` : null,
       base: m.hrvBase != null ? `${Math.round(m.hrvBase)} ms` : null,
       meter: bar(hrv, true), hint: 'down = less recovered' },
@@ -406,7 +433,9 @@ function ReadinessSignal({ item }) {
   return (
     <li className="rounded-2xl border-2 px-4 py-4" style={{ borderColor: '#FCA5A5', background: '#FEF2F2' }}>
       <div className="flex items-start gap-3">
-        <span aria-hidden className="text-3xl leading-none">🛑</span>
+        <span className="flex-shrink-0 rounded-xl p-2" style={{ background: '#FEE2E2', color: '#DC2626' }}>
+          <RsIcon name="pause" size={26} />
+        </span>
         <div className="min-w-0">
           <div className="text-[17px] font-extrabold text-gray-900 leading-tight">
             Take today easy
@@ -423,8 +452,9 @@ function ReadinessSignal({ item }) {
           {rows.map((r) => (
             <div key={r.key}>
               <div className="flex items-center justify-between gap-2 text-[12px]">
-                <span className="font-semibold text-gray-800">
-                  <span aria-hidden className="mr-1">{r.icon}</span>{r.label}
+                <span className="font-semibold text-gray-800 inline-flex items-center gap-1.5">
+                  <RsIcon name={r.icon} size={14} style={{ color: r.meter.bad ? '#DC2626' : '#059669' }} />
+                  {r.label}
                 </span>
                 <span className="tabular-nums font-bold" style={{ color: r.meter.bad ? '#DC2626' : '#059669' }}>
                   {r.meter.pct > 0 ? '+' : ''}{r.meter.pct}%
@@ -447,10 +477,17 @@ function ReadinessSignal({ item }) {
 
       <div className="mt-3.5 rounded-xl bg-white/70 border border-red-100 px-3 py-2.5">
         <div className="text-[11px] font-bold uppercase tracking-wide text-red-700 mb-1">What to do today</div>
-        <ul className="text-[12.5px] text-gray-700 leading-relaxed space-y-0.5">
-          <li>🚶 Easy Z1–Z2 only, or a full rest day</li>
-          <li>😴 Sleep is the fastest lever — protect tonight</li>
-          <li>🔁 Re-check tomorrow; one off day is normal, three in a row is not</li>
+        <ul className="text-[12.5px] text-gray-700 leading-relaxed space-y-1.5">
+          {[
+            ['trendDown', 'Easy Z1–Z2 only, or a full rest day'],
+            ['moon', 'Sleep is the fastest lever — protect tonight'],
+            ['refresh', 'Re-check tomorrow; one off day is normal, three in a row is not'],
+          ].map(([icon, text]) => (
+            <li key={icon} className="flex items-start gap-2">
+              <RsIcon name={icon} size={14} className="mt-0.5 flex-shrink-0" style={{ color: '#B91C1C' }} />
+              <span>{text}</span>
+            </li>
+          ))}
         </ul>
       </div>
     </li>
