@@ -171,7 +171,7 @@ Reddit nadpis = zní jako redditor, ne značka. První osoba, konkrétní, špet
 
 **Ad 1 — branded reporty (nejsilnější coach hook):**
 - Nadpis: *Coaches: turn your lactate tests into branded PDF reports — your logo, not the app's*
-- Text: If you test lactate for clients, the report is the product. This gives you LT1/LT2, zones and a clean PDF with your studio's logo + name — plus every athlete's history in one place. 2 months free.
+- Text: If you test lactate for clients, the report is the product. This gives you LT1/LT2, zones and a clean PDF with your studio's logo + name — plus every athlete's history in one place. 2 weeks free.
 
 **Ad 2 — proti-spreadsheet:**
 - Nadpis: *Still running your athletes' lactate tests in a spreadsheet?*
@@ -179,7 +179,7 @@ Reddit nadpis = zní jako redditor, ne značka. První osoba, konkrétní, špet
 
 **Ad 3 — celý workflow:**
 - Nadpis: *Lactate testing software for coaches — test, brand the report, plan the training*
-- Text: Switch between your whole roster, generate branded lactate reports, and plan workouts into each athlete's calendar. Try the Coach plan free for 2 months.
+- Text: Switch between your whole roster, generate branded lactate reports, and plan workouts into each athlete's calendar. Try the Coach plan free for 2 weeks.
 
 **Obrázky pro coach kampaň:** `/images/lactate-pdf-report.jpg` (branded report — nejsilnější), `/about-design/dashboard-home.png` (coach dashboard). Ideálně screenshot reportu s tvým vlastním logem, ať je vidět „tvoje značka".
 
