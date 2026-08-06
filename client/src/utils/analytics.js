@@ -80,6 +80,36 @@ export function initAnalytics(measurementId) {
   }
 }
 
+// ── Reddit Pixel (paid-ads conversion tracking) ────────────────────────────
+// Inert until REACT_APP_REDDIT_PIXEL_ID is set in the build env (same pattern
+// as GA). Once set, Reddit Ads can optimise for real conversions because we
+// fire SignUp on registration and Purchase on checkout success — not just clicks.
+const REDDIT_PIXEL_ID = process.env.REACT_APP_REDDIT_PIXEL_ID;
+let redditInitialized = false;
+
+export function initRedditPixel() {
+  if (redditInitialized || !REDDIT_PIXEL_ID) return;
+  try {
+    /* eslint-disable */
+    !function(w,d){if(!w.rdt){var p=w.rdt=function(){p.sendEvent?p.sendEvent.apply(p,arguments):p.callQueue.push(arguments)};p.callQueue=[];var t=d.createElement("script");t.src="https://www.redditstatic.com/ads/pixel.js";t.async=!0;var s=d.getElementsByTagName("script")[0];s.parentNode.insertBefore(t,s)}}(window,document);
+    /* eslint-enable */
+    window.rdt('init', REDDIT_PIXEL_ID);
+    window.rdt('track', 'PageVisit');
+    redditInitialized = true;
+  } catch (e) {
+    console.error('Reddit pixel init failed:', e);
+  }
+}
+
+/** Fire a Reddit conversion event (no-op until the pixel is initialised). */
+export function trackRedditEvent(eventName, params) {
+  if (!redditInitialized || !window.rdt) return;
+  try {
+    if (params) window.rdt('track', eventName, params);
+    else window.rdt('track', eventName);
+  } catch { /* ignore */ }
+}
+
 export function trackPageView(path) {
   if (!initialized || !window.gtag) return;
   window.gtag('event', 'page_view', {
@@ -116,6 +146,8 @@ export function trackUserRegistration(method, userRole = 'athlete') {
     event_category: 'user_engagement',
     event_label: 'registration_completed'
   });
+  // Reddit Ads conversion — every registration path funnels through here.
+  trackRedditEvent('SignUp');
 }
 
 export function trackDemoUsage(action, details = {}) {
@@ -197,6 +229,10 @@ export function trackPurchase({ plan, value, currency = 'EUR' } = {}) {
     currency,
     event_category: 'subscription',
   });
+  // Reddit Ads conversion — lets Reddit optimise for paying subscribers.
+  trackRedditEvent('Purchase', Number.isFinite(Number(value))
+    ? { currency, value: Number(value) }
+    : undefined);
 }
 
 /** Strava / Garmin / Apple Health successfully connected. */

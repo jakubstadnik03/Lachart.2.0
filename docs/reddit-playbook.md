@@ -102,4 +102,26 @@ Do postu produkt necpi. Když je dobrý, lidi si tě najdou v profilu.
 
 ---
 
-*Reddit je maraton důvěry, ne sprint odkazů. 10 skvělých užitečných odpovědí týdně po měsíc udělá víc než 50 odkazů za týden (a ban).* 
+*Reddit je maraton důvěry, ne sprint odkazů. 10 skvělých užitečných odpovědí týdně po měsíc udělá víc než 50 odkazů za týden (a ban).*
+
+---
+
+## Reddit Ads — konverzní tracking (pixel)
+
+Pokud jdeš cestou **placených Reddit Ads**, pixel je už v kódu — jen ho aktivuj:
+
+1. [ads.reddit.com](https://ads.reddit.com) → **Events Manager** → vytvoř **Pixel**, zkopíruj **Pixel ID** (tvar `a2_xxxxxxxx`).
+2. Ve **Vercelu** (Project → Settings → Environment Variables) přidej:
+   ```
+   REACT_APP_REDDIT_PIXEL_ID = a2_xxxxxxxx
+   ```
+3. **Redeploy** (Vercel → Deployments → Redeploy), ať se proměnná zapeče do buildu.
+
+Co se pak děje automaticky (napojeno v `client/src/utils/analytics.js`):
+- **PageVisit** na každém načtení
+- **SignUp** při každé dokončené registraci (všechny cesty — e-mail/Google/Apple)
+- **Purchase** při dokončení platby (s hodnotou předplatného)
+
+Díky tomu Reddit optimalizuje na **platící**, ne na kliky, a ty v Reddit Ads Manageru uvidíš cost-per-signup a cost-per-purchase. Bez toho ID je pixel neaktivní (nic se nenačítá).
+
+**Doporučené nastavení kampaně:** cíl **Conversions** (ne Clicks), optimalizace na **Purchase** (nebo SignUp, dokud nemáš dost platebních konverzí), cílení na r/Velo, r/triathlon, r/AdvancedRunning, r/trainerroad. Landing page = **free kalkulačka** nebo **/for-coaches**, ne pricing.

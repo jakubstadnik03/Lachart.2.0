@@ -11,7 +11,7 @@ import { AthleteSelectionProvider } from './context/AthleteSelectionContext';
 import Layout from './components/Layout';
 import ProtectedRoute from './components/ProtectedRoute';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { initAnalytics, trackPageView, trackAdsConversionKontakt } from './utils/analytics';
+import { initAnalytics, initRedditPixel, trackPageView, trackAdsConversionKontakt } from './utils/analytics';
 import { isCapacitorNative } from './utils/isNativeApp';
 import { BRAND_LOGO_SRC } from './constants/brandLogo';
 import './App.css';
@@ -477,6 +477,7 @@ function App() {
               {/* GA runs in the native app too — analytics.js tags hits with
                   app_platform (ios/android/web) and a stable client_id. */}
               {isProd && initAnalytics('G-HNHPQH30BL')}
+              {isProd && initRedditPixel()}
               <AppRoutes />
               {/* Floating "return to active workout" pill — renders only when
                   a session is live and the user is on a non-execution route.
