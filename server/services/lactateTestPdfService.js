@@ -477,6 +477,26 @@ async function resolveBrandingLogo(logoUrl) {
   }
 }
 
+/**
+ * Fit an image inside a box without distorting it.
+ *
+ * addImage stretches to whatever width/height it is given, so a wide logo drawn
+ * into a square box came out squashed. Ask jsPDF for the image's real pixel
+ * dimensions and letterbox it instead, vertically centred in the box.
+ */
+function fitLogo(doc, image, x, y, boxW, boxH) {
+  try {
+    const props = doc.getImageProperties(image);
+    if (props?.width > 0 && props?.height > 0) {
+      const scale = Math.min(boxW / props.width, boxH / props.height);
+      const w = props.width * scale;
+      const h = props.height * scale;
+      return { x, y: y + (boxH - h) / 2, w, h };
+    }
+  } catch { /* fall back to the square box below */ }
+  return { x, y, w: boxH, h: boxH };
+}
+
 function drawHeader(doc, title, pageW, branding = null) {
   doc.setFillColor(...BRAND.primary);
   doc.rect(0, 0, pageW, 28, 'F');
@@ -485,16 +505,27 @@ function drawHeader(doc, title, pageW, branding = null) {
   // LaChart's. Both branches here used to draw the built-in logo regardless,
   // so a coach who uploaded their own never saw it on a server-made report.
   let logoAdded = false;
+  let logoRight = 30;   // where the brand name starts; grows with a wide logo
   if (branding?.logoData) {
     // PNG keeps the alpha channel (jsPDF emits it as an /SMask), so a transparent
     // coach logo stays transparent instead of arriving as a solid block.
     const fmt = /^data:image\/jpe?g/i.test(branding.logoData) ? 'JPEG' : 'PNG';
-    try { doc.addImage(branding.logoData, fmt, 10, 4, 20, 20); logoAdded = true; } catch { /* fall through */ }
+    try {
+      const box = fitLogo(doc, branding.logoData, 10, 4, 40, 20);
+      doc.addImage(branding.logoData, fmt, box.x, box.y, box.w, box.h);
+      logoRight = box.x + box.w;
+      logoAdded = true;
+    } catch { /* fall through */ }
   }
   if (!logoAdded) {
     const logoB64 = getLogoBase64();
     if (logoB64) {
-      try { doc.addImage(logoB64, 'PNG', 10, 4, 20, 20); logoAdded = true; } catch { /* ignore */ }
+      try {
+        const box = fitLogo(doc, logoB64, 10, 4, 40, 20);
+        doc.addImage(logoB64, 'PNG', box.x, box.y, box.w, box.h);
+        logoRight = box.x + box.w;
+        logoAdded = true;
+      } catch { /* ignore */ }
     }
   }
 
@@ -502,7 +533,7 @@ function drawHeader(doc, title, pageW, branding = null) {
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(18);
   doc.setTextColor(...BRAND.white);
-  doc.text(brandName, logoAdded ? 34 : 12, 17);
+  doc.text(brandName, logoAdded ? logoRight + 4 : 12, 17);
 
   doc.setFontSize(10);
   doc.setFont('helvetica', 'normal');
