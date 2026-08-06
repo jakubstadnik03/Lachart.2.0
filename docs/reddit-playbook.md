@@ -125,3 +125,58 @@ Co se pak děje automaticky (napojeno v `client/src/utils/analytics.js`):
 Díky tomu Reddit optimalizuje na **platící**, ne na kliky, a ty v Reddit Ads Manageru uvidíš cost-per-signup a cost-per-purchase. Bez toho ID je pixel neaktivní (nic se nenačítá).
 
 **Doporučené nastavení kampaně:** cíl **Conversions** (ne Clicks), optimalizace na **Purchase** (nebo SignUp, dokud nemáš dost platebních konverzí), cílení na r/Velo, r/triathlon, r/AdvancedRunning, r/trainerroad. Landing page = **free kalkulačka** nebo **/for-coaches**, ne pricing.
+
+---
+
+## Kampaň krok za krokem (Reddit Ads Manager)
+
+1. **Create Campaign** → Objective: **Conversions**
+2. **Conversion event:** začni na **SignUp** (Purchase přepni, až bude ≥ ~15 nákupů/týden, jinak nemá Reddit na čem optimalizovat)
+3. **Ad Group → Targeting:**
+   - **Communities** (ne interests): `r/Velo`, `r/triathlon`, `r/AdvancedRunning`, `r/running`, `r/trainerroad`, `r/Zwift`, `r/cycling`
+   - Lokace: US, UK, CA, AU, DE, NL, NO (tvoje top země z GA)
+   - Zařízení: nech všechna
+4. **Rozpočet:** Daily $8, **1 ad group**, 3 varianty reklamy (Reddit si sám vybere vítěze)
+5. **Bidding:** Automatic (Maximize conversions)
+6. **Ads:** formát **Single image / Free-form post**. Nahraj 3 varianty níže.
+7. Spusť, **7 dní nešahej** (učí se), pak vypni nejslabší, škáluj vítěze.
+
+## Reklamy pro sportovce (landing = /lactate-curve-calculator)
+
+Reddit nadpis = zní jako redditor, ne značka. První osoba, konkrétní, špetka zvědavosti. Žádné vykřičníky.
+
+**Ad 1 — „proti odhadu"**
+- Nadpis: *Your watch's training zones are guesses. Here's how to get them from actual lactate data.*
+- Text: I got tired of zones based on %HRmax formulas, so I built a free calculator — enter your lactate step-test numbers and it gives you LT1, LT2 and your real power/HR/pace zones. No signup.
+- CTA: **Learn More** → kalkulačka
+
+**Ad 2 — „free tool, no signup"**
+- Nadpis: *Free lactate threshold calculator — LT1, LT2 & training zones from your own test*
+- Text: Did a home lactate test and want to know where your thresholds actually are? Paste your data, get the curve + zones in ~30s. Free, no account.
+- CTA: **Learn More**
+
+**Ad 3 — „home testing"**
+- Nadpis: *Testing lactate at home? Here's a free tool to read your curve (LT1/LT2, OBLA, D-max)*
+- Text: Built this for my own testing — multiple threshold methods at once instead of eyeballing the deflection. Free to try on your data.
+- CTA: **Learn More**
+
+## Reklamy pro trenéry (landing = /for-coaches) — druhá kampaň, později
+
+- *Coaches: turn your lactate tests into branded PDF reports with your own logo*
+- *Stop running your athletes' lactate tests in spreadsheets — one workspace for the whole roster*
+
+## Obrázky (co použít)
+
+Reddit odměňuje **autentické, ne „reklamní"** vizuály. Nejsilnější = **screenshot reálné laktátové křivky** (ukazuje přesně, co dostanou).
+
+- **Nejlepší:** vyfoť výsledek vlastní kalkulačky — křivka s vyznačeným LT1/LT2 + zóny. Autentické, „to je přesně to, co chci".
+- **Připravené v `public/`:** `/images/lactate_curve.png`, `/about-design/hero-lactate-curve.jpg`, `/about-design/zones-generator.png`. Pro coach kampaň `/images/lactate-pdf-report.jpg`.
+- **Rozměry:** feed **1200 × 628** (poměr 1.91:1) nebo čtverec **1080 × 1080**. Text v obrázku minimum (Reddit i výkon preferuje čistý obraz).
+- **Vyhni se:** stock fotkám sportovců, výrazným logům, „SALE" grafice — to křičí reklama a redditoři to odscrollují.
+
+## Co sledovat po spuštění (a kdy zasáhnout)
+
+- **CTR** < 0.3 % → slabý nadpis/obrázek, vyměň.
+- **Cost per SignUp** — tvoje hlavní číslo. Porovnej s hodnotou zákazníka (Coach €14.99/měs, drží se dlouho → i €5–15 za signup může dávat smysl).
+- **Cost per Purchase** (jak se nasbírá) → finální metrika.
+- Škáluj rozpočet jen na tom, co konvertuje; nedávej víc než +50 % rozpočtu za den (Reddit se pak přeučuje).
