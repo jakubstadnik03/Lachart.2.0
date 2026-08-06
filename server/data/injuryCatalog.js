@@ -1,5 +1,5 @@
 /**
- * injuryCatalog.js — the seed library of injuries and illnesses this app knows
+ * injuryCatalog.js - the seed library of injuries and illnesses this app knows
  * how to monitor.
  *
  * Why a catalogue instead of one generic "injury" record: tissues behave in
@@ -8,15 +8,15 @@
  * an Achilles athlete to rest is as wrong as telling a tibial stress fracture
  * athlete to keep running. So every entry carries:
  *
- *   loadResponse  — 'rest' | 'modified_load' | 'progressive_load'
+ *   loadResponse  - 'rest' | 'modified_load' | 'progressive_load'
  *                   drives the whole tone of the UI and what the gate allows.
- *   hallmark      — the ONE question worth asking daily for this injury.
+ *   hallmark      - the ONE question worth asking daily for this injury.
  *                   Generic "rate your pain 0-10" gets ignored after a week;
  *                   "how long was your morning stiffness?" is a real signal for
  *                   a tendon and takes one tap.
- *   painRule      — the numbers healthGate.js applies to decide progress /
+ *   painRule      - the numbers healthGate.js applies to decide progress /
  *                   hold / step back.
- *   stages        — the return protocol, each with a gate that must be cleared
+ *   stages        - the return protocol, each with a gate that must be cleared
  *                   before the next stage unlocks.
  *
  * This is education and load bookkeeping, not diagnosis. Entries describe the
@@ -24,7 +24,7 @@
  * to push people out of the app and to a clinician when that is the answer.
  *
  * The client fetches this via GET /api/health/catalog so there is one source of
- * truth — do not mirror it in client code.
+ * truth - do not mirror it in client code.
  */
 
 'use strict';
@@ -45,7 +45,7 @@ const FUNCTIONAL_TESTS = {
   single_leg_heel_raise_bent: {
     id: 'single_leg_heel_raise_bent',
     label: 'Single-leg heel raise, knee bent (soleus)',
-    instructions: 'Same as heel raise but with the knee bent ~30° — this biases the soleus.',
+    instructions: 'Same as heel raise but with the knee bent ~30° - this biases the soleus.',
     unit: 'reps',
     bilateral: true,
     defaultTarget: { symmetryPct: 90, minValue: 20 },
@@ -111,7 +111,7 @@ const FUNCTIONAL_TESTS = {
 /** Hallmark question kinds the client knows how to render. */
 const HALLMARK_KINDS = ['scale', 'minutes', 'reps', 'choice'];
 
-/** Reusable morning-stiffness question — the best cheap proxy for tendon state. */
+/** Reusable morning-stiffness question - the best cheap proxy for tendon state. */
 const MORNING_STIFFNESS = {
   key: 'morningStiffnessMinutes',
   kind: 'minutes',
@@ -173,7 +173,7 @@ const INJURIES = [
   // ── Tendon ───────────────────────────────────────────────────────────────
   {
     id: 'achilles_tendinopathy_midportion',
-    label: 'Achilles tendinopathy — mid-portion',
+    label: 'Achilles tendinopathy - mid-portion',
     shortLabel: 'Achilles (mid-portion)',
     tissue: 'tendon',
     tendonSubtype: 'midportion',
@@ -181,7 +181,7 @@ const INJURIES = [
     sports: ['run', 'triathlon'],
     loadResponse: 'progressive_load',
     summary:
-      'Pain and stiffness 2-6 cm above the heel bone. Tendons adapt to load and de-adapt with rest — '
+      'Pain and stiffness 2-6 cm above the heel bone. Tendons adapt to load and de-adapt with rest - '
       + 'the goal is the right dose, not time off.',
     hallmark: MORNING_STIFFNESS,
     painRule: TENDON_PAIN_RULE,
@@ -189,8 +189,8 @@ const INJURIES = [
     crossTraining: { allowed: ['bike', 'swim', 'aqua_jog'], boneLoadFactor: 0 },
     functionalTests: ['single_leg_heel_raise', 'hop_10_single_leg'],
     redFlags: [
-      { id: 'achilles_rupture', label: 'Sudden pop or snap with inability to push off / rise onto the toes — go to urgent care today.' },
-      { id: 'fluoroquinolone', label: 'Recent fluoroquinolone antibiotics (e.g. ciprofloxacin) — tendon rupture risk, speak to your doctor before loading.' },
+      { id: 'achilles_rupture', label: 'Sudden pop or snap with inability to push off / rise onto the toes - go to urgent care today.' },
+      { id: 'fluoroquinolone', label: 'Recent fluoroquinolone antibiotics (e.g. ciprofloxacin) - tendon rupture risk, speak to your doctor before loading.' },
     ],
     typicalWeeks: [12, 26],
     prevention: { strengthSessionsPerWeek: 2, minMonths: 6 },
@@ -254,7 +254,7 @@ const INJURIES = [
   },
   {
     id: 'achilles_tendinopathy_insertional',
-    label: 'Achilles tendinopathy — insertional',
+    label: 'Achilles tendinopathy - insertional',
     shortLabel: 'Achilles (insertional)',
     tissue: 'tendon',
     tendonSubtype: 'insertional',
@@ -262,7 +262,7 @@ const INJURIES = [
     sports: ['run', 'triathlon'],
     loadResponse: 'progressive_load',
     summary:
-      'Pain right at the heel bone. Unlike the mid-portion form this one is aggravated by compression — '
+      'Pain right at the heel bone. Unlike the mid-portion form this one is aggravated by compression - '
       + 'stretching, deep dorsiflexion, hills and heel drops off a step usually make it worse.',
     hallmark: MORNING_STIFFNESS,
     painRule: TENDON_PAIN_RULE,
@@ -270,7 +270,7 @@ const INJURIES = [
     crossTraining: { allowed: ['bike', 'swim', 'aqua_jog'], boneLoadFactor: 0 },
     functionalTests: ['single_leg_heel_raise', 'hop_10_single_leg'],
     redFlags: [
-      { id: 'achilles_rupture', label: 'Sudden pop or snap with inability to push off — go to urgent care today.' },
+      { id: 'achilles_rupture', label: 'Sudden pop or snap with inability to push off - go to urgent care today.' },
     ],
     typicalWeeks: [16, 26],
     prevention: { strengthSessionsPerWeek: 2, minMonths: 6 },
@@ -322,7 +322,7 @@ const INJURIES = [
       {
         id: 'return',
         name: 'Return to full training',
-        focus: 'Hills last of all — they compress the insertion hardest.',
+        focus: 'Hills last of all - they compress the insertion hardest.',
         runningAllowed: true,
         volumePctOfBaseline: 100,
         allowedZones: [1, 2, 3, 4, 5],
@@ -347,7 +347,7 @@ const INJURIES = [
     crossTraining: { allowed: ['swim', 'aqua_jog', 'bike'], boneLoadFactor: 0 },
     functionalTests: ['decline_squat', 'single_leg_hop_distance'],
     redFlags: [
-      { id: 'patellar_rupture', label: 'Sudden giving way with inability to straighten the knee — urgent care.' },
+      { id: 'patellar_rupture', label: 'Sudden giving way with inability to straighten the knee - urgent care.' },
     ],
     typicalWeeks: [12, 26],
     prevention: { strengthSessionsPerWeek: 2, minMonths: 6 },
@@ -409,7 +409,7 @@ const INJURIES = [
     loadResponse: 'progressive_load',
     summary:
       'Pain over the bony point of the hip, worst lying on that side and on single-leg stance. '
-      + 'Compression aggravates it — crossing legs and hanging on one hip are the usual culprits.',
+      + 'Compression aggravates it - crossing legs and hanging on one hip are the usual culprits.',
     hallmark: PAIN_0_10('Pain over the side of the hip today (lying on it / standing on one leg)?'),
     painRule: TENDON_PAIN_RULE,
     contraindications: ['hip_adduction_stretching', 'crossing_legs', 'side_lying_on_affected_hip'],
@@ -470,7 +470,7 @@ const INJURIES = [
     crossTraining: { allowed: ['bike', 'swim', 'aqua_jog'], boneLoadFactor: 0 },
     functionalTests: ['single_leg_heel_raise'],
     redFlags: [
-      { id: 'flatfoot_collapse', label: 'Arch collapsing or the foot turning outwards compared with the other side — get it assessed.' },
+      { id: 'flatfoot_collapse', label: 'Arch collapsing or the foot turning outwards compared with the other side - get it assessed.' },
     ],
     typicalWeeks: [8, 16],
     prevention: { strengthSessionsPerWeek: 2, minMonths: 3 },
@@ -530,7 +530,7 @@ const INJURIES = [
     crossTraining: { allowed: ['bike', 'swim', 'aqua_jog'], boneLoadFactor: 0 },
     functionalTests: ['single_leg_heel_raise'],
     redFlags: [
-      { id: 'heel_bone_stress', label: 'Pinpoint pain on squeezing the heel bone from both sides, or night pain — could be a calcaneal bone stress injury, get it imaged.' },
+      { id: 'heel_bone_stress', label: 'Pinpoint pain on squeezing the heel bone from both sides, or night pain - could be a calcaneal bone stress injury, get it imaged.' },
     ],
     typicalWeeks: [12, 39],
     prevention: { strengthSessionsPerWeek: 2, minMonths: 6 },
@@ -575,7 +575,7 @@ const INJURIES = [
   // ── Bone ─────────────────────────────────────────────────────────────────
   {
     id: 'bone_stress_injury_low_risk',
-    label: 'Bone stress injury — low risk site (tibia, metatarsals 2-4, fibula)',
+    label: 'Bone stress injury - low risk site (tibia, metatarsals 2-4, fibula)',
     shortLabel: 'Bone stress (low risk)',
     tissue: 'bone',
     boneRisk: 'low',
@@ -583,7 +583,7 @@ const INJURIES = [
     sports: ['run', 'triathlon'],
     loadResponse: 'rest',
     summary:
-      'Bone responds to impact cycles, not to TSS — 90 min of cycling loads the tibia far less than 20 min '
+      'Bone responds to impact cycles, not to TSS - 90 min of cycling loads the tibia far less than 20 min '
       + 'of running. Return is governed by impact volume and there is no acceptable level of pain.',
     hallmark: PAIN_0_10('Pain in the injured bone during weight-bearing today?'),
     painRule: BONE_PAIN_RULE,
@@ -591,8 +591,8 @@ const INJURIES = [
     crossTraining: NO_IMPACT_CROSS_TRAINING,
     functionalTests: ['pain_free_walk', 'hop_10_single_leg'],
     redFlags: [
-      { id: 'night_pain', label: 'Pain at rest or waking you at night, or pain that is getting worse despite offloading — see a doctor.' },
-      { id: 'repeat_bsi', label: 'A second bone stress injury within two years — ask about energy availability and bone density, not just training load.' },
+      { id: 'night_pain', label: 'Pain at rest or waking you at night, or pain that is getting worse despite offloading - see a doctor.' },
+      { id: 'repeat_bsi', label: 'A second bone stress injury within two years - ask about energy availability and bone density, not just training load.' },
     ],
     typicalWeeks: [8, 16],
     prevention: { strengthSessionsPerWeek: 2, minMonths: 6 },
@@ -601,7 +601,7 @@ const INJURIES = [
         id: 'offload',
         name: 'Offload',
         focus:
-          'No running, no jumping. Build pain-free walking. Keep fitness with cycling, swimming or aqua jogging — '
+          'No running, no jumping. Build pain-free walking. Keep fitness with cycling, swimming or aqua jogging - '
           + 'none of it loads the bone.',
         runningAllowed: false,
         volumePctOfBaseline: 0,
@@ -647,7 +647,7 @@ const INJURIES = [
         id: 'rebuild',
         name: 'Rebuild volume',
         focus:
-          'Add consecutive running days, then the long run, then intensity — one variable at a time, never two '
+          'Add consecutive running days, then the long run, then intensity - one variable at a time, never two '
           + 'in the same week.',
         runningAllowed: true,
         volumePctOfBaseline: 70,
@@ -660,7 +660,7 @@ const INJURIES = [
       {
         id: 'return',
         name: 'Return to full training',
-        focus: 'Full volume and intensity. Keep strength training — it is the best protection against a repeat.',
+        focus: 'Full volume and intensity. Keep strength training - it is the best protection against a repeat.',
         runningAllowed: true,
         volumePctOfBaseline: 100,
         allowedZones: [1, 2, 3, 4, 5],
@@ -672,7 +672,7 @@ const INJURIES = [
   },
   {
     id: 'bone_stress_injury_high_risk',
-    label: 'Bone stress injury — high risk site (femoral neck, navicular, anterior tibia, sacrum)',
+    label: 'Bone stress injury - high risk site (femoral neck, navicular, anterior tibia, sacrum)',
     shortLabel: 'Bone stress (high risk)',
     tissue: 'bone',
     boneRisk: 'high',
@@ -681,7 +681,7 @@ const INJURIES = [
     loadResponse: 'rest',
     summary:
       'These sites have a poor blood supply or are under tension, and can progress to a full fracture. '
-      + 'Management belongs with a doctor — this app only tracks what they tell you to do.',
+      + 'Management belongs with a doctor - this app only tracks what they tell you to do.',
     requiresMedicalClearance: true,
     hallmark: PAIN_0_10('Pain in the injured area during weight-bearing today?'),
     painRule: BONE_PAIN_RULE,
@@ -690,7 +690,7 @@ const INJURIES = [
     functionalTests: ['pain_free_walk'],
     redFlags: [
       { id: 'high_risk_site', label: 'High-risk bone stress injuries need imaging and medical supervision. Do not self-manage a return to running.' },
-      { id: 'groin_pain_weight_bearing', label: 'Deep groin pain on weight-bearing — femoral neck stress fractures can displace. See a doctor before your next run.' },
+      { id: 'groin_pain_weight_bearing', label: 'Deep groin pain on weight-bearing - femoral neck stress fractures can displace. See a doctor before your next run.' },
     ],
     typicalWeeks: [12, 26],
     prevention: { strengthSessionsPerWeek: 2, minMonths: 12 },
@@ -754,14 +754,14 @@ const INJURIES = [
     loadResponse: 'modified_load',
     summary:
       'Diffuse pain along the inner shin, spread over several centimetres rather than one point. '
-      + 'Sits on the same continuum as a bone stress injury — if it narrows to one spot, treat it as one.',
+      + 'Sits on the same continuum as a bone stress injury - if it narrows to one spot, treat it as one.',
     hallmark: PAIN_0_10('Shin pain during running today?'),
     painRule: { duringMax: 2, settleWithinHours: 24, morningMustNotWorsen: true, zeroTolerance: false },
     contraindications: ['hills', 'hard_surfaces'],
     crossTraining: NO_IMPACT_CROSS_TRAINING,
     functionalTests: ['single_leg_heel_raise', 'hop_10_single_leg'],
     redFlags: [
-      { id: 'focal_pain', label: 'Pain narrowing to a single point you can cover with a fingertip, or night pain — this may be a stress fracture, get it assessed.' },
+      { id: 'focal_pain', label: 'Pain narrowing to a single point you can cover with a fingertip, or night pain - this may be a stress fracture, get it assessed.' },
     ],
     typicalWeeks: [4, 12],
     prevention: { strengthSessionsPerWeek: 2, minMonths: 3 },
@@ -813,7 +813,7 @@ const INJURIES = [
     sports: ['run', 'triathlon'],
     loadResponse: 'rest',
     summary:
-      'The classic endurance-runner calf injury — a deep, cramping ache low in the calf that builds over a run '
+      'The classic endurance-runner calf injury - a deep, cramping ache low in the calf that builds over a run '
       + 'rather than tearing suddenly. Notoriously slow to settle and quick to recur if rushed.',
     hallmark: PAIN_0_10('Pain in the calf during single-leg heel raises today?'),
     painRule: MUSCLE_PAIN_RULE,
@@ -821,8 +821,8 @@ const INJURIES = [
     crossTraining: { allowed: ['bike', 'swim', 'aqua_jog'], boneLoadFactor: 0 },
     functionalTests: ['single_leg_heel_raise_bent', 'single_leg_heel_raise', 'hop_10_single_leg'],
     redFlags: [
-      { id: 'dvt', label: 'Calf swelling, warmth, redness or pain that is worse when you are not moving — get checked for a clot the same day.' },
-      { id: 'achilles_rupture', label: 'A sudden loud pop with inability to push off — urgent care.' },
+      { id: 'dvt', label: 'Calf swelling, warmth, redness or pain that is worse when you are not moving - get checked for a clot the same day.' },
+      { id: 'achilles_rupture', label: 'A sudden loud pop with inability to push off - urgent care.' },
     ],
     typicalWeeks: [4, 10],
     prevention: { strengthSessionsPerWeek: 2, minMonths: 6 },
@@ -897,14 +897,14 @@ const INJURIES = [
     bodySites: ['calf'],
     sports: ['run', 'triathlon'],
     loadResponse: 'rest',
-    summary: 'Sudden sharp pain high in the calf, often mid-stride or on a push-off — the "tennis leg" pattern.',
+    summary: 'Sudden sharp pain high in the calf, often mid-stride or on a push-off - the "tennis leg" pattern.',
     hallmark: PAIN_0_10('Pain in the calf during single-leg heel raises today?'),
     painRule: MUSCLE_PAIN_RULE,
     contraindications: ['sprinting', 'hills'],
     crossTraining: { allowed: ['bike', 'swim', 'aqua_jog'], boneLoadFactor: 0 },
     functionalTests: ['single_leg_heel_raise', 'hop_10_single_leg'],
     redFlags: [
-      { id: 'dvt', label: 'Calf swelling, warmth, redness or pain at rest — get checked for a clot the same day.' },
+      { id: 'dvt', label: 'Calf swelling, warmth, redness or pain at rest - get checked for a clot the same day.' },
     ],
     typicalWeeks: [3, 6],
     prevention: { strengthSessionsPerWeek: 2, minMonths: 3 },
@@ -979,15 +979,15 @@ const INJURIES = [
     loadResponse: 'rest',
     summary:
       'Sudden pain in the back of the thigh, usually during faster running. Return is governed by speed, '
-      + 'not by volume — most re-injuries happen in the first two weeks back at pace.',
+      + 'not by volume - most re-injuries happen in the first two weeks back at pace.',
     hallmark: PAIN_0_10('Pain in the hamstring on a fast straight-leg raise today?'),
     painRule: MUSCLE_PAIN_RULE,
     contraindications: ['sprinting', 'aggressive_stretching'],
     crossTraining: { allowed: ['bike', 'swim', 'aqua_jog'], boneLoadFactor: 0 },
     functionalTests: ['active_slr', 'single_leg_bridge', 'single_leg_hop_distance'],
     redFlags: [
-      { id: 'proximal_avulsion', label: 'A pop deep at the sitting bone with heavy bruising and difficulty walking — needs imaging promptly, avulsions can need surgery.' },
-      { id: 'intramuscular_tendon', label: 'If imaging showed the central (intramuscular) tendon is involved, expect roughly three times the usual timeline — set the episode timeline accordingly.' },
+      { id: 'proximal_avulsion', label: 'A pop deep at the sitting bone with heavy bruising and difficulty walking - needs imaging promptly, avulsions can need surgery.' },
+      { id: 'intramuscular_tendon', label: 'If imaging showed the central (intramuscular) tendon is involved, expect roughly three times the usual timeline - set the episode timeline accordingly.' },
     ],
     typicalWeeks: [3, 12],
     prevention: { strengthSessionsPerWeek: 2, minMonths: 6 },
@@ -1006,7 +1006,7 @@ const INJURIES = [
       {
         id: 'strength',
         name: 'Strength through range',
-        focus: 'Nordic curls, Romanian deadlifts, single-leg bridges — loaded at increasing length.',
+        focus: 'Nordic curls, Romanian deadlifts, single-leg bridges - loaded at increasing length.',
         runningAllowed: false,
         volumePctOfBaseline: 0,
         allowedZones: [1, 2, 3],
@@ -1032,7 +1032,7 @@ const INJURIES = [
         name: 'Return of speed',
         focus:
           'One speed step per session with 48 h between: 60% -> 70% -> 80% -> 90% -> 95% -> 100%. '
-          + 'Confidence matters as much as pain here — do not skip steps.',
+          + 'Confidence matters as much as pain here - do not skip steps.',
         runningAllowed: true,
         volumePctOfBaseline: 70,
         allowedZones: [1, 2, 3, 4],
@@ -1044,7 +1044,7 @@ const INJURIES = [
       {
         id: 'return',
         name: 'Return to full training',
-        focus: 'Full training. Nordic curls stay in the programme — they are the best evidence-backed protection.',
+        focus: 'Full training. Nordic curls stay in the programme - they are the best evidence-backed protection.',
         runningAllowed: true,
         volumePctOfBaseline: 100,
         allowedZones: [1, 2, 3, 4, 5],
@@ -1069,7 +1069,7 @@ const INJURIES = [
     crossTraining: { allowed: ['swim', 'bike'], boneLoadFactor: 0 },
     functionalTests: ['adductor_squeeze'],
     redFlags: [
-      { id: 'hip_referred', label: 'Deep groin pain with weight-bearing, catching or a locking hip — get the hip and femoral neck assessed.' },
+      { id: 'hip_referred', label: 'Deep groin pain with weight-bearing, catching or a locking hip - get the hip and femoral neck assessed.' },
     ],
     typicalWeeks: [3, 8],
     prevention: { strengthSessionsPerWeek: 2, minMonths: 3 },
@@ -1145,7 +1145,7 @@ const INJURIES = [
         { value: 15, label: '5-15 min' },
         { value: 30, label: '15-30 min' },
         { value: 60, label: '30-60 min' },
-        { value: 999, label: 'Never — pain free' },
+        { value: 999, label: 'Never - pain free' },
       ],
       betterIsLower: false,
     },
@@ -1186,7 +1186,7 @@ const INJURIES = [
       {
         id: 'return',
         name: 'Return to full training',
-        focus: 'Reintroduce downhills last — they are the biggest provocateur.',
+        focus: 'Reintroduce downhills last - they are the biggest provocateur.',
         runningAllowed: true,
         volumePctOfBaseline: 100,
         allowedZones: [1, 2, 3, 4, 5],
@@ -1206,14 +1206,14 @@ const INJURIES = [
     loadResponse: 'modified_load',
     summary:
       'Diffuse ache around or behind the kneecap, worse going downstairs, squatting and after long sitting. '
-      + 'A load-tolerance problem — reduce the provocation, build the capacity.',
+      + 'A load-tolerance problem - reduce the provocation, build the capacity.',
     hallmark: PAIN_0_10('Pain going down stairs today?'),
     painRule: { duringMax: 3, settleWithinHours: 24, morningMustNotWorsen: true, zeroTolerance: false },
     contraindications: ['downhill_running', 'deep_squats', 'hills'],
     crossTraining: { allowed: ['swim', 'aqua_jog', 'bike'], boneLoadFactor: 0 },
     functionalTests: ['decline_squat', 'single_leg_bridge'],
     redFlags: [
-      { id: 'locking_knee', label: 'Knee locking, giving way or swelling that fills the joint — get it examined.' },
+      { id: 'locking_knee', label: 'Knee locking, giving way or swelling that fills the joint - get it examined.' },
     ],
     typicalWeeks: [6, 12],
     prevention: { strengthSessionsPerWeek: 2, minMonths: 6 },
@@ -1266,7 +1266,7 @@ const INJURIES = [
     sports: ['run', 'triathlon'],
     loadResponse: 'rest',
     summary:
-      'Rolled ankle with pain and swelling on the outside. Balance work is what stops it happening again — '
+      'Rolled ankle with pain and swelling on the outside. Balance work is what stops it happening again - '
       + 'the single biggest risk factor for an ankle sprain is a previous ankle sprain.',
     hallmark: PAIN_0_10('Pain in the ankle during weight-bearing today?'),
     painRule: MUSCLE_PAIN_RULE,
@@ -1274,7 +1274,7 @@ const INJURIES = [
     crossTraining: { allowed: ['swim', 'bike'], boneLoadFactor: 0 },
     functionalTests: ['single_leg_hop_distance', 'hop_10_single_leg'],
     redFlags: [
-      { id: 'ottawa', label: 'Cannot bear weight for four steps, or bony tenderness on the back edge or tip of either ankle bone — needs an X-ray to rule out a fracture.' },
+      { id: 'ottawa', label: 'Cannot bear weight for four steps, or bony tenderness on the back edge or tip of either ankle bone - needs an X-ray to rule out a fracture.' },
     ],
     typicalWeeks: [2, 8],
     prevention: { strengthSessionsPerWeek: 2, minMonths: 6 },
@@ -1332,7 +1332,7 @@ const INJURIES = [
     crossTraining: { allowed: ['run', 'bike'], boneLoadFactor: 1 },
     functionalTests: [],
     redFlags: [
-      { id: 'night_pain_shoulder', label: 'Night pain, marked weakness lifting the arm, or a traumatic onset — get it assessed for a cuff tear.' },
+      { id: 'night_pain_shoulder', label: 'Night pain, marked weakness lifting the arm, or a traumatic onset - get it assessed for a cuff tear.' },
     ],
     typicalWeeks: [6, 16],
     prevention: { strengthSessionsPerWeek: 2, minMonths: 6 },
@@ -1382,7 +1382,7 @@ const INJURIES = [
 const ILLNESSES = [
   {
     id: 'urti_above_neck',
-    label: 'Upper respiratory infection — above the neck',
+    label: 'Upper respiratory infection - above the neck',
     shortLabel: 'Cold (above neck)',
     tissue: null,
     kind: 'illness',
@@ -1411,7 +1411,7 @@ const ILLNESSES = [
     functionalTests: [],
     redFlags: [
       { id: 'fever_training', label: 'Never train with a fever. Training with a febrile infection is associated with heart muscle inflammation (myocarditis).' },
-      { id: 'chest_symptoms', label: 'Chest tightness, a productive cough, breathlessness at rest or palpitations — see a doctor before training.' },
+      { id: 'chest_symptoms', label: 'Chest tightness, a productive cough, breathlessness at rest or palpitations - see a doctor before training.' },
     ],
     typicalWeeks: [1, 2],
     stages: [
@@ -1449,7 +1449,7 @@ const ILLNESSES = [
   },
   {
     id: 'systemic_illness_below_neck',
-    label: 'Systemic illness — fever or below the neck',
+    label: 'Systemic illness - fever or below the neck',
     shortLabel: 'Illness (systemic)',
     tissue: null,
     kind: 'illness',
@@ -1482,9 +1482,9 @@ const ILLNESSES = [
     crossTraining: { allowed: [], boneLoadFactor: 0 },
     functionalTests: [],
     redFlags: [
-      { id: 'myocarditis', label: 'Chest pain, palpitations, unusual breathlessness or fainting during or after illness — stop and see a doctor. These can signal heart involvement.' },
-      { id: 'mononucleosis', label: 'If glandular fever (mononucleosis) is suspected or confirmed, an enlarged spleen means no contact or high-impact sport for several weeks — needs medical clearance.' },
-      { id: 'prolonged', label: 'Symptoms or unusual fatigue lasting more than two to three weeks — get assessed rather than pushing through.' },
+      { id: 'myocarditis', label: 'Chest pain, palpitations, unusual breathlessness or fainting during or after illness - stop and see a doctor. These can signal heart involvement.' },
+      { id: 'mononucleosis', label: 'If glandular fever (mononucleosis) is suspected or confirmed, an enlarged spleen means no contact or high-impact sport for several weeks - needs medical clearance.' },
+      { id: 'prolonged', label: 'Symptoms or unusual fatigue lasting more than two to three weeks - get assessed rather than pushing through.' },
     ],
     typicalWeeks: [1, 4],
     stages: [
@@ -1524,7 +1524,7 @@ const ILLNESSES = [
       {
         id: 'return',
         name: 'Return to full training',
-        focus: 'Full training. Consider a threshold retest — your zones may have shifted.',
+        focus: 'Full training. Consider a threshold retest - your zones may have shifted.',
         runningAllowed: true,
         volumePctOfBaseline: 100,
         allowedZones: [1, 2, 3, 4, 5],
@@ -1551,7 +1551,7 @@ const OTHER = {
   crossTraining: { allowed: ['bike', 'swim'], boneLoadFactor: 0 },
   functionalTests: [],
   redFlags: [
-    { id: 'unclear', label: 'Pain at rest, at night, or getting worse despite backing off — get a proper diagnosis.' },
+    { id: 'unclear', label: 'Pain at rest, at night, or getting worse despite backing off - get a proper diagnosis.' },
   ],
   typicalWeeks: [2, 12],
   stages: [
@@ -1631,7 +1631,7 @@ function getCatalogEntry(id) {
   return CATALOG_BY_ID[id] || null;
 }
 
-/** Entries plausible for a body site — drives the picker after the map tap. */
+/** Entries plausible for a body site - drives the picker after the map tap. */
 function catalogForBodySite(siteId) {
   if (!siteId) return CATALOG;
   return CATALOG.filter((e) => (e.bodySites || []).includes(siteId));
