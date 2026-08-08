@@ -16,13 +16,16 @@ import { isCapacitorNative } from '../utils/isNativeApp';
 const DISMISS_KEY = 'trialBanner_dismissed';
 
 const TrialBanner = () => {
-  const { isPremium } = usePremium();
+  const { isPremium, premiumResolved } = usePremium();
   const navigate = useNavigate();
   const [dismissed, setDismissed] = useState(() => {
     try { return sessionStorage.getItem(DISMISS_KEY) === '1'; } catch { return false; }
   });
 
-  if (isPremium || dismissed || isCapacitorNative()) return null;
+  // Wait for the profile to resolve before showing — otherwise the banner
+  // flashes at paying users on every navigation (isPremium reads "free" until
+  // the user object loads).
+  if (!premiumResolved || isPremium || dismissed || isCapacitorNative()) return null;
 
   const dismiss = (e) => {
     e.stopPropagation();
