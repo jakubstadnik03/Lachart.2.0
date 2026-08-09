@@ -150,6 +150,9 @@ export function trackUserRegistration(method, userRole = 'athlete') {
   });
   // Reddit Ads conversion — every registration path funnels through here.
   trackRedditEvent('SignUp');
+  // Google Ads conversion — fire once on a real conversion (registration),
+  // not on every page view.
+  trackAdsConversionKontakt();
 }
 
 export function trackDemoUsage(action, details = {}) {

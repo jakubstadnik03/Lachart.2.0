@@ -11,7 +11,7 @@ import { AthleteSelectionProvider } from './context/AthleteSelectionContext';
 import Layout from './components/Layout';
 import ProtectedRoute from './components/ProtectedRoute';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { initAnalytics, initRedditPixel, trackPageView, trackAdsConversionKontakt } from './utils/analytics';
+import { initAnalytics, initRedditPixel, trackPageView } from './utils/analytics';
 import { isCapacitorNative } from './utils/isNativeApp';
 import { BRAND_LOGO_SRC } from './constants/brandLogo';
 import './App.css';
@@ -212,18 +212,12 @@ function AppRoutes() {
     <Layout isMenuOpen={isMenuOpen} setIsMenuOpen={setIsMenuOpen} />
   ), [isMenuOpen]);
 
-  // Track page views on route change
+  // Track page views on route change. (The Google Ads conversion is NOT fired
+  // here — it used to fire on every /dashboard|/testing|/training view, i.e.
+  // once per page load, which flooded the conversion with ~1.7k false hits.
+  // It now fires once, on a real conversion: see trackUserRegistration.)
   React.useEffect(() => {
     trackPageView(location.pathname + location.search);
-    // Example: fire Google Ads conversion when user reaches key pages.
-    // Here: when user opens Training, Testing or Dashboard (can be adjusted).
-    if (
-      location.pathname.startsWith('/training') ||
-      location.pathname.startsWith('/testing') ||
-      location.pathname.startsWith('/dashboard')
-    ) {
-      trackAdsConversionKontakt();
-    }
   }, [location.pathname, location.search]);
 
   // Browser-style scroll-to-top on route change. Without this, clicking
