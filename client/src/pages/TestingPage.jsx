@@ -1201,9 +1201,10 @@ const TestingPage = () => {
         }))
       };
 
-      // Free-tier coaches: max 1 test per athlete
-      if (!isPremium && isCoachLikeRole && tests.length >= 1) {
-        gate('Unlimited tests — upgrade to add more', 'coach');
+      // Free plan: one test per athlete. Same widening as the button above —
+      // the server enforces this either way, this just avoids a wasted round trip.
+      if (!isPremium && tests.length >= 1) {
+        gate('Unlimited tests — upgrade to add more', isCoachLikeRole ? 'coach' : 'pro');
         return;
       }
 
@@ -1397,9 +1398,13 @@ const TestingPage = () => {
             <button
               data-tour="tour-new-testing"
               onClick={() => {
-                // Free-tier coaches: max 1 test; gate before opening the form
-                if (!showNewTesting && !isPremium && isCoachLikeRole && tests.length >= 1) {
-                  gate('Unlimited tests — upgrade to add more', 'coach');
+                // Free plan: one test on file, for athletes as much as coaches.
+                // This used to check isCoachLikeRole, so a free athlete could open
+                // the form, fill in every stage and only hit the server's 403 on
+                // save. `tests` is the selected athlete's list, which is what the
+                // server counts against.
+                if (!showNewTesting && !isPremium && tests.length >= 1) {
+                  gate('Unlimited tests — upgrade to add more', isCoachLikeRole ? 'coach' : 'pro');
                   return;
                 }
                 setShowNewTesting(prev => !prev);
