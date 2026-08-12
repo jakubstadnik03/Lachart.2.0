@@ -1,0 +1,211 @@
+/**
+ * Daily time-in-heart-rate-zone.
+ *
+ * The dashboard has always classified a session as easy/medium/hard from one
+ * number — its average heart rate or its TSS. That is misleading in the exact
+ * case athletes care about: a 4×8 min VO2max session and a steady tempo ride
+ * can share an average, while one is 30 minutes in Z5 and the other is 90
+ * minutes in Z3. Only the distribution tells them apart.
+ *
+ * Sources, in order of preference per session:
+ *   1. FitTraining.timeInZone — already computed at upload, costs nothing
+ *   2. FIT per-second records
+ *   3. Strava heart-rate streams
+ * Sessions with no heart-rate data at all are reported separately rather than
+ * silently dropped, so "80% of your week is unaccounted for" stays visible.
+ */
+
+'use strict';
+
+const FitTraining = require('../models/fitTraining');
+const StravaActivity = require('../models/StravaActivity');
+const StravaStream = require('../models/StravaStream');
+const User = require('../models/UserModel');
+
+const ZONE_KEYS = ['zone1', 'zone2', 'zone3', 'zone4', 'zone5'];
+
+/** Sport → the zone set to use. Everything unfamiliar falls back to cycling. */
+function zoneSetFor(profileZones, sport) {
+  const s = String(sport || '').toLowerCase();
+  if (s.includes('run') || s.includes('walk') || s.includes('hike')) return profileZones?.running;
+  if (s.includes('swim')) return profileZones?.swimming;
+  return profileZones?.cycling;
+}
+
+/**
+ * Zone boundaries as an ascending list of minimums.
+ * Returns null when the athlete has no usable zones — better to report "no
+ * zones set" than to invent them from a formula and present it as measured.
+ */
+function boundariesFrom(zoneSet) {
+  if (!zoneSet) return null;
+  const mins = ZONE_KEYS.map((k) => Number(zoneSet[k]?.min));
+  if (mins.some((m) => !Number.isFinite(m) || m <= 0)) return null;
+  // Guard against a mis-saved profile with unordered zones.
+  for (let i = 1; i < mins.length; i += 1) if (mins[i] <= mins[i - 1]) return null;
+  return mins;
+}
+
+/** 1..5 for a heart rate, or null below zone 1. */
+function zoneForHr(hr, mins) {
+  const v = Number(hr);
+  if (!Number.isFinite(v) || v <= 0) return null;
+  let zone = null;
+  for (let i = 0; i < mins.length; i += 1) if (v >= mins[i]) zone = i + 1;
+  return zone;
+}
+
+function emptyZones() {
+  return { z1: 0, z2: 0, z3: 0, z4: 0, z5: 0 };
+}
+
+function localDayKey(d) {
+  const x = d instanceof Date ? d : new Date(d);
+  if (Number.isNaN(x.getTime())) return null;
+  return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`;
+}
+
+/** Accumulate a heart-rate series into zone seconds. */
+function addSeries(target, hrArray, timeArray, mins) {
+  if (!Array.isArray(hrArray)) return 0;
+  let added = 0;
+  let prevT = null;
+  for (let i = 0; i < hrArray.length; i += 1) {
+    let dt = 1;
+    if (Array.isArray(timeArray) && timeArray[i] != null) {
+      if (prevT != null) dt = timeArray[i] - prevT;
+      prevT = timeArray[i];
+    }
+    // Gaps and paused stretches would otherwise dump minutes into whatever
+    // zone the athlete happened to be in when they stopped.
+    if (!(dt > 0) || dt > 10) continue;
+    const z = zoneForHr(hrArray[i], mins);
+    if (!z) continue;
+    target[`z${z}`] += dt;
+    added += dt;
+  }
+  return added;
+}
+
+/**
+ * @returns {Promise<{ days: Array, hasZones: boolean, coverage: object }>}
+ *   days: [{ date, zones: {z1..z5}, totalSec, sessions, unmeasuredSec }]
+ */
+async function dailyZoneDistribution(athleteId, startDate, endDate, { sport = 'all' } = {}) {
+  const athleteIdStr = String(athleteId);
+  const user = await User.findById(athleteIdStr).select('heartRateZones').lean();
+  const profileZones = user?.heartRateZones || null;
+
+  const byDay = new Map();
+  const dayFor = (key) => {
+    if (!byDay.has(key)) {
+      byDay.set(key, { date: key, zones: emptyZones(), totalSec: 0, sessions: 0, unmeasuredSec: 0 });
+    }
+    return byDay.get(key);
+  };
+
+  const sportMatches = (s) => {
+    if (sport === 'all') return true;
+    const v = String(s || '').toLowerCase();
+    if (sport === 'run') return v.includes('run') || v.includes('walk');
+    if (sport === 'bike') return v.includes('ride') || v.includes('bike') || v.includes('cycl') || v.includes('virtual');
+    if (sport === 'swim') return v.includes('swim');
+    return true;
+  };
+
+  let anyZones = false;
+
+  // ── FIT trainings ────────────────────────────────────────────────
+  const fits = await FitTraining.find({
+    athleteId: athleteIdStr,
+    timestamp: { $gte: startDate, $lte: endDate },
+  }).select('timestamp sport totalElapsedTime totalTimerTime timeInZone records').lean();
+
+  for (const t of fits) {
+    if (!sportMatches(t.sport)) continue;
+    const key = localDayKey(t.timestamp);
+    if (!key) continue;
+    const day = dayFor(key);
+    day.sessions += 1;
+
+    const mins = boundariesFrom(zoneSetFor(profileZones, t.sport));
+    const duration = Number(t.totalElapsedTime || t.totalTimerTime || 0);
+
+    if (!mins) { day.unmeasuredSec += duration; continue; }
+    anyZones = true;
+
+    // Precomputed at upload — by far the cheapest path.
+    if (Array.isArray(t.timeInZone) && t.timeInZone.length) {
+      let added = 0;
+      for (const entry of t.timeInZone) {
+        const z = Number(entry?.zone);
+        const secs = Number(entry?.time) || 0;
+        if (z >= 1 && z <= 5 && secs > 0) { day.zones[`z${z}`] += secs; added += secs; }
+      }
+      day.totalSec += added;
+      if (duration > added) day.unmeasuredSec += duration - added;
+      continue;
+    }
+
+    const recs = Array.isArray(t.records) ? t.records : [];
+    if (recs.length) {
+      const hr = recs.map((r) => r?.heartRate);
+      const time = recs.map((r) => (r?.elapsedTime != null ? r.elapsedTime : null));
+      const added = addSeries(day.zones, hr, time.some((x) => x != null) ? time : null, mins);
+      day.totalSec += added;
+      if (duration > added) day.unmeasuredSec += duration - added;
+    } else {
+      day.unmeasuredSec += duration;
+    }
+  }
+
+  // ── Strava activities ────────────────────────────────────────────
+  const stravas = await StravaActivity.find({
+    userId: athleteIdStr,
+    startDate: { $gte: startDate, $lte: endDate },
+  }).select('stravaId sport startDate movingTime elapsedTime').lean();
+
+  const wanted = stravas.filter((a) => sportMatches(a.sport));
+  const streamDocs = wanted.length
+    ? await StravaStream.find({
+        userId: athleteIdStr,
+        stravaId: { $in: wanted.map((a) => a.stravaId) },
+      }).select('stravaId streams').lean()
+    : [];
+  const streamsById = new Map(streamDocs.map((d) => [String(d.stravaId), d.streams || {}]));
+
+  for (const a of wanted) {
+    const key = localDayKey(a.startDate);
+    if (!key) continue;
+    const day = dayFor(key);
+    day.sessions += 1;
+
+    const mins = boundariesFrom(zoneSetFor(profileZones, a.sport));
+    const duration = Number(a.movingTime || a.elapsedTime || 0);
+    if (!mins) { day.unmeasuredSec += duration; continue; }
+    anyZones = true;
+
+    const s = streamsById.get(String(a.stravaId));
+    const added = s ? addSeries(day.zones, s.heartrate, s.time, mins) : 0;
+    day.totalSec += added;
+    if (duration > added) day.unmeasuredSec += duration - added;
+  }
+
+  const days = Array.from(byDay.values()).sort((a, b) => a.date.localeCompare(b.date));
+  const measured = days.reduce((acc, d) => acc + d.totalSec, 0);
+  const unmeasured = days.reduce((acc, d) => acc + d.unmeasuredSec, 0);
+
+  return {
+    days,
+    hasZones: anyZones,
+    coverage: {
+      measuredSec: Math.round(measured),
+      unmeasuredSec: Math.round(unmeasured),
+      // What share of recorded time we can actually place in a zone. Shown in
+      // the UI so a thin bar reads as "no HR data" rather than "an easy week".
+      pct: measured + unmeasured > 0 ? Math.round((measured / (measured + unmeasured)) * 100) : 0,
+    },
+  };
+}
+
+module.exports = { dailyZoneDistribution, zoneForHr, boundariesFrom };

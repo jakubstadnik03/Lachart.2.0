@@ -34,6 +34,7 @@ import {
 } from '../utils/unitsConverter';
 import RecordLactateModal from '../components/training/RecordLactateModal';
 import { SearchableSelect } from '../components/SearchableSelect';
+import NativeComparisonVerdict from '../components/native/NativeComparisonVerdict';
 // Lazy-load — keeps the heavy editor/modal chunks out of this page's bundle
 const ActivityFullModal = lazy(() =>
   import('../components/Calendar/CalendarView').then(m => ({ default: m.ActivityFullModal }))
@@ -2748,6 +2749,17 @@ export default function NativeTrainingPage({
                     })}
                   </div>
                 </div>
+
+                {/* Answer first, then the chart. Same verdict and confidence
+                    line as the web comparison — intervals come from this page's
+                    own merged Strava-lap cache rather than the training doc. */}
+                <NativeComparisonVerdict
+                  trainings={sessions}
+                  metric={selectedMetric}
+                  workOnly={hideWarmCool}
+                  intervalsFor={(t) => getIntervalsForChart(t, stravaLapsCache)}
+                  sport={currentSport}
+                />
 
                 {/* Chart — re-keys on type/title/metric change so each swap fades+animates in */}
                 <div

@@ -2124,3 +2124,22 @@ export const getSimilarActivities = async ({
   const { data } = await api.get('/api/integrations/activities/similar', { params });
   return data;
 };
+
+/**
+ * Daily time-in-heart-rate-zone for the Training Timeline.
+ * Server-side because it needs per-second streams, which the client never holds.
+ */
+export const getTimelineZones = async (athleteId, start, end, sport = 'all') => {
+  const params = { start, end, sport };
+  if (athleteId) params.athleteId = String(athleteId);
+  const response = await api.get('/api/timeline/zones', { params, cacheTtlMs: 5 * 60 * 1000 });
+  return response.data;
+};
+
+/** Routes the athlete has done more than once, with each repeat's time. */
+export const getRouteHistory = async (athleteId, limit = 150) => {
+  const params = { limit };
+  if (athleteId) params.athleteId = String(athleteId);
+  const response = await api.get('/api/timeline/routes', { params, cacheTtlMs: 10 * 60 * 1000 });
+  return response.data;
+};

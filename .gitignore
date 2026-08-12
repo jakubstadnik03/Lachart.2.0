@@ -55,3 +55,8 @@ client/App\ */
 # Cordova leftovers: byte-identical copies of config.xml that Capacitor
 # regenerates as "config 1.xml", "config 2.xml"... The real one is tracked.
 client/ios/App/App/config [0-9]*.xml
+
+# Generated feature preview (scripts/preview-new-features.test.js) — never ship it:
+# the copy under client/public/ would be served publicly in production.
+preview-new-features.html
+client/public/preview-new-features.html

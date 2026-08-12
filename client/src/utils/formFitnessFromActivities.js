@@ -5,40 +5,23 @@
 import { resolveActivityTss } from './computeTss';
 import { enrichProfileForTss } from './inferThresholdsFromActivities';
 import { matchesCalendarSportFilter } from './calendarDayOrdering';
+import {
+  activityCalendarDateKey,
+  activityOnLocalDay,
+  localCalendarDateKey,
+  localWeekStartKey,
+} from './calendarDateKeys';
 
-export function localCalendarDateKey(date) {
-  const d = date instanceof Date ? date : new Date(date);
-  if (Number.isNaN(d.getTime())) return null;
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
-}
-
-/** Local calendar day for an activity — same field order everywhere (dashboard, calendar, period stats, native app). */
-export function activityCalendarDateKey(act) {
-  const raw = act?.date ?? act?.timestamp ?? act?.startDate ?? act?.start_time;
-  if (raw == null) return null;
-  return localCalendarDateKey(raw);
-}
-
-/** True when the activity falls on the given local calendar day. */
-export function activityOnLocalDay(act, date) {
-  const dk = activityCalendarDateKey(act);
-  if (!dk) return false;
-  return dk === localCalendarDateKey(date);
-}
-
-/** Monday of the activity's local calendar week (YYYY-MM-DD). */
-export function localWeekStartKey(date) {
-  const d = date instanceof Date ? new Date(date) : new Date(date);
-  if (Number.isNaN(d.getTime())) return null;
-  const day = d.getDay();
-  const diff = d.getDate() - day + (day === 0 ? -6 : 1);
-  d.setDate(diff);
-  d.setHours(0, 0, 0, 0);
-  return localCalendarDateKey(d);
-}
+// The date-key helpers moved to calendarDateKeys.js — importing them from here
+// pulls in the PMC maths and (via the sport filter) a React icon component, which
+// callers outside the render tree don't want. Re-exported so existing imports,
+// of which there are many, keep working unchanged.
+export {
+  activityCalendarDateKey,
+  activityOnLocalDay,
+  localCalendarDateKey,
+  localWeekStartKey,
+};
 
 function activityTss(act, profile, tssUser) {
   return resolveActivityTss(act, profile, { user: tssUser || profile }) || 0;
