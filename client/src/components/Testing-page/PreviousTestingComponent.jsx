@@ -475,19 +475,16 @@ const PreviousTestingComponent = ({
             exit={{ opacity: 0, y: -20 }}
             transition={{ duration: 0.3 }}
           >
-        {(isPremium || filteredTests.length <= 1) ? (
-          <DateSelector
-            tests={filteredTests}
-            onSelectTest={handleDateSelectorTestSelect}
-            selectedTestId={currentTest?._id}
-          />
-        ) : (
-          <PremiumLockedCard
-            title="Your test history"
-            description="Switch between all your past tests and track how your thresholds change. Free shows your latest test only."
-            onUpgrade={() => gate('Test History', 'pro')}
-          />
-        )}
+            {/* Browsing past tests is free — the free plan caps how many tests you
+                can create (server-side, see requireQuotaSlot('tests')), not which
+                of the tests you already own you may open. Gating this only hid
+                data the user had already entered. Pro still owns the analysis on
+                top: threshold trends, zones, race paces and test comparison. */}
+            <DateSelector
+              tests={filteredTests}
+              onSelectTest={handleDateSelectorTestSelect}
+              selectedTestId={currentTest?._id}
+            />
           </motion.div>
         ) : (
           <motion.div
