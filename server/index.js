@@ -274,6 +274,7 @@ const raceEventRoutes = require("./routes/raceEventRoutes");
 const fitUploadRoute = require("./routes/fitUploadRoute");
 const lactateSessionRoutes = require("./routes/lactateSessionRoutes");
 const integrationsRoutes = require("./routes/integrationsRoutes");
+const intervalsIcuRoutes = require("./routes/intervalsIcuRoutes");
 const workoutClusteringRoutes = require("./routes/workoutClusteringRoutes");
 const subscriptionRoutes = require("./routes/subscriptionRoutes");
 const commentRoutes = require('./routes/commentRoutes');
@@ -314,6 +315,9 @@ app.use("/api/events", eventRoutes);
 app.use("/api/race-events", raceEventRoutes);
 app.use("/api/fit", fitUploadRoute);
 app.use("/api/lactate-session", lactateSessionRoutes);
+// Mount BEFORE the catch-all integrations router so its own /status route
+// wins over any similarly-named path there.
+app.use("/api/integrations/intervals-icu", intervalsIcuRoutes);
 app.use("/api/integrations", integrationsRoutes);
 app.use("/api/workout-clustering", workoutClusteringRoutes);
 app.use("/api/subscription", subscriptionRoutes);

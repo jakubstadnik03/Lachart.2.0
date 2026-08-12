@@ -12,6 +12,10 @@ const stepTargetSchema = new mongoose.Schema({
   useRange: { type: Boolean, default: false },
   rangeMin: Number,
   rangeMax: Number,
+  /** Coach's explicit watts/pace for an lt1/lt2/zone target, overriding the
+   *  athlete's own thresholds. Read by every target resolver — without it
+   *  here, Mongoose strict mode drops it on save. */
+  override: Number,
 }, { _id: false });
 
 const workoutStepSchema = new mongoose.Schema({
@@ -72,6 +76,12 @@ const plannedWorkoutSchema = new mongoose.Schema({
   executionData:   { type: mongoose.Schema.Types.Mixed, default: null },
   fitTrainingId:   String,
   stravaActivityId: String,
+  // Garmin Training API bookkeeping — set once the workout has been pushed to
+  // the athlete's Garmin Connect account, so an edit updates the same workout
+  // and a delete can remove it there too. Creating and scheduling are two
+  // separate Garmin calls, hence two ids.
+  garminWorkoutId:  String,
+  garminScheduleId: String,
 }, { timestamps: true });
 
 plannedWorkoutSchema.index({ athleteId: 1, date: -1 });

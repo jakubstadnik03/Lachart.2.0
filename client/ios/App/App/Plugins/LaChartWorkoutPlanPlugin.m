@@ -11,8 +11,15 @@
 #import <Foundation/Foundation.h>
 #import <Capacitor/Capacitor.h>
 
+// ⚠️ This list must stay in sync with `pluginMethods` in the Swift class.
+// A method missing here is unreachable from JS on the ObjC registration path,
+// which fails silently — the promise never resolves and the auto-sync no-ops.
 CAP_PLUGIN(LaChartWorkoutPlanPlugin, "LaChartWorkoutPlan",
-    CAP_PLUGIN_METHOD(isAvailable,          CAPPluginReturnPromise);
-    CAP_PLUGIN_METHOD(requestAuthorization, CAPPluginReturnPromise);
-    CAP_PLUGIN_METHOD(scheduleWorkout,      CAPPluginReturnPromise);
+    CAP_PLUGIN_METHOD(isAvailable,           CAPPluginReturnPromise);
+    CAP_PLUGIN_METHOD(requestAuthorization,  CAPPluginReturnPromise);
+    CAP_PLUGIN_METHOD(getAuthorizationState, CAPPluginReturnPromise);
+    CAP_PLUGIN_METHOD(scheduleWorkout,       CAPPluginReturnPromise);
+    CAP_PLUGIN_METHOD(getScheduledWorkouts,  CAPPluginReturnPromise);
+    CAP_PLUGIN_METHOD(removeWorkout,         CAPPluginReturnPromise);
+    CAP_PLUGIN_METHOD(getLimits,             CAPPluginReturnPromise);
 )

@@ -14,6 +14,8 @@ import { Skeleton, SkeletonCard } from '../components/common/Skeleton';
 
 import ReclassifyActivitiesCard from '../components/Settings/ReclassifyActivitiesCard';
 import AppleHealthCard from '../components/Settings/AppleHealthCard';
+import AppleWatchPlanCard from '../components/Settings/AppleWatchPlanCard';
+import IntervalsIcuCard from '../components/Settings/IntervalsIcuCard';
 import CategoryManager from '../components/Settings/CategoryManager';
 import { getIntegrationStatus, invalidateCache, listExternalActivities, uploadFitFile, getStravaAuthUrl, startGarminAuth, syncStravaActivities, backfillStravaHistory, autoSyncStravaActivities, updateAvatarFromStrava, syncGarminActivities, syncGarminHistory, autoSyncGarminActivities, fetchGdprExportJson, getCurrentSubscription, createCheckoutSession, getSubscriptionPortalUrl, cancelSubscription, reactivateSubscription, resetStravaBudget, updateUserProfile, syncSubscriptionFromStripe, fetchUserProfile, fetchStravaStatus } from '../services/api';
 import { saveUserToStorage } from '../utils/userStorage';
@@ -3825,6 +3827,10 @@ const SettingsPage = () => {
                 </div>
 
                 <AppleHealthCard isMobile={isMobile} />
+
+                <AppleWatchPlanCard isMobile={isMobile} />
+
+                <IntervalsIcuCard isMobile={isMobile} />
 
                 <div className={`bg-white ${isMobile ? 'rounded-md' : 'rounded-lg'} border border-gray-200 ${isMobile ? 'p-2.5' : 'p-6'}`}>
                   <div className={`flex items-center justify-between ${isMobile ? 'mb-2' : 'mb-4'}`}>

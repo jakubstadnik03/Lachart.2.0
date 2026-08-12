@@ -58,6 +58,23 @@ export async function initCapacitorShell() {
     console.warn('[Init] Apple Health auto-sync setup failed:', err?.message || err);
   }
 
+  // ── Apple Watch: mirror planned workouts onto the watch ─────────────
+  // Pushes a rolling 7-day window of the training calendar into the stock
+  // Workout app via WorkoutKit, so a planned session is ready to start with
+  // one tap. Reconciles (adds/updates/removes) rather than appending, and
+  // re-runs whenever the calendar changes or the app comes back to the front.
+  try {
+    const { initWatchPlanAutoSync, autoSyncWatchWorkouts } =
+      await import('../utils/appleWatchPlanAutoSync');
+    initWatchPlanAutoSync();
+    const { App: AppForWatchPlan } = await import('@capacitor/app');
+    AppForWatchPlan.addListener('appStateChange', ({ isActive }) => {
+      if (isActive) autoSyncWatchWorkouts().catch(() => {});
+    });
+  } catch (err) {
+    console.warn('[Init] Apple Watch plan auto-sync setup failed:', err?.message || err);
+  }
+
   try {
     const { App } = await import('@capacitor/app');
     if (!backListenerHandle) {

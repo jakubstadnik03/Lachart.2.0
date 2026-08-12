@@ -23,6 +23,7 @@ const stepTargetSchema = new mongoose.Schema({
   useRange: { type: Boolean, default: false },
   rangeMin: Number,   // lower bound when useRange=true
   rangeMax: Number,   // upper bound when useRange=true
+  override: Number,   // explicit watts/pace, wins over the athlete's thresholds
 }, { _id: false });
 
 /**
