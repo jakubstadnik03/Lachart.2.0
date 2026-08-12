@@ -14,6 +14,8 @@ import HealthEpisodeCard from '../components/NativeDashboard/HealthEpisodeCard';
 import WellnessDetailSheet from '../components/shared/WellnessDetailSheet';
 import OnboardingChecklist from '../components/NativeDashboard/OnboardingChecklist';
 import TrainingInsightsCard from '../components/DashboardPage/TrainingInsightsCard';
+import DailyCoachCard from '../components/DashboardPage/DailyCoachCard';
+import TrainingTimeline from '../components/DashboardPage/TrainingTimeline';
 import RaceCountdownCard from '../components/DashboardPage/RaceCountdownCard';
 import PostRaceFeedbackCard from '../components/DashboardPage/PostRaceFeedbackCard';
 import PlannedWorkoutEditor from '../components/NativeDashboard/PlannedWorkoutEditor';
@@ -1386,6 +1388,22 @@ export default function NativeDashboardPage({
             style={{ ...cardEntry(0), ...snapStyle }}
           />
 
+          {/* 0a2 · The day's coaching card. First thing on the phone, because on
+              mobile the athlete is usually checking one thing: today. */}
+          <div style={{ ...cardEntry(0), ...snapStyle }}>
+            <DailyCoachCard
+              key={`ndcc-${athleteId || user?._id || user?.id || 'self'}`}
+              athleteId={athleteId || user?._id || user?.id}
+              user={user}
+              todayMetrics={todayMetrics}
+              plannedWorkouts={plannedWorkouts}
+              activities={activities}
+              userProfile={fitnessProfile}
+              loading={metricsLoading}
+              compact
+            />
+          </div>
+
           {/* 0 · Weekly summary carousel (swipeable) */}
           <div style={{ ...cardEntry(0), ...snapStyle }}>
             <PremiumLock feature="Performance Insights" plan="pro" minHeight={180}>
@@ -1414,6 +1432,19 @@ export default function NativeDashboardPage({
               userProfile={fitnessProfile}
               loading={metricsLoading}
               compact
+            />
+          </div>
+
+          {/* 0c · Training Timeline — same three views as the web. */}
+          <div style={{ ...cardEntry(1), ...snapStyle }}>
+            <TrainingTimeline
+              key={`nttl-${athleteId || user?._id || user?.id || 'self'}`}
+              athleteId={athleteId || user?._id || user?.id}
+              activities={activities}
+              plannedWorkouts={plannedWorkouts}
+              userProfile={fitnessProfile}
+              user={user}
+              loading={metricsLoading}
             />
           </div>
 

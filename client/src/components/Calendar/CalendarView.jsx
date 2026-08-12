@@ -1,4 +1,6 @@
 import React, { useMemo, useState, useEffect, useLayoutEffect, useCallback, useRef } from 'react';
+import MoveCostDialog, { shouldConfirm } from './MoveCostDialog';
+import { assessMoveCost } from '../../utils/moveCost';
 import ReactDOM from 'react-dom';
 import TrainingFormComponent from '../TrainingForm';
 import SessionProgressChart from '../training/SessionProgressChart';
@@ -7985,6 +7987,33 @@ export default function CalendarView({
     };
   }, [onReorderPlannedWorkouts, reorderDrop, handlePlanReorderDragOver, handlePlanReorderDrop]);
 
+  // Pending move awaiting confirmation: { id, toKey, assessment }
+  const [pendingMove, setPendingMove] = useState(null);
+
+  /**
+   * Route every date-changing drop through the cost check. Free moves commit
+   * straight away; only a move that actually costs something interrupts.
+   */
+  const requestMovePlannedWorkout = useCallback((pw, toKey) => {
+    if (!onMovePlannedWorkout) return;
+    const assessment = assessMoveCost({
+      workout: pw,
+      toDate: toKey,
+      plannedWorkouts,
+      races: (races || []).map((r) => ({ date: String(r.date || '').slice(0, 10), name: r.name || r.title })),
+    });
+    if (!shouldConfirm(assessment)) {
+      onMovePlannedWorkout(pw._id, toKey);
+      return;
+    }
+    setPendingMove({ id: pw._id, toKey, assessment });
+  }, [onMovePlannedWorkout, plannedWorkouts, races]);
+
+  const confirmPendingMove = useCallback(() => {
+    if (pendingMove && onMovePlannedWorkout) onMovePlannedWorkout(pendingMove.id, pendingMove.toKey);
+    setPendingMove(null);
+  }, [pendingMove, onMovePlannedWorkout]);
+
   const endPlanDrag = useCallback(() => {
     setDraggedPw(null);
     setDragOverKey(null);
@@ -9771,7 +9800,7 @@ export default function CalendarView({
                           const { pw, isCopy } = draggedPw;
                           if (pw.date === key) return;
                           if (isCopy && onCopyPlannedWorkout) onCopyPlannedWorkout(pw, key);
-                          else if (!isCopy && onMovePlannedWorkout) onMovePlannedWorkout(pw._id, key);
+                          else if (!isCopy) requestMovePlannedWorkout(pw, key);
                           setDraggedPw(null);
                         }}
                       >
@@ -9959,7 +9988,7 @@ export default function CalendarView({
                       const { pw, isCopy } = draggedPw;
                       if (pw.date === key) return;
                       if (isCopy && onCopyPlannedWorkout) onCopyPlannedWorkout(pw, key);
-                      else if (!isCopy && onMovePlannedWorkout) onMovePlannedWorkout(pw._id, key);
+                      else if (!isCopy) requestMovePlannedWorkout(pw, key);
                       setDraggedPw(null);
                     }}
                   >
@@ -10383,6 +10412,15 @@ export default function CalendarView({
               prev && String(prev._id) === String(updated._id) ? { ...prev, ...updated } : prev
             );
           }}
+        />
+      )}
+
+      {/* What the move costs — shown before it is committed, never for a free move. */}
+      {pendingMove && (
+        <MoveCostDialog
+          assessment={pendingMove.assessment}
+          onConfirm={confirmPendingMove}
+          onCancel={() => setPendingMove(null)}
         />
       )}
     </>

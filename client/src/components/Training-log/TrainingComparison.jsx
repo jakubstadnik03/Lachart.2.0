@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthProvider';
 import { resolveDistanceUnitSystem, formatDistance, formatPaceMMSS, paceSecondsToDisplaySeconds } from '../../utils/unitsConverter';
 import { SearchableSelect } from '../SearchableSelect';
+import ComparisonVerdict from './ComparisonVerdict';
 import {
   ComposedChart,
   Line,
@@ -900,6 +901,15 @@ const TrainingComparison = ({ trainings: rawTrainings }) => {
         <AnimatePresence mode="wait">
         {activeTab === 'compare' && (
           <motion.div key="compare" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+
+            {/* Answer first. The chart below asks the athlete to do the analysis
+                themselves, and most will read a 0.2 mmol wiggle as progress —
+                this states what changed and whether it clears the noise. */}
+            <ComparisonVerdict
+              trainings={snapshotSelectedTrainings}
+              metric={selectedMetric}
+              workOnly={filterWorkOnly}
+            />
 
             {/* Training selector */}
             <div className="mb-4">

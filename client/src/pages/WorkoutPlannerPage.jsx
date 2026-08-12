@@ -15,6 +15,10 @@ import { useNotification } from '../context/NotificationContext';
 import WorkoutPlanModal, { stepTotalSecs, toLocalISO } from '../components/WorkoutPlanner/WorkoutPlanModal';
 import PlannerWeekRow from '../components/WorkoutPlanner/PlannerWeekRow';
 import PlannerProgressPanel from '../components/WorkoutPlanner/PlannerProgressPanel';
+import PlanBlockPreview from '../components/WorkoutPlanner/PlanBlockPreview';
+import {
+  buildBlockDraft, deleteDraft, draftToPlannedWorkouts, listDrafts, saveDraft,
+} from '../utils/planDraft';
 import { startOfWeek, addDays, filterItemsForWeek } from '../components/WorkoutPlanner/plannerWeekUtils';
 import {
   getPlannedWorkouts, createPlannedWorkout, updatePlannedWorkout,
@@ -246,6 +250,64 @@ export default function WorkoutPlannerPage() {
 
   useEffect(() => { loadRange(anchorWeek); }, [anchorWeek, loadRange]);
 
+  // ── Draft block ───────────────────────────────────────────────────────────
+  // A block is built and reviewed entirely in the browser; nothing reaches the
+  // calendar until the athlete commits it. Unfinished drafts survive a reload.
+  const [draft, setDraft] = useState(() => listDrafts()[0] || null);
+  const [committing, setCommitting] = useState(null); // { done, total }
+
+  const updateDraft = useCallback((next) => {
+    setDraft(next);
+    if (next) saveDraft(next);
+  }, []);
+
+  const startDraft = useCallback(() => {
+    updateDraft(buildBlockDraft({
+      startDate: anchorWeek,
+      weeks: 6,
+      weeklyHours: 8,
+      sessionsPerWeek: 5,
+      recoveryEvery: 4,
+      name: '6-week block',
+    }));
+  }, [anchorWeek, updateDraft]);
+
+  const discardDraft = useCallback(() => {
+    if (draft && !window.confirm('Discard this draft block?')) return;
+    if (draft) deleteDraft(draft.id);
+    setDraft(null);
+  }, [draft]);
+
+  const commitDraft = useCallback(async () => {
+    if (!draft) return;
+    const payloads = draftToPlannedWorkouts(draft);
+    setCommitting({ done: 0, total: payloads.length });
+    const created = [];
+    try {
+      // One at a time so the progress bar reports something true, and so a
+      // failure halfway leaves the sessions that did save rather than rolling
+      // the whole block back with no record of what happened.
+      for (const payload of payloads) {
+        // eslint-disable-next-line no-await-in-loop
+        const saved = await createPlannedWorkout(payload, coachAthleteId);
+        created.push(saved);
+        setCommitting({ done: created.length, total: payloads.length });
+      }
+      setPlanned((prev) => [...prev, ...created]);
+      deleteDraft(draft.id);
+      setDraft(null);
+      addNotification(`${created.length} sessions added to your calendar`, 'success');
+    } catch {
+      setPlanned((prev) => [...prev, ...created]);
+      addNotification(
+        `Saved ${created.length} of ${payloads.length} sessions — the rest are still in the draft`,
+        'error',
+      );
+    } finally {
+      setCommitting(null);
+    }
+  }, [draft, coachAthleteId, addNotification]);
+
   // ── CRUD handlers ─────────────────────────────────────────────────────────
   const handleSave = async (data) => {
     try {
@@ -405,6 +467,28 @@ export default function WorkoutPlannerPage() {
             </span>
           )}
         </div>
+      )}
+
+      {/* Draft block — review the whole thing before any of it is created. */}
+      {draft ? (
+        <div className="mb-4">
+          <PlanBlockPreview
+            draft={draft}
+            existingPlanned={planned}
+            onChange={updateDraft}
+            onCommit={commitDraft}
+            onDiscard={discardDraft}
+            committing={committing}
+          />
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={startDraft}
+          className="mb-4 w-full rounded-2xl border-2 border-dashed border-gray-200 py-3 text-sm font-semibold text-gray-500 hover:border-primary/40 hover:text-primary transition-colors"
+        >
+          + Plan a block — build six weeks, review it, then commit
+        </button>
       )}
 
       {/* Stacked weeks — each row: 7-day grid + right summary column */}

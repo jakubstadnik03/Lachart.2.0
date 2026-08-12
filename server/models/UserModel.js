@@ -346,6 +346,19 @@ const userSchema = new mongoose.Schema({
     pushOvertraining: { type: Boolean, default: true },
     /** Daily training reminder at 8:00 (local notification) */
     dailyTrainingReminder: { type: Boolean, default: true },
+    /** Proactive daily coaching card (local notification at the athlete's chosen time) */
+    dailyCard: { type: Boolean, default: true },
+    /** Local wall-clock hour/minute the card is delivered. */
+    dailyCardHour: { type: Number, default: 7, min: 0, max: 23 },
+    dailyCardMinute: { type: Number, default: 0, min: 0, max: 59 },
+    /** Coaching voice — see client constants/coachingStyles.js */
+    dailyCardStyle: {
+      type: String,
+      enum: ['gentle', 'supportive', 'straight', 'direct', 'dark', 'nerd'],
+      default: 'supportive',
+    },
+    /** Show the rotating lactate lesson at the foot of the card. */
+    dailyCardLesson: { type: Boolean, default: true },
     /** Sunday evening weekly digest (push / email) */
     weeklyDigest: { type: Boolean, default: true },
     /** Sunday evening weekly digest by email (same summary as push) */

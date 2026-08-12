@@ -26,6 +26,9 @@ import WellnessCard from "../components/DashboardPage/WellnessCard";
 import HealthStatusCard from "../components/DashboardPage/HealthStatusCard";
 import TrainingInsightsCard from "../components/DashboardPage/TrainingInsightsCard";
 import RaceCountdownCard from "../components/DashboardPage/RaceCountdownCard";
+import DailyCoachCard from "../components/DashboardPage/DailyCoachCard";
+import TrainingTimeline from "../components/DashboardPage/TrainingTimeline";
+import RouteHistoryCard from "../components/DashboardPage/RouteHistoryCard";
 import PostRaceFeedbackCard from "../components/DashboardPage/PostRaceFeedbackCard";
 import { useAuth } from '../context/AuthProvider';
 import { computePmcFromActivities } from '../utils/formFitnessFromActivities';
@@ -49,6 +52,8 @@ import { Skeleton } from "../components/common/Skeleton";
 import { buildActivityMatcher, metricsPatchFromDetail, patchCalendarCache, upsertPlannedWorkoutList, removePlannedWorkoutFromList, notifyPlannedWorkoutUpdated, notifyPlannedWorkoutDeleted } from '../utils/activityEventPatches';
 import { TSS_DISPLAY_MODE_EVENT, clearFormFitnessCache } from '../utils/uiPrefs';
 import { syncDailyTrainingReminder } from '../utils/dailyTrainingReminder';
+import { syncDailyCoachCardNotification } from '../utils/dailyCoachCardNotification';
+import { readDailyCardPrefs } from '../utils/dailyCardPrefs';
 import { plannedDistanceMetres, formatPlannedDistanceMetres } from '../utils/plannedWorkoutDistance';
 import ZoneDistributionChart from '../components/DashboardPage/ZoneDistributionChart';
 import IntensityDistributionChart from '../components/DashboardPage/IntensityDistributionChart';
@@ -2166,6 +2171,20 @@ export default function DashboardPage() {
     syncDailyTrainingReminder(plannedWorkouts, user?.notifications).catch(() => {});
   }, [plannedWorkouts, user?.notifications]);
 
+  // Reschedule the morning card on every dashboard load: the notification body
+  // is a snapshot, so it has to be refreshed whenever the plan or the numbers move.
+  useEffect(() => {
+    if (isCoachViewingOtherAthlete) return;
+    syncDailyCoachCardNotification({
+      prefs: readDailyCardPrefs(user),
+      todayMetrics,
+      plannedWorkouts,
+      activities: calendarData,
+      userProfile: fitnessProfile,
+      user,
+    }).catch(() => {});
+  }, [plannedWorkouts, calendarData, todayMetrics, fitnessProfile, user, isCoachViewingOtherAthlete]);
+
   // Derive CTL/ATL/TSB from calendar activities (same as native — never stale server API).
   useEffect(() => {
     if (!dashboardDataAthleteId || !user?._id) {
@@ -2828,6 +2847,24 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
         {!isTestingRole && (
           <>
+        {/* First thing on the page: the day's coaching. An athlete opening the
+            dashboard wants "what am I doing today, and should I?" answered
+            before they have to read a chart to work it out. */}
+        {dashboardDataAthleteId && (
+          <div className="lg:col-span-5 md:col-span-2">
+            <DailyCoachCard
+              key={`dcc-${dashboardDataAthleteId}`}
+              athleteId={dashboardDataAthleteId}
+              user={user}
+              todayMetrics={todayMetrics}
+              plannedWorkouts={plannedWorkouts}
+              activities={calendarData}
+              userProfile={fitnessProfile}
+              loading={dashboardFitnessLoading || formMetricsLoading}
+              readOnly={isCoachViewingOtherAthlete}
+            />
+          </div>
+        )}
         {!showAthleteEmptyWelcome && (
           <>
         {/* If the user has zero activities (no Strava, no FIT, no manual,
@@ -3069,6 +3106,29 @@ export default function DashboardPage() {
               onSubmitted={() => setRaceFeedbackFocusId(null)}
             />
             <WellnessCard athleteId={dashboardDataAthleteId} />
+            {/* Renders nothing until a route has actually been repeated. */}
+            <RouteHistoryCard athleteId={dashboardDataAthleteId} />
+          </motion.div>
+        )}
+
+        {/* Training Timeline — the shape of the block: daily load with a true
+            rolling 7-day line, real HR-zone balance, and plan vs actual. */}
+        {dashboardDataAthleteId && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.24 }}
+            className="lg:col-span-5 md:col-span-2"
+          >
+            <TrainingTimeline
+              key={`ttl-${dashboardDataAthleteId}`}
+              athleteId={dashboardDataAthleteId}
+              activities={calendarData}
+              plannedWorkouts={plannedWorkouts}
+              userProfile={fitnessProfile}
+              user={user}
+              loading={dashboardFitnessLoading}
+            />
           </motion.div>
         )}
 

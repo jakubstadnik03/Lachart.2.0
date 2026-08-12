@@ -820,7 +820,17 @@ router.put("/edit-profile", verifyToken, async (req, res) => {
             if (req.body.heartRateZones) updateData.heartRateZones = req.body.heartRateZones;
         }
         if (req.body.units) updateData.units = req.body.units;
-        if (req.body.notifications) updateData.notifications = req.body.notifications;
+        // Merge rather than replace: callers now send partial notification
+        // objects (the daily card writes only its own five keys), and a
+        // wholesale overwrite would silently reset every other push preference.
+        if (req.body.notifications && typeof req.body.notifications === 'object') {
+            const existingNotifs = existingUser?.notifications
+                ? (typeof existingUser.notifications.toObject === 'function'
+                    ? existingUser.notifications.toObject()
+                    : { ...existingUser.notifications })
+                : {};
+            updateData.notifications = { ...existingNotifs, ...req.body.notifications };
+        }
         // Training preferences (RPE scale, pace display, zones method, custom
         // zones). Merge against the existing document so partial updates
         // don't wipe other fields, since SettingsPage sends one prop at a
