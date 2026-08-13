@@ -11,8 +11,18 @@
  *   1. FitTraining.timeInZone — already computed at upload, costs nothing
  *   2. FIT per-second records
  *   3. Strava heart-rate streams
- * Sessions with no heart-rate data at all are reported separately rather than
- * silently dropped, so "80% of your week is unaccounted for" stays visible.
+ *   4. the session's average heart rate — an estimate, counted separately
+ *
+ * Four exists because of how streams actually arrive: they are prewarmed for
+ * newly synced activities and fetched lazily when someone opens one, so an
+ * athlete's back catalogue has none. Reporting a year of training as "no heart
+ * rate recorded" when every session has an average is simply wrong.
+ *
+ * The estimate puts the whole session in the zone its average falls in, which
+ * is the crude reading this file was written to replace — so it is tracked
+ * apart from measured time and the UI says which is which. A rough answer that
+ * announces itself beats a blank chart; a rough answer pretending to be
+ * measured does not.
  */
 
 'use strict';
@@ -137,7 +147,10 @@ async function dailyZoneDistribution(athleteId, startDate, endDate, { sport = 'a
   const byDay = new Map();
   const dayFor = (key) => {
     if (!byDay.has(key)) {
-      byDay.set(key, { date: key, zones: emptyZones(), totalSec: 0, sessions: 0, unmeasuredSec: 0 });
+      byDay.set(key, {
+        date: key, zones: emptyZones(), totalSec: 0, sessions: 0,
+        unmeasuredSec: 0, estimatedSec: 0,
+      });
     }
     return byDay.get(key);
   };
@@ -226,11 +239,23 @@ async function dailyZoneDistribution(athleteId, startDate, endDate, { sport = 'a
     const s = streamsById.get(String(a.stravaId));
     const added = s ? addSeries(day.zones, s.heartrate, s.time, mins) : 0;
     day.totalSec += added;
-    if (duration > added) day.unmeasuredSec += duration - added;
+
+    const remaining = duration - added;
+    if (remaining > 0) {
+      const avg = Number(a.averageHeartRate) || 0;
+      const zone = avg > 0 ? zoneForHr(avg, mins) : null;
+      if (zone) {
+        day.zones[`z${zone}`] += remaining;
+        day.estimatedSec += remaining;
+      } else {
+        day.unmeasuredSec += remaining;
+      }
+    }
   }
 
   const days = Array.from(byDay.values()).sort((a, b) => a.date.localeCompare(b.date));
   const measured = days.reduce((acc, d) => acc + d.totalSec, 0);
+  const estimated = days.reduce((acc, d) => acc + d.estimatedSec, 0);
   const unmeasured = days.reduce((acc, d) => acc + d.unmeasuredSec, 0);
 
   return {
@@ -238,10 +263,17 @@ async function dailyZoneDistribution(athleteId, startDate, endDate, { sport = 'a
     hasZones: anyZones,
     coverage: {
       measuredSec: Math.round(measured),
+      estimatedSec: Math.round(estimated),
       unmeasuredSec: Math.round(unmeasured),
       // What share of recorded time we can actually place in a zone. Shown in
       // the UI so a thin bar reads as "no HR data" rather than "an easy week".
-      pct: measured + unmeasured > 0 ? Math.round((measured / (measured + unmeasured)) * 100) : 0,
+      pct: measured + estimated + unmeasured > 0
+        ? Math.round(((measured + estimated) / (measured + estimated + unmeasured)) * 100)
+        : 0,
+      /** Share of the placed time that came from an average rather than a trace. */
+      estimatedPct: measured + estimated > 0
+        ? Math.round((estimated / (measured + estimated)) * 100)
+        : 0,
     },
   };
 }
