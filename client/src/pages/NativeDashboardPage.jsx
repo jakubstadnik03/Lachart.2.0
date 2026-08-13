@@ -15,7 +15,6 @@ import WellnessDetailSheet from '../components/shared/WellnessDetailSheet';
 import OnboardingChecklist from '../components/NativeDashboard/OnboardingChecklist';
 import DailyCoachCard from '../components/DashboardPage/DailyCoachCard';
 import TrainingTimeline from '../components/DashboardPage/TrainingTimeline';
-import RouteHistoryCard from '../components/DashboardPage/RouteHistoryCard';
 import RaceCountdownCard from '../components/DashboardPage/RaceCountdownCard';
 import PostRaceFeedbackCard from '../components/DashboardPage/PostRaceFeedbackCard';
 import PlannedWorkoutEditor from '../components/NativeDashboard/PlannedWorkoutEditor';
@@ -1433,10 +1432,9 @@ export default function NativeDashboardPage({
             />
           </div>
 
-          {/* 0d · Routes you repeat — renders nothing until one is repeated. */}
-          <div style={{ ...cardEntry(1), ...snapStyle }}>
-            <RouteHistoryCard athleteId={athleteId || user?._id || user?.id} />
-          </div>
+          {/* Routes you repeat is taken out of the dashboard for now. The
+              component and its /api/timeline/routes endpoint are still here —
+              put the card back to restore it. */}
 
           {/* 1 · Week strip */}
           <div style={{ ...cardEntry(1), ...snapStyle }}>
@@ -1690,6 +1688,25 @@ export default function NativeDashboardPage({
               setSelectedRace((prev) =>
                 prev && String(prev._id) === String(updated._id) ? { ...prev, ...updated } : prev
               );
+            }}
+            // editable defaults to false, so without these the sheet is
+            // read-only. Three of the four places that open this modal left
+            // them out, which is why a race opened anywhere but the countdown
+            // card had no way to be deleted.
+            editable
+            onSave={async (payload) => {
+              const { updateRaceEvent } = await import('../services/api');
+              const { data } = await updateRaceEvent(selectedRace._id, payload);
+              setRaces((prev) => prev.map((r) =>
+                String(r._id) === String(selectedRace._id) ? { ...r, ...(data || payload) } : r
+              ));
+              setSelectedRace(null);
+            }}
+            onDelete={async () => {
+              const { deleteRaceEvent } = await import('../services/api');
+              await deleteRaceEvent(selectedRace._id);
+              setRaces((prev) => prev.filter((r) => String(r._id) !== String(selectedRace._id)));
+              setSelectedRace(null);
             }}
           />
         </Suspense>
