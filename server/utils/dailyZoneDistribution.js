@@ -55,7 +55,7 @@ function zoneSetFor(profileZones, sport) {
  * The derived ratios are the ones in utils/lactateZones.js, not new ones — a
  * second opinion on where an athlete's Z3 starts is the last thing this needs.
  */
-function boundariesFrom(zoneSet, profile = null) {
+function boundariesFrom(zoneSet, profile = null, thresholds = null) {
   const ascending = (mins) => {
     if (mins.some((m) => !Number.isFinite(m) || m <= 0)) return null;
     for (let i = 1; i < mins.length; i += 1) if (mins[i] <= mins[i - 1]) return null;
@@ -68,9 +68,14 @@ function boundariesFrom(zoneSet, profile = null) {
     if (explicit) return explicit;
   }
 
-  // 2. Derived from the thresholds, exactly as calculateZonesFromTest does.
-  const lt1 = Number(zoneSet?.lt1 ?? zoneSet?.lt1Hr);
-  const lt2 = Number(zoneSet?.lt2 ?? zoneSet?.lt2Hr);
+  // 2. Derived from threshold heart rates.
+  //
+  // heartRateZones has no lt1/lt2 in its schema — only zone1..zone5 and
+  // maxHeartRate — so reading them off the zone set alone was dead code. A
+  // lactate test writes HR thresholds next to the power ones, so look there
+  // too before giving up.
+  const lt1 = Number(zoneSet?.lt1 ?? zoneSet?.lt1Hr ?? thresholds?.lt1Hr ?? thresholds?.lt1HeartRate);
+  const lt2 = Number(zoneSet?.lt2 ?? zoneSet?.lt2Hr ?? thresholds?.lt2Hr ?? thresholds?.lt2HeartRate);
   if (Number.isFinite(lt2) && lt2 > 0) {
     // Without a measured LT1, the usual relationship puts it around 85% of LT2.
     const first = Number.isFinite(lt1) && lt1 > 0 ? lt1 : lt2 * 0.85;
@@ -86,7 +91,12 @@ function boundariesFrom(zoneSet, profile = null) {
 
   // 3. Percentages of max heart rate — the crudest of the three, and the one
   //    most athletes will actually hit, so it is better than reporting nothing.
-  const max = Number(zoneSet?.maxHeartRate ?? profile?.maxHr ?? profile?.maxHeartRate);
+  const max = Number(
+    zoneSet?.maxHeartRate
+    ?? profile?.heartRateZones?.cycling?.maxHeartRate
+    ?? profile?.heartRateZones?.running?.maxHeartRate
+    ?? profile?.maxHr ?? profile?.maxHeartRate,
+  );
   if (Number.isFinite(max) && max > 0) {
     return ascending([0.60, 0.70, 0.80, 0.87, 0.93].map((f) => Math.round(max * f)));
   }
@@ -141,7 +151,7 @@ function addSeries(target, hrArray, timeArray, mins) {
  */
 async function dailyZoneDistribution(athleteId, startDate, endDate, { sport = 'all' } = {}) {
   const athleteIdStr = String(athleteId);
-  const user = await User.findById(athleteIdStr).select('heartRateZones maxHr maxHeartRate').lean();
+  const user = await User.findById(athleteIdStr).select('heartRateZones powerZones maxHr maxHeartRate').lean();
   const profileZones = user?.heartRateZones || null;
 
   const byDay = new Map();
@@ -179,7 +189,7 @@ async function dailyZoneDistribution(athleteId, startDate, endDate, { sport = 'a
     const day = dayFor(key);
     day.sessions += 1;
 
-    const mins = boundariesFrom(zoneSetFor(profileZones, t.sport), user);
+    const mins = boundariesFrom(zoneSetFor(profileZones, t.sport), user, zoneSetFor(user?.powerZones, t.sport));
     const duration = Number(t.totalElapsedTime || t.totalTimerTime || 0);
 
     if (!mins) { day.unmeasuredSec += duration; continue; }
@@ -231,7 +241,7 @@ async function dailyZoneDistribution(athleteId, startDate, endDate, { sport = 'a
     const day = dayFor(key);
     day.sessions += 1;
 
-    const mins = boundariesFrom(zoneSetFor(profileZones, a.sport), user);
+    const mins = boundariesFrom(zoneSetFor(profileZones, a.sport), user, zoneSetFor(user?.powerZones, a.sport));
     const duration = Number(a.movingTime || a.elapsedTime || 0);
     if (!mins) { day.unmeasuredSec += duration; continue; }
     anyZones = true;
@@ -261,6 +271,11 @@ async function dailyZoneDistribution(athleteId, startDate, endDate, { sport = 'a
   return {
     days,
     hasZones: anyZones,
+    /**
+     * Why the chart is empty, when it is. Guessing at this from the outside
+     * cost several rounds of wrong explanations; the server knows, so it says.
+     */
+    reason: anyZones ? null : (days.length ? 'no-zones' : 'no-sessions'),
     coverage: {
       measuredSec: Math.round(measured),
       estimatedSec: Math.round(estimated),
