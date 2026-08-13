@@ -174,7 +174,8 @@ export function buildTrainingTimeline({
       rolling7Complete: i >= 6,
 
       zones: zone?.zones || null,
-      zoneTotalSec: zone?.totalSec || 0,
+      zoneTotalSec: (zone?.totalSec || 0) + (zone?.estimatedSec || 0),
+      estimatedSec: zone?.estimatedSec || 0,
       unmeasuredSec: zone?.unmeasuredSec || 0,
     };
   });
@@ -184,11 +185,13 @@ export function buildTrainingTimeline({
   // ── Zone totals across the window ──
   const zoneTotals = ZONE_META.reduce((acc, z) => ({ ...acc, [z.key]: 0 }), {});
   let measuredSec = 0;
+  let estimatedSec = 0;
   let unmeasuredSec = 0;
   for (const p of points) {
     if (!p.zones) { unmeasuredSec += p.unmeasuredSec; continue; }
     for (const z of ZONE_META) zoneTotals[z.key] += p.zones[z.key] || 0;
     measuredSec += p.zoneTotalSec;
+    estimatedSec += p.estimatedSec;
     unmeasuredSec += p.unmeasuredSec;
   }
 
@@ -229,10 +232,13 @@ export function buildTrainingTimeline({
     split,
     coverage: {
       measuredSec: Math.round(measuredSec),
+      /** Time placed from a session average rather than a per-second trace. */
+      estimatedSec: Math.round(estimatedSec),
       unmeasuredSec: Math.round(unmeasuredSec),
       pct: measuredSec + unmeasuredSec > 0
         ? Math.round((measuredSec / (measuredSec + unmeasuredSec)) * 100)
         : 0,
+      estimatedPct: measuredSec > 0 ? Math.round((estimatedSec / measuredSec) * 100) : 0,
     },
 
     compliance: totalPlanned > 0

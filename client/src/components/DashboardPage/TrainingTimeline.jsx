@@ -308,7 +308,13 @@ function Summary({ timeline, view }) {
           <span><span className="font-bold text-amber-600">{timeline.split.greyPct}%</span> <span className="text-gray-500">grey (Z3)</span></span>
           <span><span className="font-bold text-rose-600">{timeline.split.hardPct}%</span> <span className="text-gray-500">hard (Z4–5)</span></span>
         </div>
-        {timeline.coverage.pct < 90 ? (
+        {timeline.coverage.estimatedPct > 0 ? (
+          <p className="text-[10px] text-gray-400 mt-1">
+            {timeline.coverage.estimatedPct}% of this is estimated from session averages — LaChart
+            only stores the full trace for sessions you have opened. Open one and its real
+            distribution replaces the estimate.
+          </p>
+        ) : timeline.coverage.pct < 90 ? (
           <p className="text-[10px] text-gray-400 mt-1">
             Based on {timeline.coverage.pct}% of recorded time — the rest had no heart-rate data.
           </p>
