@@ -12,16 +12,22 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import {
+  ArrowDownRightIcon,
+  ArrowUpRightIcon,
+  EqualsIcon,
+  MinusSmallIcon,
+} from '@heroicons/react/24/outline';
+import {
   RPE_LABELS,
   assessFeltVsData,
   rpeToBorg,
 } from '../../utils/feltVsData';
 
 const DIRECTION_STYLE = {
-  harder: { bg: '#FFFBEB', border: '#FDE68A', accent: '#B45309', icon: '↑' },
-  easier: { bg: '#ECFDF5', border: '#A7F3D0', accent: '#047857', icon: '↓' },
-  matched: { bg: '#F8FAFC', border: '#E2E8F0', accent: '#475569', icon: '=' },
-  unknown: { bg: '#F8FAFC', border: '#E2E8F0', accent: '#475569', icon: '·' },
+  harder: { bg: '#FFFBEB', border: '#FDE68A', accent: '#B45309', Icon: ArrowUpRightIcon },
+  easier: { bg: '#ECFDF5', border: '#A7F3D0', accent: '#047857', Icon: ArrowDownRightIcon },
+  matched: { bg: '#F8FAFC', border: '#E2E8F0', accent: '#475569', Icon: EqualsIcon },
+  unknown: { bg: '#F8FAFC', border: '#E2E8F0', accent: '#475569', Icon: MinusSmallIcon },
 };
 
 /** Colour ramp across the scale — cool at 1, hot at 10. */
@@ -113,8 +119,9 @@ export default function RpeCapture({
           style={{ background: tone.bg, borderColor: tone.border }}
         >
           <div className="flex items-center justify-between gap-2">
-            <span className="text-xs font-bold" style={{ color: tone.accent }}>
-              {tone.icon} {felt.verdict}
+            <span className="inline-flex items-center gap-1 text-xs font-bold" style={{ color: tone.accent }}>
+              <tone.Icon className="w-3.5 h-3.5 shrink-0" />
+              {felt.verdict}
             </span>
             {felt.expected !== null ? (
               <span className="text-[11px] text-gray-500">
