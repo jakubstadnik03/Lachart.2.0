@@ -513,10 +513,13 @@ export default function TrainingTimeline({
 
   return (
     <div className="bg-white rounded-2xl p-4 sm:p-5 shadow-lg">
-      <div className="flex items-center justify-between mb-1">
-        <h3 className="text-base font-bold text-gray-900">Training Timeline</h3>
-        <span className="text-[10px] text-gray-400 flex items-center gap-1">
-          <InformationCircleIcon className="w-3.5 h-3.5" />
+      <div className="flex items-center justify-between gap-2 mb-1">
+        <h3 className="text-base font-bold text-gray-900 whitespace-nowrap">Training Timeline</h3>
+        {/* Hidden on phones: at that width it wraps the title onto two lines and
+            squeezes itself onto two more, for a sentence the view tabs and the
+            summary line underneath already convey. */}
+        <span className="hidden sm:flex text-[10px] text-gray-400 items-center gap-1 text-right">
+          <InformationCircleIcon className="w-3.5 h-3.5 shrink-0" />
           {TIMELINE_VIEWS.find((v) => v.id === view)?.hint}
         </span>
       </div>
