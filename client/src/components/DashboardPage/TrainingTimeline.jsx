@@ -326,9 +326,13 @@ function Summary({ timeline, view, zoneReason = null, backfill = null }) {
         ) : null}
         {timeline.coverage.estimatedPct > 0 ? (
           <p className="text-[10px] text-gray-400 mt-1">
-            {timeline.coverage.estimatedPct}% of this is estimated from session averages — LaChart
-            only stores the full trace for sessions you have opened. Open one and its real
-            distribution replaces the estimate.
+            {timeline.coverage.estimatedPct}% of this is still estimated from session averages,
+            which flattens every interval into one zone.
+            {backfill?.remaining > 0
+              ? ` Fetching the real traces a few at a time — ${backfill.remaining} left. Reopen this and it sharpens.`
+              : backfill?.fetched > 0
+                ? ` Just fetched ${backfill.fetched} — reopen this to see them.`
+                : ' Waiting on Strava for the traces; it retries each time you open this.'}
           </p>
         ) : timeline.coverage.pct < 90 ? (
           <p className="text-[10px] text-gray-400 mt-1">
