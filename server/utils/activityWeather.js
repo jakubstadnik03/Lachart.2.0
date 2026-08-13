@@ -21,6 +21,7 @@ const StravaStream = require('../models/StravaStream');
 const FitTraining = require('../models/fitTraining');
 const User = require('../models/UserModel');
 const stravaBudget = require('./stravaBudget');
+const { channel } = require('./streamChannel');
 const { getValidStravaToken } = require('./stravaToken');
 
 /** WMO weather codes → plain English. */
@@ -169,7 +170,7 @@ async function locateActivity(userId, activityKey) {
     if (!act) return null;
 
     const stream = await StravaStream.findOne({ userId, stravaId }).select('streams.latlng').lean();
-    const first = (stream?.streams?.latlng || []).find(
+    const first = channel(stream?.streams, 'latlng').find(
       (p) => Array.isArray(p) && Number.isFinite(p[0]) && !(p[0] === 0 && p[1] === 0),
     );
     if (first) return { when: act.startDate, lat: Number(first[0]), lng: Number(first[1]) };
@@ -207,7 +208,15 @@ async function locateActivity(userId, activityKey) {
 /**
  * Weather for one activity, from cache when it has been looked up before.
  *
- * @returns {Promise<object|null>} null when the activity has no GPS at all
+ * Three outcomes, and they must stay distinguishable. Collapsing them into
+ * "nothing to show" is what made this impossible to diagnose: an athlete
+ * looking at a blank summary could not tell a treadmill session from a
+ * rate-limited lookup, and neither could I.
+ *
+ * @returns {Promise<object|null>}
+ *   a document       — conditions, frozen
+ *   {pending,reason} — could not ask yet; worth trying again
+ *   null             — this activity genuinely has no location
  */
 async function weatherForActivity(userId, activityKey) {
   const cached = await ActivityWeather.findOne({ userId, activityKey }).lean();
@@ -229,7 +238,7 @@ async function weatherForActivity(userId, activityKey) {
     // Only record the absence when we actually know it. A rate-limited lookup
     // is not evidence that a session had no GPS, and caching it as such would
     // kill the weather on that activity permanently for one throttled request.
-    if (located.retryable) return null;
+    if (located.retryable) return { pending: true, reason: 'strava_unavailable' };
 
     // Finding the location can cost a Strava request, so an activity that
     // genuinely has none (treadmill, trainer) must not pay for it every view.
@@ -252,7 +261,7 @@ async function weatherForActivity(userId, activityKey) {
     // A provider outage should not be recorded as "this session had no weather"
     // — leave it uncached so the next view tries again.
     console.warn('[weather] lookup failed:', err.message);
-    return null;
+    return { pending: true, reason: 'provider_unavailable' };
   }
 
   const doc = {

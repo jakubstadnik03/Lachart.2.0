@@ -30,16 +30,22 @@ export default function PremiumLock({
   className = '',
   children,
 }) {
-  const { isPremium, gate, UpgradeModalProps } = usePremium();
+  const { isPremium, premiumResolved, gate, UpgradeModalProps } = usePremium();
   const isNative = isCapacitorNative();
   const lockHeight = isNative ? Math.min(minHeight, 140) : minHeight;
 
   if (isPremium) return children;
 
+  // Until the profile lands, isPremium reads exactly like "free" — so every
+  // navigation flashed a wall of "Premium feature" locks at a paying
+  // subscriber before correcting itself. Show a quiet skeleton instead: we do
+  // not yet know, so we claim nothing.
+  const unknown = !premiumResolved;
+
   return (
     <>
       <div className={`relative overflow-hidden rounded-2xl border border-gray-100 ${className}`} style={{ minHeight: lockHeight }}>
-        <div className="pointer-events-none select-none blur-[6px] opacity-50" aria-hidden="true">
+        <div className={`pointer-events-none select-none blur-[6px] opacity-50 ${unknown ? 'animate-pulse' : ''}`} aria-hidden="true">
           {preview || (
             <div className="p-3 space-y-2">
               <div className="h-3 w-1/3 rounded bg-gray-200" />
@@ -52,20 +58,22 @@ export default function PremiumLock({
           )}
         </div>
 
-        <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 bg-white/45 backdrop-blur-[1px] px-4 text-center">
-          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10">
-            <LockClosedIcon className="h-4 w-4 text-primary" />
+        {!unknown && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 bg-white/45 backdrop-blur-[1px] px-4 text-center">
+            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10">
+              <LockClosedIcon className="h-4 w-4 text-primary" />
+            </div>
+            <div className="text-[12px] font-bold text-gray-700">{label}</div>
+            <button
+              type="button"
+              onClick={() => gate(feature, plan)}
+              className="mt-0.5 rounded-full bg-primary px-3.5 py-1.5 text-[11px] font-bold text-white shadow-sm active:opacity-80 touch-manipulation"
+              style={{ WebkitTapHighlightColor: 'transparent' }}
+            >
+              {isNative ? 'Learn more' : 'Unlock with Premium'}
+            </button>
           </div>
-          <div className="text-[12px] font-bold text-gray-700">{label}</div>
-          <button
-            type="button"
-            onClick={() => gate(feature, plan)}
-            className="mt-0.5 rounded-full bg-primary px-3.5 py-1.5 text-[11px] font-bold text-white shadow-sm active:opacity-80 touch-manipulation"
-            style={{ WebkitTapHighlightColor: 'transparent' }}
-          >
-            {isNative ? 'Learn more' : 'Unlock with Premium'}
-          </button>
-        </div>
+        )}
       </div>
 
       <UpgradeModal {...UpgradeModalProps} />

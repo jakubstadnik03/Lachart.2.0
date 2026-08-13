@@ -2148,11 +2148,19 @@ export const getRouteHistory = async (athleteId, limit = 150) => {
 export const getActivityWeather = async (activityKey) => {
   const response = await api.get('/api/timeline/weather', {
     params: { activityKey },
-    cacheTtlMs: 60 * 60 * 1000,
+    // Short, because a pending lookup is worth repeating and the successful
+    // answer is frozen server-side anyway — a repeat costs a Mongo read, not a
+    // Strava request. An hour here would have made "retries on your next
+    // visit" untrue.
+    cacheTtlMs: 5 * 60 * 1000,
   });
   // A 204 (no GPS to look anything up from) arrives as an empty body, and the
   // cache layer replays hits as { data } with no status — so trust the payload
   // rather than the status code, which is absent on every cached read.
   const data = response?.data;
-  return data && typeof data === 'object' && data.tempC != null ? data : null;
+  if (!data || typeof data !== 'object') return null;
+  // {pending} says the lookup could not be made; it must reach the caller
+  // rather than being flattened into the same null as a treadmill session.
+  if (data.pending) return data;
+  return data.tempC != null ? data : null;
 };

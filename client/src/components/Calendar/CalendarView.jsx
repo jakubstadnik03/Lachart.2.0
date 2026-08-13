@@ -1,4 +1,5 @@
 import React, { useMemo, useState, useEffect, useLayoutEffect, useCallback, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import MoveCostDialog, { shouldConfirm } from './MoveCostDialog';
 import { assessMoveCost } from '../../utils/moveCost';
 import ReactDOM from 'react-dom';
@@ -2477,17 +2478,38 @@ function mamFromRecords(recs, key, mult = 1, summaryAvg = null) {
   };
 }
 
+/**
+ * Pace is a reciprocal, so it detonates near zero: one sample at 0.03 m/s —
+ * waiting at a crossing, a lost GPS fix — becomes 476:11/km and takes the
+ * "max" column with it. The fast end fails the same way, one spike reading as
+ * a 2:32/km mile inside an easy run.
+ *
+ * So: ignore samples slower than walking (the athlete was not running, and a
+ * pace for standing still is not a pace), then trim the outermost 2% at each
+ * end. What is left is the range actually run. The trim is why these are
+ * "fastest/slowest sustained" rather than literal extremes — a single bad
+ * sample should not define a column an athlete reads as fact.
+ */
 function mamPaceFromRecords(recs, { isSwim, avgSpeed }) {
-  const speedVals = recs.map(r => r.speed).filter(v => v != null && v > 0);
+  // Below this nobody is moving under their own power in this sport.
+  const movingFloorMs = isSwim ? 0.25 : 0.5;
+  const speedVals = recs
+    .map(r => r.speed)
+    .filter(v => v != null && v > movingFloorMs);
   if (speedVals.length < 3) return null;
+
   const toPace = (s) => (isSwim ? 100 / s : 1000 / s);
-  const paces = speedVals.map(toPace);
+  const paces = speedVals.map(toPace).sort((x, y) => x - y);
+  // Ascending pace: index 0 is the fastest, the last is the slowest.
+  const cut = Math.floor(paces.length * 0.02);
+  const trimmed = paces.length > 50 ? paces.slice(cut, paces.length - cut) : paces;
+
   const summaryPace = avgSpeed > 0 ? toPace(avgSpeed) : null;
-  const streamAvg = paces.reduce((a, b) => a + b, 0) / paces.length;
+  const streamAvg = trimmed.reduce((a, b) => a + b, 0) / trimmed.length;
   return {
-    min: Math.min(...paces),
+    min: trimmed[0],
     avg: summaryPace != null && summaryPace > 0 ? summaryPace : streamAvg,
-    max: Math.max(...paces),
+    max: trimmed[trimmed.length - 1],
   };
 }
 
@@ -3493,7 +3515,15 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
   const rpe = Number(merged.rpe || merged.RPE || 0);
   const sessionLactate = merged.lactate != null ? Number(merged.lactate) : null;
   const elevation = Number(merged.totalElevationGain || merged.elevationGain || merged.total_elevation_gain || 0);
-  const cadence   = Number(merged.averageCadence || merged.average_cadence || merged.avgCadence || 0);
+  // Strava reports running cadence as strides/min — one foot. The per-second
+  // records are already doubled to spm when they are built (normCad, above),
+  // so taking this average raw printed 84 next to a min of 100 and a max of
+  // 180: three numbers, two different units, one of them impossible. FIT files
+  // already store full spm and must not be doubled again.
+  const cadenceRaw = Number(merged.averageCadence || merged.average_cadence || merged.avgCadence || 0);
+  const cadence = String(merged?.id || merged?._id || a?.id || a?._id || '').startsWith('strava-')
+    ? (stravaHalfCadenceToSpm(cadenceRaw, sport) ?? cadenceRaw)
+    : cadenceRaw;
   const avgSpeed  = Number(merged.avgSpeed || merged.averageSpeed || merged.average_speed || 0);
   const actDate   = merged.date || merged.timestamp || merged.startDate || merged.start_time;
   const dateStr   = actDate ? new Date(actDate).toLocaleDateString(undefined, { weekday:'long', month:'long', day:'numeric', year:'numeric' }) : '';
@@ -7736,6 +7766,17 @@ export default function CalendarView({
   const [optimisticSelectedId, setOptimisticSelectedId] = useState(null);
   // Mobile-specific state
   const [mobileTab, setMobileTab] = useState('calendar');
+  const navigate = useNavigate();
+
+  /**
+   * Planner sits beside Calendar and Charts in the switcher but is a page of
+   * its own, so tapping it navigates instead of swapping the panel. It never
+   * reads as the selected segment — by the time it would, this view is gone.
+   */
+  const goToPlanner = useCallback(() => {
+    const to = athleteId ? `/workout-planner?athleteId=${athleteId}` : '/workout-planner';
+    navigate(to);
+  }, [navigate, athleteId]);
   const [showMiniCal, setShowMiniCal] = useState(true);
   const [showMonthPicker, setShowMonthPicker] = useState(false);
   const [pickerYear, setPickerYear] = useState(() => new Date().getFullYear());
@@ -9170,10 +9211,10 @@ export default function CalendarView({
           <div ref={mobileStickyHeaderRef} className="sticky top-0 z-10 bg-white border-b border-gray-100 shadow-sm">
             {/* Tab switcher */}
             <div className="flex bg-gray-100 rounded-xl p-0.5 mx-3 mt-2 mb-2">
-              {[['calendar', 'Calendar'], ['charts', 'Charts']].map(([tab, label]) => (
+              {[['calendar', 'Calendar'], ['charts', 'Charts'], ['planner', 'Planner']].map(([tab, label]) => (
                 <button
                   key={tab}
-                  onClick={() => setMobileTab(tab)}
+                  onClick={() => (tab === 'planner' ? goToPlanner() : setMobileTab(tab))}
                   className={`flex-1 py-1.5 text-sm font-semibold rounded-lg transition-all touch-manipulation ${mobileTab === tab ? 'bg-white shadow text-gray-900' : 'text-gray-500'}`}
                   style={{ WebkitTapHighlightColor: 'transparent' }}
                 >{label}</button>

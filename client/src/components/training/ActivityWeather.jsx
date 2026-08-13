@@ -44,7 +44,28 @@ export default function ActivityWeather({ activityKey, className = '' }) {
     return () => { cancelled = true; };
   }, [activityKey]);
 
-  if (!loaded || !weather || weather.tempC == null) return null;
+  if (!loaded || !weather) return null;
+
+  // The lookup could not be made — a Strava throttle, a provider outage. Say so
+  // in one quiet line rather than showing nothing: a blank summary is
+  // indistinguishable from a treadmill session, which is how this went four
+  // rounds without anyone being able to tell what was wrong.
+  if (weather.pending) {
+    return (
+      <div className={className}>
+        <div className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-2">
+          Conditions
+        </div>
+        <div className="text-[11px] text-gray-400">
+          {weather.reason === 'provider_unavailable'
+            ? 'The weather service did not answer — this retries on your next visit.'
+            : 'Waiting on Strava for this session’s location — it retries on your next visit.'}
+        </div>
+      </div>
+    );
+  }
+
+  if (weather.tempC == null) return null;
 
   const Icon = iconFor(weather.code);
   const dir = windLabel(weather.windDirDeg);
