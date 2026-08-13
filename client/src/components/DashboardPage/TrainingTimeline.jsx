@@ -315,6 +315,15 @@ function Summary({ timeline, view, zoneReason = null, backfill = null }) {
           <span><span className="font-bold text-amber-600">{timeline.split.greyPct}%</span> <span className="text-gray-500">grey (Z3)</span></span>
           <span><span className="font-bold text-rose-600">{timeline.split.hardPct}%</span> <span className="text-gray-500">hard (Z4–5)</span></span>
         </div>
+        {/* An average never reaches Z4, so an estimated week always reports no
+            hard work. Saying 0% without that caveat is worse than saying
+            nothing — an athlete could read it as a training problem. */}
+        {timeline.split.hardPct === 0 && timeline.coverage.estimatedPct > 50 ? (
+          <p className="text-[10px] text-amber-700 mt-1">
+            The 0% hard is the estimate, not your training: a session average never lands in
+            Z4–5, however hard the intervals were.
+          </p>
+        ) : null}
         {timeline.coverage.estimatedPct > 0 ? (
           <p className="text-[10px] text-gray-400 mt-1">
             {timeline.coverage.estimatedPct}% of this is estimated from session averages — LaChart
@@ -506,10 +515,27 @@ export default function TrainingTimeline({
         )}
       </div>
 
-      {/* Axis — first, today, and the weeks between */}
-      <div className="flex justify-between text-[9px] text-gray-400 mt-1">
-        <span>{timeline.points[0]?.label}</span>
-        <span>{timeline.points[timeline.points.length - 1]?.label}</span>
+      {/* Axis — a label on each week start, positioned over its own bar rather
+          than only marking the ends, which said nothing about the middle. */}
+      <div className="relative h-3 mt-1">
+        {timeline.points.map((p, i) => {
+          const isLast = i === timeline.points.length - 1;
+          if (!p.isWeekStart && !isLast) return null;
+          // Weeks sit at their bar; the final label is pinned to the right edge
+          // so it cannot run off the end of the card.
+          const pct = (i / Math.max(1, timeline.points.length - 1)) * 100;
+          return (
+            <span
+              key={p.date}
+              className={`absolute text-[9px] whitespace-nowrap ${p.isToday || isLast ? 'text-gray-600 font-semibold' : 'text-gray-400'}`}
+              style={isLast
+                ? { right: 0 }
+                : { left: `${pct}%`, transform: 'translateX(-50%)' }}
+            >
+              {isLast ? 'today' : p.label}
+            </span>
+          );
+        })}
       </div>
 
       <Legend view={view} />
