@@ -29,8 +29,18 @@ const DEFAULT_LIMIT = 8;
  * Key sets, widest first: Strava 400s on latlng for indoor activities, and on
  * watts where there is no power meter, so the request steps down until one is
  * accepted rather than giving up on the first refusal.
+ *
+ * latlng is asked for even though the zone chart has no use for it. Without it
+ * the weather lookup has no location on the activity and has to buy the start
+ * point with a second Strava request — from the same exhausted bulk lane that
+ * made this file necessary. One request that answers both questions costs
+ * nothing extra; the indoor rungs below drop it, which is exactly when there
+ * is no weather to look up anyway.
  */
 const KEY_SETS = [
+  'time,heartrate,watts,velocity_smooth,distance,latlng',
+  'time,heartrate,velocity_smooth,distance,latlng',
+  'time,heartrate,distance,latlng',
   'time,heartrate,watts,velocity_smooth,distance',
   'time,heartrate,velocity_smooth,distance',
   'time,heartrate,distance',

@@ -163,7 +163,12 @@ router.get('/routes', verifyToken, async (req, res) => {
  * GET /api/timeline/weather?activityKey=strava-123
  *
  * Conditions during one activity, looked up once from its own GPS and start
- * time, then frozen. 204 when the activity has no GPS to look anything up from.
+ * time, then frozen.
+ *
+ * 204 means the activity genuinely has no location — a treadmill session, and
+ * nothing to show now or ever. A 200 carrying {pending, reason} means the
+ * lookup could not be made yet and is worth repeating; the two must not look
+ * alike to the client, or a throttled request reads as a treadmill.
  */
 router.get('/weather', verifyToken, async (req, res) => {
   try {
