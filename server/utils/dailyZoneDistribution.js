@@ -35,6 +35,12 @@ const { backfillStreams } = require('./streamBackfill');
 
 const ZONE_KEYS = ['zone1', 'zone2', 'zone3', 'zone4', 'zone5'];
 
+/** True when this sport's "power" zones actually hold pace in seconds. */
+function isPaceSport(sport) {
+  const v = String(sport || '').toLowerCase();
+  return v.includes('run') || v.includes('walk') || v.includes('swim') || v.includes('hike');
+}
+
 /** Sport → the zone set to use. Everything unfamiliar falls back to cycling. */
 function zoneSetFor(profileZones, sport) {
   const s = String(sport || '').toLowerCase();
@@ -124,13 +130,46 @@ function boundariesFrom(zoneSet, profile = null, thresholds = null) {
   return null;
 }
 
-/** 1..5 for a heart rate, or null below zone 1. */
+/** 1..5 for a heart rate or power reading, or null below zone 1. */
 function zoneForHr(hr, mins) {
   const v = Number(hr);
   if (!Number.isFinite(v) || v <= 0) return null;
   let zone = null;
   for (let i = 0; i < mins.length; i += 1) if (v >= mins[i]) zone = i + 1;
   return zone;
+}
+
+/**
+ * 1..5 for a pace, in seconds per km.
+ *
+ * Running and swimming store their "power" zones as pace, which runs the other
+ * way: a smaller number is faster, so the boundaries descend and Z5 is the
+ * lowest of them. Feeding those through the ascending bucketing would put every
+ * sprint in Z1.
+ */
+function zoneForPace(secPerKm, bounds) {
+  const v = Number(secPerKm);
+  if (!Number.isFinite(v) || v <= 0) return null;
+  // `bounds` holds the fast end of each zone, descending. A pace belongs to the
+  // first band it is not faster than; anything faster than the last bound is
+  // beyond Z5's opening and still Z5.
+  for (let i = 0; i < bounds.length; i += 1) if (v >= bounds[i]) return i + 1;
+  return bounds.length;
+}
+
+/** Zone-1-to-5 upper pace bounds, descending, from a pace zone table. */
+function paceBoundsFrom(zoneSet) {
+  if (!zoneSet) return null;
+  // Z1 is the slowest band, so its *max* seconds is the largest number and the
+  // bounds tighten from there.
+  const bounds = ZONE_KEYS.map((k) => {
+    const max = Number(zoneSet[k]?.max);
+    const min = Number(zoneSet[k]?.min);
+    return Number.isFinite(max) && max > 0 ? max : min;
+  });
+  if (bounds.some((b) => !Number.isFinite(b) || b <= 0)) return null;
+  for (let i = 1; i < bounds.length; i += 1) if (bounds[i] >= bounds[i - 1]) return null;
+  return bounds;
 }
 
 function emptyZones() {
@@ -144,7 +183,7 @@ function localDayKey(d) {
 }
 
 /** Accumulate a heart-rate series into zone seconds. */
-function addSeries(target, hrArray, timeArray, mins) {
+function addSeries(target, hrArray, timeArray, mins, pace = false) {
   if (!Array.isArray(hrArray)) return 0;
   let added = 0;
   let prevT = null;
@@ -157,7 +196,7 @@ function addSeries(target, hrArray, timeArray, mins) {
     // Gaps and paused stretches would otherwise dump minutes into whatever
     // zone the athlete happened to be in when they stopped.
     if (!(dt > 0) || dt > 10) continue;
-    const z = zoneForHr(hrArray[i], mins);
+    const z = pace ? zoneForPace(hrArray[i], mins) : zoneForHr(hrArray[i], mins);
     if (!z) continue;
     target[`z${z}`] += dt;
     added += dt;
@@ -169,9 +208,24 @@ function addSeries(target, hrArray, timeArray, mins) {
  * @returns {Promise<{ days: Array, hasZones: boolean, coverage: object }>}
  *   days: [{ date, zones: {z1..z5}, totalSec, sessions, unmeasuredSec }]
  */
-async function dailyZoneDistribution(athleteId, startDate, endDate, { sport = 'all' } = {}) {
+async function dailyZoneDistribution(athleteId, startDate, endDate, { sport = 'all', metric = 'hr' } = {}) {
+  const usePower = metric === 'power';
   const athleteIdStr = String(athleteId);
   const user = await User.findById(athleteIdStr).select('heartRateZones powerZones maxHr maxHeartRate').lean();
+
+  /**
+   * Boundaries for one sport under the chosen metric. Power on a bike is watts
+   * and ascends; on foot or in water the same block holds pace in seconds and
+   * descends, so the two are bucketed by different functions.
+   */
+  const boundsFor = (actSport) => {
+    if (!usePower) {
+      return { mins: boundariesFrom(zoneSetFor(user?.heartRateZones, actSport), user, zoneSetFor(user?.powerZones, actSport)), pace: false };
+    }
+    const zs = zoneSetFor(user?.powerZones, actSport);
+    if (isPaceSport(actSport)) return { mins: paceBoundsFrom(zs), pace: true };
+    return { mins: boundariesFrom(zs), pace: false };
+  };
   const profileZones = user?.heartRateZones || null;
 
   const byDay = new Map();
@@ -209,7 +263,7 @@ async function dailyZoneDistribution(athleteId, startDate, endDate, { sport = 'a
     const day = dayFor(key);
     day.sessions += 1;
 
-    const mins = boundariesFrom(zoneSetFor(profileZones, t.sport), user, zoneSetFor(user?.powerZones, t.sport));
+    const { mins, pace } = boundsFor(t.sport);
     const duration = Number(t.totalElapsedTime || t.totalTimerTime || 0);
 
     if (!mins) { day.unmeasuredSec += duration; continue; }
@@ -273,20 +327,29 @@ async function dailyZoneDistribution(athleteId, startDate, endDate, { sport = 'a
     const day = dayFor(key);
     day.sessions += 1;
 
-    const mins = boundariesFrom(zoneSetFor(profileZones, a.sport), user, zoneSetFor(user?.powerZones, a.sport));
+    const { mins, pace } = boundsFor(a.sport);
     const duration = Number(a.movingTime || a.elapsedTime || 0);
     if (!mins) { day.unmeasuredSec += duration; continue; }
     anyZones = true;
 
     const s = streamsById.get(String(a.stravaId));
-    const added = s ? addSeries(day.zones, s.heartrate, s.time, mins) : 0;
+    // Power reads watts; pace comes from speed, converted to seconds per km.
+    const series = !s ? null
+      : usePower
+        ? (pace
+            ? (s.velocity_smooth || []).map((v) => (Number(v) > 0.3 ? 1000 / Number(v) : null))
+            : s.watts)
+        : s.heartrate;
+    const added = series ? addSeries(day.zones, series, s.time, mins, pace) : 0;
     day.totalSec += added;
 
     const remaining = duration - added;
     if (remaining > 0) {
       // Both spellings exist on the model — Strava's raw field and the mapped
       // one — and which is populated depends on the sync path that wrote it.
-      const avg = Number(a.averageHeartRate || a.average_heartrate) || 0;
+      // Only heart rate has a usable session average here; a mean wattage over
+      // a ride with coasting in it is not a zone anyone should be shown.
+      const avg = usePower ? 0 : Number(a.averageHeartRate || a.average_heartrate) || 0;
       const zone = avg > 0 ? zoneForHr(avg, mins) : null;
       if (zone) {
         day.zones[`z${zone}`] += remaining;
@@ -329,4 +392,6 @@ async function dailyZoneDistribution(athleteId, startDate, endDate, { sport = 'a
   };
 }
 
-module.exports = { dailyZoneDistribution, zoneForHr, boundariesFrom };
+module.exports = {
+  dailyZoneDistribution, zoneForHr, zoneForPace, boundariesFrom, paceBoundsFrom, isPaceSport,
+};

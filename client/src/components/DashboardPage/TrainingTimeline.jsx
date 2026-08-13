@@ -392,10 +392,12 @@ export default function TrainingTimeline({
   const [zoneReason, setZoneReason] = useState(null);
   /** How many traces are still missing — the chart sharpens as they arrive. */
   const [backfill, setBackfill] = useState(null);
+  /** Balance can read heart rate or power/pace — different zones, same chart. */
+  const [zoneMetric, setZoneMetric] = useState(saved.zoneMetric || 'hr');
 
   useEffect(() => {
-    writePrefs({ view, sportFilter, days, showPlan });
-  }, [view, sportFilter, days, showPlan]);
+    writePrefs({ view, sportFilter, days, showPlan, zoneMetric });
+  }, [view, sportFilter, days, showPlan, zoneMetric]);
 
   // Zone data is the only part that needs the server, so it is fetched only
   // when the Balance view actually asks for it.
@@ -406,7 +408,7 @@ export default function TrainingTimeline({
     start.setDate(start.getDate() - (days - 1));
     let cancelled = false;
     setZonesLoading(true);
-    getTimelineZones(athleteId, localCalendarDateKey(start), localCalendarDateKey(end), sportFilter)
+    getTimelineZones(athleteId, localCalendarDateKey(start), localCalendarDateKey(end), sportFilter, zoneMetric)
       .then((data) => {
         if (cancelled) return;
         setZoneDays(data?.days || []);
@@ -416,7 +418,7 @@ export default function TrainingTimeline({
       .catch(() => { if (!cancelled) { setZoneDays([]); setZoneReason(null); } })
       .finally(() => { if (!cancelled) setZonesLoading(false); });
     return () => { cancelled = true; };
-  }, [view, athleteId, days, sportFilter]);
+  }, [view, athleteId, days, sportFilter, zoneMetric]);
 
   const timeline = useMemo(
     () => buildTrainingTimeline({
@@ -493,6 +495,22 @@ export default function TrainingTimeline({
             </button>
           ))}
         </div>
+        {view === 'balance' ? (
+          <div className="inline-flex p-0.5 rounded-lg bg-gray-100">
+            {[{ id: 'hr', label: 'HR' }, { id: 'power', label: 'Power / Pace' }].map((m) => (
+              <button
+                key={m.id}
+                type="button"
+                onClick={() => setZoneMetric(m.id)}
+                className={`px-2 py-0.5 rounded-md text-[11px] font-semibold transition-colors ${
+                  zoneMetric === m.id ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                {m.label}
+              </button>
+            ))}
+          </div>
+        ) : null}
         {view === 'flow' ? (
           <label className="inline-flex items-center gap-1.5 text-[11px] text-gray-600 cursor-pointer select-none">
             <input

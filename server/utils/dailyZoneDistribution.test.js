@@ -7,7 +7,7 @@
 'use strict';
 
 const assert = require('assert');
-const { boundariesFrom, zoneForHr } = require('./dailyZoneDistribution');
+const { boundariesFrom, zoneForHr, zoneForPace, paceBoundsFrom, isPaceSport } = require('./dailyZoneDistribution');
 
 let passed = 0;
 function test(name, fn) {
@@ -134,6 +134,50 @@ test('ignores missing and impossible readings', () => {
   assert.strictEqual(zoneForHr(0, mins), null);
   assert.strictEqual(zoneForHr(null, mins), null);
   assert.strictEqual(zoneForHr('abc', mins), null);
+});
+
+console.log('\npace zones');
+
+test('knows which sports keep pace in the power block', () => {
+  assert.strictEqual(isPaceSport('Run'), true);
+  assert.strictEqual(isPaceSport('Swim'), true);
+  assert.strictEqual(isPaceSport('Ride'), false);
+  assert.strictEqual(isPaceSport('VirtualRide'), false);
+});
+
+test('reads descending pace bounds', () => {
+  // Z1 is the slowest band, so its seconds are the largest and they tighten.
+  const bounds = paceBoundsFrom({
+    zone1: { min: 400, max: 360 }, zone2: { min: 360, max: 330 },
+    zone3: { min: 330, max: 310 }, zone4: { min: 310, max: 290 },
+    zone5: { min: 290, max: 240 },
+  });
+  assert.deepStrictEqual(bounds, [360, 330, 310, 290, 240]);
+});
+
+test('rejects a pace table that ascends', () => {
+  assert.strictEqual(paceBoundsFrom({
+    zone1: { max: 240 }, zone2: { max: 290 }, zone3: { max: 310 },
+    zone4: { max: 330 }, zone5: { max: 360 },
+  }), null);
+});
+
+test('buckets pace the right way round', () => {
+  // Faster is a smaller number and a higher zone. Bucketing this ascending
+  // would file every sprint under Z1.
+  const bounds = [360, 330, 310, 290, 240];
+  // Bands run 400>360 (Z1), 360>330 (Z2), 330>310 (Z3), 310>290 (Z4), 290>240 (Z5).
+  assert.strictEqual(zoneForPace(380, bounds), 1);      // an easy jog
+  assert.strictEqual(zoneForPace(355, bounds), 2);
+  assert.strictEqual(zoneForPace(320, bounds), 3);
+  assert.strictEqual(zoneForPace(295, bounds), 4);
+  assert.strictEqual(zoneForPace(230, bounds), 5);      // faster than Z5 opens
+});
+
+test('ignores nonsense paces', () => {
+  const bounds = [360, 330, 310, 290, 240];
+  assert.strictEqual(zoneForPace(0, bounds), null);
+  assert.strictEqual(zoneForPace(null, bounds), null);
 });
 
 console.log(`\n${passed} passed`);

@@ -52,7 +52,8 @@ router.get('/zones', verifyToken, async (req, res) => {
     }
 
     const sport = ['all', 'run', 'bike', 'swim'].includes(req.query.sport) ? req.query.sport : 'all';
-    const result = await dailyZoneDistribution(targetId, start, end, { sport });
+    const metric = req.query.metric === 'power' ? 'power' : 'hr';
+    const result = await dailyZoneDistribution(targetId, start, end, { sport, metric });
     res.json(result);
   } catch (error) {
     console.error('Error building timeline zones:', error);
