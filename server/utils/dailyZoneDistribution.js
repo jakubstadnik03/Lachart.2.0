@@ -243,7 +243,7 @@ async function dailyZoneDistribution(athleteId, startDate, endDate, { sport = 'a
   const stravas = await StravaActivity.find({
     userId: athleteIdStr,
     startDate: { $gte: startDate, $lte: endDate },
-  }).select('stravaId sport startDate movingTime elapsedTime').lean();
+  }).select('stravaId sport startDate movingTime elapsedTime averageHeartRate average_heartrate').lean();
 
   const wanted = stravas.filter((a) => sportMatches(a.sport));
   const streamDocs = wanted.length
@@ -271,7 +271,9 @@ async function dailyZoneDistribution(athleteId, startDate, endDate, { sport = 'a
 
     const remaining = duration - added;
     if (remaining > 0) {
-      const avg = Number(a.averageHeartRate) || 0;
+      // Both spellings exist on the model — Strava's raw field and the mapped
+      // one — and which is populated depends on the sync path that wrote it.
+      const avg = Number(a.averageHeartRate || a.average_heartrate) || 0;
       const zone = avg > 0 ? zoneForHr(avg, mins) : null;
       if (zone) {
         day.zones[`z${zone}`] += remaining;
