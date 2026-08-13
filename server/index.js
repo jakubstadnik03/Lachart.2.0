@@ -298,6 +298,7 @@ const { startLactateTestFollowUpScheduler } = require('./services/lactateTestFol
 const { startRetentionScheduler } = require('./services/retentionScheduler');
 const { startAppReengagementScheduler } = require('./services/appReengagementScheduler');
 const { startGarminTokenRefreshScheduler } = require('./services/garminTokenRefreshScheduler');
+const { startStreamBackfillScheduler } = require('./services/streamBackfillScheduler');
 const { startWinBackScheduler } = require('./services/winBackScheduler');
 const { startRaceReminderScheduler } = require('./services/raceReminderScheduler');
 const { startTrainingAlertScheduler } = require('./services/trainingAlertScheduler');
@@ -382,6 +383,11 @@ startAppReengagementScheduler();
 
 // Garmin OAuth2 tokens expire silently for webhook-only users — refresh ahead of time.
 startGarminTokenRefreshScheduler();
+
+// Per-second traces for the Balance chart. Runs on a tick rather than inside
+// the request that draws the chart: that request arrives exactly when
+// interactive Strava traffic peaks, so the bulk lane was refused every time.
+startStreamBackfillScheduler();
 
 // One-time win-back to lapsed free accounts. OFF unless ENABLE_WINBACK_SCHEDULER=true
 // — a 435-person campaign is a deliberate decision, not a deploy side effect.

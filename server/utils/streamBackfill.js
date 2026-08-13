@@ -66,7 +66,19 @@ async function fetchStreams(token, stravaId) {
       // 400 means this key set does not apply to the activity — try a narrower
       // one. Anything else (429, 401, network) is not fixed by asking again.
       if (status !== 400) {
-        console.warn(`[streams] ${stravaId} failed:`, status || err.message);
+        // A budget refusal is the common case and "reserved for interactive
+        // traffic" alone does not say which ceiling was hit or how close it
+        // was — print the counters so the next diagnosis is one line, not a
+        // code read.
+        if (err?.code === 'STRAVA_BUDGET_EXHAUSTED') {
+          const s = err.snapshot || {};
+          console.warn(
+            `[streams] ${stravaId} refused by local budget — window ${s.windowUsed}/${s.bulkWindowLimit}, `
+            + `day ${s.dayUsed}/${s.bulkDayLimit}, resets in ${err.retryAfterSec}s`,
+          );
+        } else {
+          console.warn(`[streams] ${stravaId} failed:`, status || err.message);
+        }
         return null;
       }
     }
