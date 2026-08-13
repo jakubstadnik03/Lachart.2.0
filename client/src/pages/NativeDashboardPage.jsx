@@ -13,7 +13,6 @@ import AppleHealthWellnessCard from '../components/NativeDashboard/AppleHealthWe
 import HealthEpisodeCard from '../components/NativeDashboard/HealthEpisodeCard';
 import WellnessDetailSheet from '../components/shared/WellnessDetailSheet';
 import OnboardingChecklist from '../components/NativeDashboard/OnboardingChecklist';
-import TrainingInsightsCard from '../components/DashboardPage/TrainingInsightsCard';
 import DailyCoachCard from '../components/DashboardPage/DailyCoachCard';
 import TrainingTimeline from '../components/DashboardPage/TrainingTimeline';
 import RouteHistoryCard from '../components/DashboardPage/RouteHistoryCard';
@@ -1419,21 +1418,6 @@ export default function NativeDashboardPage({
                 kpis={{ fitness: todayMetrics?.fitness, form: todayMetrics?.form, fatigue: todayMetrics?.fatigue }}
               />
             </PremiumLock>
-          </div>
-
-          {/* 0b · Daily training insight */}
-          <div style={{ ...cardEntry(0), ...snapStyle, marginTop: -4 }}>
-            <TrainingInsightsCard
-              athleteId={athleteId || user?._id || user?.id}
-              todayMetrics={todayMetrics}
-              plannedWorkouts={plannedWorkouts}
-              activities={activities}
-              tests={tests}
-              sparklineData={sparklineData}
-              userProfile={fitnessProfile}
-              loading={metricsLoading}
-              compact
-            />
           </div>
 
           {/* 0c · Training Timeline — same three views as the web. */}

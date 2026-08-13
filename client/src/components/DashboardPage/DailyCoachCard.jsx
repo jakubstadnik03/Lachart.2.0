@@ -10,6 +10,7 @@
  * push, and none of them can drift from each other.
  */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import ReactDOM from 'react-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   AdjustmentsHorizontalIcon,
@@ -30,10 +31,10 @@ import {
   styleIndex,
 } from '../../constants/coachingStyles';
 import {
-  isCardMinimised,
+  isCardExpanded,
   readDailyCardPrefs,
   saveDailyCardPrefs,
-  setCardMinimised,
+  setCardExpanded,
 } from '../../utils/dailyCardPrefs';
 
 /** Form gauge: the five readiness bands laid out left (strained) → right (very fresh). */
@@ -192,6 +193,8 @@ function FeltVsDataLine({ activity, userProfile }) {
   );
 }
 
+const isNerdStyle = (id) => id === 'nerd';
+
 function SessionRow({ item, muted = false, prefix = null }) {
   return (
     <div className="flex items-start gap-2.5 py-1.5">
@@ -269,7 +272,9 @@ export default function DailyCoachCard({
   const [prefs, setPrefs] = useState(() => readDailyCardPrefs(user));
   const [showSettings, setShowSettings] = useState(false);
   const [showMore, setShowMore] = useState(false);
-  const [minimised, setMinimised] = useState(false);
+  // Starts collapsed, before the stored state is read — otherwise the sheet
+  // flashes open on every mount and closes itself a frame later.
+  const [minimised, setMinimised] = useState(true);
   const [saving, setSaving] = useState(false);
   const [wellness, setWellness] = useState(wellnessDays || []);
   const [ratedYesterday, setRatedYesterday] = useState(null);
@@ -303,8 +308,11 @@ export default function DailyCoachCard({
     [todayMetrics, plannedWorkouts, activities, userProfile, user, prefs.style, weather, wellness],
   );
 
+  // Collapsed by default. The card carries a lot, and on a phone it pushed the
+  // rest of the dashboard off the screen — so it leads with the one line that
+  // matters and opens on demand, the way the insight banner it replaces did.
   useEffect(() => {
-    setMinimised(isCardMinimised(athleteId, card.dateKey));
+    setMinimised(!isCardExpanded(athleteId, card.dateKey));
   }, [athleteId, card.dateKey]);
 
   const persist = useCallback(async (next) => {
@@ -326,12 +334,12 @@ export default function DailyCoachCard({
 
   const minimise = useCallback(() => {
     setMinimised(true);
-    setCardMinimised(athleteId, card.dateKey, true);
+    setCardExpanded(athleteId, card.dateKey, false);
   }, [athleteId, card.dateKey]);
 
   const restore = useCallback(() => {
     setMinimised(false);
-    setCardMinimised(athleteId, card.dateKey, false);
+    setCardExpanded(athleteId, card.dateKey, true);
   }, [athleteId, card.dateKey]);
 
   if (loading) {
@@ -357,26 +365,56 @@ export default function DailyCoachCard({
         onClick={restore}
         initial={{ opacity: 0, y: -6 }}
         animate={{ opacity: 1, y: 0 }}
-        className="w-full flex items-center gap-2 px-3 py-2 rounded-xl bg-white shadow border border-gray-100 text-left"
+        className="w-full text-left bg-white rounded-2xl shadow-lg px-4 py-3 flex items-start gap-3"
         style={{ borderLeft: `3px solid ${card.readiness.color}` }}
       >
-        <span className="text-xs font-bold text-gray-900 truncate">{card.headline}</span>
-        <span className="text-[11px] text-gray-500 truncate hidden sm:inline">{card.pushBody}</span>
-        <ChevronDownIcon className="w-4 h-4 text-gray-400 ml-auto shrink-0" />
+        <div className="min-w-0 flex-1">
+          <div className="text-[10px] font-bold uppercase tracking-wider" style={{ color: card.readiness.color }}>
+            Today
+          </div>
+          <div className="text-sm font-bold text-gray-900 truncate">{card.headline}</div>
+          {/* Two lines, then it stops — the rest is behind the tap. */}
+          <p className="text-xs text-gray-600 leading-snug line-clamp-2 mt-0.5">
+            {isNerdStyle(prefs.style) ? card.readiness.readout : card.directive}
+          </p>
+        </div>
+        <ChevronDownIcon className="w-4 h-4 text-gray-300 shrink-0 mt-1" />
       </motion.button>
     );
   }
 
   const isNerd = prefs.style === 'nerd';
 
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: -8 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="bg-white rounded-2xl shadow-lg overflow-hidden"
-      style={{ borderTop: `3px solid ${card.readiness.color}` }}
+  // Opens as a sheet from the bottom, matching the insight banner it replaces.
+  return ReactDOM.createPortal(
+    <div
+      className="fixed inset-0 z-[10050] flex flex-col justify-end"
+      style={{ background: 'rgba(15,23,42,0.45)' }}
+      onClick={minimise}
+      role="presentation"
     >
-      <div className={compact ? 'p-3.5' : 'p-4 sm:p-5'}>
+      <motion.div
+        initial={{ y: '100%' }}
+        animate={{ y: 0 }}
+        exit={{ y: '110%' }}
+        transition={{ type: 'spring', damping: 30, stiffness: 300 }}
+        drag="y"
+        dragConstraints={{ top: 0 }}
+        dragElastic={{ top: 0, bottom: 0.35 }}
+        onDragEnd={(_, info) => { if (info.offset.y > 90 || info.velocity.y > 450) minimise(); }}
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        className="bg-white rounded-t-2xl shadow-2xl max-h-[88vh] overflow-y-auto"
+        style={{
+          borderTop: `3px solid ${card.readiness.color}`,
+          paddingBottom: 'max(16px, env(safe-area-inset-bottom))',
+        }}
+    >
+      {/* Grab handle — the affordance that says this drags away. */}
+      <div className="flex justify-center pt-2 pb-1 sticky top-0 bg-white z-10">
+        <div className="w-9 h-1 rounded-full bg-gray-300" />
+      </div>
+      <div className={compact ? 'p-3.5 pt-1' : 'p-4 sm:p-5 pt-1'}>
         {/* Header */}
         <div className="flex items-start justify-between gap-2 mb-1">
           <div className="min-w-0">
@@ -579,6 +617,8 @@ export default function DailyCoachCard({
           </div>
         </div>
       ) : null}
-    </motion.div>
+      </motion.div>
+    </div>,
+    document.body,
   );
 }
