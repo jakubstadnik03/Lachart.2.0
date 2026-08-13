@@ -73,6 +73,7 @@ import { stravaHalfCadenceToSpm, cadenceDisplayUnit } from '../../utils/cadenceD
 import { notifyTssDisplayModeChanged, clearFormFitnessCache } from '../../utils/uiPrefs';
 import { motion, AnimatePresence } from 'framer-motion';
 import TrainingComments from '../TrainingComments';
+import ActivityWeather from '../training/ActivityWeather';
 import { MapContainer, TileLayer, Polyline, CircleMarker, Tooltip as LeafletTooltip, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import TrainingChart from '../FitAnalysis/TrainingChart';
@@ -3501,6 +3502,22 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
   const planDescription = plannedDescriptionOnly(plannedWorkout);
   const commentsTarget = resolveCommentsTarget(merged, plannedWorkout);
 
+  // Weather keys off the completed activity, not off commentsTarget — that
+  // points at the planned workout when there is one, and a plan has no GPS.
+  // Manual entries return null: nothing to look a location up from.
+  const activityWeatherKey = useMemo(() => {
+    const id = String(merged?.id || merged?._id || '');
+    if (id.startsWith('strava-') || merged?.source === 'strava' || merged?.type === 'strava' || merged?.stravaId) {
+      const raw = String(merged?.stravaId || id.replace(/^strava-/, ''));
+      return raw ? `strava-${raw}` : null;
+    }
+    if (id.startsWith('fit-') || merged?.source === 'fit' || merged?.type === 'fit') {
+      const raw = String(merged?._id || id.replace(/^fit-/, ''));
+      return raw ? `fit-${raw}` : null;
+    }
+    return null;
+  }, [merged]);
+
   const fmtDur = (s) => {
     if (!s) return '—';
     const h = Math.floor(s/3600), m = Math.floor((s%3600)/60), sec = Math.floor(s%60);
@@ -4835,6 +4852,13 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
             </div>
             )}
 
+            {/* Conditions — context for everything above, so it sits last. */}
+            {activityWeatherKey && (
+              <div className="px-4 py-4 border-b border-gray-100">
+                <ActivityWeather activityKey={activityWeatherKey} />
+              </div>
+            )}
+
             {/* Planned section moved → Edit tab. Quick "Add planned" shortcut
                 when there's no plan yet, so Summary doesn't lose discoverability. */}
             {!plannedWorkout && (
@@ -5600,6 +5624,13 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
               trainingType={commentsTarget.trainingType}
             />
           </div>
+          )}
+
+          {/* Conditions — context for everything above, so it sits last. */}
+          {activityWeatherKey && (
+            <div className="px-5 py-4 border-b border-gray-100">
+              <ActivityWeather activityKey={activityWeatherKey} />
+            </div>
           )}
 
           {/* ── Route Map ── */}

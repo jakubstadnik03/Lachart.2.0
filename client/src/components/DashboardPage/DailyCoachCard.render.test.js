@@ -14,6 +14,8 @@ jest.mock('../../services/wellnessData', () => ({
   fetchWellness: () => Promise.resolve({ connected: false, days: [] }),
 }));
 // The RPE capture saves through services/api, which imports axios (ESM).
+// SportGlyph pulls in lucide-react, which ships ESM that jest won't transform.
+jest.mock('../shared/SportIcon', () => ({ SportGlyph: () => null }));
 jest.mock('../../services/api', () => ({
   updateFitTraining: jest.fn(),
   updateStravaActivity: jest.fn(),

@@ -14,6 +14,7 @@ const verifyToken = require('../middleware/verifyToken');
 const User = require('../models/UserModel');
 const { dailyZoneDistribution } = require('../utils/dailyZoneDistribution');
 const { groupByRoute } = require('../utils/routeSignature');
+const { weatherForActivity } = require('../utils/activityWeather');
 const StravaActivity = require('../models/StravaActivity');
 const StravaStream = require('../models/StravaStream');
 const { isCoachLikeRole, athleteHasCoachUser } = require('../utils/athleteCoachAccess');
@@ -154,6 +155,27 @@ router.get('/routes', verifyToken, async (req, res) => {
   } catch (error) {
     console.error('Error building route history:', error);
     res.status(500).json({ error: 'Failed to build route history' });
+  }
+});
+
+/**
+ * GET /api/timeline/weather?activityKey=strava-123
+ *
+ * Conditions during one activity, looked up once from its own GPS and start
+ * time, then frozen. 204 when the activity has no GPS to look anything up from.
+ */
+router.get('/weather', verifyToken, async (req, res) => {
+  try {
+    const activityKey = String(req.query.activityKey || '').trim();
+    if (!/^(strava|fit|regular)-[\w-]+$/.test(activityKey)) {
+      return res.status(400).json({ error: 'Invalid activityKey' });
+    }
+    const weather = await weatherForActivity(req.user.userId, activityKey);
+    if (!weather) return res.status(204).end();
+    res.json(weather);
+  } catch (error) {
+    console.error('Error fetching activity weather:', error);
+    res.status(500).json({ error: 'Failed to fetch weather' });
   }
 });
 

@@ -20,6 +20,7 @@ import {
 } from '@heroicons/react/24/outline';
 import { buildDailyCard } from '../../utils/dailyCoachCard';
 import { fetchWellness } from '../../services/wellnessData';
+import { SportGlyph } from '../shared/SportIcon';
 import RpeCapture from '../training/RpeCapture';
 import { assessFeltVsData } from '../../utils/feltVsData';
 import { saveSessionRpe } from '../../utils/saveSessionRpe';
@@ -34,11 +35,6 @@ import {
   saveDailyCardPrefs,
   setCardMinimised,
 } from '../../utils/dailyCardPrefs';
-
-const SPORT_EMOJI = {
-  run: '🏃', bike: '🚴', mtbike: '🚵', swim: '🏊', strength: '🏋️', gym: '🏋️',
-  walk: '🚶', brick: '🔁', crosstrain: '🤸', rowing: '🚣', lactate: '🩸', other: '•',
-};
 
 /** Form gauge: the five readiness bands laid out left (strained) → right (very fresh). */
 function ReadinessGauge({ readiness, compact }) {
@@ -199,8 +195,8 @@ function FeltVsDataLine({ activity, userProfile }) {
 function SessionRow({ item, muted = false, prefix = null }) {
   return (
     <div className="flex items-start gap-2.5 py-1.5">
-      <span className="text-base leading-5 shrink-0" aria-hidden="true">
-        {SPORT_EMOJI[String(item.sport || '').toLowerCase()] || '•'}
+      <span className="shrink-0 mt-0.5" aria-hidden="true">
+        <SportGlyph sport={item.sport} size={16} />
       </span>
       <div className="min-w-0 flex-1">
         <div className={`text-sm font-semibold truncate ${muted ? 'text-gray-600' : 'text-gray-900'}`}>

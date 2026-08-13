@@ -20,6 +20,7 @@ import path from 'path';
 jest.mock('../client/src/services/wellnessData', () => ({
   fetchWellness: () => Promise.resolve({ connected: false, days: [] }),
 }));
+jest.mock('../client/src/components/shared/SportIcon', () => ({ SportGlyph: () => null }));
 jest.mock('../client/src/services/api', () => ({
   getTimelineZones: () => Promise.resolve({ days: [] }),
   updateFitTraining: () => Promise.resolve({}),

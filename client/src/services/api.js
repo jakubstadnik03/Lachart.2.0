@@ -2143,3 +2143,13 @@ export const getRouteHistory = async (athleteId, limit = 150) => {
   const response = await api.get('/api/timeline/routes', { params, cacheTtlMs: 10 * 60 * 1000 });
   return response.data;
 };
+
+/** Conditions during one activity — looked up once from its GPS, then frozen. */
+export const getActivityWeather = async (activityKey) => {
+  const response = await api.get('/api/timeline/weather', {
+    params: { activityKey },
+    cacheTtlMs: 60 * 60 * 1000,
+  });
+  // 204 = the activity has no GPS to look anything up from.
+  return response.status === 204 ? null : response.data;
+};
