@@ -118,16 +118,22 @@ async function fetchPlace(lat, lng) {
  * Start coordinates from the Strava activity detail.
  *
  * Goes through the shared budget so a burst of weather lookups cannot eat the
- * quota the sync and the activity views depend on. Any failure returns null:
- * missing weather is a small loss, a rate-limited Strava integration is not.
+ * quota the sync and the activity views depend on.
+ *
+ * Returns a discriminated result rather than plain null, because "Strava said
+ * this activity has no start point" and "we never got to ask Strava" look
+ * identical from the outside and must not be treated the same: the first is a
+ * permanent fact worth caching, the second is a rate limit that clears.
+ *
+ * @returns {{ found: [lat,lng] } | { noGps: true } | { failed: true }}
  */
 async function fetchStravaStartLatLng(userId, stravaId) {
   try {
     const user = await User.findById(userId).select('strava');
-    if (!user?.strava?.accessToken) return null;
+    if (!user?.strava?.accessToken) return { failed: true };
 
     const token = await getValidStravaToken(user);
-    if (!token) return null;
+    if (!token) return { failed: true };
 
     // 'bulk', not 'interactive': nobody is waiting on the weather, and it must
     // never crowd out the sync or an activity the athlete just opened.
@@ -138,16 +144,17 @@ async function fetchStravaStartLatLng(userId, stravaId) {
     );
     try { stravaBudget.reconcileFromHeaders(resp.headers); } catch { /* swallow */ }
 
+    // Strava answered, so whatever it says is the truth about this activity.
     const pair = resp.data?.start_latlng;
-    if (!Array.isArray(pair) || pair.length < 2) return null;
+    if (!Array.isArray(pair) || pair.length < 2) return { noGps: true };
     const lat = Number(pair[0]);
     const lng = Number(pair[1]);
-    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
-    if (lat === 0 && lng === 0) return null; // no fix
-    return { lat, lng };
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return { noGps: true };
+    if (lat === 0 && lng === 0) return { noGps: true };
+    return { found: [lat, lng] };
   } catch (err) {
     console.warn('[weather] start_latlng lookup failed:', err?.response?.status || err.message);
-    return null;
+    return { failed: true };
   }
 }
 
@@ -175,10 +182,13 @@ async function locateActivity(userId, activityKey) {
     // Worth one request: the answer is cached forever afterwards (the weather
     // is frozen), so this costs an athlete one call per activity for their
     // whole history rather than one per view.
-    const startLatLng = await fetchStravaStartLatLng(userId, stravaId);
-    if (startLatLng) return { when: act.startDate, ...startLatLng };
-
-    return { when: act.startDate, lat: null, lng: null };
+    const result = await fetchStravaStartLatLng(userId, stravaId);
+    if (result.found) {
+      return { when: act.startDate, lat: result.found[0], lng: result.found[1] };
+    }
+    // `failed` means we never got an answer — a rate limit, an expired token —
+    // so the absence must not be recorded as permanent.
+    return { when: act.startDate, lat: null, lng: null, retryable: !!result.failed };
   }
 
   if (fitId) {
@@ -201,15 +211,28 @@ async function locateActivity(userId, activityKey) {
  */
 async function weatherForActivity(userId, activityKey) {
   const cached = await ActivityWeather.findOne({ userId, activityKey }).lean();
-  if (cached) return cached.unavailable ? null : cached;
+  if (cached && !cached.unavailable) return cached;
+
+  if (cached?.unavailable) {
+    // An earlier build cached "no location" for lookups that had merely been
+    // rate-limited, which is indistinguishable in the stored record. Give a
+    // stale negative one more chance rather than leaving those activities
+    // permanently blank; a genuine no-GPS session simply re-records it.
+    const age = Date.now() - new Date(cached.fetchedAt || 0).getTime();
+    if (age < 24 * 3600 * 1000) return null;
+  }
 
   const located = await locateActivity(userId, activityKey);
   if (!located) return null;
 
   if (located.lat == null || located.lng == null) {
-    // Record the absence. Finding the location can cost a Strava request, and
-    // an activity with no GPS at all (treadmill, trainer) would otherwise pay
-    // it again on every single view.
+    // Only record the absence when we actually know it. A rate-limited lookup
+    // is not evidence that a session had no GPS, and caching it as such would
+    // kill the weather on that activity permanently for one throttled request.
+    if (located.retryable) return null;
+
+    // Finding the location can cost a Strava request, so an activity that
+    // genuinely has none (treadmill, trainer) must not pay for it every view.
     await ActivityWeather.findOneAndUpdate(
       { userId, activityKey },
       { userId, activityKey, observedAt: located.when, fetchedAt: new Date(), unavailable: true },
