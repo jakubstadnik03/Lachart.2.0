@@ -2150,6 +2150,9 @@ export const getActivityWeather = async (activityKey) => {
     params: { activityKey },
     cacheTtlMs: 60 * 60 * 1000,
   });
-  // 204 = the activity has no GPS to look anything up from.
-  return response.status === 204 ? null : response.data;
+  // A 204 (no GPS to look anything up from) arrives as an empty body, and the
+  // cache layer replays hits as { data } with no status — so trust the payload
+  // rather than the status code, which is absent on every cached read.
+  const data = response?.data;
+  return data && typeof data === 'object' && data.tempC != null ? data : null;
 };
