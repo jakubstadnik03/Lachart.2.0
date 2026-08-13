@@ -288,16 +288,23 @@ function HoverDetail({ point }) {
   );
 }
 
-function Summary({ timeline, view }) {
+function Summary({ timeline, view, zoneReason = null }) {
   if (view === 'balance') {
     if (!timeline.split) {
       // Two different problems, two different fixes — telling someone to set
       // zones they already have is how a message stops being read.
+      // The server says which of these it is; earlier versions guessed and got
+      // it wrong twice.
+      const MESSAGES = {
+        'no-zones': 'Your profile has no heart-rate zones yet. Set them in Settings — or run a lactate test, which fills them in — and this view works from your existing sessions.',
+        'no-sessions': 'No sessions in this window.',
+      };
       return (
         <p className="text-[11px] text-gray-500 mt-2">
-          {timeline.coverage.unmeasuredSec > 0
-            ? 'None of the sessions in this window recorded heart rate. Wear a strap or a watch and this view fills in.'
-            : 'No sessions in this window.'}
+          {MESSAGES[zoneReason]
+            || (timeline.coverage.unmeasuredSec > 0
+              ? 'None of the sessions in this window recorded heart rate.'
+              : 'No sessions in this window.')}
         </p>
       );
     }
@@ -368,6 +375,8 @@ export default function TrainingTimeline({
   const [hovered, setHovered] = useState(null);
   const [zoneDays, setZoneDays] = useState([]);
   const [zonesLoading, setZonesLoading] = useState(false);
+  /** Why the zone view is empty, straight from the server rather than guessed. */
+  const [zoneReason, setZoneReason] = useState(null);
 
   useEffect(() => {
     writePrefs({ view, sportFilter, days, showPlan });
@@ -383,8 +392,12 @@ export default function TrainingTimeline({
     let cancelled = false;
     setZonesLoading(true);
     getTimelineZones(athleteId, localCalendarDateKey(start), localCalendarDateKey(end), sportFilter)
-      .then((data) => { if (!cancelled) setZoneDays(data?.days || []); })
-      .catch(() => { if (!cancelled) setZoneDays([]); })
+      .then((data) => {
+        if (cancelled) return;
+        setZoneDays(data?.days || []);
+        setZoneReason(data?.reason || null);
+      })
+      .catch(() => { if (!cancelled) { setZoneDays([]); setZoneReason(null); } })
       .finally(() => { if (!cancelled) setZonesLoading(false); });
     return () => { cancelled = true; };
   }, [view, athleteId, days, sportFilter]);
@@ -497,7 +510,7 @@ export default function TrainingTimeline({
       </div>
 
       <Legend view={view} />
-      <Summary timeline={timeline} view={view} />
+      <Summary timeline={timeline} view={view} zoneReason={zoneReason} />
       <HoverDetail point={hoveredPoint} />
     </div>
   );
