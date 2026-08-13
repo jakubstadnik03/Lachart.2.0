@@ -13,10 +13,15 @@
 
 'use strict';
 
+const axios = require('axios');
+
 const ActivityWeather = require('../models/ActivityWeather');
 const StravaActivity = require('../models/StravaActivity');
 const StravaStream = require('../models/StravaStream');
 const FitTraining = require('../models/fitTraining');
+const User = require('../models/UserModel');
+const stravaBudget = require('./stravaBudget');
+const { getValidStravaToken } = require('./stravaToken');
 
 /** WMO weather codes → plain English. */
 const WMO = {
@@ -109,6 +114,43 @@ async function fetchPlace(lat, lng) {
   }
 }
 
+/**
+ * Start coordinates from the Strava activity detail.
+ *
+ * Goes through the shared budget so a burst of weather lookups cannot eat the
+ * quota the sync and the activity views depend on. Any failure returns null:
+ * missing weather is a small loss, a rate-limited Strava integration is not.
+ */
+async function fetchStravaStartLatLng(userId, stravaId) {
+  try {
+    const user = await User.findById(userId).select('strava');
+    if (!user?.strava?.accessToken) return null;
+
+    const token = await getValidStravaToken(user);
+    if (!token) return null;
+
+    // 'bulk', not 'interactive': nobody is waiting on the weather, and it must
+    // never crowd out the sync or an activity the athlete just opened.
+    await stravaBudget.take({ priority: 'bulk' });
+    const resp = await axios.get(
+      `https://www.strava.com/api/v3/activities/${stravaId}`,
+      { headers: { Authorization: `Bearer ${token}` }, timeout: 20000 },
+    );
+    try { stravaBudget.reconcileFromHeaders(resp.headers); } catch { /* swallow */ }
+
+    const pair = resp.data?.start_latlng;
+    if (!Array.isArray(pair) || pair.length < 2) return null;
+    const lat = Number(pair[0]);
+    const lng = Number(pair[1]);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+    if (lat === 0 && lng === 0) return null; // no fix
+    return { lat, lng };
+  } catch (err) {
+    console.warn('[weather] start_latlng lookup failed:', err?.response?.status || err.message);
+    return null;
+  }
+}
+
 /** Where and when an activity happened, from whichever source it came from. */
 async function locateActivity(userId, activityKey) {
   const key = String(activityKey || '');
@@ -118,12 +160,25 @@ async function locateActivity(userId, activityKey) {
   if (stravaId) {
     const act = await StravaActivity.findOne({ userId, stravaId }).select('startDate').lean();
     if (!act) return null;
+
     const stream = await StravaStream.findOne({ userId, stravaId }).select('streams.latlng').lean();
     const first = (stream?.streams?.latlng || []).find(
       (p) => Array.isArray(p) && Number.isFinite(p[0]) && !(p[0] === 0 && p[1] === 0),
     );
-    if (!first) return { when: act.startDate, lat: null, lng: null };
-    return { when: act.startDate, lat: Number(first[0]), lng: Number(first[1]) };
+    if (first) return { when: act.startDate, lat: Number(first[0]), lng: Number(first[1]) };
+
+    // No stream stored. Streams are only kept for newly synced activities and
+    // ones the athlete has opened, so a back catalogue has none — and without
+    // one there is no location on the activity at all. Ask Strava for the
+    // detail, which carries start_latlng.
+    //
+    // Worth one request: the answer is cached forever afterwards (the weather
+    // is frozen), so this costs an athlete one call per activity for their
+    // whole history rather than one per view.
+    const startLatLng = await fetchStravaStartLatLng(userId, stravaId);
+    if (startLatLng) return { when: act.startDate, ...startLatLng };
+
+    return { when: act.startDate, lat: null, lng: null };
   }
 
   if (fitId) {
@@ -149,7 +204,19 @@ async function weatherForActivity(userId, activityKey) {
   if (cached) return cached.unavailable ? null : cached;
 
   const located = await locateActivity(userId, activityKey);
-  if (!located || located.lat == null || located.lng == null) return null;
+  if (!located) return null;
+
+  if (located.lat == null || located.lng == null) {
+    // Record the absence. Finding the location can cost a Strava request, and
+    // an activity with no GPS at all (treadmill, trainer) would otherwise pay
+    // it again on every single view.
+    await ActivityWeather.findOneAndUpdate(
+      { userId, activityKey },
+      { userId, activityKey, observedAt: located.when, fetchedAt: new Date(), unavailable: true },
+      { upsert: true },
+    );
+    return null;
+  }
 
   let reading = null;
   let place = null;
