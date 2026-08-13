@@ -15,6 +15,7 @@ const User = require('../models/UserModel');
 const { dailyZoneDistribution } = require('../utils/dailyZoneDistribution');
 const { groupByRoute } = require('../utils/routeSignature');
 const { weatherForActivity } = require('../utils/activityWeather');
+const { channel } = require('../utils/streamChannel');
 const StravaActivity = require('../models/StravaActivity');
 const StravaStream = require('../models/StravaStream');
 const { isCoachLikeRole, athleteHasCoachUser } = require('../utils/athleteCoachAccess');
@@ -99,7 +100,13 @@ router.get('/routes', verifyToken, async (req, res) => {
       userId: targetId,
       stravaId: { $in: activities.map((a) => a.stravaId) },
     }).select('stravaId streams.latlng').lean();
-    const latlngById = new Map(streams.map((s) => [String(s.stravaId), s.streams?.latlng || null]));
+    // channel(): the sync stores Strava's wrapped {data:[…]}, the backfill the
+    // bare series. Passing the wrapper straight through gave routeSignature an
+    // object where it expected points, so those activities matched nothing.
+    const latlngById = new Map(streams.map((s) => {
+      const track = channel(s.streams, 'latlng');
+      return [String(s.stravaId), track.length ? track : null];
+    }));
 
     const withTracks = activities.map((a) => ({
       id: `strava-${a.stravaId}`,

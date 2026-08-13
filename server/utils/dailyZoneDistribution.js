@@ -32,6 +32,7 @@ const StravaActivity = require('../models/StravaActivity');
 const StravaStream = require('../models/StravaStream');
 const User = require('../models/UserModel');
 const { backfillStreams } = require('./streamBackfill');
+const { channel } = require('./streamChannel');
 
 const ZONE_KEYS = ['zone1', 'zone2', 'zone3', 'zone4', 'zone5'];
 
@@ -334,13 +335,18 @@ async function dailyZoneDistribution(athleteId, startDate, endDate, { sport = 'a
 
     const s = streamsById.get(String(a.stravaId));
     // Power reads watts; pace comes from speed, converted to seconds per km.
+    // Every channel goes through channel(): the sync stores Strava's wrapped
+    // {data:[…]} and the backfill stores the bare series, and reading only the
+    // bare one made a wrapped stream contribute nothing — the day then fell
+    // back to the session average, which is the flattened reading this chart
+    // exists to replace.
     const series = !s ? null
       : usePower
         ? (pace
-            ? (s.velocity_smooth || []).map((v) => (Number(v) > 0.3 ? 1000 / Number(v) : null))
-            : s.watts)
-        : s.heartrate;
-    const added = series ? addSeries(day.zones, series, s.time, mins, pace) : 0;
+            ? channel(s, 'velocity_smooth').map((v) => (Number(v) > 0.3 ? 1000 / Number(v) : null))
+            : channel(s, 'watts'))
+        : channel(s, 'heartrate');
+    const added = series?.length ? addSeries(day.zones, series, channel(s, 'time'), mins, pace) : 0;
     day.totalSec += added;
 
     const remaining = duration - added;

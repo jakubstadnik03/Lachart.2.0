@@ -21,6 +21,7 @@ const StravaStream = require('../models/StravaStream');
 const FitTraining = require('../models/fitTraining');
 const User = require('../models/UserModel');
 const stravaBudget = require('./stravaBudget');
+const { channel } = require('./streamChannel');
 const { getValidStravaToken } = require('./stravaToken');
 
 /** WMO weather codes → plain English. */
@@ -169,7 +170,7 @@ async function locateActivity(userId, activityKey) {
     if (!act) return null;
 
     const stream = await StravaStream.findOne({ userId, stravaId }).select('streams.latlng').lean();
-    const first = (stream?.streams?.latlng || []).find(
+    const first = channel(stream?.streams, 'latlng').find(
       (p) => Array.isArray(p) && Number.isFinite(p[0]) && !(p[0] === 0 && p[1] === 0),
     );
     if (first) return { when: act.startDate, lat: Number(first[0]), lng: Number(first[1]) };
