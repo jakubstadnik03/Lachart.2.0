@@ -33,6 +33,34 @@ test('uses an explicit zone table when the athlete entered one', () => {
   assert.deepStrictEqual(mins, [100, 130, 150, 165, 175]);
 });
 
+test('reads a table with the bottom of Z1 left blank', () => {
+  // The zones modal writes undefined for any empty box, and athletes routinely
+  // leave Z1's lower bound out because it has no meaningful value. Demanding
+  // all five minimums threw away a table that was four-fifths filled in.
+  const mins = boundariesFrom({
+    zone1: { max: 129 }, zone2: { min: 130, max: 149 }, zone3: { min: 150, max: 164 },
+    zone4: { min: 165, max: 174 }, zone5: { min: 175, max: 200 },
+  });
+  assert.ok(mins && ascending(mins), 'expected a usable table');
+  assert.strictEqual(mins[1], 130);
+  assert.strictEqual(mins[4], 175);
+});
+
+test('infers missing minimums from the previous zone maximum', () => {
+  const mins = boundariesFrom({
+    zone1: { max: 129 }, zone2: { max: 149 }, zone3: { max: 164 },
+    zone4: { max: 174 }, zone5: { max: 200 },
+  });
+  assert.ok(mins && ascending(mins));
+  assert.strictEqual(mins[1], 130, 'Z2 should open one above Z1 max');
+});
+
+test('still refuses a table with nothing in it at all', () => {
+  assert.strictEqual(boundariesFrom({
+    zone1: {}, zone2: {}, zone3: {}, zone4: {}, zone5: {},
+  }), null);
+});
+
 test('falls back to LT2 when there is no table', () => {
   // This is the case that made every athlete look like they had no heart rate:
   // LaChart counts an LT2 as "zones are set", so reading only an explicit
