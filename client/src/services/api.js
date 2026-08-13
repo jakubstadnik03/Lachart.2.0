@@ -2129,8 +2129,8 @@ export const getSimilarActivities = async ({
  * Daily time-in-heart-rate-zone for the Training Timeline.
  * Server-side because it needs per-second streams, which the client never holds.
  */
-export const getTimelineZones = async (athleteId, start, end, sport = 'all') => {
-  const params = { start, end, sport };
+export const getTimelineZones = async (athleteId, start, end, sport = 'all', metric = 'hr') => {
+  const params = { start, end, sport, metric };
   if (athleteId) params.athleteId = String(athleteId);
   const response = await api.get('/api/timeline/zones', { params, cacheTtlMs: 5 * 60 * 1000 });
   return response.data;
