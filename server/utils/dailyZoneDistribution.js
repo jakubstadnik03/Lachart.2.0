@@ -34,16 +34,54 @@ function zoneSetFor(profileZones, sport) {
 
 /**
  * Zone boundaries as an ascending list of minimums.
- * Returns null when the athlete has no usable zones — better to report "no
- * zones set" than to invent them from a formula and present it as measured.
+ *
+ * Three sources, in the order the rest of the app trusts them. Demanding a
+ * complete zone1..zone5 block was wrong: LaChart treats an athlete as having
+ * heart-rate zones when they have an LT2 or a max HR, and derives the five
+ * zones from those on the fly. Reading more strictly than the app writes made
+ * every athlete without a hand-entered zone table look like they had no heart
+ * rate at all.
+ *
+ * The derived ratios are the ones in utils/lactateZones.js, not new ones — a
+ * second opinion on where an athlete's Z3 starts is the last thing this needs.
  */
-function boundariesFrom(zoneSet) {
-  if (!zoneSet) return null;
-  const mins = ZONE_KEYS.map((k) => Number(zoneSet[k]?.min));
-  if (mins.some((m) => !Number.isFinite(m) || m <= 0)) return null;
-  // Guard against a mis-saved profile with unordered zones.
-  for (let i = 1; i < mins.length; i += 1) if (mins[i] <= mins[i - 1]) return null;
-  return mins;
+function boundariesFrom(zoneSet, profile = null) {
+  const ascending = (mins) => {
+    if (mins.some((m) => !Number.isFinite(m) || m <= 0)) return null;
+    for (let i = 1; i < mins.length; i += 1) if (mins[i] <= mins[i - 1]) return null;
+    return mins;
+  };
+
+  // 1. An explicit zone table, when the athlete has entered one.
+  if (zoneSet) {
+    const explicit = ascending(ZONE_KEYS.map((k) => Number(zoneSet[k]?.min)));
+    if (explicit) return explicit;
+  }
+
+  // 2. Derived from the thresholds, exactly as calculateZonesFromTest does.
+  const lt1 = Number(zoneSet?.lt1 ?? zoneSet?.lt1Hr);
+  const lt2 = Number(zoneSet?.lt2 ?? zoneSet?.lt2Hr);
+  if (Number.isFinite(lt2) && lt2 > 0) {
+    // Without a measured LT1, the usual relationship puts it around 85% of LT2.
+    const first = Number.isFinite(lt1) && lt1 > 0 ? lt1 : lt2 * 0.85;
+    const derived = ascending([
+      first * 0.70,
+      first * 0.90,
+      first * 1.00,
+      lt2 * 0.96,
+      lt2 * 1.05,
+    ].map(Math.round));
+    if (derived) return derived;
+  }
+
+  // 3. Percentages of max heart rate — the crudest of the three, and the one
+  //    most athletes will actually hit, so it is better than reporting nothing.
+  const max = Number(zoneSet?.maxHeartRate ?? profile?.maxHr ?? profile?.maxHeartRate);
+  if (Number.isFinite(max) && max > 0) {
+    return ascending([0.60, 0.70, 0.80, 0.87, 0.93].map((f) => Math.round(max * f)));
+  }
+
+  return null;
 }
 
 /** 1..5 for a heart rate, or null below zone 1. */
@@ -93,7 +131,7 @@ function addSeries(target, hrArray, timeArray, mins) {
  */
 async function dailyZoneDistribution(athleteId, startDate, endDate, { sport = 'all' } = {}) {
   const athleteIdStr = String(athleteId);
-  const user = await User.findById(athleteIdStr).select('heartRateZones').lean();
+  const user = await User.findById(athleteIdStr).select('heartRateZones maxHr maxHeartRate').lean();
   const profileZones = user?.heartRateZones || null;
 
   const byDay = new Map();
@@ -128,7 +166,7 @@ async function dailyZoneDistribution(athleteId, startDate, endDate, { sport = 'a
     const day = dayFor(key);
     day.sessions += 1;
 
-    const mins = boundariesFrom(zoneSetFor(profileZones, t.sport));
+    const mins = boundariesFrom(zoneSetFor(profileZones, t.sport), user);
     const duration = Number(t.totalElapsedTime || t.totalTimerTime || 0);
 
     if (!mins) { day.unmeasuredSec += duration; continue; }
@@ -180,7 +218,7 @@ async function dailyZoneDistribution(athleteId, startDate, endDate, { sport = 'a
     const day = dayFor(key);
     day.sessions += 1;
 
-    const mins = boundariesFrom(zoneSetFor(profileZones, a.sport));
+    const mins = boundariesFrom(zoneSetFor(profileZones, a.sport), user);
     const duration = Number(a.movingTime || a.elapsedTime || 0);
     if (!mins) { day.unmeasuredSec += duration; continue; }
     anyZones = true;

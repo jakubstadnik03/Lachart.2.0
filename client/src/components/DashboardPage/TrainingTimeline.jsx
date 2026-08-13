@@ -291,10 +291,13 @@ function HoverDetail({ point }) {
 function Summary({ timeline, view }) {
   if (view === 'balance') {
     if (!timeline.split) {
+      // Two different problems, two different fixes — telling someone to set
+      // zones they already have is how a message stops being read.
       return (
         <p className="text-[11px] text-gray-500 mt-2">
-          No heart-rate data in this window. Connect a watch, or set your heart-rate zones in Settings,
-          and this view fills in.
+          {timeline.coverage.unmeasuredSec > 0
+            ? 'None of the sessions in this window recorded heart rate. Wear a strap or a watch and this view fills in.'
+            : 'No sessions in this window.'}
         </p>
       );
     }
