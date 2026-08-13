@@ -10484,6 +10484,23 @@ export default function CalendarView({
               prev && String(prev._id) === String(updated._id) ? { ...prev, ...updated } : prev
             );
           }}
+          // editable defaults to false, which left this sheet read-only — a
+          // race opened from the calendar had no way to be edited or deleted.
+          editable
+          onSave={async (payload) => {
+            const { updateRaceEvent } = await import('../../services/api');
+            const { data } = await updateRaceEvent(selectedRace._id, payload);
+            setRaces((prev) => prev.map((r) =>
+              String(r._id) === String(selectedRace._id) ? { ...r, ...(data || payload) } : r
+            ));
+            setSelectedRace(null);
+          }}
+          onDelete={async () => {
+            const { deleteRaceEvent } = await import('../../services/api');
+            await deleteRaceEvent(selectedRace._id);
+            setRaces((prev) => prev.filter((r) => String(r._id) !== String(selectedRace._id)));
+            setSelectedRace(null);
+          }}
         />
       )}
 

@@ -27,7 +27,6 @@ import HealthStatusCard from "../components/DashboardPage/HealthStatusCard";
 import RaceCountdownCard from "../components/DashboardPage/RaceCountdownCard";
 import DailyCoachCard from "../components/DashboardPage/DailyCoachCard";
 import TrainingTimeline from "../components/DashboardPage/TrainingTimeline";
-import RouteHistoryCard from "../components/DashboardPage/RouteHistoryCard";
 import PostRaceFeedbackCard from "../components/DashboardPage/PostRaceFeedbackCard";
 import { useAuth } from '../context/AuthProvider';
 import { computePmcFromActivities } from '../utils/formFitnessFromActivities';
@@ -3094,8 +3093,9 @@ export default function DashboardPage() {
               onSubmitted={() => setRaceFeedbackFocusId(null)}
             />
             <WellnessCard athleteId={dashboardDataAthleteId} />
-            {/* Renders nothing until a route has actually been repeated. */}
-            <RouteHistoryCard athleteId={dashboardDataAthleteId} />
+            {/* Routes you repeat is taken out of the dashboard for now. The
+                component and its /api/timeline/routes endpoint are still here —
+                put the card back to restore it. */}
           </motion.div>
         )}
 
