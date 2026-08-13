@@ -35,6 +35,7 @@ import {
 import RecordLactateModal from '../components/training/RecordLactateModal';
 import { SearchableSelect } from '../components/SearchableSelect';
 import NativeComparisonVerdict from '../components/native/NativeComparisonVerdict';
+import InteractiveChart from '../components/charts/InteractiveChart';
 // Lazy-load — keeps the heavy editor/modal chunks out of this page's bundle
 const ActivityFullModal = lazy(() =>
   import('../components/Calendar/CalendarView').then(m => ({ default: m.ActivityFullModal }))
@@ -2717,6 +2718,7 @@ export default function NativeTrainingPage({
                     {[
                       { id: 'bars', label: 'Bars', icon: 'M3 20h2V10H3v10zm4 0h2V4H7v16zm4 0h2v-7h-2v7zm4 0h2V7h-2v13zm4 0h2v-4h-2v4z' },
                       { id: 'line', label: 'Line', icon: 'M3 17l6-6 4 4 8-8' },
+                      { id: 'trace', label: 'Trace', icon: 'M3 12h3l2-6 3 12 3-9 2 3h5' },
                     ].map(({ id, label, icon }) => {
                       const on = chartType === id;
                       return (
@@ -2786,6 +2788,62 @@ export default function NativeTrainingPage({
                     // to highlight, all bars treated as "other").
                     const safeHighlight = visibleSessions.some(s => activityKey(s) === highlightSessionId)
                       ? highlightSessionId : null;
+                    // One session's profile, laid out on real elapsed time —
+                    // the only view here where panning and zooming mean
+                    // anything, since the other two are indexed by interval
+                    // number rather than by time.
+                    if (chartType === 'trace') {
+                      const target = visibleSessions.find(s => activityKey(s) === safeHighlight)
+                        || visibleSessions[visibleSessions.length - 1];
+                      const ivs = getIntervalsForChart(target, stravaLapsCache);
+                      const isPace = currentSport === 'run' || currentSport === 'swim';
+
+                      // Each interval becomes a step at its own elapsed offset:
+                      // lap resolution rather than per-second, but built from
+                      // data already loaded — no extra request to read a session.
+                      const points = [];
+                      const bands = [];
+                      let t = 0;
+                      ivs.forEach((iv, i) => {
+                        const dur = Math.max(1, parseResultDurationSec(iv));
+                        const value = isPace && selectedMetric === 'power'
+                          ? intervalPaceSec(iv, currentSport)
+                          : getIntervalMetric(iv, selectedMetric);
+                        if (value != null) {
+                          points.push({ x: t, y: value });
+                          points.push({ x: t + dur, y: value });
+                        }
+                        bands.push({ start: t, end: t + dur, hard: iv?.intervalType === 'work' });
+                        t += dur;
+                      });
+
+                      if (points.length < 2) {
+                        return (
+                          <div style={{ height: 230, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9CA3AF', fontSize: 11, fontWeight: 600, textAlign: 'center', padding: '0 20px' }}>
+                            No {selectedMetric === 'power' && isPace ? 'Pace' : (METRICS.find((m) => m.id === selectedMetric)?.label || selectedMetric)} data on this session
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <InteractiveChart
+                          series={[{
+                            key: selectedMetric === 'power' && isPace ? 'pace' : selectedMetric,
+                            label: selectedMetric === 'power' && isPace ? 'Pace' : (METRICS.find((m) => m.id === selectedMetric)?.label || selectedMetric),
+                            unit: isPace && selectedMetric === 'power' ? '' : metricUnit(selectedMetric),
+                            points,
+                            decimals: selectedMetric === 'lactate' ? 1 : 0,
+                          }]}
+                          laps={bands}
+                          title={target?.title || target?.name || 'Session'}
+                          height={210}
+                          valueFormat={isPace && selectedMetric === 'power'
+                            ? (v) => (v == null ? '—' : `${Math.floor(v / 60)}:${String(Math.round(v % 60)).padStart(2, '0')}`)
+                            : null}
+                        />
+                      );
+                    }
+
                     return chartType === 'bars'
                       ? <SessionBarChart
                           sessions={visibleSessions}

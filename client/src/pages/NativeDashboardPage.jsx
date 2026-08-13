@@ -16,6 +16,7 @@ import OnboardingChecklist from '../components/NativeDashboard/OnboardingCheckli
 import TrainingInsightsCard from '../components/DashboardPage/TrainingInsightsCard';
 import DailyCoachCard from '../components/DashboardPage/DailyCoachCard';
 import TrainingTimeline from '../components/DashboardPage/TrainingTimeline';
+import RouteHistoryCard from '../components/DashboardPage/RouteHistoryCard';
 import RaceCountdownCard from '../components/DashboardPage/RaceCountdownCard';
 import PostRaceFeedbackCard from '../components/DashboardPage/PostRaceFeedbackCard';
 import PlannedWorkoutEditor from '../components/NativeDashboard/PlannedWorkoutEditor';
@@ -1446,6 +1447,11 @@ export default function NativeDashboardPage({
               user={user}
               loading={metricsLoading}
             />
+          </div>
+
+          {/* 0d · Routes you repeat — renders nothing until one is repeated. */}
+          <div style={{ ...cardEntry(1), ...snapStyle }}>
+            <RouteHistoryCard athleteId={athleteId || user?._id || user?.id} />
           </div>
 
           {/* 1 · Week strip */}
