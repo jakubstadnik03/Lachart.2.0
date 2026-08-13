@@ -63,8 +63,27 @@ function boundariesFrom(zoneSet, profile = null, thresholds = null) {
   };
 
   // 1. An explicit zone table, when the athlete has entered one.
+  //
+  // Read leniently. The zones modal writes `undefined` for any box left blank,
+  // and athletes routinely leave the bottom of Z1 empty because it has no
+  // meaningful lower bound. Demanding all five minimums threw away a table that
+  // was four-fifths filled in — which is what left this chart blank for people
+  // who plainly had zones set.
   if (zoneSet) {
-    const explicit = ascending(ZONE_KEYS.map((k) => Number(zoneSet[k]?.min)));
+    const mins = [];
+    for (let i = 0; i < ZONE_KEYS.length; i += 1) {
+      const zone = zoneSet[ZONE_KEYS[i]];
+      const min = Number(zone?.min);
+      if (Number.isFinite(min) && min > 0) { mins.push(min); continue; }
+      // A missing lower bound is the previous zone's upper bound.
+      const prevMax = Number(zoneSet[ZONE_KEYS[i - 1]]?.max);
+      if (Number.isFinite(prevMax) && prevMax > 0) { mins.push(prevMax + 1); continue; }
+      // Nothing to anchor Z1 on: everything above zero is Z1, which is what an
+      // athlete means when they leave that box empty.
+      if (i === 0) { mins.push(1); continue; }
+      mins.push(NaN);
+    }
+    const explicit = ascending(mins);
     if (explicit) return explicit;
   }
 
