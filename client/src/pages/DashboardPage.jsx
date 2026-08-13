@@ -24,7 +24,6 @@ import FormFitnessChart from "../components/DashboardPage/FormFitnessChart";
 import WeeklyTrainingLoad from "../components/DashboardPage/WeeklyTrainingLoad";
 import WellnessCard from "../components/DashboardPage/WellnessCard";
 import HealthStatusCard from "../components/DashboardPage/HealthStatusCard";
-import TrainingInsightsCard from "../components/DashboardPage/TrainingInsightsCard";
 import RaceCountdownCard from "../components/DashboardPage/RaceCountdownCard";
 import DailyCoachCard from "../components/DashboardPage/DailyCoachCard";
 import TrainingTimeline from "../components/DashboardPage/TrainingTimeline";
@@ -3076,17 +3075,6 @@ export default function DashboardPage() {
             <HealthStatusCard
               key={`hsc-${dashboardDataAthleteId}`}
               athleteId={dashboardDataAthleteId}
-            />
-            <TrainingInsightsCard
-              key={`tic-${dashboardDataAthleteId}`}
-              athleteId={dashboardDataAthleteId}
-              todayMetrics={todayMetrics}
-              plannedWorkouts={plannedWorkouts}
-              activities={calendarData}
-              tests={tests}
-              sparklineData={sparklineData}
-              userProfile={fitnessProfile}
-              loading={dashboardFitnessLoading || formMetricsLoading}
             />
             <RaceCountdownCard
               key={`rcc-${dashboardDataAthleteId}`}

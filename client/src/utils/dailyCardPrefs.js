@@ -88,24 +88,25 @@ export async function saveDailyCardPrefs(prefs, existingNotifications = {}) {
   return updatedUser;
 }
 
-// ── Minimise-to-chip state ─────────────────────────────────────────
-// Per day: minimising is "I've read today's card", not "hide this forever".
+// ── Expanded state ─────────────────────────────────────────────────
+// Collapsed is the default, so what gets stored is "I opened today's card" —
+// per day, because opening it yesterday says nothing about today.
 
-function minimiseKey(athleteId, dateKey) {
-  return `lachart:dailyCardMin:${athleteId || 'self'}:${dateKey}`;
+function expandedKey(athleteId, dateKey) {
+  return `lachart:dailyCardOpen:${athleteId || 'self'}:${dateKey}`;
 }
 
-export function isCardMinimised(athleteId, dateKey) {
+export function isCardExpanded(athleteId, dateKey) {
   try {
-    return localStorage.getItem(minimiseKey(athleteId, dateKey)) === '1';
+    return localStorage.getItem(expandedKey(athleteId, dateKey)) === '1';
   } catch {
     return false;
   }
 }
 
-export function setCardMinimised(athleteId, dateKey, minimised) {
+export function setCardExpanded(athleteId, dateKey, expanded) {
   try {
-    if (minimised) localStorage.setItem(minimiseKey(athleteId, dateKey), '1');
-    else localStorage.removeItem(minimiseKey(athleteId, dateKey));
+    if (expanded) localStorage.setItem(expandedKey(athleteId, dateKey), '1');
+    else localStorage.removeItem(expandedKey(athleteId, dateKey));
   } catch { /* ignore */ }
 }

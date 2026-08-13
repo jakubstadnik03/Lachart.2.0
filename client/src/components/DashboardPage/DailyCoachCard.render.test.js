@@ -61,16 +61,25 @@ const renderCard = (props = {}) =>
   );
 
 describe('DailyCoachCard renders', () => {
-  it('shows the headline, the readiness numbers and the plan', () => {
+  // The card is collapsed by default and opens into a bottom sheet, which is a
+  // portal and cannot be server-rendered — so these cover the banner, which is
+  // what an athlete actually sees on load. buildDailyCard's own tests cover the
+  // contents behind the tap.
+
+  it('leads with the headline and two lines of the directive', () => {
     const html = renderCard();
-    expect(html).toContain('Deep in the work'); // supportive voice, productive fatigue
-    expect(html).toContain('4x8min VO2max');
-    expect(html).toContain('62'); // fitness
-    expect(html).toContain('HARD');
-    expect(html).toContain('Productive fatigue');
+    expect(html).toContain('Deep in the work');
+    expect(html).toContain('line-clamp-2');
+    // Detail belongs behind the tap, not in the banner.
+    expect(html).not.toContain('Productive fatigue');
+    expect(html).not.toContain('How did it feel?');
   });
 
-  it('shows a skeleton while loading rather than a card of zeroes', () => {
+  it('carries the readiness colour so the state reads at a glance', () => {
+    expect(renderCard()).toContain('#B45309'); // productive fatigue
+  });
+
+  it('shows a skeleton while loading rather than a banner of zeroes', () => {
     const html = renderCard({ loading: true });
     expect(html).toContain('animate-pulse');
     expect(html).not.toContain('Deep in the work');
@@ -83,39 +92,9 @@ describe('DailyCoachCard renders', () => {
     expect(html).toBe('');
   });
 
-  it('renders a rest day without a planned session', () => {
-    const html = renderCard({ plannedWorkouts: [] });
-    expect(html).toContain('Nothing planned');
-  });
-
-  it('carries the lesson at the foot of the card', () => {
-    // The tag is rendered in its source casing; the uppercase look is CSS.
-    expect(renderCard()).toMatch(/lactate|training|recovery|load|zones|racing|testing|physiology|fuelling|consistency/i);
-  });
-
-  it('keeps yesterday and the RPE prompt behind the disclosure', () => {
-    // Yesterday is secondary information; it costs a tap so the card stays
-    // about today. buildDailyCard's own tests cover the prompt's trigger.
-    const html = renderCard();
-    expect(html).toContain('Yesterday, tomorrow &amp; load');
-    expect(html).not.toContain('How did it feel?');
-  });
-
-  it('shows the body strip only when there is wearable data', () => {
-    expect(renderCard()).not.toContain('vs your normal');
-
-    const days = [];
-    for (let i = 6; i >= 1; i -= 1) {
-      days.push({ date: dayKey(offset(-i)), restingHeartRate: 48, hrvMs: 90, sleepMinutes: 460 });
-    }
-    days.push({ date: dayKey(NOW), restingHeartRate: 55, hrvMs: 70, sleepMinutes: 400 });
-
-    const html = renderCard({ wellnessDays: days, todayMetrics: { fitness: 62, fatigue: 50, form: 12 } });
-    expect(html).toContain('Resting HR');
-    expect(html).toContain('vs your normal');
-    expect(html).toContain('Overreaching');
-    // Load model says fresh, the wearables say otherwise — the card says so.
-    expect(html).toContain('Your numbers and your body disagree today');
+  it('still speaks the chosen voice in the banner', () => {
+    const html = renderCard({ user: { ...USER, notifications: { dailyCardStyle: 'dark' } } });
+    expect(html).toContain('This is the part that counts');
   });
 });
 
