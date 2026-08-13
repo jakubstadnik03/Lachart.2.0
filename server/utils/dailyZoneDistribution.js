@@ -31,6 +31,7 @@ const FitTraining = require('../models/fitTraining');
 const StravaActivity = require('../models/StravaActivity');
 const StravaStream = require('../models/StravaStream');
 const User = require('../models/UserModel');
+const { backfillStreams } = require('./streamBackfill');
 
 const ZONE_KEYS = ['zone1', 'zone2', 'zone3', 'zone4', 'zone5'];
 
@@ -246,6 +247,18 @@ async function dailyZoneDistribution(athleteId, startDate, endDate, { sport = 'a
   }).select('stravaId sport startDate movingTime elapsedTime averageHeartRate average_heartrate').lean();
 
   const wanted = stravas.filter((a) => sportMatches(a.sport));
+
+  // Fetch a few of the missing traces before reading them. Newest first: the
+  // recent end of the window is what an athlete is looking at, and it is where
+  // a wrong easy/hard split misleads them most.
+  let backfill = { fetched: 0, remaining: 0 };
+  if (wanted.length) {
+    backfill = await backfillStreams(
+      athleteIdStr,
+      [...wanted].sort((a, b) => new Date(b.startDate) - new Date(a.startDate)).map((a) => a.stravaId),
+    ).catch(() => ({ fetched: 0, remaining: 0 }));
+  }
+
   const streamDocs = wanted.length
     ? await StravaStream.find({
         userId: athleteIdStr,
@@ -297,6 +310,8 @@ async function dailyZoneDistribution(athleteId, startDate, endDate, { sport = 'a
      * cost several rounds of wrong explanations; the server knows, so it says.
      */
     reason: anyZones ? null : (days.length ? 'no-zones' : 'no-sessions'),
+    /** Traces still to fetch, so the UI can say the chart is still sharpening. */
+    backfill,
     coverage: {
       measuredSec: Math.round(measured),
       estimatedSec: Math.round(estimated),
