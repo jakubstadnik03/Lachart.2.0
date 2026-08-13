@@ -1,4 +1,5 @@
 import React, { useMemo, useState, useEffect, useLayoutEffect, useCallback, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import MoveCostDialog, { shouldConfirm } from './MoveCostDialog';
 import { assessMoveCost } from '../../utils/moveCost';
 import ReactDOM from 'react-dom';
@@ -7736,6 +7737,17 @@ export default function CalendarView({
   const [optimisticSelectedId, setOptimisticSelectedId] = useState(null);
   // Mobile-specific state
   const [mobileTab, setMobileTab] = useState('calendar');
+  const navigate = useNavigate();
+
+  /**
+   * Planner sits beside Calendar and Charts in the switcher but is a page of
+   * its own, so tapping it navigates instead of swapping the panel. It never
+   * reads as the selected segment — by the time it would, this view is gone.
+   */
+  const goToPlanner = useCallback(() => {
+    const to = athleteId ? `/workout-planner?athleteId=${athleteId}` : '/workout-planner';
+    navigate(to);
+  }, [navigate, athleteId]);
   const [showMiniCal, setShowMiniCal] = useState(true);
   const [showMonthPicker, setShowMonthPicker] = useState(false);
   const [pickerYear, setPickerYear] = useState(() => new Date().getFullYear());
@@ -9170,10 +9182,10 @@ export default function CalendarView({
           <div ref={mobileStickyHeaderRef} className="sticky top-0 z-10 bg-white border-b border-gray-100 shadow-sm">
             {/* Tab switcher */}
             <div className="flex bg-gray-100 rounded-xl p-0.5 mx-3 mt-2 mb-2">
-              {[['calendar', 'Calendar'], ['charts', 'Charts']].map(([tab, label]) => (
+              {[['calendar', 'Calendar'], ['charts', 'Charts'], ['planner', 'Planner']].map(([tab, label]) => (
                 <button
                   key={tab}
-                  onClick={() => setMobileTab(tab)}
+                  onClick={() => (tab === 'planner' ? goToPlanner() : setMobileTab(tab))}
                   className={`flex-1 py-1.5 text-sm font-semibold rounded-lg transition-all touch-manipulation ${mobileTab === tab ? 'bg-white shadow text-gray-900' : 'text-gray-500'}`}
                   style={{ WebkitTapHighlightColor: 'transparent' }}
                 >{label}</button>
