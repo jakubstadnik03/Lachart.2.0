@@ -288,7 +288,7 @@ function HoverDetail({ point }) {
   );
 }
 
-function Summary({ timeline, view, zoneReason = null }) {
+function Summary({ timeline, view, zoneReason = null, backfill = null }) {
   if (view === 'balance') {
     if (!timeline.split) {
       // Two different problems, two different fixes — telling someone to set
@@ -377,6 +377,8 @@ export default function TrainingTimeline({
   const [zonesLoading, setZonesLoading] = useState(false);
   /** Why the zone view is empty, straight from the server rather than guessed. */
   const [zoneReason, setZoneReason] = useState(null);
+  /** How many traces are still missing — the chart sharpens as they arrive. */
+  const [backfill, setBackfill] = useState(null);
 
   useEffect(() => {
     writePrefs({ view, sportFilter, days, showPlan });
@@ -396,6 +398,7 @@ export default function TrainingTimeline({
         if (cancelled) return;
         setZoneDays(data?.days || []);
         setZoneReason(data?.reason || null);
+        setBackfill(data?.backfill || null);
       })
       .catch(() => { if (!cancelled) { setZoneDays([]); setZoneReason(null); } })
       .finally(() => { if (!cancelled) setZonesLoading(false); });
@@ -510,7 +513,7 @@ export default function TrainingTimeline({
       </div>
 
       <Legend view={view} />
-      <Summary timeline={timeline} view={view} zoneReason={zoneReason} />
+      <Summary timeline={timeline} view={view} zoneReason={zoneReason} backfill={backfill} />
       <HoverDetail point={hoveredPoint} />
     </div>
   );
