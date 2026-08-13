@@ -519,11 +519,15 @@ export default function TrainingTimeline({
           than only marking the ends, which said nothing about the middle. */}
       <div className="relative h-3 mt-1">
         {timeline.points.map((p, i) => {
-          const isLast = i === timeline.points.length - 1;
+          const last = timeline.points.length - 1;
+          const isLast = i === last;
           if (!p.isWeekStart && !isLast) return null;
+          // A week starting within a few days of the end collides with the
+          // pinned 'today' label — which is how "10.today" ended up on screen.
+          if (p.isWeekStart && !isLast && last - i < 4) return null;
           // Weeks sit at their bar; the final label is pinned to the right edge
           // so it cannot run off the end of the card.
-          const pct = (i / Math.max(1, timeline.points.length - 1)) * 100;
+          const pct = (i / Math.max(1, last)) * 100;
           return (
             <span
               key={p.date}
