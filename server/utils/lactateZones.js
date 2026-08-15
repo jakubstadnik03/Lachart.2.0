@@ -4,6 +4,7 @@
  */
 
 const { calculateThresholds } = require('./lactateThresholds');
+const { ltZoneBounds, zonesFromBounds, measuredMaxHr } = require('./trainingZoneBounds');
 
 function formatPace(seconds) {
   const s = Math.max(0, Math.round(Number(seconds) || 0));
@@ -61,37 +62,30 @@ function calculateZonesFromTest(testData) {
   }
 
   const hasHR = hr1 != null && hr2 != null && !Number.isNaN(Number(hr1)) && !Number.isNaN(Number(hr2));
-  const heartRate = hasHR ? {
-    zone1: { min: Math.round(hr1 * 0.70), max: Math.round(hr1 * 0.90) },
-    zone2: { min: Math.round(hr1 * 0.90), max: Math.round(hr1 * 1.00) },
-    zone3: { min: Math.round(hr1 * 1.00), max: Math.round(hr2 * 0.95) },
-    zone4: { min: Math.round(hr2 * 0.96), max: Math.round(hr2 * 1.04) },
-    zone5: { min: Math.round(hr2 * 1.05), max: Math.round(hr2 * 1.20) }
-  } : null;
+  // Z5 stops at the heart rate the athlete actually reached in this test.
+  const heartRate = hasHR
+    ? zonesFromBounds(ltZoneBounds({
+        lt1: hr1, lt2: hr2, ascending: true, floorFactor: 0.70, top: measuredMaxHr(testData),
+      }))
+    : null;
 
   if (sport === 'bike') {
     return {
       sport,
       lt1,
       lt2,
-      power: {
-        zone1: { min: Math.round(lt1 * 0.70), max: Math.round(lt1 * 0.90) },
-        zone2: { min: Math.round(lt1 * 0.90), max: Math.round(lt1 * 1.00) },
-        zone3: { min: Math.round(lt1 * 1.00), max: Math.round(lt2 * 0.95) },
-        zone4: { min: Math.round(lt2 * 0.96), max: Math.round(lt2 * 1.04) },
-        zone5: { min: Math.round(lt2 * 1.05), max: Math.round(lt2 * 1.20) }
-      },
+      power: zonesFromBounds(ltZoneBounds({
+        lt1, lt2, ascending: true, floorFactor: 0.70, topFactor: 1.20,
+      })),
       heartRate
     };
   }
 
-  const paceSeconds = {
-    zone1: { min: lt1 / 0.70, max: lt1 / 0.90 },
-    zone2: { min: lt1 / 0.90, max: lt1 / 1.00 },
-    zone3: { min: lt1 / 1.00, max: lt2 / 0.95 },
-    zone4: { min: lt2 / 0.96, max: lt2 / 1.04 },
-    zone5: { min: lt2 / 1.05, max: lt2 / 1.20 }
-  };
+  // Pace seconds run backwards (more seconds = slower), hence ascending: false.
+  // Unrounded so the /km values keep sub-second precision for minSeconds.
+  const paceSeconds = zonesFromBounds(ltZoneBounds({
+    lt1, lt2, ascending: false, floorFactor: 0.70, topFactor: 1.20, round: false,
+  }));
 
   return {
     sport,

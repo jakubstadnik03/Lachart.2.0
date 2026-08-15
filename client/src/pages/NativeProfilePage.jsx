@@ -20,6 +20,7 @@ import {
 } from '../utils/extractLactateThresholds';
 import { formatActivityDistance } from '../utils/unitsConverter';
 import { formatProfileFullName } from '../utils/profileName';
+import { ltZoneBounds, zonesFromBounds } from '../utils/trainingZoneBounds';
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -526,38 +527,23 @@ function computeZonesFromThresholds({ sport, lt1, lt2, hr1, hr2 }) {
   const v = (n) => Number.isFinite(Number(n)) && Number(n) > 0 ? Number(n) : null;
   const lt1v = v(lt1); const lt2v = v(lt2);
   const hr1v = v(hr1); const hr2v = v(hr2);
-  const heartRateZones = (hr1v && hr2v) ? {
-    zone1: { min: Math.round(hr1v * 0.50), max: Math.round(hr1v * 0.90) },
-    zone2: { min: Math.round(hr1v * 0.90), max: Math.round(hr1v * 1.00) },
-    zone3: { min: Math.round(hr1v * 1.00), max: Math.round(hr2v * 0.95) },
-    zone4: { min: Math.round(hr2v * 0.96), max: Math.round(hr2v * 1.04) },
-    zone5: { min: Math.round(hr2v * 1.05), max: Math.round(hr2v * 1.30) },
-    maxHeartRate: Math.round(hr2v * 1.10),
-  } : null;
+  // These are typed-in thresholds with no test attached, so there is no
+  // measured max HR to cap Z5 with — 1.10x LT2 HR is the fallback. The old
+  // 1.30x drew Z5 well past any heart rate the athlete had actually reached.
+  const hrBounds = (hr1v && hr2v)
+    ? ltZoneBounds({ lt1: hr1v, lt2: hr2v, ascending: true, floorFactor: 0.50, topFactor: 1.10 })
+    : null;
+  const heartRateZones = hrBounds
+    ? { ...zonesFromBounds(hrBounds), maxHeartRate: hrBounds[5] }
+    : null;
   if (!lt1v || !lt2v) return { primary: null, heartRateZones };
-  if (sport === 'bike') {
-    return {
-      primary: {
-        zone1: { min: Math.round(lt1v * 0.50), max: Math.round(lt1v * 0.90) },
-        zone2: { min: Math.round(lt1v * 0.90), max: Math.round(lt1v * 1.00) },
-        zone3: { min: Math.round(lt1v * 1.00), max: Math.round(lt2v * 0.95) },
-        zone4: { min: Math.round(lt2v * 0.96), max: Math.round(lt2v * 1.04) },
-        zone5: { min: Math.round(lt2v * 1.05), max: Math.round(lt2v * 1.30) },
-        lt1: lt1v, lt2: lt2v,
-      },
-      heartRateZones,
-    };
-  }
-  // run / swim — pace seconds (smaller = faster)
+  // run / swim store pace seconds, where smaller means faster.
+  const primaryZones = zonesFromBounds(ltZoneBounds({
+    lt1: lt1v, lt2: lt2v, ascending: sport === 'bike',
+    floorFactor: 0.50, topFactor: sport === 'bike' ? 1.30 : 1.10,
+  }));
   return {
-    primary: {
-      zone1: { min: Math.round(lt1v / 0.50), max: Math.round(lt1v / 0.90) },
-      zone2: { min: Math.round(lt1v / 0.90), max: Math.round(lt1v / 1.00) },
-      zone3: { min: Math.round(lt1v / 1.00), max: Math.round(lt2v / 0.95) },
-      zone4: { min: Math.round(lt2v / 0.96), max: Math.round(lt2v / 1.04) },
-      zone5: { min: Math.round(lt2v / 1.05), max: Math.round(lt2v / 1.10) },
-      lt1: lt1v, lt2: lt2v,
-    },
+    primary: primaryZones ? { ...primaryZones, lt1: lt1v, lt2: lt2v } : null,
     heartRateZones,
   };
 }

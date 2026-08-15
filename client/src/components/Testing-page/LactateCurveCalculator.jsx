@@ -1061,12 +1061,26 @@ const LactateCurveCalculator = ({ mockData, athleteId: athleteIdProp = null, dem
     const baseLa = Number(mockData?.baseLactate || 1.0);
     const safeLt1 = Number.isFinite(lt1La) ? lt1La : Math.max(baseLa + 0.8, 2.0);
     const safeLt2 = Number.isFinite(lt2La) ? lt2La : Math.max(safeLt1 + 1.2, 3.5);
+    // Shared edges, same rule as the pace/power/HR zones: the top of one zone is
+    // the bottom of the next, so no lactate value falls between Z3 and Z4.
+    const r1 = (n) => Number(n.toFixed(1));
+    const laEdges = [
+      baseLa,
+      Math.max(baseLa + 0.2, safeLt1 * 0.9),
+      safeLt1,
+      safeLt2,
+      safeLt2 * 1.04,
+      safeLt2 * 1.20,
+    ].map(r1);
+    for (let i = 1; i < laEdges.length; i++) {
+      if (laEdges[i] <= laEdges[i - 1]) laEdges[i] = r1(laEdges[i - 1] + 0.1);
+    }
     const lactateZones = {
-      zone1: { min: Number(baseLa.toFixed(1)), max: Number(Math.max(baseLa + 0.2, safeLt1 * 0.9).toFixed(1)) },
-      zone2: { min: Number((safeLt1 * 0.9).toFixed(1)), max: Number(safeLt1.toFixed(1)) },
-      zone3: { min: Number(safeLt1.toFixed(1)), max: Number((safeLt2 * 0.95).toFixed(1)) },
-      zone4: { min: Number((safeLt2 * 0.96).toFixed(1)), max: Number((safeLt2 * 1.04).toFixed(1)) },
-      zone5: { min: Number((safeLt2 * 1.05).toFixed(1)), max: Number((safeLt2 * 1.20).toFixed(1)) }
+      zone1: { min: laEdges[0], max: laEdges[1] },
+      zone2: { min: laEdges[1], max: laEdges[2] },
+      zone3: { min: laEdges[2], max: laEdges[3] },
+      zone4: { min: laEdges[3], max: laEdges[4] },
+      zone5: { min: laEdges[4], max: laEdges[5] },
     };
     const mergedZones = zones ? { ...zones, lactate: { ...lactateZones, ...(zones.lactate || {}) } } : { lactate: lactateZones };
     setZoneOverride(mergedZones);
