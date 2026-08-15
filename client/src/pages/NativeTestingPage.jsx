@@ -269,6 +269,17 @@ export default function NativeTestingPage({ user, athleteId: externalAthleteId }
   const athleteId = externalAthleteId || user?._id || user?.id;
 
   const [tests, setTests] = useState([]);
+  const [pdfBusy, setPdfBusy] = useState(false);
+  /**
+   * PDF export is offered on your own tests only.
+   *
+   * The report is branded with the athlete's name and this page never loads an
+   * athlete profile — only the viewer's. A coach exporting from here would put
+   * their own name on someone else's report, and these get sent to clients.
+   * The full editor resolves the profile properly and stays the route for that.
+   */
+  const isOwnTests = !externalAthleteId
+    || String(externalAthleteId) === String(user?._id || user?.id || '');
   // The web TestingPage caps the free plan at one test per athlete; this page
   // never checked, so the app let a free account add as many as it liked. The
   // server rejects them anyway — the gate is what turns a silent failure into
@@ -735,6 +746,44 @@ export default function NativeTestingPage({ user, athleteId: externalAthleteId }
                       </div>
                     );
                   })()}
+
+                  {/* Export PDF — the same report the web produces, minus the
+                      comparison against earlier tests: choosing which two to
+                      compare is a full-editor job, and a single-test report is
+                      what you want from a phone anyway. */}
+                  {isOwnTests && (
+                  <button
+                    onClick={async () => {
+                      if (pdfBusy) return;
+                      setPdfBusy(true);
+                      try {
+                        const { downloadLactateReportPdf } = await import('../components/Testing-page/LactateReportPdf');
+                        await downloadLactateReportPdf({
+                          test: selected,
+                          athlete: user,
+                          thresholds: desktopCalculateThresholds(selected),
+                          zones: calculateZonesFromTest(selected),
+                          prevTest: null,
+                          prevThresholds: null,
+                          prevTest2: null,
+                          prevThresholds2: null,
+                          customNote: null,
+                          customAnalysis: null,
+                          creatorEmail: user?.email || null,
+                          preTestSummary: null,
+                          coachBranding: user?.coachBranding || null,
+                        });
+                      } catch (e) {
+                        console.warn('[NativeTesting] PDF export failed:', e?.message || e);
+                      } finally {
+                        setPdfBusy(false);
+                      }
+                    }}
+                    style={{ ...styles.openBtn, marginBottom: 8 }}
+                  >
+                    {pdfBusy ? 'Preparing PDF…' : 'Export PDF'}
+                  </button>
+                  )}
 
                   {/* Open in full editor */}
                   <button
