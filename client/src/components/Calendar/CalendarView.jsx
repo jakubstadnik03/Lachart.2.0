@@ -7765,7 +7765,16 @@ export default function CalendarView({
   // Optimistic selection — marks activity immediately on click, before parent updates selectedActivityId
   const [optimisticSelectedId, setOptimisticSelectedId] = useState(null);
   // Mobile-specific state
-  const [mobileTab, setMobileTab] = useState('calendar');
+  // ?tab=charts lets the planner's switcher land on the right panel — the two
+  // are one page, so without this a tap on Charts from there opened Calendar.
+  const [mobileTab, setMobileTab] = useState(() => {
+    try {
+      const t = new URLSearchParams(window.location.search).get('tab');
+      return t === 'charts' ? 'charts' : 'calendar';
+    } catch {
+      return 'calendar';
+    }
+  });
   const navigate = useNavigate();
 
   /**
