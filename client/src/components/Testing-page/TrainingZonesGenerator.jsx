@@ -8,6 +8,7 @@ import { InformationCircleIcon } from '@heroicons/react/24/outline';
 import TrainingGlossary from '../DashboardPage/TrainingGlossary';
 import { useAuth } from '../../context/AuthProvider';
 import { getEffectiveLactateInputMode, getLactateDisplayMode } from '../../utils/lactateTestInputMode';
+import { ltZoneBounds, zonesFromBounds, measuredMaxHr } from '../../utils/trainingZoneBounds';
 import { resolveDistanceUnitSystem } from '../../utils/unitsConverter';
 
 const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
@@ -396,6 +397,19 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
     
     // HR is optional - if not available, we'll show zones without HR
     const hasHR = hr1 && hr2;
+
+    // One HR zone set for every branch below. Edges are shared (no gap between
+    // Z3 and Z4), and Z5 stops at the heart rate actually recorded in the test
+    // instead of 1.30x LT2 HR, which used to run well past the athlete's max.
+    const hrZones = hasHR
+      ? zonesFromBounds(ltZoneBounds({
+          lt1: hr1, lt2: hr2, ascending: true, floorFactor: 0.50, top: measuredMaxHr(mockData),
+        }))
+      : null;
+    const hrRange = (z) => {
+      const zone = hrZones?.[`zone${z}`];
+      return zone ? `${zone.min}\u2013${zone.max} BPM` : 'N/A';
+    };
     
     // Validace: Pro bike (power) musí být LTP2 > LTP1, pro run/swim (pace) musí být LTP2 < LTP1
     if (sport === 'bike') {
@@ -539,16 +553,19 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
       
       // Calculate lactate values for each zone based on actual test data
       // Z1: intenzita pod 90 % LT1 (spodní hranice ~50 % LT1 pro tabulku)
-      const zone1_min_power = Math.round(lt1_watts * 0.50);
-      const zone1_max_power = Math.round(lt1_watts * 0.90);
-      const zone2_min_power = Math.round(lt1_watts * 0.90);
-      const zone2_max_power = Math.round(lt1_watts * 1.00);
-      const zone3_min_power = Math.round(lt1_watts * 1.00);
-      const zone3_max_power = Math.round(lt2_watts * 0.95);
-      const zone4_min_power = Math.round(lt2_watts * 0.96);
-      const zone4_max_power = Math.round(lt2_watts * 1.04);
-      const zone5_min_power = Math.round(lt2_watts * 1.05);
-      const zone5_max_power = Math.round(lt2_watts * 1.20);
+      // Shared zone edges: the end of one zone is the start of the next, so no
+      // intensity falls between Z3 and Z4 (or Z4 and Z5) as it used to.
+      const powerB = ltZoneBounds({ lt1: lt1_watts, lt2: lt2_watts, ascending: true, floorFactor: 0.50, topFactor: 1.20 }) || [0, 0, 0, 0, 0, 0];
+      const zone1_min_power = powerB[0];
+      const zone1_max_power = powerB[1];
+      const zone2_min_power = powerB[1];
+      const zone2_max_power = powerB[2];
+      const zone3_min_power = powerB[2];
+      const zone3_max_power = powerB[3];
+      const zone4_min_power = powerB[3];
+      const zone4_max_power = powerB[4];
+      const zone5_min_power = powerB[4];
+      const zone5_max_power = powerB[5];
       
       // Calculate lactate values based on LTP1 and LTP2 lactate values
       // If we have lactate values from thresholds, use them; otherwise interpolate from test data
@@ -610,7 +627,7 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
             min: zone1_min_power,
             max: zone1_max_power,
             description: '< 90% LT1 (recovery / easy)',
-            hr: hasHR ? `${Math.round(hr1*0.50)}–${Math.round(hr1*0.90)} BPM` : 'N/A',
+            hr: hasHR ? hrRange(1) : 'N/A',
             percent: '< 90% LT1',
             lactate: `${finalZone1.min.toFixed(1)}–${finalZone1.max.toFixed(1)}`,
           },
@@ -618,44 +635,38 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
             min: zone2_min_power,
             max: zone2_max_power,
             description: '90%–100% LT1',
-            hr: hasHR ? `${Math.round(hr1*0.90)}–${Math.round(hr1*1.00)} BPM` : 'N/A',
+            hr: hasHR ? hrRange(2) : 'N/A',
             percent: '90–100% LT1',
             lactate: `${finalZone2.min.toFixed(1)}–${finalZone2.max.toFixed(1)}`,
           },
           zone3: {
             min: zone3_min_power,
             max: zone3_max_power,
-            description: '100% LT1 – 95% LT2',
-            hr: hasHR ? `${Math.round(hr1*1.00)}–${Math.round(hr2*0.95)} BPM` : 'N/A',
-            percent: '100% LT1 – 95% LT2',
+            description: 'LT1 – LT2 (tempo)',
+            hr: hasHR ? hrRange(3) : 'N/A',
+            percent: 'LT1 – LT2',
             lactate: `${finalZone3.min.toFixed(1)}–${finalZone3.max.toFixed(1)}`,
           },
           zone4: {
             min: zone4_min_power,
             max: zone4_max_power,
-            description: '96%–104% LT2 (threshold)',
-            hr: hasHR ? `${Math.round(hr2*0.96)}–${Math.round(hr2*1.04)} BPM` : 'N/A',
-            percent: '96–104% LT2',
+            description: 'LT2 – 104% LT2 (threshold)',
+            hr: hasHR ? hrRange(4) : 'N/A',
+            percent: 'LT2 – 104% LT2',
             // Use the calculated range for this specific test (no hardcoded 4.0 anchor)
             lactate: `${finalZone4.min.toFixed(1)}–${finalZone4.max.toFixed(1)}`,
           },
           zone5: {
             min: zone5_min_power,
             max: zone5_max_power,
-            description: '> 105% LT2 (VO₂max+ / sprint)',
-            hr: hasHR ? `${Math.round(hr2 * 1.05)}–${Math.round(hr2 * 1.30)} BPM` : 'N/A',
-            percent: '> 105% LT2',
+            description: '> 104% LT2 (VO₂max+ / sprint)',
+            hr: hasHR ? hrRange(5) : 'N/A',
+            percent: '> 104% LT2',
             // Use the calculated range for this specific test (no hardcoded 4.0 anchor)
             lactate: `${finalZone5.min.toFixed(1)}–${finalZone5.max.toFixed(1)}`,
           },
         },
-        heartRate: hasHR ? {
-          zone1: { min: Math.round(hr1*0.50), max: Math.round(hr1*0.90) },
-          zone2: { min: Math.round(hr1*0.90), max: Math.round(hr1*1.00) },
-          zone3: { min: Math.round(hr1*1.00), max: Math.round(hr2*0.95) },
-          zone4: { min: Math.round(hr2*0.96), max: Math.round(hr2*1.04) },
-          zone5: { min: Math.round(hr2*1.05), max: Math.round(hr2*1.30) },
-        } : null
+        heartRate: hrZones
       };
       setZones(applyTestZoneOverrides(calculated, sport));
     } else if (storageMode === 'speed') {
@@ -664,16 +675,19 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
 
       console.log(`[Zones Run/Swim Speed] LTP1: ${lt1_kmh} km/h LTP2: ${lt2_kmh} km/h`);
 
-      const zone1_min_speed = lt1_kmh * 0.50;
-      const zone1_max_speed = lt1_kmh * 0.90;
-      const zone2_min_speed = lt1_kmh * 0.90;
-      const zone2_max_speed = lt1_kmh * 1.00;
-      const zone3_min_speed = lt1_kmh * 1.00;
-      const zone3_max_speed = lt2_kmh * 0.95;
-      const zone4_min_speed = lt2_kmh * 0.96;
-      const zone4_max_speed = lt2_kmh * 1.04;
-      const zone5_min_speed = lt2_kmh * 1.05;
-      const zone5_max_speed = lt2_kmh * 1.30;
+      // Shared zone edges: the end of one zone is the start of the next, so no
+      // intensity falls between Z3 and Z4 (or Z4 and Z5) as it used to.
+      const speedB = ltZoneBounds({ lt1: lt1_kmh, lt2: lt2_kmh, ascending: true, floorFactor: 0.50, topFactor: 1.30 }) || [0, 0, 0, 0, 0, 0];
+      const zone1_min_speed = speedB[0];
+      const zone1_max_speed = speedB[1];
+      const zone2_min_speed = speedB[1];
+      const zone2_max_speed = speedB[2];
+      const zone3_min_speed = speedB[2];
+      const zone3_max_speed = speedB[3];
+      const zone4_min_speed = speedB[3];
+      const zone4_max_speed = speedB[4];
+      const zone5_min_speed = speedB[4];
+      const zone5_max_speed = speedB[5];
 
       const lt1_lactate_value_speed = lt1_lactate || getLactateForPower(lt1_kmh, mockData.results, sport, true) || 2.0;
       const lt2_lactate_value_speed = lt2_lactate || getLactateForPower(lt2_kmh, mockData.results, sport, true) || 4.0;
@@ -719,7 +733,7 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
             min: toDisplaySpeed(zone1_min_speed),
             max: toDisplaySpeed(zone1_max_speed),
             description: '< 90% LT1 (recovery / easy)',
-            hr: hasHR ? `${Math.round(hr1 * 0.50)}–${Math.round(hr1 * 0.90)} BPM` : 'N/A',
+            hr: hasHR ? hrRange(1) : 'N/A',
             percent: '< 90% LT1',
             lactate: `${finalZone1Speed.min.toFixed(1)}–${finalZone1Speed.max.toFixed(1)}`,
           },
@@ -727,42 +741,36 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
             min: toDisplaySpeed(zone2_min_speed),
             max: toDisplaySpeed(zone2_max_speed),
             description: '90%–100% LT1',
-            hr: hasHR ? `${Math.round(hr1 * 0.90)}–${Math.round(hr1 * 1.00)} BPM` : 'N/A',
+            hr: hasHR ? hrRange(2) : 'N/A',
             percent: '90–100% LT1',
             lactate: `${finalZone2Speed.min.toFixed(1)}–${finalZone2Speed.max.toFixed(1)}`,
           },
           zone3: {
             min: toDisplaySpeed(zone3_min_speed),
             max: toDisplaySpeed(zone3_max_speed),
-            description: '100% LT1 – 95% LT2',
-            hr: hasHR ? `${Math.round(hr1 * 1.00)}–${Math.round(hr2 * 0.95)} BPM` : 'N/A',
-            percent: '100% LT1 – 95% LT2',
+            description: 'LT1 – LT2 (tempo)',
+            hr: hasHR ? hrRange(3) : 'N/A',
+            percent: 'LT1 – LT2',
             lactate: `${finalZone3Speed.min.toFixed(1)}–${finalZone3Speed.max.toFixed(1)}`,
           },
           zone4: {
             min: toDisplaySpeed(zone4_min_speed),
             max: toDisplaySpeed(zone4_max_speed),
-            description: '96%–104% LT2 (threshold)',
-            hr: hasHR ? `${Math.round(hr2 * 0.96)}–${Math.round(hr2 * 1.04)} BPM` : 'N/A',
-            percent: '96–104% LT2',
+            description: 'LT2 – 104% LT2 (threshold)',
+            hr: hasHR ? hrRange(4) : 'N/A',
+            percent: 'LT2 – 104% LT2',
             lactate: `${finalZone4Speed.min.toFixed(1)}–${finalZone4Speed.max.toFixed(1)}`,
           },
           zone5: {
             min: toDisplaySpeed(zone5_min_speed),
             max: toDisplaySpeed(zone5_max_speed),
-            description: '> 105% LT2 (VO₂max+ / sprint)',
-            hr: hasHR ? `${Math.round(hr2 * 1.05)}–${Math.round(hr2 * 1.30)} BPM` : 'N/A',
-            percent: '> 105% LT2',
+            description: '> 104% LT2 (VO₂max+ / sprint)',
+            hr: hasHR ? hrRange(5) : 'N/A',
+            percent: '> 104% LT2',
             lactate: `${finalZone5Speed.min.toFixed(1)}–${finalZone5Speed.max.toFixed(1)}`,
           },
         },
-        heartRate: hasHR ? {
-          zone1: { min: Math.round(hr1 * 0.50), max: Math.round(hr1 * 0.90) },
-          zone2: { min: Math.round(hr1 * 0.90), max: Math.round(hr1 * 1.00) },
-          zone3: { min: Math.round(hr1 * 1.00), max: Math.round(hr2 * 0.95) },
-          zone4: { min: Math.round(hr2 * 0.96), max: Math.round(hr2 * 1.04) },
-          zone5: { min: Math.round(hr2 * 1.05), max: Math.round(hr2 * 1.30) },
-        } : null,
+        heartRate: hrZones,
       };
       setZones(applyTestZoneOverrides(calculated, sport));
     } else {
@@ -775,16 +783,20 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
       
     // NOVÁ LOGIKA: dělení pro tempo, násobení pro HR
       // Pro pace: min = pomalejší (více sekund), max = rychlejší (méně sekund)
-      const zone1_min_pace_sec = lt1_sec / 0.50; // pomalejší (více sekund) — spodek < 90 % LT1
-      const zone1_max_pace_sec = lt1_sec / 0.90; // rychlejší = hranice 90 % LT1
-      const zone2_min_pace_sec = lt1_sec / 0.90;
-      const zone2_max_pace_sec = lt1_sec / 1.00;
-      const zone3_min_pace_sec = lt1_sec / 1.00;
-      const zone3_max_pace_sec = lt2_sec / 0.95;
-      const zone4_min_pace_sec = lt2_sec / 0.96;
-      const zone4_max_pace_sec = lt2_sec / 1.04;
-      const zone5_min_pace_sec = lt2_sec / 1.05;
-      const zone5_max_pace_sec = lt2_sec / 1.30;
+      // Shared zone edges: the end of one zone is the start of the next, so no
+      // intensity falls between Z3 and Z4 (or Z4 and Z5) as it used to.
+      // Pace seconds run backwards, so the edges descend (ascending: false).
+      const pace_secB = ltZoneBounds({ lt1: lt1_sec, lt2: lt2_sec, ascending: false, floorFactor: 0.50, topFactor: 1.30 }) || [0, 0, 0, 0, 0, 0];
+      const zone1_min_pace_sec = pace_secB[0];
+      const zone1_max_pace_sec = pace_secB[1];
+      const zone2_min_pace_sec = pace_secB[1];
+      const zone2_max_pace_sec = pace_secB[2];
+      const zone3_min_pace_sec = pace_secB[2];
+      const zone3_max_pace_sec = pace_secB[3];
+      const zone4_min_pace_sec = pace_secB[3];
+      const zone4_max_pace_sec = pace_secB[4];
+      const zone5_min_pace_sec = pace_secB[4];
+      const zone5_max_pace_sec = pace_secB[5];
       
       // Calculate lactate values based on LTP1 and LTP2 lactate values (for pace)
       // If we have lactate values from thresholds, use them; otherwise interpolate from test data
@@ -838,7 +850,7 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
             min: fmt(zone1_min_pace_sec), // pomalejší (více sekund)
             max: fmt(zone1_max_pace_sec), // rychlejší (méně sekund)
           description: '< 90% LT1 (recovery / easy)',
-          hr: `${Math.round(hr1*0.50)}–${Math.round(hr1*0.90)} BPM`,
+          hr: hrRange(1),
           percent: '< 90% LT1',
           lactate: `${finalZone1Pace.min.toFixed(1)}–${finalZone1Pace.max.toFixed(1)}`,
         },
@@ -846,44 +858,38 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
             min: fmt(zone2_min_pace_sec), // pomalejší
             max: fmt(zone2_max_pace_sec), // rychlejší
           description: '90%–100% LT1',
-          hr: `${Math.round(hr1*0.90)}–${Math.round(hr1*1.00)} BPM`,
+          hr: hrRange(2),
           percent: '90–100% LT1',
           lactate: `${finalZone2Pace.min.toFixed(1)}–${finalZone2Pace.max.toFixed(1)}`,
         },
         zone3: {
             min: fmt(zone3_min_pace_sec), // pomalejší
             max: fmt(zone3_max_pace_sec), // rychlejší
-          description: '100% LT1 – 95% LT2',
-          hr: `${Math.round(hr1*1.00)}–${Math.round(hr2*0.95)} BPM`,
-          percent: '100% LT1 – 95% LT2',
+          description: 'LT1 – LT2 (tempo)',
+          hr: hrRange(3),
+          percent: 'LT1 – LT2',
           lactate: `${finalZone3Pace.min.toFixed(1)}–${finalZone3Pace.max.toFixed(1)}`,
         },
         zone4: {
             min: fmt(zone4_min_pace_sec), // pomalejší
             max: fmt(zone4_max_pace_sec), // rychlejší
-          description: '96%–104% LT2 (threshold)',
-          hr: `${Math.round(hr2*0.96)}–${Math.round(hr2*1.04)} BPM`,
-          percent: '96–104% LT2',
+          description: 'LT2 – 104% LT2 (threshold)',
+          hr: hrRange(4),
+          percent: 'LT2 – 104% LT2',
           // Use the calculated range for this specific test (no hardcoded 4.0 anchor)
           lactate: `${finalZone4Pace.min.toFixed(1)}–${finalZone4Pace.max.toFixed(1)}`,
         },
         zone5: {
             min: fmt(zone5_min_pace_sec), // pomalejší
             max: fmt(zone5_max_pace_sec), // rychlejší
-          description: '> 105% LT2 (VO₂max+ / sprint)',
-          hr: `${Math.round(hr2 * 1.05)}–${Math.round(hr2 * 1.30)} BPM`,
-          percent: '> 105% LT2',
+          description: '> 104% LT2 (VO₂max+ / sprint)',
+          hr: hrRange(5),
+          percent: '> 104% LT2',
           // Use the calculated range for this specific test (no hardcoded 4.0 anchor)
           lactate: `${finalZone5Pace.min.toFixed(1)}–${finalZone5Pace.max.toFixed(1)}`,
         },
       },
-      heartRate: {
-        zone1: { min: Math.round(hr1*0.50), max: Math.round(hr1*0.90) },
-        zone2: { min: Math.round(hr1*0.90), max: Math.round(hr1*1.00) },
-        zone3: { min: Math.round(hr1*1.00), max: Math.round(hr2*0.95) },
-        zone4: { min: Math.round(hr2*0.96), max: Math.round(hr2*1.04) },
-        zone5: { min: Math.round(hr2*1.05), max: Math.round(hr2*1.30) },
-      }
+      heartRate: hrZones
     };
     setZones(applyTestZoneOverrides(calculated, sport));
     }

@@ -1,5 +1,22 @@
 import React, { useState, useEffect } from 'react';
 import Modal from '../Modal';
+import { ltZones } from '../../utils/trainingZoneBounds';
+
+// Zone edges are shared, so a description names the boundary pair it spans.
+// The old wording ("100% LT1 - 95% LT2", "96%-104% LT2") described edges that
+// were computed independently and therefore left gaps between the zones.
+const ZONE_DESCRIPTIONS = {
+  zone1: '< 90% LT1 (recovery / easy)',
+  zone2: '90%-100% LT1',
+  zone3: 'LT1 - LT2 (tempo)',
+  zone4: 'LT2 - 104% LT2 (threshold)',
+  zone5: '> 104% LT2 (VO\u2082max+ / sprint)',
+};
+
+const withDescriptions = (zones) =>
+  zones && Object.fromEntries(
+    Object.entries(zones).map(([key, z]) => [key, { ...z, description: ZONE_DESCRIPTIONS[key] }])
+  );
 
 const TrainingZonesModal = ({ isOpen, onClose, onSubmit, userData }) => {
   const [formData, setFormData] = useState({});
@@ -185,13 +202,9 @@ const TrainingZonesModal = ({ isOpen, onClose, onSubmit, userData }) => {
         setError('LTP2 must be greater than LTP1 for cycling');
         return;
       }
-      const zones = {
-        zone1: { min: Math.round(lt1 * 0.50), max: Math.round(lt1 * 0.90), description: '< 90% LT1 (recovery / easy)' },
-        zone2: { min: Math.round(lt1 * 0.90), max: Math.round(lt1 * 1.00), description: '90%–100% LT1' },
-        zone3: { min: Math.round(lt1 * 1.00), max: Math.round(lt2 * 0.95), description: '100% LT1 – 95% LT2' },
-        zone4: { min: Math.round(lt2 * 0.96), max: Math.round(lt2 * 1.04), description: '96%–104% LT2 (threshold)' },
-        zone5: { min: Math.round(lt2 * 1.05), max: Math.round(lt2 * 1.30), description: '> 105% LT2 (VO₂max+ / sprint)' }
-      };
+      const zones = withDescriptions(ltZones({
+        lt1, lt2, ascending: true, floorFactor: 0.50, topFactor: 1.30,
+      }));
       setFormData(prev => ({
         ...prev,
         powerZones: {
@@ -205,13 +218,9 @@ const TrainingZonesModal = ({ isOpen, onClose, onSubmit, userData }) => {
         setError(`LTP2 must be less than LTP1 for ${sportName} (faster pace = lower seconds)`);
         return;
       }
-      const zones = {
-        zone1: { min: Math.round(lt1 / 0.50), max: Math.round(lt1 / 0.90), description: '< 90% LT1 (recovery / easy)' },
-        zone2: { min: Math.round(lt1 / 0.90), max: Math.round(lt1 / 1.00), description: '90%–100% LT1' },
-        zone3: { min: Math.round(lt1 / 1.00), max: Math.round(lt2 / 0.95), description: '100% LT1 – 95% LT2' },
-        zone4: { min: Math.round(lt2 / 0.96), max: Math.round(lt2 / 1.04), description: '96%–104% LT2 (threshold)' },
-        zone5: { min: Math.round(lt2 / 1.05), max: Math.round(lt2 / 1.30), description: '> 105% LT2 (VO₂max+ / sprint)' }
-      };
+      const zones = withDescriptions(ltZones({
+        lt1, lt2, ascending: false, floorFactor: 0.50, topFactor: 1.30,
+      }));
       setFormData(prev => ({
         ...prev,
         powerZones: {

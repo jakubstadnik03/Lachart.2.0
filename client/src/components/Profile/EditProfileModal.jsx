@@ -2,7 +2,25 @@ import React, { useState, useEffect, useCallback } from 'react';
 import Modal from '../Modal';
 import { heightLabel, weightLabel, resolveDistanceUnitSystem } from '../../utils/unitsConverter';
 import { getEditProfileZonesPrefs, setEditProfileZonesPrefs } from '../../utils/uiPrefs';
+import { ltZones } from '../../utils/trainingZoneBounds';
+
 import { splitProfileNameFields } from '../../utils/profileName';
+
+// Zones share their edges, so each description names the boundary pair it
+// spans. The previous wording ("100% LT1 - 95% LT2", "96%-104% LT2") described
+// independently computed edges, which is what left gaps between the zones.
+const ZONE_DESCRIPTIONS = {
+  zone1: '70-90% LT1 (recovery, reference wide zone)',
+  zone2: '90%-100% LT1',
+  zone3: 'LT1 - LT2 (tempo)',
+  zone4: 'LT2 - 104% LT2 (threshold)',
+  zone5: '104-120% LT2 (sprint/VO2max+ reference)',
+};
+
+const withZoneDescriptions = (zones) =>
+  zones && Object.fromEntries(
+    Object.entries(zones).map(([key, z]) => [key, { ...z, description: ZONE_DESCRIPTIONS[key] }])
+  );
 
 const EditProfileModal = ({ isOpen, onClose, onSubmit, userData, zonesOnly = false }) => {
   const [formData, setFormData] = useState({});
@@ -445,33 +463,9 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData, zonesOnly = fal
         return;
       }
 
-      const zones = {
-        zone1: {
-          min: Math.round(lt1 * 0.70),
-          max: Math.round(lt1 * 0.90),
-          description: '70–90% LT1 (recovery, reference wide zone)'
-        },
-        zone2: {
-          min: Math.round(lt1 * 0.90),
-          max: Math.round(lt1 * 1.00),
-          description: '90%–100% LT1'
-        },
-        zone3: {
-          min: Math.round(lt1 * 1.00),
-          max: Math.round(lt2 * 0.95),
-          description: '100% LT1 – 95% LT2'
-        },
-        zone4: {
-          min: Math.round(lt2 * 0.96),
-          max: Math.round(lt2 * 1.04),
-          description: '96%–104% LT2 (threshold)'
-        },
-        zone5: {
-          min: Math.round(lt2 * 1.05),
-          max: Math.round(lt2 * 1.20),
-          description: '105–120% LT2 (sprint/VO2max+ reference)'
-        }
-      };
+      const zones = withZoneDescriptions(ltZones({
+        lt1, lt2, ascending: true, floorFactor: 0.70, topFactor: 1.20,
+      }));
 
       setFormData(prev => ({
         ...prev,
@@ -498,33 +492,10 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData, zonesOnly = fal
         return;
       }
 
-      const zones = {
-        zone1: {
-          min: Math.round(lt1 / 0.70), // slower (more seconds)
-          max: Math.round(lt1 / 0.90), // faster (fewer seconds)
-          description: '70–90% LT1 (recovery, reference wide zone)'
-        },
-        zone2: {
-          min: Math.round(lt1 / 0.90),
-          max: Math.round(lt1 / 1.00),
-          description: '90%–100% LT1'
-        },
-        zone3: {
-          min: Math.round(lt1 / 1.00),
-          max: Math.round(lt2 / 0.95),
-          description: '100% LT1 – 95% LT2'
-        },
-        zone4: {
-          min: Math.round(lt2 / 0.96),
-          max: Math.round(lt2 / 1.04),
-          description: '96%–104% LT2 (threshold)'
-        },
-        zone5: {
-          min: Math.round(lt2 / 1.05),
-          max: Math.round(lt2 / 1.20),
-          description: '105–120% LT2 (sprint/VO2max+ reference)'
-        }
-      };
+      // Pace seconds run backwards — the helper divides instead of multiplying.
+      const zones = withZoneDescriptions(ltZones({
+        lt1, lt2, ascending: false, floorFactor: 0.70, topFactor: 1.20,
+      }));
 
       setFormData(prev => ({
         ...prev,
