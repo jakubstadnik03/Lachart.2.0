@@ -14,6 +14,7 @@ import {
   CALENDAR_DATA_EVENT,
 } from '../../utils/calendarActivitiesForPmc';
 import { mergeProfileZones } from '../../utils/inferThresholdsFromActivities';
+import { matchesCalendarSportFilter } from '../../utils/calendarDayOrdering';
 import { getTsbStatus } from '../../utils/formFitnessMetrics';
 import { TSS_DISPLAY_MODE_EVENT } from '../../utils/uiPrefs';
 import { pmcAxisDomainsFromPoints, PMC_COLORS, PMC_VIEW_DAY_RANGES, PMC_MAX_VIEW_DAYS, pmcDefaultZoomWindow } from '../../utils/pmcChartAxes';
@@ -22,6 +23,14 @@ import FormFitnessHelpSheet from './FormFitnessHelpSheet';
 const ReactECharts = EChartsModule?.default ?? EChartsModule;
 
 const TIME_RANGES = PMC_VIEW_DAY_RANGES;
+
+/** Ids match the sportFilter computePmcFromActivities already accepts. */
+const SPORT_FILTERS = [
+  { id: 'all', label: 'All' },
+  { id: 'bike', label: 'Bike' },
+  { id: 'run', label: 'Run' },
+  { id: 'swim', label: 'Swim' },
+];
 
 function deltaText(delta) {
   const n = Math.abs(Math.round(delta || 0));
@@ -44,6 +53,7 @@ export default function PmcCombinedChart({
   activities = null,
 }) {
   const [viewDays, setViewDays] = useState(90);
+  const [sportFilter, setSportFilter] = useState('all');
   const [pmcActivities, setPmcActivities] = useState([]);
   const [loadingActs, setLoadingActs] = useState(true);
   const [hoverIndex, setHoverIndex] = useState(-1);
@@ -95,19 +105,32 @@ export default function PmcCombinedChart({
       return;
     }
 
+    // Paint the cache immediately, then fetch and keep whichever set is
+    // larger.
+    //
+    // This used to return on a cache hit and never look again, so the chart
+    // could sit on a set written days ago while the dashboard rebuilt from
+    // live data — and the two then disagreed about the same athlete's Fitness
+    // and Form. CTL and ATL are exponential averages over a 252-day warmup, so
+    // a shorter history reads high: 138/-8/139 here against 145/+9/119 there.
+    //
+    // Larger wins rather than newer, for the same reason as the dashboard's
+    // guard: a fetch that returns less than the cache is a partial answer, not
+    // a correction.
     const cached = readCalendarActivitiesCache(athleteId);
     if (cached.length > 0) {
       setPmcActivities(cached);
       setLoadingActs(false);
-      return;
+    } else {
+      setLoadingActs(true);
     }
 
-    setLoadingActs(true);
     try {
       const list = await fetchCalendarActivitiesForPmc(api, athleteId);
-      setPmcActivities(Array.isArray(list) ? list : []);
+      const fetched = Array.isArray(list) ? list : [];
+      setPmcActivities((prev) => (fetched.length >= prev.length ? fetched : prev));
     } catch {
-      setPmcActivities([]);
+      if (!cached.length) setPmcActivities([]);
     } finally {
       setLoadingActs(false);
     }
@@ -173,17 +196,24 @@ export default function PmcCombinedChart({
     }
     const { series, todayMetrics: tm } = computePmcFromActivities(pmcActivities, profile, {
       displayDays: PMC_MAX_VIEW_DAYS,
-      sportFilter: 'all',
+      sportFilter,
       tssUser: user,
     });
     return { fullSeries: series, todayMetrics: tm };
-  }, [pmcActivities, profile, user, tssTick]);
+  }, [pmcActivities, profile, user, tssTick, sportFilter]);
 
   const projection = useMemo(() => {
     if (!showProjection || !fullSeries.length || !plannedWorkouts.length) return [];
-    const plannedTssByDate = buildPlannedTssByDate(plannedWorkouts);
+    // Filter the plan the same way as the history. A run-only Fitness line
+    // projected forward on every planned session — bike and swim included —
+    // would rise for training the line does not count.
+    const planned = sportFilter === 'all'
+      ? plannedWorkouts
+      : plannedWorkouts.filter((w) => matchesCalendarSportFilter(w, sportFilter));
+    if (!planned.length) return [];
+    const plannedTssByDate = buildPlannedTssByDate(planned);
     return computePmcProjection(fullSeries, plannedTssByDate);
-  }, [showProjection, fullSeries, plannedWorkouts]);
+  }, [showProjection, fullSeries, plannedWorkouts, sportFilter]);
 
   const chartSeries = useMemo(() => {
     if (!fullSeries.length) return [];
@@ -226,7 +256,11 @@ export default function PmcCombinedChart({
   }, [chartSeries, viewDays]);
 
   const displayPoint = hoverIndex >= 0 ? chartSeries[hoverIndex] : null;
-  const headline = serverMetrics || todayMetrics || {
+  // The server computes across every sport, so it cannot answer "my running
+  // Fitness". Under a sport filter the local series is the only thing that
+  // knows, and showing the all-sport headline above a run-only curve would be
+  // the same two-numbers-one-metric problem this chart already had.
+  const headline = (sportFilter === 'all' ? serverMetrics : null) || todayMetrics || {
     fitness: displayPoint?.Fitness ?? 0,
     fatigue: displayPoint?.Fatigue ?? 0,
     form: displayPoint?.Form ?? 0,
@@ -544,6 +578,25 @@ export default function PmcCombinedChart({
             >
               {showProjection ? 'Projection on' : 'Projection off'}
             </button>
+            {/* Fitness for one discipline. A triathlete's cycling CTL and
+                running CTL move independently, and the combined line hides
+                which one is actually building. computePmcFromActivities has
+                taken sportFilter all along — it was only ever pinned to 'all'
+                here. */}
+            <div className="flex bg-gray-100 rounded-lg p-0.5 gap-0.5">
+              {SPORT_FILTERS.map((s) => (
+                <button
+                  key={s.id}
+                  type="button"
+                  onClick={() => setSportFilter(s.id)}
+                  className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-all ${
+                    sportFilter === s.id ? 'bg-white shadow text-gray-900' : 'text-gray-500'
+                  }`}
+                >
+                  {s.label}
+                </button>
+              ))}
+            </div>
             <div className="flex bg-gray-100 rounded-lg p-0.5 gap-0.5">
               {TIME_RANGES.map((r) => (
                 <button
