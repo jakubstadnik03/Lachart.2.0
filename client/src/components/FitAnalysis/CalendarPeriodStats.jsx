@@ -696,6 +696,7 @@ export default function CalendarPeriodStats({
 
     // For daily stacked bar by sport
     const byDaySportSec = new Map();
+    const byDaySportTss = new Map();
 
     // Intensity totals across all zone data
     let intensityEasySec = 0;
@@ -736,6 +737,11 @@ export default function CalendarPeriodStats({
 
         const daySportKey = `${dk}-${b}`;
         byDaySportSec.set(daySportKey, (byDaySportSec.get(daySportKey) || 0) + sec);
+        // TSS per sport as well as per day. Hours were already split this way;
+        // TSS was one lumped bar, so a 250-TSS day never said whether it came
+        // from a long ride or a hard run — which is the first thing you want
+        // to know about it.
+        if (tssVal > 0) byDaySportTss.set(daySportKey, (byDaySportTss.get(daySportKey) || 0) + tssVal);
       }
 
       if (effectiveProfile && ps) {
@@ -783,6 +789,15 @@ export default function CalendarPeriodStats({
     const dailyCounts = dayKeys.map((k) => byDayCount.get(k) || 0);
     const dailyTss = dayKeys.map((k) => Math.round(byDayTss.get(k) || 0));
 
+    const dailyTssBike = dayKeys.map((k) => Math.round(byDaySportTss.get(`${k}-bike`) || 0));
+    const dailyTssRun = dayKeys.map((k) => Math.round(byDaySportTss.get(`${k}-run`) || 0));
+    const dailyTssSwim = dayKeys.map((k) => Math.round(byDaySportTss.get(`${k}-swim`) || 0));
+    // Everything that isn't one of the three — gym, hike, ski. Derived from the
+    // day total so the stack still adds up to the number shown elsewhere.
+    const dailyTssOther = dayKeys.map((k, i) => Math.max(
+      0,
+      Math.round(byDayTss.get(k) || 0) - dailyTssBike[i] - dailyTssRun[i] - dailyTssSwim[i],
+    ));
     const dailyHoursBike = dayKeys.map((k) => +((byDaySportSec.get(`${k}-bike`) || 0) / 3600).toFixed(2));
     const dailyHoursRun = dayKeys.map((k) => +((byDaySportSec.get(`${k}-run`) || 0) / 3600).toFixed(2));
     const dailyHoursSwim = dayKeys.map((k) => +((byDaySportSec.get(`${k}-swim`) || 0) / 3600).toFixed(2));
@@ -816,6 +831,10 @@ export default function CalendarPeriodStats({
       dailyHours,
       dailyCounts,
       dailyTss,
+      dailyTssBike,
+      dailyTssRun,
+      dailyTssSwim,
+      dailyTssOther,
       dailyHoursBike,
       dailyHoursRun,
       dailyHoursSwim,
@@ -1046,12 +1065,39 @@ export default function CalendarPeriodStats({
       },
       series: isTss
         ? [
+            // Stacked by sport, like the hours view. Same colours, so a day
+            // reads the same whichever unit you switch to.
             {
-              name: 'TSS',
+              name: 'Bike',
               type: 'bar',
+              stack: 'd',
+              barMaxWidth: 14,
+              itemStyle: { color: '#3b82f6', borderRadius: 0 },
+              data: aggregates.dailyTssBike,
+            },
+            {
+              name: 'Run',
+              type: 'bar',
+              stack: 'd',
+              barMaxWidth: 14,
+              itemStyle: { color: '#f97316', borderRadius: 0 },
+              data: aggregates.dailyTssRun,
+            },
+            {
+              name: 'Swim',
+              type: 'bar',
+              stack: 'd',
+              barMaxWidth: 14,
+              itemStyle: { color: '#06b6d4', borderRadius: 0 },
+              data: aggregates.dailyTssSwim,
+            },
+            {
+              name: 'Other',
+              type: 'bar',
+              stack: 'd',
               barMaxWidth: 14,
               itemStyle: { color: '#7c6cf0', borderRadius: [3, 3, 0, 0] },
-              data: aggregates.dailyTss,
+              data: aggregates.dailyTssOther,
             },
           ]
         : [
@@ -1081,7 +1127,9 @@ export default function CalendarPeriodStats({
             },
           ],
     };
-  }, [aggregates.dayKeys, aggregates.dailyHoursBike, aggregates.dailyHoursRun, aggregates.dailyHoursSwim, aggregates.dailyTss, dailyLoadMode, periodView]);
+  }, [aggregates.dayKeys, aggregates.dailyHoursBike, aggregates.dailyHoursRun, aggregates.dailyHoursSwim,
+    aggregates.dailyTssBike, aggregates.dailyTssRun, aggregates.dailyTssSwim,
+    aggregates.dailyTssOther, dailyLoadMode, periodView]);
 
   // Weekly trend chart option
   const weeklyTrendOption = useMemo(() => {

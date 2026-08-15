@@ -407,6 +407,24 @@ export default function WorkoutPlannerPage() {
 
       {/* Planner + progress charts */}
       <div className={`flex-1 min-w-0 ${isMobile ? '' : 'flex'}`}>
+      {/* Same switcher as the calendar. The Planner segment was added there
+          without adding it here, which left the planner a dead end — the only
+          way back was the bottom tab bar. Calendar and Charts are one page, so
+          they navigate with the tab in the query string. */}
+      {isMobile && (
+        <div className="flex bg-gray-100 rounded-xl p-0.5 mx-3 mt-2">
+          {[['calendar', 'Calendar'], ['charts', 'Charts'], ['planner', 'Planner']].map(([tab, label]) => (
+            <button
+              key={tab}
+              onClick={() => { if (tab !== 'planner') navigate(`/training-calendar?tab=${tab}`); }}
+              className={`flex-1 py-1.5 text-sm font-semibold rounded-lg transition-all touch-manipulation ${
+                tab === 'planner' ? 'bg-white shadow text-gray-900' : 'text-gray-500'
+              }`}
+              style={{ WebkitTapHighlightColor: 'transparent' }}
+            >{label}</button>
+          ))}
+        </div>
+      )}
       <div className="flex-1 p-4 sm:p-6 min-w-0">
       {/* Header */}
       <div className={`mb-4 ${isMobile ? 'flex flex-col items-start gap-3' : 'flex items-end justify-between gap-4'}`}>

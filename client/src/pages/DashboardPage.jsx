@@ -2088,16 +2088,52 @@ export default function DashboardPage() {
     return recomputeFormFitness(calendarDataRef.current, getFitnessProfile());
   }, [recomputeFormFitness, getFitnessProfile]);
 
+  /**
+   * Overlay the server's Fitness/Form/Fatigue on top of the local ones.
+   *
+   * Three surfaces headline this metric and until now they used two different
+   * engines: the web dashboard and the Charts tab read the server's
+   * calculateFormFitnessData, while the native dashboard computed its own and
+   * never called the server at all — it returned early below. The same athlete
+   * therefore read 145/+9/119 on the app's home screen and 138/-8/139 in
+   * Charts, with nothing to say which was right.
+   *
+   * The server is the agreed source of truth (see PmcCombinedChart). The local
+   * computation still paints first so the app has numbers offline and without
+   * waiting on a request; this replaces them when the server answers.
+   */
+  const overlayServerMetrics = useCallback(async (targetId) => {
+    if (!targetId) return;
+    const gen = formFitnessRequestGen.current;
+    try {
+      const res = await getTodayMetrics(targetId);
+      const d = res?.data ?? res;
+      // A newer local recompute has landed meanwhile — leave it alone.
+      if (gen !== formFitnessRequestGen.current) return;
+      if (d && Number.isFinite(Number(d.fitness))) setTodayMetrics(d);
+    } catch {
+      /* offline or refused — the local numbers stand */
+    }
+  }, []);
+
   const loadFormFitness = useCallback(async (targetId) => {
     if (!targetId) return;
-    if (applyCalendarFormFitness()) return;
-    // Calendar-driven: never paint stale server PMC when calendar activities exist.
+    if (applyCalendarFormFitness()) {
+      // Painted locally. Ask the server too, so the app agrees with Charts.
+      overlayServerMetrics(targetId);
+      return;
+    }
+    // Calendar-driven: never paint the stale server *series* when calendar
+    // activities exist — but the headline numbers still come from the server,
+    // which is what the other two surfaces show.
     if (calendarDataRef.current?.length) {
       setFormMetricsLoading(false);
+      overlayServerMetrics(targetId);
       return;
     }
     if (isCapacitorNative()) {
       setFormMetricsLoading(false);
+      overlayServerMetrics(targetId);
       return;
     }
     const gen = ++formFitnessRequestGen.current;
@@ -2121,7 +2157,7 @@ export default function DashboardPage() {
     } finally {
       if (gen === formFitnessRequestGen.current) setFormMetricsLoading(false);
     }
-  }, [applyCalendarFormFitness, pushFormFitnessWidget]);
+  }, [applyCalendarFormFitness, pushFormFitnessWidget, overlayServerMetrics]);
 
   /** Native pull-to-refresh: reload activities + recompute CTL/ATL/TSB from calendar TSS. */
   const refreshNativeDashboard = useCallback(async ({ syncStrava = false } = {}) => {
