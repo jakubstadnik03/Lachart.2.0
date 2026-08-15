@@ -8,6 +8,7 @@ import {
   StyleSheet, Image, pdf,
 } from '@react-pdf/renderer';
 import { formatHeight, formatWeight, resolveDistanceUnitSystem, getUserUnits } from '../../utils/unitsConverter';
+import { getEffectiveLactateInputMode, normalizeLactateSport } from '../../utils/lactateTestInputMode';
 
 // ── Logo URL (client-side, resolved at runtime) ────────────────────────────────
 const LOGO_URL = (() => {
@@ -90,6 +91,15 @@ const s = StyleSheet.create({
   table:      { borderWidth: 1, borderColor: C.midGray, borderRadius: 6, overflow: 'hidden' },
   tableHead:  { flexDirection: 'row', backgroundColor: C.primary, paddingVertical: 7, paddingHorizontal: 10 },
   tableHeadT: { fontSize: 7.5, fontFamily: 'Helvetica-Bold', color: C.white, flex: 1, textAlign: 'center' },
+  // tableHeadT (four/five equal, centred cells) only lines up with the stage
+  // results table, where every body cell is flex:1 too. The threshold and zone
+  // tables use weighted, mixed-alignment columns, so their headers need to
+  // mirror those weights — otherwise "Name" floats over the wrong column.
+  thrHeadMethod: { fontSize: 7.5, fontFamily: 'Helvetica-Bold', color: C.white, flex: 2 },
+  thrHeadVal:    { fontSize: 7.5, fontFamily: 'Helvetica-Bold', color: C.white, flex: 1.5, textAlign: 'right' },
+  zoneHeadSpacer:{ width: 16 },
+  zoneHeadZone:  { fontSize: 7.5, fontFamily: 'Helvetica-Bold', color: C.white, flex: 2 },
+  zoneHeadVal:   { fontSize: 7.5, fontFamily: 'Helvetica-Bold', color: C.white, flex: 2, textAlign: 'right' },
   tableRow:   { flexDirection: 'row', paddingVertical: 6, paddingHorizontal: 10, borderTopWidth: 1, borderTopColor: C.lightGray },
   tableRowAlt:{ backgroundColor: '#F9FAFB' },
   tableCell:  { fontSize: 8.5, color: C.dark, flex: 1, textAlign: 'center' },
@@ -105,8 +115,9 @@ const s = StyleSheet.create({
   // Zone row
   zoneRow:  { flexDirection: 'row', alignItems: 'center', paddingVertical: 7, paddingHorizontal: 10, borderTopWidth: 1, borderTopColor: C.lightGray },
   zoneDot:  { width: 8, height: 8, borderRadius: 4, marginRight: 8 },
-  zoneLabel:{ fontSize: 8, fontFamily: 'Helvetica-Bold', color: C.dark, width: 40 },
-  zoneName: { fontSize: 8, color: C.gray, flex: 1.5 },
+  zoneLabelWrap: { flexDirection: 'row', alignItems: 'baseline', flex: 2 },
+  zoneLabel:{ fontSize: 8, fontFamily: 'Helvetica-Bold', color: C.dark, width: 20 },
+  zoneName: { fontSize: 8, color: C.gray },
   zoneVal:  { fontSize: 8.5, fontFamily: 'Helvetica-Bold', color: C.dark, flex: 2, textAlign: 'right' },
   zoneHr:   { fontSize: 8.5, color: C.gray, flex: 2, textAlign: 'right' },
 
@@ -162,6 +173,43 @@ function darkenHex(hex, amount = 0.15) {
 const sportLabel = (s) => ({ bike:'Cycling', run:'Running', swim:'Swimming' }[s] || s || 'Sport');
 const capitalize = (s) => s ? s.charAt(0).toUpperCase() + s.slice(1) : '';
 
+/**
+ * The report uses @react-pdf's built-in Helvetica, which is written out in
+ * WinAnsi. Any code point outside cp1252 gets truncated to its low byte, so
+ * "VO₂max" printed as "VO‚max" and "LT1→IAT" as "LT1’IAT". Nothing is broken in
+ * the data — the glyphs simply don't exist in the font.
+ *
+ * ARROW / DASH below are the safe stand-ins used throughout the document, and
+ * `pdfSafe` scrubs the same characters out of free text a coach may have pasted
+ * into a note or an analysis override.
+ */
+const ARROW = '->';
+const UNSAFE_CHARS = [
+  [/[→⇒➡]/g, '->'],
+  [/[←⇐]/g, '<-'],
+  [/₂/g, '2'],   // subscript two, as in VO₂max
+  [/₁/g, '1'],
+  [/₃/g, '3'],
+  [/≤/g, '<='],
+  [/≥/g, '>='],
+  [/[•●]/g, '·'],
+];
+// Everything WinAnsi can actually draw: printable ASCII, the Latin-1 supplement
+// and the handful of typographic characters PDFKit remaps into the C1 range.
+const WIN_ANSI_OK = /[ -~ -ÿ€‚ƒ„…†‡ˆ‰Š‹ŒŽ‘’“”•–—˜™š›œžŸ]/;
+function pdfSafe(text) {
+  if (text == null) return text;
+  let out = String(text);
+  for (const [re, sub] of UNSAFE_CHARS) out = out.replace(re, sub);
+  return out.replace(/./gu, (ch) => {
+    if (WIN_ANSI_OK.test(ch)) return ch;
+    // Czech / Polish letters (č, ř, ł …) aren't in WinAnsi either. Strip the
+    // accent rather than the whole letter so a name stays readable.
+    const folded = ch.normalize('NFD').replace(/[̀-ͯ]/g, '');
+    return WIN_ANSI_OK.test(folded) ? folded : '';
+  });
+}
+
 function fmtPace(secs) {
   if (!secs || !Number.isFinite(Number(secs))) return '—';
   const s  = Number(secs);
@@ -170,32 +218,117 @@ function fmtPace(secs) {
   return `${m}:${String(ss).padStart(2,'0')}`;
 }
 
-function fmtIntensity(val, sport, inputMode) {
-  if (!Number.isFinite(Number(val))) return '—';
-  const v = Number(val);
-  if (sport === 'bike') return `${Math.round(v)} W`;
-  if (inputMode === 'pace') return `${fmtPace(v)} /km`;
-  return `${v.toFixed(1)} km/h`;
+// ── Units ──────────────────────────────────────────────────────────────────────
+/**
+ * Loads for run/swim are stored as PACE SECONDS (sec/km, sec/100m) regardless of
+ * what `inputMode` says — `inputMode` is a *display* preference (a coach who sets
+ * paceDisplay=kmh in Settings gets inputMode:'speed' on a pace-stored test).
+ * Conflating the two is what printed "301.0 km/h" for a 5:01/km stage and left
+ * the axis running fast→slow.
+ *
+ * `makeUnits` resolves the two independently and returns every conversion and
+ * formatter the report needs, so a value is converted exactly once, at the point
+ * it is displayed.
+ */
+function makeUnits(test) {
+  const sport       = normalizeLactateSport(test?.sport);
+  const unitSystem  = test?.unitSystem || 'metric';
+  const isBike      = sport === 'bike';
+  const isSwim      = sport === 'swim';
+  const isPaceSport = !isBike;
+
+  // How the numbers in test.results / thresholds are actually stored.
+  const storageMode = isPaceSport ? getEffectiveLactateInputMode(test) : 'power';
+  // How the reader wants them shown. Speed-stored tests can only be shown as speed.
+  const displayMode = !isPaceSport
+    ? 'power'
+    : (storageMode === 'speed' || String(test?.inputMode || '').toLowerCase() === 'speed' ? 'speed' : 'pace');
+
+  const imperial  = unitSystem === 'imperial';
+  const paceUnit  = isSwim ? (imperial ? '/100yd' : '/100m') : (imperial ? '/mile' : '/km');
+  const speedUnit = imperial ? 'mph' : 'km/h';
+  // Distance units covered per hour: 3600 s/h for a per-km (or per-mile) pace,
+  // 360 for a per-100 m pace (10 x 100 m = 1 km).
+  const SEC_PER_HOUR = isSwim ? 360 : 3600;
+
+  /** Stored load → pace seconds (sec/km, sec/mile or sec/100m). */
+  const toPaceSeconds = (v) => {
+    const n = Number(v);
+    if (!Number.isFinite(n) || n <= 0) return NaN;
+    return storageMode === 'speed' ? SEC_PER_HOUR / n : n;
+  };
+  /** Stored load → speed in the display unit. */
+  const toSpeed = (v) => {
+    const n = Number(v);
+    if (!Number.isFinite(n) || n <= 0) return NaN;
+    return storageMode === 'speed' ? n : SEC_PER_HOUR / n;
+  };
+
+  /**
+   * Stored load → the number the X axis is plotted in. Bike keeps watts, speed
+   * display keeps km/h, pace display keeps seconds. In every case a *larger*
+   * display value means harder except pace seconds, hence `reverseX`.
+   */
+  const toDisplayX = (v) => {
+    const n = Number(v);
+    if (!Number.isFinite(n)) return NaN;
+    if (!isPaceSport) return n;
+    return displayMode === 'speed' ? toSpeed(n) : toPaceSeconds(n);
+  };
+
+  /** Full label for a stored load, e.g. "5:01 /km", "12.0 km/h", "245 W". */
+  const fmtIntensity = (v) => {
+    const n = Number(v);
+    if (!Number.isFinite(n)) return '—';
+    if (!isPaceSport) return `${Math.round(n)} W`;
+    if (displayMode === 'speed') {
+      const sp = toSpeed(n);
+      return Number.isFinite(sp) ? `${sp.toFixed(1)} ${speedUnit}` : '—';
+    }
+    const sec = toPaceSeconds(n);
+    return Number.isFinite(sec) ? `${fmtPace(sec)} ${paceUnit}` : '—';
+  };
+
+  /** Short, unit-less axis tick for a *display-space* value. */
+  const fmtTick = (displayX) => {
+    const n = Number(displayX);
+    if (!Number.isFinite(n)) return '';
+    if (!isPaceSport) return String(Math.round(n));
+    return displayMode === 'speed' ? n.toFixed(1) : fmtPace(n);
+  };
+
+  return {
+    sport, isBike, isSwim, isPaceSport, unitSystem,
+    storageMode, displayMode,
+    paceUnit, speedUnit,
+    // Pace seconds run backwards (bigger = slower), so the axis has to be flipped
+    // to keep "slower on the left, faster on the right".
+    reverseX: isPaceSport && displayMode === 'pace',
+    axisLabel: isBike ? 'Power (W)' : (displayMode === 'speed' ? `Speed (${speedUnit})` : `Pace (min${paceUnit})`),
+    columnLabel: isBike ? 'Power (W)' : (displayMode === 'speed' ? `Speed (${speedUnit})` : `Pace (min${paceUnit})`),
+    toPaceSeconds, toSpeed, toDisplayX, fmtIntensity, fmtTick,
+  };
 }
 
 // ── Shared SVG axis helpers ────────────────────────────────────────────────────
-function makePts(results) {
-  return results
-    .map(r => ({ x: Number(r.power), la: Number(r.lactate), hr: Number(r.heartRate) }))
+/** Raw results → points in *display* X space, sorted low→high display value. */
+function makePts(results, U) {
+  return (Array.isArray(results) ? results : [])
+    .map(r => ({ x: U.toDisplayX(r.power), la: Number(r.lactate), hr: Number(r.heartRate) }))
     .filter(p => Number.isFinite(p.x) && Number.isFinite(p.la) && p.x > 0)
     .sort((a, b) => a.x - b.x);
 }
 
 /**
- * Build sx() — maps an X value to a pixel position.
- * For pace sports, axis is REVERSED: higher pace (slower) is on the LEFT.
+ * Build sx() — maps a display-space X value to a pixel position.
+ * When `reverse` is set (pace display) the axis runs slow→fast, left→right.
  */
-function makeSx(xMin, xMax, padLeft, cw, isPace) {
+function makeSx(xMin, xMax, padLeft, cw, reverse) {
   return (x) => {
     const ratio = (xMax - xMin) < 0.001 ? 0 : (x - xMin) / (xMax - xMin);
-    return isPace
-      ? padLeft + (1 - ratio) * cw   // reversed: slow (big) = left
-      : padLeft + ratio * cw;         // normal:   low  (sm)  = left
+    return reverse
+      ? padLeft + (1 - ratio) * cw   // reversed: slow (big seconds) = left
+      : padLeft + ratio * cw;         // normal:   low value          = left
   };
 }
 
@@ -276,23 +409,26 @@ function sampledPath(fn, xMin, xMax, samples, sx, sy) {
 }
 
 /** Build colored zone band specs from threshold keys.
- *  Returns ordered list of { from, to, fill } in numerical x order.
+ *  `thresholds` are raw stored values; they are converted into display space
+ *  with U.toDisplayX so the bands line up with the plotted points.
+ *  Returns an ordered list of { from, to, fill } in numerical x order.
  *
- *  isPace=true: the x-axis is REVERSED (high seconds = slow pace = LEFT side).
+ *  When the axis is reversed (pace display) high seconds = slow pace = LEFT.
  *  Palette[0]=Recovery(green) must appear on the LEFT, which is the band with
- *  the highest numerical x values (last band in ascending sort).  We therefore
- *  flip the palette index for pace so band N-1 (leftmost visually) gets
- *  palette[0] and band 0 (rightmost visually) gets palette[N-1]. */
-function buildZoneBands(thresholds = {}, xMin, xMax, isPace = false) {
+ *  the highest numerical x values (last band in ascending sort). We therefore
+ *  flip the palette index so band N-1 (leftmost visually) gets palette[0] and
+ *  band 0 (rightmost visually) gets palette[N-1]. */
+function buildZoneBands(thresholds = {}, xMin, xMax, U) {
   // The five-zone scheme matches what the interactive coach chart uses:
-  // Z1 recovery (below LTP1), Z2 aerobic (LTP1→IAT), Z3 tempo (IAT→LTP2),
-  // Z4 threshold (LTP2→OBLA 3.0), Z5 VO₂max (above OBLA 3.0).
-  const lt1  = numOrNull(thresholds.LTP1);
-  const iat  = numOrNull(thresholds.IAT);
-  const lt2  = numOrNull(thresholds.LTP2);
-  const ob30 = numOrNull(thresholds['OBLA 3.0']);
+  // Z1 recovery (below LTP1), Z2 aerobic (LTP1->IAT), Z3 tempo (IAT->LTP2),
+  // Z4 threshold (LTP2->OBLA 3.0), Z5 VO2max (above OBLA 3.0).
+  const dx   = (v) => { const n = numOrNull(v); return n == null ? null : numOrNull(U.toDisplayX(n)); };
+  const lt1  = dx(thresholds.LTP1);
+  const iat  = dx(thresholds.IAT);
+  const lt2  = dx(thresholds.LTP2);
+  const ob30 = dx(thresholds['OBLA 3.0']);
   // Soft pastel fills — readable when printed, don't fight the data lines.
-  // palette[0]=Recovery(green) … palette[4]=VO₂max(purple).
+  // palette[0]=Recovery(green) … palette[4]=VO2max(purple).
   const palette = ['#dcfce7', '#dbeafe', '#fef3c7', '#fee2e2', '#ede9fe'];
   const boundaries = [xMin, lt1, iat, lt2, ob30, xMax]
     .filter(v => v != null)
@@ -304,12 +440,10 @@ function buildZoneBands(thresholds = {}, xMin, xMax, isPace = false) {
   const numBands = boundaries.length - 1;
   const bands = [];
   for (let i = 0; i < numBands; i++) {
-    // For pace the axis is reversed: band 0 (numerically smallest x) sits on
-    // the RIGHT (fastest/hardest), so it should get the VO₂max colour.
-    // Flipping the index achieves this: band (numBands-1) (leftmost = easiest)
-    // gets palette[0] = Recovery green, band 0 (rightmost = hardest) gets
-    // palette[numBands-1].
-    const pi = isPace ? (numBands - 1 - i) : i;
+    // On a reversed axis band 0 (numerically smallest x = fastest pace) sits on
+    // the RIGHT, so it should get the VO2max colour. Flipping the index gives
+    // band (numBands-1) (leftmost = easiest) palette[0] = Recovery green.
+    const pi = U.reverseX ? (numBands - 1 - i) : i;
     bands.push({
       from: boundaries[i],
       to:   boundaries[i + 1],
@@ -320,25 +454,65 @@ function buildZoneBands(thresholds = {}, xMin, xMax, isPace = false) {
 }
 function numOrNull(v) { return Number.isFinite(Number(v)) ? Number(v) : null; }
 
+/** Lactate gridlines every 2 mmol/L, always reaching the top of the plotted data. */
+function laAxisTicks(laMax) {
+  const step = laMax > 12 ? 4 : 2;
+  const ticks = [];
+  for (let v = 0; v <= laMax + 1e-9; v += step) ticks.push(v);
+  return ticks;
+}
+
+/**
+ * Drop X ticks that would be printed on top of each other. A comparison chart
+ * overlays two tests, so the combined stage list can easily produce labels
+ * closer together than they are wide. The first and last tick always survive.
+ */
+function thinTicks(values, sx, minGap = 18) {
+  const sorted = [...new Set(values)].sort((a, b) => sx(a) - sx(b));
+  if (sorted.length < 2) return sorted;
+  const kept = [sorted[0]];
+  for (let i = 1; i < sorted.length - 1; i++) {
+    if (sx(sorted[i]) - sx(kept[kept.length - 1]) >= minGap) kept.push(sorted[i]);
+  }
+  const last = sorted[sorted.length - 1];
+  // Keep the fast end of the axis even if it crowds the tick before it.
+  while (kept.length > 1 && sx(last) - sx(kept[kept.length - 1]) < minGap) kept.pop();
+  kept.push(last);
+  return kept;
+}
+
+/** "Nice" tick values for the heart-rate axis — multiples of 10 inside the domain. */
+function hrAxisTicks(minHr, maxHr) {
+  const span = maxHr - minHr;
+  const step = span > 80 ? 20 : 10;
+  const first = Math.ceil(minHr / step) * step;
+  const ticks = [];
+  for (let v = first; v <= maxHr; v += step) ticks.push(v);
+  return ticks;
+}
+
 // ── Single-test Lactate Curve SVG ──────────────────────────────────────────────
-function LattateCurveSvg({ results = [], sport, inputMode, thresholds, primary = C.primary }) {
-  const isPace = sport !== 'bike' && inputMode === 'pace';
-  const W = 500, H = 210;
-  const PAD = { top: 12, right: 24, bottom: 34, left: 42 };
+function LattateCurveSvg({ results = [], U, thresholds, primary = C.primary }) {
+  const W = 500, H = 220;
+  // Room on the right for the heart-rate scale; without it the HR curve had no
+  // readable units at all and could only be judged by shape.
+  const hrPtsAll = makePts(results, U).filter(p => Number.isFinite(p.hr) && p.hr > 50);
+  const hasHr    = hrPtsAll.length >= 2;
+  const PAD = { top: 12, right: hasHr ? 40 : 24, bottom: 38, left: 42 };
   const cw  = W - PAD.left - PAD.right;
   const ch  = H - PAD.top  - PAD.bottom;
 
-  const pts = makePts(results);
+  const pts = makePts(results, U);
   if (pts.length < 2) return null;
 
   const xMin  = Math.min(...pts.map(p => p.x));
   const xMax  = Math.max(...pts.map(p => p.x));
   const laMax = Math.max(...pts.map(p => p.la), 6);
 
-  const hrPts = pts.filter(p => Number.isFinite(p.hr) && p.hr > 50);
-  const hasHr = hrPts.length >= 2;
-  const hrMin = hasHr ? Math.min(...hrPts.map(p => p.hr)) - 10 : 0;
-  const hrMax = hasHr ? Math.max(...hrPts.map(p => p.hr)) + 10 : 200;
+  const hrPts = hrPtsAll;
+  // Snap the HR domain to round tens so the printed axis reads 130/140/150…
+  const hrMin = hasHr ? Math.floor((Math.min(...hrPts.map(p => p.hr)) - 8) / 10) * 10 : 0;
+  const hrMax = hasHr ? Math.ceil((Math.max(...hrPts.map(p => p.hr)) + 8) / 10) * 10 : 200;
 
   // Add a small margin (~5 % of the data range) on each side so the first and
   // last measurement points are not flush against the axis edges — mirrors
@@ -348,7 +522,7 @@ function LattateCurveSvg({ results = [], sport, inputMode, thresholds, primary =
   const domainMin = xMin - xPad;
   const domainMax = xMax + xPad;
 
-  const sx  = makeSx(domainMin, domainMax, PAD.left, cw, isPace);
+  const sx  = makeSx(domainMin, domainMax, PAD.left, cw, U.reverseX);
   const sla = (la) => PAD.top + ch - (la / laMax) * ch;
   const shr = (hr) => PAD.top + ch - ((hr - hrMin) / (hrMax - hrMin || 1)) * ch;
 
@@ -362,19 +536,19 @@ function LattateCurveSvg({ results = [], sport, inputMode, thresholds, primary =
   const polyFn = cubicFitLog(pts);
   const polyPath = polyFn ? sampledPath(polyFn, xMin, xMax, 80, sx, sla) : '';
 
-  const lt1 = thresholds?.['LTP1'];
-  const lt2 = thresholds?.['LTP2'];
+  // Thresholds are stored values — plot them in display space like everything else.
+  const lt1 = numOrNull(U.toDisplayX(thresholds?.['LTP1']));
+  const lt2 = numOrNull(U.toDisplayX(thresholds?.['LTP2']));
 
   // Colored zone bands behind the curve. Same five-zone palette as the
   // in-app chart so the printed report matches what the athlete sees.
   // Use the expanded domain so bands fill all the way to the chart edges
   // (including the 5 % margin), and clip any threshold outside the domain.
-  // isPace is forwarded so the palette is flipped for reversed axes.
-  const zoneBands = buildZoneBands(thresholds || {}, domainMin, domainMax, isPace);
+  const zoneBands = buildZoneBands(thresholds || {}, domainMin, domainMax, U);
 
-  // Up to 6 X-axis ticks
-  const xTicks = [...new Set([xMin, ...pts.map(p => p.x), xMax])];
-  const laGridLines = [0, 2, 4, 6];
+  const xTicks = thinTicks([xMin, ...pts.map(p => p.x), xMax], sx);
+  const laGridLines = laAxisTicks(laMax);
+  const hrTicks = hasHr ? hrAxisTicks(hrMin, hrMax) : [];
 
   return (
     <Svg width={W} height={H} viewBox={`0 0 ${W} ${H}`}>
@@ -404,7 +578,7 @@ function LattateCurveSvg({ results = [], sport, inputMode, thresholds, primary =
       ))}
 
       {/* LT1 dashed */}
-      {lt1 && Number.isFinite(lt1) && lt1 >= xMin && lt1 <= xMax && (
+      {lt1 != null && lt1 >= domainMin && lt1 <= domainMax && (
         <>
           <Line x1={sx(lt1).toFixed(1)} y1={PAD.top}
             x2={sx(lt1).toFixed(1)} y2={PAD.top + ch}
@@ -416,7 +590,7 @@ function LattateCurveSvg({ results = [], sport, inputMode, thresholds, primary =
       )}
 
       {/* LT2 dashed */}
-      {lt2 && Number.isFinite(lt2) && lt2 >= xMin && lt2 <= xMax && (
+      {lt2 != null && lt2 >= domainMin && lt2 <= domainMax && (
         <>
           <Line x1={sx(lt2).toFixed(1)} y1={PAD.top}
             x2={sx(lt2).toFixed(1)} y2={PAD.top + ch}
@@ -428,7 +602,12 @@ function LattateCurveSvg({ results = [], sport, inputMode, thresholds, primary =
       )}
 
       {/* HR curve */}
-      {hasHr && <Path d={hrPath} stroke={C.secondary} strokeWidth={1.5} fill="none" strokeLinejoin="round" />}
+      {hasHr && <Path d={hrPath} stroke={C.secondary} strokeWidth={1.5} fill="none" strokeLinejoin="round" strokeDasharray="4,2" />}
+      {hasHr && hrPts.map((p, i) => (
+        <Circle key={`hr${i}`}
+          cx={sx(p.x).toFixed(1)} cy={shr(p.hr).toFixed(1)}
+          r={2} fill={C.white} stroke={C.secondary} strokeWidth={1.2} />
+      ))}
 
       {/* Lactate curve — prefer the polynomial-3 smooth fit when we have
           enough data; fall back to the raw zigzag (≤3 stages or singular fit)
@@ -453,21 +632,24 @@ function LattateCurveSvg({ results = [], sport, inputMode, thresholds, primary =
       {xTicks.map((x, i) => (
         <Text key={i} style={{ fontSize: 6.5, fill: C.gray }}
           x={sx(x).toFixed(1)} y={PAD.top + ch + 12} textAnchor="middle">
-          {sport === 'bike' ? Math.round(x) : fmtPace(x)}
+          {U.fmtTick(x)}
         </Text>
       ))}
 
-      {/* Reversed axis arrow hint for pace sports */}
-      {isPace && (
+      {/* Axis caption + direction hint. Intensity always rises to the right,
+          including on the reversed pace axis. */}
+      <Text style={{ fontSize: 6.5, fill: C.gray }}
+        x={PAD.left + cw / 2} y={PAD.top + ch + 24} textAnchor="middle">{U.axisLabel}</Text>
+      {U.isPaceSport && (
         <>
           <Text style={{ fontSize: 6, fill: C.gray }}
-            x={PAD.left} y={PAD.top + ch + 24} textAnchor="start">← slower</Text>
+            x={PAD.left} y={PAD.top + ch + 24} textAnchor="start">{'<- slower'}</Text>
           <Text style={{ fontSize: 6, fill: C.gray }}
-            x={W - PAD.right} y={PAD.top + ch + 24} textAnchor="end">faster →</Text>
+            x={W - PAD.right} y={PAD.top + ch + 24} textAnchor="end">{'faster ->'}</Text>
         </>
       )}
 
-      {/* Y axis labels */}
+      {/* Lactate axis (left) */}
       <Text style={{ fontSize: 6.5, fill: C.red }} x={6} y={PAD.top + ch / 2 + 2} textAnchor="middle">
         La
       </Text>
@@ -476,20 +658,41 @@ function LattateCurveSvg({ results = [], sport, inputMode, thresholds, primary =
           x={PAD.left - 4} y={sla(la) + 2} textAnchor="end">{la}</Text>
       ))}
 
+      {/* Heart-rate axis (right) — the HR curve is on its own bpm scale, so
+          without these ticks it could not be read off the lactate axis. */}
+      {hasHr && (
+        <>
+          <Line x1={W - PAD.right} y1={PAD.top} x2={W - PAD.right} y2={PAD.top + ch}
+            stroke={C.secondary} strokeWidth={0.5} />
+          {hrTicks.map(hr => (
+            <React.Fragment key={hr}>
+              <Line x1={W - PAD.right} y1={shr(hr).toFixed(1)}
+                x2={W - PAD.right + 3} y2={shr(hr).toFixed(1)}
+                stroke={C.secondary} strokeWidth={0.5} />
+              <Text style={{ fontSize: 6, fill: C.secondary }}
+                x={W - PAD.right + 5} y={shr(hr) + 2} textAnchor="start">{hr}</Text>
+            </React.Fragment>
+          ))}
+          <Text style={{ fontSize: 6.5, fill: C.secondary }}
+            x={W - PAD.right + 5} y={PAD.top - 4} textAnchor="start">bpm</Text>
+        </>
+      )}
+
     </Svg>
   );
 }
 
 // ── Comparison Curve SVG — both tests overlaid ────────────────────────────────
-function ComparisonCurveSvg({ currentResults = [], prevResults = [], sport, inputMode, currentThresholds, prevThresholds, currentDate, prevDate, primary = C.primary }) {
-  const isPace = sport !== 'bike' && inputMode === 'pace';
-  const W = 500, H = 180;
-  const PAD = { top: 16, right: 24, bottom: 42, left: 42 };
+function ComparisonCurveSvg({ currentResults = [], prevResults = [], U, currentThresholds, prevThresholds, currentDate, prevDate, primary = C.primary }) {
+  const W = 500, H = 200;
+  // Extra bottom room: the threshold badges now sit under the plot instead of
+  // at the top, where the legend box used to paint over them.
+  const PAD = { top: 34, right: 24, bottom: 56, left: 42 };
   const cw  = W - PAD.left - PAD.right;
   const ch  = H - PAD.top  - PAD.bottom;
 
-  const curPts  = makePts(currentResults);
-  const prevPts = makePts(prevResults);
+  const curPts  = makePts(currentResults, U);
+  const prevPts = makePts(prevResults, U);
   if (curPts.length < 2 && prevPts.length < 2) return null;
 
   // Combined X range across both tests
@@ -501,7 +704,7 @@ function ComparisonCurveSvg({ currentResults = [], prevResults = [], sport, inpu
   const allLa = [...curPts.map(p => p.la), ...prevPts.map(p => p.la)];
   const laMax  = Math.max(...allLa, 6);
 
-  const sx  = makeSx(xMin, xMax, PAD.left, cw, isPace);
+  const sx  = makeSx(xMin, xMax, PAD.left, cw, U.reverseX);
   const sla = (la) => PAD.top + ch - (la / laMax) * ch;
 
   const pathOf = (pts) =>
@@ -510,12 +713,17 @@ function ComparisonCurveSvg({ currentResults = [], prevResults = [], sport, inpu
   const curPath  = curPts.length  >= 2 ? pathOf(curPts)  : '';
   const prevPath = prevPts.length >= 2 ? pathOf(prevPts) : '';
 
-  const curLT2  = currentThresholds?.['LTP2'];
-  const prevLT2 = prevThresholds?.['LTP2'];
+  const curLT2  = numOrNull(U.toDisplayX(currentThresholds?.['LTP2']));
+  const prevLT2 = numOrNull(U.toDisplayX(prevThresholds?.['LTP2']));
+  const inDomain = (v) => v != null && v >= xMin && v <= xMax;
 
   // X-axis ticks (deduplicated, sorted)
-  const xTicks = [...new Set([xMin, ...allX, xMax])].sort((a,b) => a-b);
-  const laGrid = [0, 2, 4, 6];
+  const xTicks = thinTicks(allX, sx);
+  const laGrid = laAxisTicks(laMax);
+
+  // Legend sits above the plot area in its own strip, so it can never cover the
+  // curves or the threshold markers.
+  const legendY = 12;
 
   return (
     <Svg width={W} height={H} viewBox={`0 0 ${W} ${H}`}>
@@ -527,27 +735,27 @@ function ComparisonCurveSvg({ currentResults = [], prevResults = [], sport, inpu
           stroke={C.lightGray} strokeWidth={0.5} />
       ))}
 
-      {/* Previous LT2 */}
-      {prevLT2 && Number.isFinite(prevLT2) && prevLT2 >= xMin && prevLT2 <= xMax && (
+      {/* Threshold markers. Labelled below the axis so the badge text is always
+          legible; the previous test's marker is offset onto a second row when
+          the two thresholds are close enough to collide. */}
+      {inDomain(prevLT2) && (
         <>
           <Line x1={sx(prevLT2).toFixed(1)} y1={PAD.top}
             x2={sx(prevLT2).toFixed(1)} y2={PAD.top + ch}
             stroke={C.gray} strokeWidth={1} strokeDasharray="3,3" />
-          <Rect x={sx(prevLT2)-18} y={PAD.top+2} width={36} height={11} rx={3} fill={C.gray} />
-          <Text style={{ fontSize: 5.5, fill: C.white }}
-            x={sx(prevLT2).toFixed(1)} y={PAD.top+10} textAnchor="middle">LT2 prev</Text>
+          <Rect x={sx(prevLT2) - 22} y={PAD.top + ch + 26} width={44} height={11} rx={3} fill={C.gray} />
+          <Text style={{ fontSize: 6, fill: C.white }}
+            x={sx(prevLT2).toFixed(1)} y={PAD.top + ch + 34} textAnchor="middle">LT2 prev</Text>
         </>
       )}
-
-      {/* Current LT2 */}
-      {curLT2 && Number.isFinite(curLT2) && curLT2 >= xMin && curLT2 <= xMax && (
+      {inDomain(curLT2) && (
         <>
           <Line x1={sx(curLT2).toFixed(1)} y1={PAD.top}
             x2={sx(curLT2).toFixed(1)} y2={PAD.top + ch}
             stroke={C.red} strokeWidth={1} strokeDasharray="3,3" />
-          <Rect x={sx(curLT2)-14} y={PAD.top+2} width={28} height={11} rx={3} fill={C.red} />
+          <Rect x={sx(curLT2) - 22} y={PAD.top + ch + 13} width={44} height={11} rx={3} fill={C.red} />
           <Text style={{ fontSize: 6, fill: C.white }}
-            x={sx(curLT2).toFixed(1)} y={PAD.top+10} textAnchor="middle">LT2</Text>
+            x={sx(curLT2).toFixed(1)} y={PAD.top + ch + 21} textAnchor="middle">LT2 now</Text>
         </>
       )}
 
@@ -583,18 +791,20 @@ function ComparisonCurveSvg({ currentResults = [], prevResults = [], sport, inpu
       {/* X ticks */}
       {xTicks.map((x, i) => (
         <Text key={i} style={{ fontSize: 6, fill: C.gray }}
-          x={sx(x).toFixed(1)} y={PAD.top + ch + 11} textAnchor="middle">
-          {sport === 'bike' ? Math.round(x) : fmtPace(x)}
+          x={sx(x).toFixed(1)} y={PAD.top + ch + 10} textAnchor="middle">
+          {U.fmtTick(x)}
         </Text>
       ))}
 
-      {/* Axis arrow hints for pace */}
-      {isPace && (
+      {/* Axis caption + direction hint */}
+      <Text style={{ fontSize: 6, fill: C.gray }}
+        x={PAD.left + cw / 2} y={H - 3} textAnchor="middle">{U.axisLabel}</Text>
+      {U.isPaceSport && (
         <>
           <Text style={{ fontSize: 5.5, fill: C.gray }}
-            x={PAD.left} y={PAD.top + ch + 22} textAnchor="start">← slower</Text>
+            x={PAD.left} y={H - 3} textAnchor="start">{'<- slower'}</Text>
           <Text style={{ fontSize: 5.5, fill: C.gray }}
-            x={W - PAD.right} y={PAD.top + ch + 22} textAnchor="end">faster →</Text>
+            x={W - PAD.right} y={H - 3} textAnchor="end">{'faster ->'}</Text>
         </>
       )}
 
@@ -607,25 +817,36 @@ function ComparisonCurveSvg({ currentResults = [], prevResults = [], sport, inpu
           x={PAD.left - 4} y={sla(la) + 2} textAnchor="end">{la}</Text>
       ))}
 
-      {/* Legend box */}
-      <Rect x={PAD.left + 4} y={PAD.top + 2} width={130} height={prevPath && curPath ? 30 : 16}
-        rx={3} fill="white" stroke={C.lightGray} strokeWidth={0.5} />
-
+      {/* Legend — own strip above the plot, every swatch labelled */}
       {curPath && (
         <>
-          <Line x1={PAD.left+10} y1={PAD.top+10} x2={PAD.left+22} y2={PAD.top+10}
+          <Line x1={PAD.left} y1={legendY} x2={PAD.left + 12} y2={legendY}
             stroke={C.red} strokeWidth={2} />
-          <Text style={{ fontSize: 6.5, fill: C.dark }} x={PAD.left+26} y={PAD.top+12}>
-            {currentDate ? `Current (${currentDate})` : 'Current test'}
+          <Text style={{ fontSize: 6.5, fill: C.dark }} x={PAD.left + 16} y={legendY + 2}>
+            {currentDate ? `Current test (${currentDate})` : 'Current test'}
           </Text>
         </>
       )}
       {prevPath && (
         <>
-          <Line x1={PAD.left+10} y1={PAD.top+22} x2={PAD.left+22} y2={PAD.top+22}
+          <Line x1={PAD.left} y1={legendY + 11} x2={PAD.left + 12} y2={legendY + 11}
             stroke={primary} strokeWidth={1.5} strokeDasharray="4,2" />
-          <Text style={{ fontSize: 6.5, fill: C.dark }} x={PAD.left+26} y={PAD.top+24}>
-            {prevDate ? `Previous (${prevDate})` : 'Previous test'}
+          <Text style={{ fontSize: 6.5, fill: C.dark }} x={PAD.left + 16} y={legendY + 13}>
+            {prevDate ? `Previous test (${prevDate})` : 'Previous test'}
+          </Text>
+        </>
+      )}
+      {(inDomain(curLT2) || inDomain(prevLT2)) && (
+        <>
+          <Line x1={PAD.left + 180} y1={legendY} x2={PAD.left + 192} y2={legendY}
+            stroke={C.red} strokeWidth={1} strokeDasharray="3,3" />
+          <Text style={{ fontSize: 6.5, fill: C.dark }} x={PAD.left + 196} y={legendY + 2}>
+            LT2 this test
+          </Text>
+          <Line x1={PAD.left + 180} y1={legendY + 11} x2={PAD.left + 192} y2={legendY + 11}
+            stroke={C.gray} strokeWidth={1} strokeDasharray="3,3" />
+          <Text style={{ fontSize: 6.5, fill: C.dark }} x={PAD.left + 196} y={legendY + 13}>
+            LT2 previous test
           </Text>
         </>
       )}
@@ -643,8 +864,8 @@ const Header = ({ title, date, branding }) => {
       <View style={s.headerBrand}>
         <Image src={branding?.logoUrl || LOGO_URL} style={s.headerLogo} />
         <View>
-          <Text style={[s.headerName, { color: pc }]}>{name}</Text>
-          {tagline ? <Text style={s.headerSub}>{tagline.toUpperCase()}</Text> : null}
+          <Text style={[s.headerName, { color: pc }]}>{pdfSafe(name)}</Text>
+          {tagline ? <Text style={s.headerSub}>{pdfSafe(tagline.toUpperCase())}</Text> : null}
         </View>
       </View>
       <Text style={s.headerDate}>{title} · {date}</Text>
@@ -671,9 +892,9 @@ const Footer = ({ athlete, creatorEmail, branding }) => {
     <View style={s.footer} fixed>
       <View style={s.footerBrand}>
         <Image src={branding?.logoUrl || LOGO_URL} style={s.footerLogo} />
-        <Text style={[s.footerName, { color: pc }]}>{name}</Text>
+        <Text style={[s.footerName, { color: pc }]}>{pdfSafe(name)}</Text>
         {contactParts.map((part, i) => (
-          <Text key={i} style={s.footerText}> · {part}</Text>
+          <Text key={i} style={s.footerText}> · {pdfSafe(part)}</Text>
         ))}
       </View>
       <Text style={s.footerText}
@@ -769,13 +990,17 @@ export default function LactateReportPdf({ test, athlete, thresholds, zones, pre
   const brandPrimary     = coachBranding?.primaryColor || C.primary;
   const brandPrimaryDark = darkenHex(brandPrimary);
 
-  const sport       = test.sport || 'bike';
-  const inputMode   = test.inputMode || 'pace';
+  // Single source of truth for units: how the loads are stored vs how they are
+  // shown. Every intensity in the report is formatted through U.fmtIntensity so
+  // pace seconds can never leak out labelled as km/h.
+  const U           = makeUnits(test);
+  const sport       = U.sport;
   const unitSys     = test.unitSystem || 'metric';
   const results     = Array.isArray(test.results) ? test.results : [];
-  const athleteName = athlete ? `${athlete.name || ''} ${athlete.surname || ''}`.trim() : 'Athlete';
+  const athleteName = pdfSafe(athlete ? `${athlete.name || ''} ${athlete.surname || ''}`.trim() : 'Athlete');
   const testDate    = fmtDate(test.date);
-  const isBike      = sport === 'bike';
+  const isBike      = U.isBike;
+  const fmtInt      = U.fmtIntensity;
 
   // Key thresholds — current
   const lt1   = thresholds?.['LTP1'];
@@ -808,6 +1033,29 @@ export default function LactateReportPdf({ test, athlete, thresholds, zones, pre
   // Check if HR data exists in results
   const hasHrData = results.filter(r => Number.isFinite(Number(r.heartRate)) && Number(r.heartRate) > 50).length >= 2;
 
+  /**
+   * Change in a threshold between two tests, in the unit the reader expects.
+   * Pace differences are computed on seconds (never on a stored km/h value) and
+   * "improved" means harder: more watts, or fewer seconds per km.
+   */
+  const ltDelta = (cur, prev) => {
+    if (!Number.isFinite(Number(cur)) || !Number.isFinite(Number(prev))) return null;
+    if (isBike) {
+      const d = Math.round(Number(cur) - Number(prev));
+      return { improved: d > 0, same: d === 0, magnitude: `${Math.abs(d)} W`, signed: `${d > 0 ? '+' : d < 0 ? '-' : ''}${Math.abs(d)} W` };
+    }
+    const cs = U.toPaceSeconds(cur);
+    const ps = U.toPaceSeconds(prev);
+    if (!Number.isFinite(cs) || !Number.isFinite(ps)) return null;
+    const d = Math.round(cs - ps);   // negative = faster = better
+    return {
+      improved: d < 0,
+      same: d === 0,
+      magnitude: `${fmtPace(Math.abs(d))} ${U.paceUnit}`,
+      signed: `${d > 0 ? '+' : d < 0 ? '-' : ''}${fmtPace(Math.abs(d))} ${U.paceUnit}`,
+    };
+  };
+
   // Build automatic analysis paragraph (used unless caller provides a
   // hand-written customAnalysis override). When `customAnalysis` is set
   // it fully replaces the generated text — coaches often want to add
@@ -816,8 +1064,8 @@ export default function LactateReportPdf({ test, athlete, thresholds, zones, pre
   const analysisText = (typeof customAnalysis === 'string' && customAnalysis.trim().length > 0)
     ? customAnalysis.trim()
     : (() => {
-    const lt2Str   = lt2   ? fmtIntensity(lt2,   sport, inputMode) : null;
-    const lt1Str   = lt1   ? fmtIntensity(lt1,   sport, inputMode) : null;
+    const lt2Str   = lt2   ? fmtInt(lt2) : null;
+    const lt1Str   = lt1   ? fmtInt(lt1) : null;
     const lt2HrStr = lt2Hr ? `${Math.round(lt2Hr)} bpm` : null;
     const lt1HrStr = lt1Hr ? `${Math.round(lt1Hr)} bpm` : null;
 
@@ -829,13 +1077,13 @@ export default function LactateReportPdf({ test, athlete, thresholds, zones, pre
     if (lt2Str) {
       text += `Anaerobic threshold (LT2): ${lt2Str}${lt2HrStr ? ` · ${lt2HrStr}` : ''}. Above this intensity lactate accumulates faster than it can be cleared — the upper limit of sustainable race efforts. `;
     }
-    if (hasPrev && prevLt2 && lt2) {
-      const diff = Number(lt2) - Number(prevLt2);
-      const improved = isBike ? diff > 0 : diff < 0;
-      const diffStr  = isBike ? `${Math.abs(Math.round(diff))} W` : fmtPace(Math.abs(diff));
-      text += improved
-        ? `vs. previous test (${prevDate}): LT2 improved by ${diffStr} — positive training adaptation. `
-        : (diff === 0 ? `vs. previous test (${prevDate}): LT2 remained stable. ` : `vs. previous test (${prevDate}): LT2 shifted by ${diffStr} — monitor training load and recovery. `);
+    const d = hasPrev ? ltDelta(lt2, prevLt2) : null;
+    if (d) {
+      text += d.same
+        ? `vs. previous test (${prevDate}): LT2 remained stable. `
+        : d.improved
+          ? `vs. previous test (${prevDate}): LT2 improved by ${d.magnitude} — positive training adaptation. `
+          : `vs. previous test (${prevDate}): LT2 shifted by ${d.magnitude} — monitor training load and recovery. `;
     }
     text += `Training in the zones derived from these thresholds will support aerobic base development and overall endurance performance.`;
     return text;
@@ -854,16 +1102,16 @@ export default function LactateReportPdf({ test, athlete, thresholds, zones, pre
             <View style={s.coverBrandWrap}>
               <Image src={coachBranding?.logoUrl || LOGO_URL} style={s.coverLogo} />
               <View>
-                <Text style={s.coverBrandName}>{coachBranding?.title || 'LaChart'}</Text>
+                <Text style={s.coverBrandName}>{pdfSafe(coachBranding?.title || 'LaChart')}</Text>
                 <Text style={s.coverBrandSub}>
                   {coachBranding?.subtitle
-                    ? coachBranding.subtitle.toUpperCase()
+                    ? pdfSafe(coachBranding.subtitle.toUpperCase())
                     : (coachBranding?.title ? '' : 'LACTATE ANALYSIS PLATFORM')}
                 </Text>
               </View>
             </View>
             <View style={s.coverTitleWrap}>
-              <Text style={s.coverTitle}>{test.title || 'Lactate Test Report'}</Text>
+              <Text style={s.coverTitle}>{pdfSafe(test.title || 'Lactate Test Report')}</Text>
               <Text style={s.coverSub}>{sportLabel(sport)} · {testDate}</Text>
             </View>
           </View>
@@ -872,8 +1120,8 @@ export default function LactateReportPdf({ test, athlete, thresholds, zones, pre
             {[
               { label: 'ATHLETE', value: athleteName },
               { label: 'SPORT',   value: sportLabel(sport) },
-              { label: 'LT1',     value: fmtIntensity(lt1, sport, inputMode) },
-              { label: 'LT2',     value: fmtIntensity(lt2, sport, inputMode) },
+              { label: 'LT1',     value: fmtInt(lt1) },
+              { label: 'LT2',     value: fmtInt(lt2) },
               { label: 'BASE La', value: test.baseLactate ? `${Number(test.baseLactate).toFixed(2)} mmol/L` : '—' },
             ].map(item => (
               <View key={item.label} style={s.coverPill}>
@@ -891,7 +1139,7 @@ export default function LactateReportPdf({ test, athlete, thresholds, zones, pre
               <Text style={s.cardLabel}>Athlete</Text>
               {[
                 ['Name',   athleteName],
-                ['Email',  athlete?.email || '—'],
+                ['Email',  pdfSafe(athlete?.email) || '—'],
                 ['Sport',  sportLabel(athlete?.sport || sport)],
                 // Prefer the weight captured at test time (testers commonly weigh in
                 // before each lab session) and fall back to the athlete's profile.
@@ -914,7 +1162,7 @@ export default function LactateReportPdf({ test, athlete, thresholds, zones, pre
               <Text style={s.cardLabel}>Test Info</Text>
               {[
                 ['Date',         testDate],
-                ['Title',        test.title || '—'],
+                ['Title',        pdfSafe(test.title) || '—'],
                 ['Base lactate', test.baseLactate ? `${Number(test.baseLactate).toFixed(2)} mmol/L` : '—'],
                 ['Unit system',  capitalize(unitSys)],
                 ['Stages',       results.length],
@@ -947,7 +1195,7 @@ export default function LactateReportPdf({ test, athlete, thresholds, zones, pre
               if (val == null) return null;
               const s = String(val).trim();
               if (!s) return null;
-              return unit ? `${s} ${unit}` : s;
+              return unit ? `${pdfSafe(s)} ${unit}` : pdfSafe(s);
             };
             // Stage duration is stored as seconds — render as MM:SS so it
             // matches what the user typed in TestingForm.
@@ -1038,10 +1286,10 @@ export default function LactateReportPdf({ test, athlete, thresholds, zones, pre
           <View style={{ flexDirection: 'row', gap: 10, marginBottom: 6, flexWrap: 'wrap' }}>
             {[
               { fill: '#dcfce7', label: 'Recovery (<LT1)' },
-              { fill: '#dbeafe', label: 'Aerobic (LT1→IAT)' },
-              { fill: '#fef3c7', label: 'Tempo (IAT→LT2)' },
-              { fill: '#fee2e2', label: 'Threshold (LT2→3.0)' },
-              { fill: '#ede9fe', label: 'VO₂max (>3.0)' },
+              { fill: '#dbeafe', label: `Aerobic (LT1${ARROW}IAT)` },
+              { fill: '#fef3c7', label: `Tempo (IAT${ARROW}LT2)` },
+              { fill: '#fee2e2', label: `Threshold (LT2${ARROW}3.0)` },
+              { fill: '#ede9fe', label: 'VO2max (>3.0)' },
             ].map((z) => (
               <View key={z.label} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
                 <View style={{ width: 10, height: 8, backgroundColor: z.fill, borderRadius: 1 }} />
@@ -1052,7 +1300,7 @@ export default function LactateReportPdf({ test, athlete, thresholds, zones, pre
 
           <View wrap={false}>
             {results.length >= 2
-              ? <LattateCurveSvg results={results} sport={sport} inputMode={inputMode} thresholds={thresholds} primary={brandPrimary} />
+              ? <LattateCurveSvg results={results} U={U} thresholds={thresholds} primary={brandPrimary} />
               : <Text style={{ fontSize: 8.5, color: C.gray }}>Not enough data points to render curve.</Text>
             }
           </View>
@@ -1063,14 +1311,14 @@ export default function LactateReportPdf({ test, athlete, thresholds, zones, pre
               Analysis
             </Text>
             <Text style={{ fontSize: 8.5, color: C.dark, lineHeight: 1.6 }}>
-              {analysisText}
+              {pdfSafe(analysisText)}
             </Text>
             {customNote ? (
               <View style={{ marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: C.midGray }}>
                 <Text style={{ fontSize: 7.5, color: C.gray, letterSpacing: 0.7, textTransform: 'uppercase', marginBottom: 4, fontFamily: 'Helvetica-Bold' }}>
                   Coach / Athlete Notes
                 </Text>
-                <Text style={{ fontSize: 8.5, color: C.dark, lineHeight: 1.6 }}>{customNote}</Text>
+                <Text style={{ fontSize: 8.5, color: C.dark, lineHeight: 1.6 }}>{pdfSafe(customNote)}</Text>
               </View>
             ) : null}
           </View>
@@ -1086,14 +1334,14 @@ export default function LactateReportPdf({ test, athlete, thresholds, zones, pre
             <SectionHeader title="Stage Results" color={brandPrimary} />
             <View style={s.table}>
               <View style={[s.tableHead, { backgroundColor: brandPrimary }]}>
-                {['Stage', isBike ? 'Power (W)' : 'Pace', 'HR (bpm)', 'Lactate (mmol/L)', 'RPE'].map(h => (
+                {['Stage', U.columnLabel, 'HR (bpm)', 'Lactate (mmol/L)', 'RPE'].map(h => (
                   <Text key={h} style={s.tableHeadT}>{h}</Text>
                 ))}
               </View>
               {results.map((r, i) => (
                 <View key={i} wrap={false} style={[s.tableRow, i % 2 === 1 ? s.tableRowAlt : {}]}>
                   <Text style={s.tableCellB}>{r.interval ?? i + 1}</Text>
-                  <Text style={s.tableCell}>{fmtIntensity(r.power, sport, inputMode)}</Text>
+                  <Text style={s.tableCell}>{fmtInt(r.power)}</Text>
                   <Text style={s.tableCell}>{r.heartRate || '—'}</Text>
                   <Text style={s.tableCell}>
                     {r.lactate != null ? Number(r.lactate).toFixed(2) : '—'}
@@ -1117,9 +1365,9 @@ export default function LactateReportPdf({ test, athlete, thresholds, zones, pre
           <SectionHeader title="Key Thresholds" color={brandPrimary} />
           <View style={{ flexDirection: 'row', gap: 12, marginBottom: 16 }}>
             {[
-              { label: 'LT1 · Aerobic Threshold',  val: fmtIntensity(lt1,  sport, inputMode), hr: lt1Hr, la: thresholds?.lactates?.['LTP1'],     color: brandPrimary },
-              { label: 'LT2 · Anaerobic Threshold', val: fmtIntensity(lt2,  sport, inputMode), hr: lt2Hr, la: thresholds?.lactates?.['LTP2'],     color: C.red       },
-              { label: 'OBLA 3.0',                  val: fmtIntensity(obla, sport, inputMode), hr: thresholds?.heartRates?.['OBLA 3.0'], la: thresholds?.lactates?.['OBLA 3.0'] ?? 3.0, color: C.secondary },
+              { label: 'LT1 · Aerobic Threshold',  val: fmtInt(lt1), hr: lt1Hr, la: thresholds?.lactates?.['LTP1'],     color: brandPrimary },
+              { label: 'LT2 · Anaerobic Threshold', val: fmtInt(lt2), hr: lt2Hr, la: thresholds?.lactates?.['LTP2'],     color: C.red       },
+              { label: 'OBLA 3.0',                  val: fmtInt(obla), hr: thresholds?.heartRates?.['OBLA 3.0'], la: thresholds?.lactates?.['OBLA 3.0'] ?? 3.0, color: C.secondary },
             ].map(item => (
               <View key={item.label} style={{ flex: 1, borderRadius: 8, borderWidth: 1.5,
                 borderColor: item.color, padding: 12, alignItems: 'center' }}>
@@ -1141,9 +1389,10 @@ export default function LactateReportPdf({ test, athlete, thresholds, zones, pre
           <SectionHeader title="All Threshold Methods" color={brandPrimary} />
           <View style={s.table}>
             <View style={[s.tableHead, { backgroundColor: brandPrimary }]}>
-              {['Method', isBike ? 'Power' : 'Pace', 'HR (bpm)', 'La (mmol/L)'].map(h => (
-                <Text key={h} style={s.tableHeadT}>{h}</Text>
-              ))}
+              <Text style={s.thrHeadMethod}>Method</Text>
+              <Text style={s.thrHeadVal}>{U.columnLabel}</Text>
+              <Text style={s.thrHeadVal}>HR (bpm)</Text>
+              <Text style={s.thrHeadVal}>La (mmol/L)</Text>
             </View>
             {thrMethods.map((method, i) => {
               const val = thresholds?.[method];
@@ -1155,7 +1404,7 @@ export default function LactateReportPdf({ test, athlete, thresholds, zones, pre
                   <Text style={[s.thrMethod, (method==='LTP1'||method==='LTP2') ? { fontFamily:'Helvetica-Bold' } : {}]}>
                     {method}
                   </Text>
-                  <Text style={[s.thrVal, { color: brandPrimary }]}>{fmtIntensity(val, sport, inputMode)}</Text>
+                  <Text style={[s.thrVal, { color: brandPrimary }]}>{fmtInt(val)}</Text>
                   <Text style={s.thrHr}>{hr ? `${Math.round(hr)} bpm` : '—'}</Text>
                   <Text style={s.thrLa}>{la ? `${Number(la).toFixed(2)}` : '—'}</Text>
                 </View>
@@ -1168,9 +1417,11 @@ export default function LactateReportPdf({ test, athlete, thresholds, zones, pre
             <SectionHeader title="Training Zones" color={brandPrimary} />
             <View style={s.table}>
               <View style={[s.tableHead, { backgroundColor: brandPrimary }]}>
-                {['Zone', 'Name', isBike ? 'Power (W)' : 'Pace', 'Heart Rate'].map(h => (
-                  <Text key={h} style={s.tableHeadT}>{h}</Text>
-                ))}
+                {/* Spacer stands in for the colour dot on each body row. */}
+                <View style={s.zoneHeadSpacer} />
+                <Text style={s.zoneHeadZone}>Zone</Text>
+                <Text style={s.zoneHeadVal}>{U.columnLabel}</Text>
+                <Text style={s.zoneHeadVal}>Heart Rate</Text>
               </View>
               {[1,2,3,4,5].map((z, i) => {
                 const zKey = `zone${z}`;
@@ -1178,29 +1429,48 @@ export default function LactateReportPdf({ test, athlete, thresholds, zones, pre
                 const zh   = zoneHr?.[zKey];
                 const color = C.zone[i];
                 if (!zd) return null;
+                // Zone bounds come out of the zone calculator as "M:SS" pace
+                // strings (or watts for bike) — parse back to seconds so both
+                // the pace and speed renderings come from one number.
+                const zoneSeconds = (v) => {
+                  if (v == null || v === '') return null;
+                  const str = String(v);
+                  if (str.includes(':')) {
+                    const [m, sec] = str.split(':').map(Number);
+                    return Number.isFinite(m) && Number.isFinite(sec) ? m * 60 + sec : null;
+                  }
+                  const n = Number(str);
+                  return Number.isFinite(n) && n > 0 ? n : null;
+                };
+                const secMin = isBike ? null : zoneSeconds(zd.min);
+                const secMax = isBike ? null : zoneSeconds(zd.max);
+                const speedOf = (sec) => (sec > 0 ? (U.isSwim ? 360 : 3600) / sec : null);
+                const paceRange = (secMin && secMax)
+                  ? `${fmtPace(secMin)} – ${fmtPace(secMax)} ${U.paceUnit}`
+                  : `${zd.min || '—'} – ${zd.max || '—'}`;
+                const speedRange = (secMin && secMax)
+                  ? `${speedOf(secMin).toFixed(1)} – ${speedOf(secMax).toFixed(1)} ${U.speedUnit}`
+                  : null;
+                // Lead with whatever the reader picked; keep the other as a
+                // subline so the table serves both kinds of athlete.
                 const valStr = isBike
                   ? `${Math.round(zd.min ?? 0)} – ${Math.round(zd.max ?? 0)} W`
-                  : `${zd.min || '—'} – ${zd.max || '—'} /km`;
-                // Speed (km/h) line for pace sports — many athletes record speed,
-                // so show the km/h equivalent under the pace range. Pace "MM:SS"
-                // (sec per km) → km/h = 3600 / secPerKm. Slower pace = lower km/h.
-                const paceToKmh = (p) => {
-                  if (!p) return null;
-                  const parts = String(p).split(':').map(Number);
-                  const sec = parts.length === 2 ? parts[0] * 60 + parts[1] : Number(p);
-                  return sec > 0 ? 3600 / sec : null;
-                };
-                const kmhMin = isBike ? null : paceToKmh(zd.min);
-                const kmhMax = isBike ? null : paceToKmh(zd.max);
-                const speedStr = (kmhMin && kmhMax) ? `${kmhMin.toFixed(1)} – ${kmhMax.toFixed(1)} km/h` : null;
+                  : (U.displayMode === 'speed' ? (speedRange || paceRange) : paceRange);
+                const speedStr = isBike
+                  ? null
+                  : (U.displayMode === 'speed' ? (speedRange ? paceRange : null) : speedRange);
                 const hrStr = zh
                   ? `${Math.round(zh.min ?? 0)} – ${Math.round(zh.max ?? 0)} bpm`
                   : '—';
                 return (
                   <View key={z} style={[s.zoneRow, i % 2 === 1 ? s.tableRowAlt : {}]}>
                     <View style={[s.zoneDot, { backgroundColor: color }]} />
-                    <Text style={s.zoneLabel}>Z{z}</Text>
-                    <Text style={s.zoneName}>{zoneNames[i]}</Text>
+                    {/* Number and name are one column — "Z1" and "Recovery" in
+                        separate columns just said the same thing twice. */}
+                    <View style={s.zoneLabelWrap}>
+                      <Text style={s.zoneLabel}>Z{z}</Text>
+                      <Text style={s.zoneName}>{zoneNames[i]}</Text>
+                    </View>
                     <View style={[s.zoneVal, { alignItems: 'flex-end' }]}>
                       <Text>{valStr}</Text>
                       {speedStr && <Text style={{ fontSize: 6.5, color: C.gray }}>{speedStr}</Text>}
@@ -1220,45 +1490,60 @@ export default function LactateReportPdf({ test, athlete, thresholds, zones, pre
             </>
           )}
 
-          {/* ── Comparison with previous test ── */}
+          {/* ── Comparison with previous test ──
+              Header + chart share a wrap={false} block so the heading can never
+              be left stranded at the foot of a page with the chart overleaf. */}
           {hasPrev && <>
-            <SectionHeader title={hasPrev2 ? `Progress Trend · ${prevDate2} → ${prevDate} → ${testDate}` : `Comparison vs Previous Test · ${prevDate}`} color={brandPrimary} />
+            <View wrap={false}>
+              <SectionHeader title={hasPrev2 ? `Progress Trend · ${prevDate2} ${ARROW} ${prevDate} ${ARROW} ${testDate}` : `Comparison vs Previous Test · ${prevDate}`} color={brandPrimary} />
 
-            {/* Overlaid dual-curve chart (primary comparison only) */}
-            <ComparisonCurveSvg
-              currentResults={results}
-              prevResults={prevTest.results}
-              sport={sport}
-              inputMode={inputMode}
-              currentThresholds={thresholds}
-              prevThresholds={prevThresholds}
-              currentDate={testDate}
-              prevDate={prevDate}
-              primary={brandPrimary}
-            />
+              {/* Overlaid dual-curve chart (primary comparison only) */}
+              <ComparisonCurveSvg
+                currentResults={results}
+                prevResults={prevTest.results}
+                U={U}
+                currentThresholds={thresholds}
+                prevThresholds={prevThresholds}
+                currentDate={testDate}
+                prevDate={prevDate}
+                primary={brandPrimary}
+              />
+            </View>
 
             {/* Delta cards (current vs primary comparison) */}
             <View style={[s.deltaCards, { marginTop: 12 }]}>
               {[
-                { label: 'LT1 change', cur: lt1,   prev: prevLt1,   unit: isBike ? 'W' : 's', better: isBike },
-                { label: 'LT2 change', cur: lt2,   prev: prevLt2,   unit: isBike ? 'W' : 's', better: isBike },
-                { label: 'LT2 HR',     cur: lt2Hr, prev: prevLt2Hr, unit: 'bpm', better: false },
+                { label: 'LT1 change', cur: lt1,   prev: prevLt1,   kind: 'intensity' },
+                { label: 'LT2 change', cur: lt2,   prev: prevLt2,   kind: 'intensity' },
+                // Heart rate is bpm — it must never be run through the intensity
+                // formatter, which is what printed "170.0 km/h -> 167.0 km/h".
+                { label: 'LT2 HR',     cur: lt2Hr, prev: prevLt2Hr, kind: 'hr' },
               ].map(item => {
-                const diff = Number(item.cur) - Number(item.prev);
-                const sign = diff > 0 ? '+' : '';
-                const good = item.better ? diff > 0 : diff < 0;
-                const st   = diff === 0 ? {} : good ? s.deltaPositive : s.deltaNegative;
-                const valStr = item.unit === 'bpm'
-                  ? `${sign}${Math.round(diff)} bpm`
-                  : isBike
-                    ? `${sign}${Math.round(diff)} W`
-                    : `${sign}${fmtPace(Math.abs(diff))}`;
+                const isHr = item.kind === 'hr';
+                const finite = Number.isFinite(Number(item.cur)) && Number.isFinite(Number(item.prev));
+                let valStr = '—';
+                let st = {};
+                if (finite && isHr) {
+                  const d = Math.round(Number(item.cur) - Number(item.prev));
+                  valStr = `${d > 0 ? '+' : ''}${d} bpm`;
+                  // A lower HR at the same threshold is the favourable direction.
+                  st = d === 0 ? {} : d < 0 ? s.deltaPositive : s.deltaNegative;
+                } else if (finite) {
+                  const d = ltDelta(item.cur, item.prev);
+                  if (d) {
+                    valStr = d.signed;
+                    st = d.same ? {} : d.improved ? s.deltaPositive : s.deltaNegative;
+                  }
+                }
+                const fmtSide = isHr
+                  ? (v) => (Number.isFinite(Number(v)) ? `${Math.round(Number(v))} bpm` : '—')
+                  : fmtInt;
                 return (
                   <View key={item.label} style={s.deltaCard}>
                     <Text style={s.deltaLabel}>{item.label}</Text>
-                    <Text style={[s.deltaBig, st]}>{Number.isFinite(diff) ? valStr : '—'}</Text>
+                    <Text style={[s.deltaBig, st]}>{valStr}</Text>
                     <Text style={{ fontSize: 7.5, color: C.gray }}>
-                      {fmtIntensity(item.prev, sport, inputMode)} → {fmtIntensity(item.cur, sport, inputMode)}
+                      {fmtSide(item.prev)} {ARROW} {fmtSide(item.cur)}
                     </Text>
                   </View>
                 );
@@ -1278,15 +1563,15 @@ export default function LactateReportPdf({ test, athlete, thresholds, zones, pre
                 {/* Oldest comparison test */}
                 <View style={[s.trendRow, s.trendRowAlt]}>
                   <Text style={s.trendCellDate}>{prevDate2}</Text>
-                  <Text style={s.trendCellVal}>{fmtIntensity(prevLt1_2, sport, inputMode)}</Text>
-                  <Text style={s.trendCellVal}>{fmtIntensity(prevLt2_2, sport, inputMode)}</Text>
+                  <Text style={s.trendCellVal}>{fmtInt(prevLt1_2)}</Text>
+                  <Text style={s.trendCellVal}>{fmtInt(prevLt2_2)}</Text>
                   <Text style={s.trendCellVal}>{prevThresholds2?.heartRates?.['LTP2'] ? `${Math.round(prevThresholds2.heartRates['LTP2'])} bpm` : '—'}</Text>
                 </View>
                 {/* More recent comparison test */}
                 <View style={s.trendRow}>
                   <Text style={s.trendCellDate}>{prevDate}</Text>
-                  <Text style={s.trendCellVal}>{fmtIntensity(prevLt1, sport, inputMode)}</Text>
-                  <Text style={s.trendCellVal}>{fmtIntensity(prevLt2, sport, inputMode)}</Text>
+                  <Text style={s.trendCellVal}>{fmtInt(prevLt1)}</Text>
+                  <Text style={s.trendCellVal}>{fmtInt(prevLt2)}</Text>
                   <Text style={s.trendCellVal}>{prevLt2Hr ? `${Math.round(prevLt2Hr)} bpm` : '—'}</Text>
                 </View>
                 {/* Current test (highlighted) */}
@@ -1295,8 +1580,8 @@ export default function LactateReportPdf({ test, athlete, thresholds, zones, pre
                     <Text style={[s.trendCellDate, { color: brandPrimary, fontFamily: 'Helvetica-Bold' }]}>{testDate}</Text>
                     <Text style={[s.trendBadge, { backgroundColor: brandPrimary }]}>NOW</Text>
                   </View>
-                  <Text style={[s.trendCellVal, { color: brandPrimary }]}>{fmtIntensity(lt1, sport, inputMode)}</Text>
-                  <Text style={[s.trendCellVal, { color: brandPrimary }]}>{fmtIntensity(lt2, sport, inputMode)}</Text>
+                  <Text style={[s.trendCellVal, { color: brandPrimary }]}>{fmtInt(lt1)}</Text>
+                  <Text style={[s.trendCellVal, { color: brandPrimary }]}>{fmtInt(lt2)}</Text>
                   <Text style={[s.trendCellVal, { color: brandPrimary }]}>{lt2Hr ? `${Math.round(lt2Hr)} bpm` : '—'}</Text>
                 </View>
               </View>

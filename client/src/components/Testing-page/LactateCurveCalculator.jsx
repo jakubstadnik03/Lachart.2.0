@@ -515,6 +515,8 @@ const chartXToStoredX = (x, opts) => {
 const lactateZoneLtpOverlayPlugin = {
   id: 'lactateZoneLtpOverlay',
   beforeDraw(chart) {
+    // Cleared every frame; set below when there are LT labels to paint on top.
+    chart.$ltLabelPass = null;
     const opts = chart.options.plugins?.lactateZoneLtpOverlay;
     if (!opts) return;
 
@@ -685,156 +687,169 @@ const lactateZoneLtpOverlayPlugin = {
       });
 
       if (labels.length > 0) {
-        ctx.save();
+        // The dashed LT1/LT2 markers are ordinary Chart.js line datasets,
+        // so they paint after this hook and used to run straight through
+        // these boxes. Defer the label pass until the datasets are down.
+        chart.$ltLabelPass = () => {
+          ctx.save();
 
-        const mobileMode = opts.isMobile === true;
-        const padXBox = mobileMode ? 6 : 10;
-        const padYBox = mobileMode ? 4 : 7;
-        const lineGap = mobileMode ? 2 : 3;
-        const fontPrimary = mobileMode
-          ? '600 9px system-ui, -apple-system, "Segoe UI", sans-serif'
-          : '600 11px system-ui, -apple-system, "Segoe UI", sans-serif';
-        const fontSecondary = mobileMode
-          ? '8px system-ui, -apple-system, "Segoe UI", sans-serif'
-          : '10px system-ui, -apple-system, "Segoe UI", sans-serif';
-        const topMargin = mobileMode ? 4 : 6;
-        const accentStripH = mobileMode ? 2 : 3;
+          const mobileMode = opts.isMobile === true;
+          const padXBox = mobileMode ? 6 : 10;
+          const padYBox = mobileMode ? 4 : 7;
+          const lineGap = mobileMode ? 2 : 3;
+          const fontPrimary = mobileMode
+            ? '600 9px system-ui, -apple-system, "Segoe UI", sans-serif'
+            : '600 11px system-ui, -apple-system, "Segoe UI", sans-serif';
+          const fontSecondary = mobileMode
+            ? '8px system-ui, -apple-system, "Segoe UI", sans-serif'
+            : '10px system-ui, -apple-system, "Segoe UI", sans-serif';
+          const topMargin = mobileMode ? 4 : 6;
+          const accentStripH = mobileMode ? 2 : 3;
 
-        const ltTitleFor = (label) =>
-          label === 'LT1'
-            ? 'LT1 · Aerobic threshold'
-            : 'LT2 · Anaerobic threshold';
+          const ltTitleFor = (label) =>
+            label === 'LT1'
+              ? 'LT1 · Aerobic threshold'
+              : 'LT2 · Anaerobic threshold';
 
-        const drawTooltip = (labelData, bx, by) => {
-          const line1 = ltTitleFor(labelData.label);
-          const line2 = labelData.isHRView
-            ? `${labelData.lactateText} · ${labelData.valueText}`
-            : labelData.valueText;
-          const line3 = labelData.isHRView ? null : labelData.lactateText;
+          const drawTooltip = (labelData, bx, by) => {
+            const line1 = ltTitleFor(labelData.label);
+            const line2 = labelData.isHRView
+              ? `${labelData.lactateText} · ${labelData.valueText}`
+              : labelData.valueText;
+            const line3 = labelData.isHRView ? null : labelData.lactateText;
 
-          const accent =
-            labelData.label === 'LT1'
-              ? colorMap['LTP1'] || '#16a34a'
-              : colorMap['LTP2'] || '#dc2626';
+            const accent =
+              labelData.label === 'LT1'
+                ? colorMap['LTP1'] || '#16a34a'
+                : colorMap['LTP2'] || '#dc2626';
 
-          ctx.font = fontPrimary;
-          const w1 = ctx.measureText(line1).width;
-          ctx.font = fontSecondary;
-          const w2 = ctx.measureText(line2).width;
-          const w3 = line3 ? ctx.measureText(line3).width : 0;
-          const boxW = Math.ceil(Math.max(w1, w2, w3) + padXBox * 2 + 4);
-          const line1H = 13;
-          const line2H = 12;
-          const line3H = line3 ? 12 : 0;
-          const contentH =
-            accentStripH +
-            padYBox +
-            line1H +
-            lineGap +
-            line2H +
-            (line3 ? lineGap + line3H : 0) +
-            padYBox;
+            ctx.font = fontPrimary;
+            const w1 = ctx.measureText(line1).width;
+            ctx.font = fontSecondary;
+            const w2 = ctx.measureText(line2).width;
+            const w3 = line3 ? ctx.measureText(line3).width : 0;
+            const boxW = Math.ceil(Math.max(w1, w2, w3) + padXBox * 2 + 4);
+            const line1H = 13;
+            const line2H = 12;
+            const line3H = line3 ? 12 : 0;
+            const contentH =
+              accentStripH +
+              padYBox +
+              line1H +
+              lineGap +
+              line2H +
+              (line3 ? lineGap + line3H : 0) +
+              padYBox;
 
-          const gapFromLine = 8;
-          const lineX = labelData.xPixel;
-          const r = 8;
+            const gapFromLine = 8;
+            const lineX = labelData.xPixel;
+            const r = 8;
 
-          ctx.shadowColor = 'rgba(15, 23, 42, 0.12)';
-          ctx.shadowBlur = 10;
-          ctx.shadowOffsetY = 2;
-          ctx.fillStyle = 'rgba(255, 255, 255, 0.96)';
-          ctx.strokeStyle = 'rgba(15, 23, 42, 0.1)';
-          ctx.lineWidth = 1;
+            ctx.shadowColor = 'rgba(15, 23, 42, 0.12)';
+            ctx.shadowBlur = 10;
+            ctx.shadowOffsetY = 2;
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.96)';
+            ctx.strokeStyle = 'rgba(15, 23, 42, 0.1)';
+            ctx.lineWidth = 1;
 
-          ctx.beginPath();
-          if (typeof ctx.roundRect === 'function') {
-            ctx.roundRect(bx, by, boxW, contentH, r);
-          } else {
-            const rr = r;
-            ctx.moveTo(bx + rr, by);
-            ctx.arcTo(bx + boxW, by, bx + boxW, by + contentH, rr);
-            ctx.arcTo(bx + boxW, by + contentH, bx, by + contentH, rr);
-            ctx.arcTo(bx, by + contentH, bx, by, rr);
-            ctx.arcTo(bx, by, bx + boxW, by, rr);
-            ctx.closePath();
-          }
-          ctx.fill();
-          ctx.shadowBlur = 0;
-          ctx.shadowOffsetY = 0;
-          ctx.stroke();
-
-          ctx.fillStyle = accent;
-          ctx.fillRect(bx + r * 0.35, by + 0.5, boxW - r * 0.7, accentStripH);
-
-          const textX = bx + boxW / 2;
-          let ty = by + accentStripH + padYBox + line1H - 2;
-          ctx.textBaseline = 'alphabetic';
-          ctx.textAlign = 'center';
-          ctx.font = fontPrimary;
-          ctx.fillStyle = 'rgba(15, 23, 42, 0.95)';
-          ctx.fillText(line1, textX, ty);
-          ty += lineGap + line2H;
-          ctx.font = fontSecondary;
-          ctx.fillStyle = 'rgba(71, 85, 105, 0.95)';
-          ctx.fillText(line2, textX, ty);
-          if (line3) {
-            ty += lineGap + line3H;
-            ctx.fillText(line3, textX, ty);
-          }
-
-          const boxBottom = by + contentH;
-          const halfBase = 6;
-          ctx.fillStyle = 'rgba(255, 255, 255, 0.96)';
-          ctx.strokeStyle = 'rgba(15, 23, 42, 0.12)';
-          ctx.lineWidth = 1;
-          ctx.beginPath();
-          ctx.moveTo(lineX - halfBase, boxBottom);
-          ctx.lineTo(lineX + halfBase, boxBottom);
-          ctx.lineTo(lineX, boxBottom + gapFromLine);
-          ctx.closePath();
-          ctx.fill();
-          ctx.stroke();
-        };
-
-        const baseTop = chartArea.top + topMargin;
-        const placedBoxes = [];
-        labels.forEach((labelData) => {
-          const title = ltTitleFor(labelData.label);
-          ctx.font = fontPrimary;
-          const w1 = ctx.measureText(title).width;
-          ctx.font = fontSecondary;
-          const w2 = ctx.measureText(labelData.valueText).width;
-          const w3 = labelData.isHRView ? 0 : ctx.measureText(labelData.lactateText).width;
-          const boxW = Math.ceil(Math.max(w1, w2, w3) + padXBox * 2 + 4);
-          const line1H = 13;
-          const line2H = 12;
-          const line3H = labelData.isHRView ? 0 : 12;
-          const contentH =
-            accentStripH +
-            padYBox +
-            line1H +
-            lineGap +
-            line2H +
-            (line3H ? lineGap + line3H : 0) +
-            padYBox;
-
-          let bx = labelData.xPixel - boxW / 2;
-          bx = Math.max(4 + chartArea.left, Math.min(bx, chartArea.right - boxW - 4));
-          let by = baseTop;
-          for (const prev of placedBoxes) {
-            const overlapX = bx < prev.bx + prev.boxW && bx + boxW > prev.bx;
-            const overlapY = by < prev.by + prev.contentH && by + contentH > prev.by;
-            if (overlapX && overlapY) {
-              by = prev.by + prev.contentH + 4;
+            ctx.beginPath();
+            if (typeof ctx.roundRect === 'function') {
+              ctx.roundRect(bx, by, boxW, contentH, r);
+            } else {
+              const rr = r;
+              ctx.moveTo(bx + rr, by);
+              ctx.arcTo(bx + boxW, by, bx + boxW, by + contentH, rr);
+              ctx.arcTo(bx + boxW, by + contentH, bx, by + contentH, rr);
+              ctx.arcTo(bx, by + contentH, bx, by, rr);
+              ctx.arcTo(bx, by, bx + boxW, by, rr);
+              ctx.closePath();
             }
-          }
-          placedBoxes.push({ bx, by, boxW, contentH });
-          drawTooltip(labelData, bx, by);
-        });
+            ctx.fill();
+            ctx.shadowBlur = 0;
+            ctx.shadowOffsetY = 0;
+            ctx.stroke();
 
-        ctx.restore();
+            ctx.fillStyle = accent;
+            ctx.fillRect(bx + r * 0.35, by + 0.5, boxW - r * 0.7, accentStripH);
+
+            const textX = bx + boxW / 2;
+            let ty = by + accentStripH + padYBox + line1H - 2;
+            ctx.textBaseline = 'alphabetic';
+            ctx.textAlign = 'center';
+            ctx.font = fontPrimary;
+            ctx.fillStyle = 'rgba(15, 23, 42, 0.95)';
+            ctx.fillText(line1, textX, ty);
+            ty += lineGap + line2H;
+            ctx.font = fontSecondary;
+            ctx.fillStyle = 'rgba(71, 85, 105, 0.95)';
+            ctx.fillText(line2, textX, ty);
+            if (line3) {
+              ty += lineGap + line3H;
+              ctx.fillText(line3, textX, ty);
+            }
+
+            const boxBottom = by + contentH;
+            const halfBase = 6;
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.96)';
+            ctx.strokeStyle = 'rgba(15, 23, 42, 0.12)';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(lineX - halfBase, boxBottom);
+            ctx.lineTo(lineX + halfBase, boxBottom);
+            ctx.lineTo(lineX, boxBottom + gapFromLine);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+          };
+
+          const baseTop = chartArea.top + topMargin;
+          const placedBoxes = [];
+          labels.forEach((labelData) => {
+            const title = ltTitleFor(labelData.label);
+            ctx.font = fontPrimary;
+            const w1 = ctx.measureText(title).width;
+            ctx.font = fontSecondary;
+            const w2 = ctx.measureText(labelData.valueText).width;
+            const w3 = labelData.isHRView ? 0 : ctx.measureText(labelData.lactateText).width;
+            const boxW = Math.ceil(Math.max(w1, w2, w3) + padXBox * 2 + 4);
+            const line1H = 13;
+            const line2H = 12;
+            const line3H = labelData.isHRView ? 0 : 12;
+            const contentH =
+              accentStripH +
+              padYBox +
+              line1H +
+              lineGap +
+              line2H +
+              (line3H ? lineGap + line3H : 0) +
+              padYBox;
+
+            let bx = labelData.xPixel - boxW / 2;
+            bx = Math.max(4 + chartArea.left, Math.min(bx, chartArea.right - boxW - 4));
+            let by = baseTop;
+            for (const prev of placedBoxes) {
+              const overlapX = bx < prev.bx + prev.boxW && bx + boxW > prev.bx;
+              const overlapY = by < prev.by + prev.contentH && by + contentH > prev.by;
+              if (overlapX && overlapY) {
+                by = prev.by + prev.contentH + 4;
+              }
+            }
+            placedBoxes.push({ bx, by, boxW, contentH });
+            drawTooltip(labelData, bx, by);
+          });
+
+          ctx.restore();
+        };
       }
     }
+  },
+
+  /** Paints the LT1/LT2 callouts on top of the datasets (see beforeDraw). */
+  afterDatasetsDraw(chart) {
+    const pass = chart.$ltLabelPass;
+    if (!pass) return;
+    chart.$ltLabelPass = null;
+    pass();
   },
 };
 
