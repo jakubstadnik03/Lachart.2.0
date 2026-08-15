@@ -920,6 +920,9 @@ export default function DashboardPage() {
   const [sparklineData, setSparklineData] = useState([]);
   const [formMetricsLoading, setFormMetricsLoading] = useState(true);
   const formFitnessRequestGen = useRef(0);
+  /** Largest activity count any published PMC was computed from — see
+   *  recomputeFormFitness. Reset when the athlete changes. */
+  const widestActivityCountRef = useRef(0);
   const [isTrainingFormOpen, setIsTrainingFormOpen] = useState(false);
 
   // For heavy dashboard widgets (TrainingTable, TrainingStats, TrainingGraph, SpiderChart),
@@ -2011,6 +2014,9 @@ export default function DashboardPage() {
     setSparklineData([]);
     setFormMetricsLoading(true);
     formFitnessRequestGen.current += 1;
+    // A different athlete's history is not comparable — start the "widest so
+    // far" count over, or their first, partial load would be discarded.
+    widestActivityCountRef.current = 0;
     // Paint cached calendar immediately so native PMC can compute without waiting for network.
     if (dashboardDataAthleteId) {
       try {
@@ -2047,6 +2053,21 @@ export default function DashboardPage() {
       setFormMetricsLoading(false);
       return false;
     }
+    // Never publish PMC from a smaller history than one already used.
+    //
+    // CTL and ATL are exponential averages seeded at zero over a 252-day
+    // warmup, so a truncated history over-weights recent load: the same
+    // athlete read 157/+11/128 on a partial calendar and 145/+9/119 once it
+    // had all loaded. Because the calendar arrives in pieces and several
+    // effects recompute as it grows, the first, worst-informed result was the
+    // one shown — and pull-to-refresh "fixed" it only by recomputing on the
+    // full set.
+    //
+    // Counting activities is the cheap proxy for how much history we hold. A
+    // recompute on fewer of them cannot be better informed than one already
+    // published, so it is dropped rather than painted.
+    if (acts.length < widestActivityCountRef.current) return true;
+    widestActivityCountRef.current = acts.length;
     const { series, todayMetrics: tm } = computePmcFromActivities(acts, profile, {
       displayDays: PMC_MAX_VIEW_DAYS,
       tssUser: userRef.current,
@@ -2109,6 +2130,11 @@ export default function DashboardPage() {
 
     clearFormFitnessCache();
     setFormMetricsLoading(true);
+    // An explicit refresh re-reads everything, so whatever it returns is the
+    // truth even if it is a shorter list than before — an activity may have
+    // been deleted. Clear the "widest so far" guard or that delete would never
+    // reach the numbers.
+    widestActivityCountRef.current = 0;
     try {
       localStorage.removeItem(`calendarData_${targetId}`);
       localStorage.removeItem(`calendarData_timestamp_${targetId}`);
