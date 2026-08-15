@@ -18,6 +18,8 @@ import { calculateZonesFromTest } from '../components/Testing-page/zoneCalculato
 import { calculateThresholds as desktopCalculateThresholds } from '../components/Testing-page/DataTable';
 import NewTestSheet from '../components/NativeDashboard/NewTestSheet';
 import LT2TrendSparkline from '../components/DashboardPage/LT2TrendSparkline';
+import { usePremium } from '../hooks/usePremium';
+import UpgradeModal from '../components/UpgradeModal';
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -267,6 +269,11 @@ export default function NativeTestingPage({ user, athleteId: externalAthleteId }
   const athleteId = externalAthleteId || user?._id || user?.id;
 
   const [tests, setTests] = useState([]);
+  // The web TestingPage caps the free plan at one test per athlete; this page
+  // never checked, so the app let a free account add as many as it liked. The
+  // server rejects them anyway — the gate is what turns a silent failure into
+  // the upgrade prompt the web has always shown.
+  const { isPremium, gate, UpgradeModalProps } = usePremium();
   const [loading, setLoading] = useState(true);
   const [selectedSport, setSelectedSport] = useState('bike');
   const [selectedTestId, setSelectedTestId] = useState(testIdFromUrl || null);
@@ -444,7 +451,13 @@ export default function NativeTestingPage({ user, athleteId: externalAthleteId }
             </div>
           </div>
           <button
-            onClick={() => setNewSheetOpen(true)}
+            onClick={() => {
+              if (!isPremium && tests.length >= 1) {
+                gate('Unlimited tests — upgrade to add more', 'pro');
+                return;
+              }
+              setNewSheetOpen(true);
+            }}
             onMouseDown={(e) => { e.currentTarget.style.transform = 'scale(.94)'; }}
             onMouseUp={(e)   => { e.currentTarget.style.transform = ''; }}
             onMouseLeave={(e)=> { e.currentTarget.style.transform = ''; }}
@@ -1166,6 +1179,8 @@ export default function NativeTestingPage({ user, athleteId: externalAthleteId }
 
       {/* New-test bottom sheet — wraps NewTestingComponent so the user can fill
           in stages, see live curve preview, and save without leaving the app. */}
+      <UpgradeModal {...UpgradeModalProps} />
+
       <NewTestSheet
         open={newSheetOpen}
         onClose={() => setNewSheetOpen(false)}
