@@ -270,8 +270,26 @@ export default function PerformanceInsightsSlide({
     });
   };
 
-  // Once activities are on screen, compute locally — don't block on parent PMC state.
-  if (loading && !activities?.length) {
+  // Wait for the server's numbers rather than showing the local derivation as
+  // if it were final.
+  //
+  // This used to paint as soon as activities had loaded, on the reasoning that
+  // a local figure beats a skeleton. But the local derivation and the server's
+  // calculateFormFitnessData do not agree — they read 157/+11/128 against
+  // 145/+9/119 on a real account — so the card showed one set of numbers and
+  // then silently swapped them for another, and the only way to get the right
+  // ones was to pull-to-refresh. A number an athlete has to distrust is worth
+  // less than a skeleton that resolves in a moment.
+  //
+  // Only the first load waits: once server metrics are in hand a background
+  // refresh keeps showing them, and if the server genuinely has nothing the
+  // local derivation still renders below as the fallback it was meant to be.
+  const awaitingServerMetrics = loading
+    && todayMetrics?.fitness == null
+    && todayMetrics?.form == null
+    && todayMetrics?.fatigue == null;
+
+  if (awaitingServerMetrics || (loading && !activities?.length)) {
     return (
       <div style={CARD}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
