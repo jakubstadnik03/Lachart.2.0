@@ -2701,6 +2701,11 @@ export default function DashboardPage() {
           if (type === 'updated' && planned?._id) {
             setPlannedWorkouts(prev => upsertPlannedWorkoutList(prev, planned));
             notifyPlannedWorkoutUpdated(planned);
+            // A plan that just gained a completedTrainingId means a session was
+            // recorded by hand a moment ago. The plan list knows; the activity
+            // list does not, and without a reload the new session simply does
+            // not appear — no card, no charts, nothing against the plan.
+            if (planned.completedTrainingId) refreshNativeDashboard();
           } else if (type === 'deleted' && id) {
             setPlannedWorkouts(prev => removePlannedWorkoutFromList(prev, id));
             notifyPlannedWorkoutDeleted(id);

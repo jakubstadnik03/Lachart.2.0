@@ -162,7 +162,12 @@ export default function PlannedWorkoutEditor({
     setDoneError(null);
     try {
       const distM = Number(doneDist) || 0;
-      const { data: created } = await api.post('/training', {
+      // addTraining, not a raw POST: it calls invalidateTrainingCaches on the
+      // way out. Posting directly left every cached activity list untouched,
+      // so the session saved fine and then simply did not appear — the plan
+      // still had nothing against it until the app was restarted.
+      const { addTraining } = await import('../../services/api');
+      const { data: created } = await addTraining({
         athleteId: athleteId || undefined,
         title: title || 'Untitled Training',
         sport: normSport(sport),
@@ -1141,9 +1146,12 @@ function DoneInput({ value, onChange, suffix = null, width = 44 }) {
         onChange={(e) => onChange(e.target.value.replace(/[^\d]/g, ''))}
         inputMode="numeric"
         style={{
-          width, padding: '3px 5px', borderRadius: 7, border: '1px solid #cbd5e1',
+          width, padding: '2px 5px', borderRadius: 7, border: '1px solid #cbd5e1',
           background: '#fff', color: '#0f172a', fontFamily: 'inherit',
-          fontSize: 13, fontWeight: 800, textAlign: 'right',
+          // Matches the Planned column beside it: same size, same weight. The
+          // inputs were bigger and bold, so the two halves of one comparison
+          // did not read as a pair.
+          fontSize: 11, fontWeight: 600, textAlign: 'right',
           fontVariantNumeric: 'tabular-nums',
         }}
       />
