@@ -1747,14 +1747,29 @@ export default function NativeTrainingPage({
       });
   }, [categoryFilteredTrainings]);
 
-  // Auto-select the most-repeated workout once data or category filter changes
+  // Open on the session you just did, not the one with the most history.
+  //
+  // The dropdown is ordered by what is most worth comparing — lactate first,
+  // then repeats — and the default followed that order. So the page opened on
+  // a workout last done months ago while the ride from this morning sat
+  // several taps away, which is backwards: you come here to see how the last
+  // one went. The ordering of the list is still the comparison-value one; only
+  // where it starts has changed.
   useEffect(() => {
     if (grouped.length === 0) {
       setSelectedTitle(null);
       return;
     }
     if (selectedTitle && grouped.find(([t]) => t === selectedTitle)) return;
-    setSelectedTitle(grouped[0][0]);
+    let newestTitle = grouped[0][0];
+    let newestAt = -Infinity;
+    for (const [title, arr] of grouped) {
+      for (const t of arr) {
+        const at = getDate(t).getTime();
+        if (Number.isFinite(at) && at > newestAt) { newestAt = at; newestTitle = title; }
+      }
+    }
+    setSelectedTitle(newestTitle);
   }, [grouped, selectedTitle, categoryFilterId]);
 
   const sessions = useMemo(() => {
