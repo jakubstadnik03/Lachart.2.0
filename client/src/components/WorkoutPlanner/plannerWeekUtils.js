@@ -63,9 +63,18 @@ export function plannedWorkoutTss(pw, context) {
  * athlete confirmed as correct.
  */
 export function completedSecs(t) {
-  const v = t?.totalTime || t?.duration || t?.durationSeconds
-    || t?.totalTimerTime || t?.totalElapsedTime || t?.elapsedTime || t?.elapsed_time
-    || t?.movingTime || t?.moving_time;
+  // This is WeekStrip's chain, character for character, because WeekStrip is
+  // the reading the athlete confirmed as right — swim 7:00 where the calendar
+  // said 5:40. Guessing a "better" order was the mistake: the two screens then
+  // disagreed in a way no amount of reasoning about which field means what
+  // could settle. WeekStrip imports this function too, so they cannot drift
+  // apart again.
+  //
+  // The three at the end can only fire when every field above is absent, so
+  // they extend the chain without changing any answer it already gives.
+  const v = t?.totalTime || t?.duration || t?.movingTime || t?.moving_time
+    || t?.elapsedTime || t?.elapsed_time
+    || t?.totalTimerTime || t?.totalElapsedTime || t?.durationSeconds;
   const n = Number(v);
   return Number.isFinite(n) ? n : 0;
 }

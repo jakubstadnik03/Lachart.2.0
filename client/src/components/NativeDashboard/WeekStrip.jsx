@@ -4,6 +4,7 @@ import { resolveSportKey, SportGlyph, SPORT_ICON_COLORS } from '../shared/SportI
 import { resolveActivityTss } from '../../utils/computeTss';
 import { mergeProfileZones } from '../../utils/inferThresholdsFromActivities';
 import { activityOnLocalDay } from '../../utils/formFitnessFromActivities';
+import { completedSecs } from '../WorkoutPlanner/plannerWeekUtils';
 import { useAuth } from '../../context/AuthProvider';
 import { TSS_DISPLAY_MODE_EVENT } from '../../utils/uiPrefs';
 
@@ -82,7 +83,10 @@ function dailyTotals(activities, plannedWorkouts, date, userProfile, tssUser) {
   let tss = 0, secs = 0;
   for (const a of acts) {
     tss  += resolveActivityTss(a, userProfile, { user: tssUser || userProfile }) || 0;
-    secs += Number(a.totalTime || a.duration || a.movingTime || a.moving_time || a.elapsedTime || a.elapsed_time || 0) || 0;
+    // Shared with the calendar's week summary. The chain lived here and was
+    // copied — differently — in two other places, and the copies disagreed
+    // about swim durations by more than an hour a week.
+    secs += completedSecs(a);
   }
   if (acts.length === 0) {
     // No activities → fall back to planned for future days
