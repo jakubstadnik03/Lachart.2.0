@@ -1775,17 +1775,15 @@ export default function NativeTrainingPage({
       // single-session titles confused users who expected to see every recent
       // workout listed (e.g. a fresh "5×10min LT2" that they only did once).
       .filter(([, arr]) => arr.length >= 1)
-      // Prioritise titles that have lactate measurements first, then repeats,
-      // so the most "valuable to compare" sessions surface at the top of the
-      // workout selector dropdown.
+      // Newest first, full stop.
+      //
+      // This used to lead with titles that had lactate, then with the most
+      // repeated — "most valuable to compare". But the list is walked with
+      // prev/next arrows and counted "1 of 156", and both of those only make
+      // sense against an order the athlete can predict. Under the old sort,
+      // tapping next from the newest session landed somewhere arbitrary in the
+      // archive. Recency is the one order nobody has to be told.
       .sort((a, b) => {
-        const aHasLac = a[1].some(hasLactate);
-        const bHasLac = b[1].some(hasLactate);
-        if (aHasLac !== bHasLac) return aHasLac ? -1 : 1;
-        const aRepeats = a[1].length;
-        const bRepeats = b[1].length;
-        if (aRepeats !== bRepeats) return bRepeats - aRepeats;
-        // Equal repeats — show the most recently performed first
         const aLatest = Math.max(...a[1].map(getDate).map(d => d.getTime()));
         const bLatest = Math.max(...b[1].map(getDate).map(d => d.getTime()));
         return bLatest - aLatest;
@@ -2649,10 +2647,20 @@ export default function NativeTrainingPage({
                   <SearchableSelect
                     value={selectedTitle || ''}
                     onChange={(val) => setSelectedTitle(val)}
-                    options={grouped.map(([title, list]) => ({
-                      value: title,
-                      label: `${title} · ×${list.length}`,
-                    }))}
+                    // The date of the most recent one in each group. With the
+                    // list ordered by recency, the repeat count alone gave no
+                    // clue where in the archive a title sat — "×11" reads the
+                    // same whether it was last done yesterday or last winter.
+                    options={grouped.map(([title, list]) => {
+                      const last = list.reduce(
+                        (acc, t) => Math.max(acc, getDate(t).getTime()), -Infinity,
+                      );
+                      const when = Number.isFinite(last) ? fmtRelativeDate(new Date(last)) : null;
+                      return {
+                        value: title,
+                        label: `${title} · ×${list.length}${when ? ` · ${when}` : ''}`,
+                      };
+                    })}
                     placeholder="Pick a workout title"
                   />
                 </div>
