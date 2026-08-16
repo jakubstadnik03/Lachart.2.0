@@ -166,6 +166,81 @@ function activityDedupeScore(act) {
 }
 
 /** Drop duplicate rows for the same Strava/FIT session before pairing. */
+/** Seconds a session lasted, for comparison only. */
+function dupSecs(a) {
+  return Number(
+    a?.totalTime || a?.duration || a?.movingTime || a?.moving_time
+    || a?.elapsedTime || a?.elapsed_time || a?.totalElapsedTime || 0,
+  ) || 0;
+}
+
+function dupMetres(a) {
+  return Number(a?.distance || a?.totalDistance || a?.total_distance || 0) || 0;
+}
+
+function dupHr(a) {
+  return Number(a?.avgHeartRate || a?.averageHeartRate || a?.average_heartrate || 0) || 0;
+}
+
+function dupWatts(a) {
+  return Number(a?.avgPower || a?.averagePower || a?.average_watts || a?.weighted_average_watts || 0) || 0;
+}
+
+function dupDayKey(a) {
+  const raw = a?.date || a?.startDate || a?.start_date || a?.timestamp;
+  const d = raw ? new Date(raw) : null;
+  if (!d || Number.isNaN(d.getTime())) return null;
+  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+}
+
+/**
+ * Are these two records the same session, arriving from two places?
+ *
+ * The case this exists for: a ride that reached the app from both Garmin and
+ * Strava. Nothing joins them — different ids, different names, no shared
+ * reference — so the only evidence is that they describe the same effort.
+ *
+ * Every available signal has to agree, and a disagreement anywhere is a veto.
+ * That asymmetry is deliberate: showing a duplicate is a visible annoyance,
+ * but merging two genuinely different sessions makes one disappear, and the
+ * athlete has no way to notice what is gone. So the rule errs toward leaving
+ * both.
+ *
+ * Distance is required on both. Without it — a gym session, a treadmill hour —
+ * two 45-minute entries on one day are as likely to be two real sessions as
+ * one duplicated, and there is nothing left to tell them apart.
+ */
+export function looksLikeSameSession(a, b) {
+  const dayA = dupDayKey(a);
+  if (!dayA || dayA !== dupDayKey(b)) return false;
+  if (activitySportBucket(a) !== activitySportBucket(b)) return false;
+
+  const mA = dupMetres(a);
+  const mB = dupMetres(b);
+  if (mA <= 0 || mB <= 0) return false;
+  // 1%: two laps of the same loop in one day differ by far more than this.
+  if (Math.abs(mA - mB) > Math.max(mA, mB) * 0.01) return false;
+
+  const sA = dupSecs(a);
+  const sB = dupSecs(b);
+  if (sA <= 0 || sB <= 0) return false;
+  // 3 minutes, because the two devices rarely start and stop together — the
+  // real pair that prompted this was 2h14m against 2h15m.
+  if (Math.abs(sA - sB) > 180) return false;
+
+  // Heart rate and power only vote when both records carry them. A missing
+  // value is not evidence either way, so it abstains rather than blocking.
+  const hrA = dupHr(a);
+  const hrB = dupHr(b);
+  if (hrA > 0 && hrB > 0 && Math.abs(hrA - hrB) > 3) return false;
+
+  const wA = dupWatts(a);
+  const wB = dupWatts(b);
+  if (wA > 0 && wB > 0 && Math.abs(wA - wB) > Math.max(wA, wB) * 0.03) return false;
+
+  return true;
+}
+
 export function dedupeCalendarActivities(acts) {
   const list = Array.isArray(acts) ? acts : [];
   const kept = [];
@@ -201,7 +276,23 @@ export function dedupeCalendarActivities(acts) {
       kept[prevIdx] = act;
     }
   }
-  return kept;
+
+  // Second pass, for records with no id in common — the same ride synced from
+  // both Garmin and Strava. Nothing above can catch those, because there is
+  // nothing to key on; only the numbers say they are one session. Runs after
+  // the id pass so it only ever sees records already known to be distinct.
+  const merged = [];
+  for (const act of kept) {
+    const twinIdx = merged.findIndex((m) => looksLikeSameSession(m, act));
+    if (twinIdx === -1) {
+      merged.push(act);
+      continue;
+    }
+    if (activityDedupeScore(act) > activityDedupeScore(merged[twinIdx])) {
+      merged[twinIdx] = act;
+    }
+  }
+  return merged;
 }
 
 /** TrainingPeaks-style plan ↔ activity pairing for one calendar day. */
