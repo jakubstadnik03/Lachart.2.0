@@ -1419,19 +1419,6 @@ export default function NativeDashboardPage({
             </PremiumLock>
           </div>
 
-          {/* 0c · Training Timeline — same three views as the web. */}
-          <div style={{ ...cardEntry(1), ...snapStyle }}>
-            <TrainingTimeline
-              key={`nttl-${athleteId || user?._id || user?.id || 'self'}`}
-              athleteId={athleteId || user?._id || user?.id}
-              activities={activities}
-              plannedWorkouts={plannedWorkouts}
-              userProfile={fitnessProfile}
-              user={user}
-              loading={metricsLoading}
-            />
-          </div>
-
           {/* Routes you repeat is taken out of the dashboard for now. The
               component and its /api/timeline/routes endpoint are still here —
               put the card back to restore it. */}
@@ -1498,6 +1485,22 @@ export default function NativeDashboardPage({
           {/* 3b · Apple Health wellness (iOS, when connected) */}
           <div style={{ ...cardEntry(3), ...snapStyle }}>
             <AppleHealthWellnessCard loading={loading} />
+          </div>
+
+          {/* 3b² · Training Timeline — same three views as the web. Sits below
+              the week strip and Apple Health: those answer "what am I doing
+              today", this one is the shape of the block behind it, which is a
+              question you ask after the day's, not before. */}
+          <div style={{ ...cardEntry(3), ...snapStyle }}>
+            <TrainingTimeline
+              key={`nttl-${athleteId || user?._id || user?.id || 'self'}`}
+              athleteId={athleteId || user?._id || user?.id}
+              activities={activities}
+              plannedWorkouts={plannedWorkouts}
+              userProfile={fitnessProfile}
+              user={user}
+              loading={metricsLoading}
+            />
           </div>
 
           {/* 3c · Race countdown */}
