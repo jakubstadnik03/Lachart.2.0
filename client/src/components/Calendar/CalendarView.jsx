@@ -71,6 +71,7 @@ import { DAY_THEME_PRESETS, dayThemePresetColor, PERIOD_TYPES, periodColor, buil
 import { computePowerTss, computeHrTss, canToggleTss, resolveActivityTss, getAvailableTssModes, getActivityTssDisplayMode, cycleTssMode, tssModeLabel, tssToggleDisabledReason } from '../../utils/computeTss';
 import { compareActivitiesChronologically, buildChronologicalDayItems, matchesCalendarSportFilter, activitySportBucket, plannedSportBucket, sportFilterChip, sortPlannedWorkoutsForDay, reorderPlannedWorkoutIds, pairPlannedWithActivities, planSportMatchesActivity, dedupeCalendarActivities } from '../../utils/calendarDayOrdering';
 import { stravaHalfCadenceToSpm, cadenceDisplayUnit } from '../../utils/cadenceDisplay';
+import { completedSecs } from '../WorkoutPlanner/plannerWeekUtils';
 import { notifyTssDisplayModeChanged, clearFormFitnessCache } from '../../utils/uiPrefs';
 import { motion, AnimatePresence } from 'framer-motion';
 import TrainingComments from '../TrainingComments';
@@ -8983,10 +8984,20 @@ export default function CalendarView({
 
       const entry = acc[key];
       const sport = (act.sport || act.sport_type || act.type || '').toLowerCase();
-      const duration = Number(act.totalTimerTime || act.moving_time || act.movingTime || act.totalElapsedTime || act.elapsedTime || act.duration || 0);
+      // completedSecs, not a local chain. This one was missing elapsed_time
+      // and durationSeconds, so an activity carrying only those contributed
+      // zero to the week's hours — silently, since it still contributed its
+      // TSS. That is why the calendar read 24.1h against the dashboard's
+      // 25h28m for the same seven days.
+      const duration = completedSecs(act);
       const distance = Number(act.distance || 0);
 
-      const tssVal = resolveActivityTss(act, userProfile, { user: userProfile });
+      // The real user, not the profile. options.user is what
+      // getActivityTssDisplayMode reads to decide power / hr / manual, and
+      // passing the profile in its place meant this sum could score an
+      // activity by a different mode than the one the athlete picked on it —
+      // including zero, where the rest of the app shows a number.
+      const tssVal = resolveActivityTss(act, userProfile, { user: user || userProfile });
 
       entry.totalSeconds += duration;
       entry.sessionCount += 1;
@@ -9097,6 +9108,7 @@ export default function CalendarView({
     fullscreenWeeks,
     mobileWeeks,
     userProfile,
+    user,
     view,
     anchorDate,
     isMobile,
