@@ -65,7 +65,17 @@ function fmtPace(sec, unitSystem = 'metric', sport = 'run') {
 
 function fmtRelativeDate(date) {
   const d = new Date(date);
-  const days = Math.floor((Date.now() - d) / 86400000);
+  // Calendar days, not elapsed hours. Dividing the raw gap by 86400000 counts
+  // 24-hour blocks, so a ride on Monday evening read "2d ago" on Thursday
+  // afternoon — 2 days and 22 hours, floored. It broke "Yesterday" the same
+  // way: a session at 22:00 read "Today" at 08:00 the next morning. Both dates
+  // are flattened to local midnight first, so the answer matches a calendar.
+  const startOfDay = (x) => {
+    const c = new Date(x);
+    c.setHours(0, 0, 0, 0);
+    return c.getTime();
+  };
+  const days = Math.round((startOfDay(Date.now()) - startOfDay(d)) / 86400000);
   if (days === 0) return 'Today';
   if (days === 1) return 'Yesterday';
   if (days < 7)  return `${days}d ago`;
