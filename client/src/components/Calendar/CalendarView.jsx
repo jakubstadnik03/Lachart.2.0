@@ -9116,8 +9116,12 @@ export default function CalendarView({
   ]);
 
   const formatHours = (seconds) => {
-    if (!seconds || isNaN(seconds)) return '0h';
-    return `${(seconds / 3600).toFixed(1)}h`;
+    if (!seconds || isNaN(seconds)) return '0:00';
+    // h:mm, not a decimal hour. "24.1h" needs converting in your head before
+    // it can be compared with the 25h28m the dashboard prints, and a tenth of
+    // an hour is six minutes — precision the number does not really carry.
+    const total = Math.round(Number(seconds) / 60);
+    return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
   };
 
   const formatKm = (meters) => {
