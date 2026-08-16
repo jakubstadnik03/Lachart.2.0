@@ -103,9 +103,6 @@ export default function PlannedWorkoutEditor({
   onSaved,
   onDeleted,
   onOpenLinkedActivity,
-  /** Opens the shared TrainingForm prefilled from this plan. Omit to hide the
-   *  manual-entry button — the comparison columns still render. */
-  onAddCompleted = null,
 }) {
   const isOpen = !!plannedWorkout;
   const navigate = useNavigate();
@@ -129,6 +126,76 @@ export default function PlannedWorkoutEditor({
   const [error, setError]       = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [closing, setClosing]   = useState(false);
+
+  // ── Recording what actually happened ───────────────────────────────────────
+  // Three fields, typed straight into the Completed column. TSS is entered
+  // rather than derived: without power or heart rate there is nothing to
+  // derive it from, and an invented number would be worse than the athlete's
+  // own estimate. It is stored as manualTss, which resolveActivityTss checks
+  // before anything else — so the figure typed here is the one Fitness and
+  // Form use, not a different one computed behind it.
+  const [enteringDone, setEnteringDone] = useState(false);
+  const [doneH, setDoneH] = useState('');
+  const [doneM, setDoneM] = useState('');
+  const [doneDist, setDoneDist] = useState('');
+  const [doneTss, setDoneTss] = useState('');
+  const [savingDone, setSavingDone] = useState(false);
+  const [doneError, setDoneError] = useState(null);
+
+  /** Prefill from the plan — most sessions land close to what was asked for. */
+  const startEnteringDone = () => {
+    setDoneH(String(durH || ''));
+    setDoneM(String(durM || ''));
+    setDoneDist(String(plannedDist || ''));
+    setDoneTss(String(targetTss || ''));
+    setDoneError(null);
+    setEnteringDone(true);
+  };
+
+  const saveDone = async () => {
+    const secs = (Number(doneH) || 0) * 3600 + (Number(doneM) || 0) * 60;
+    const tssNum = Number(doneTss);
+    if (secs <= 0) { setDoneError('Enter how long it took.'); return; }
+    if (!(tssNum > 0)) { setDoneError('Enter a TSS — without power or HR it cannot be derived.'); return; }
+
+    setSavingDone(true);
+    setDoneError(null);
+    try {
+      const distM = Number(doneDist) || 0;
+      const { data: created } = await api.post('/training', {
+        athleteId: athleteId || undefined,
+        title: title || 'Untitled Training',
+        sport: normSport(sport),
+        // Midday, so a timezone shift can't move it to the previous day.
+        date: `${date}T12:00:00`,
+        type: 'manual',
+        duration: secs,
+        ...(distM > 0 ? { distance: distM } : {}),
+        // manualTss, not tss: getManualTssValue reads it first, and
+        // defaultTssMode falls to 'manual' when there is no power or HR — so
+        // this number reaches the PMC engine unchanged.
+        manualTss: Math.round(tssNum),
+        results: [],
+      });
+
+      // Link it to the plan so the two stop being listed as separate sessions.
+      const createdId = created?._id || created?.id;
+      if (createdId && plannedWorkout?._id) {
+        const updated = await updatePlannedWorkout(plannedWorkout._id, {
+          completedTrainingId: String(createdId),
+          status: 'completed',
+        });
+        notifyPlannedWorkoutUpdated(updated?.data || updated);
+        onSaved && onSaved(updated?.data || updated);
+      }
+      setEnteringDone(false);
+      onClose && onClose();
+    } catch (e) {
+      setDoneError(e?.response?.data?.error || e?.message || 'Could not save.');
+    } finally {
+      setSavingDone(false);
+    }
+  };
 
   // Athlete power context: profile zone ranges (primary) + latest test (fallback).
   // WorkoutChart uses cyclingZones to show the same wattage as the Training Zones screen.
@@ -534,15 +601,36 @@ export default function PlannedWorkoutEditor({
               border: `1px solid ${isCompleted ? 'rgba(34,197,94,.25)' : '#eef2f7'}`,
             }}>
               <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: .6, color: isCompleted ? '#15803d' : '#94a3b8', textTransform: 'uppercase', marginBottom: 6 }}>Completed</div>
-              <PvcRow label="Time" value={completedSummary.time} muted={!isCompleted} />
-              <PvcRow label="Distance" value={completedSummary.distance} muted={!isCompleted} />
-              <PvcRow label="TSS" value={completedSummary.tss} muted={!isCompleted} />
+              {enteringDone ? (
+                <>
+                  <DoneRow label="Time">
+                    <DoneInput value={doneH} onChange={setDoneH} suffix="h" width={34} />
+                    <DoneInput value={doneM} onChange={setDoneM} suffix="m" width={34} />
+                  </DoneRow>
+                  <DoneRow label="Dist">
+                    <DoneInput value={doneDist} onChange={setDoneDist} suffix="m" width={62} />
+                  </DoneRow>
+                  <DoneRow label="TSS">
+                    <DoneInput value={doneTss} onChange={setDoneTss} width={44} />
+                  </DoneRow>
+                </>
+              ) : (
+                <>
+                  <PvcRow label="Time" value={completedSummary.time} muted={!isCompleted} />
+                  <PvcRow label="Distance" value={completedSummary.distance} muted={!isCompleted} />
+                  <PvcRow label="TSS" value={completedSummary.tss} muted={!isCompleted} />
+                </>
+              )}
             </div>
           </div>
 
-          {!isCompleted && onAddCompleted && (
+          {doneError && (
+            <div style={{ marginTop: 8, fontSize: 11, fontWeight: 600, color: '#b91c1c' }}>{doneError}</div>
+          )}
+
+          {!isCompleted && !enteringDone && (
             <button
-              onClick={() => onAddCompleted(plannedWorkout)}
+              onClick={startEnteringDone}
               style={{
                 marginTop: 8, width: '100%', padding: '10px 12px', borderRadius: 12,
                 background: '#fff', border: '1px dashed #cbd5e1', color: '#475569',
@@ -552,6 +640,35 @@ export default function PlannedWorkoutEditor({
             >
               + Enter what you actually did
             </button>
+          )}
+
+          {enteringDone && (
+            <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+              <button
+                onClick={() => { setEnteringDone(false); setDoneError(null); }}
+                style={{
+                  flex: 1, padding: '10px 12px', borderRadius: 12, background: '#fff',
+                  border: '1px solid #e2e8f0', color: '#64748b',
+                  fontFamily: 'inherit', fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                  WebkitTapHighlightColor: 'transparent', touchAction: 'manipulation',
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={saveDone}
+                disabled={savingDone}
+                style={{
+                  flex: 1.4, padding: '10px 12px', borderRadius: 12,
+                  background: '#0f172a', border: 'none', color: '#fff',
+                  fontFamily: 'inherit', fontSize: 12, fontWeight: 800,
+                  opacity: savingDone ? .6 : 1, cursor: 'pointer',
+                  WebkitTapHighlightColor: 'transparent', touchAction: 'manipulation',
+                }}
+              >
+                {savingDone ? 'Saving…' : 'Save as completed'}
+              </button>
+            </div>
           )}
         </div>
 
@@ -1005,6 +1122,35 @@ export default function PlannedWorkoutEditor({
 }
 
 // ─── Field wrapper ────────────────────────────────────────────────────────────
+
+/** A row of the Completed column while it is being filled in. */
+function DoneRow({ label, children }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, padding: '2px 0' }}>
+      <span style={{ fontSize: 11, color: '#94a3b8', fontWeight: 600 }}>{label}</span>
+      <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>{children}</span>
+    </div>
+  );
+}
+
+function DoneInput({ value, onChange, suffix = null, width = 44 }) {
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'baseline', gap: 2 }}>
+      <input
+        value={value}
+        onChange={(e) => onChange(e.target.value.replace(/[^\d]/g, ''))}
+        inputMode="numeric"
+        style={{
+          width, padding: '3px 5px', borderRadius: 7, border: '1px solid #cbd5e1',
+          background: '#fff', color: '#0f172a', fontFamily: 'inherit',
+          fontSize: 13, fontWeight: 800, textAlign: 'right',
+          fontVariantNumeric: 'tabular-nums',
+        }}
+      />
+      {suffix ? <span style={{ fontSize: 10, color: '#94a3b8', fontWeight: 700 }}>{suffix}</span> : null}
+    </span>
+  );
+}
 
 /** One line of the planned/completed comparison. */
 function PvcRow({ label, value, muted = false }) {

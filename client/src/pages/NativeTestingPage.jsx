@@ -269,7 +269,6 @@ export default function NativeTestingPage({ user, athleteId: externalAthleteId }
   const athleteId = externalAthleteId || user?._id || user?.id;
 
   const [tests, setTests] = useState([]);
-  const [pdfBusy, setPdfBusy] = useState(false);
   /**
    * PDF export is offered on your own tests only.
    *
@@ -747,41 +746,21 @@ export default function NativeTestingPage({ user, athleteId: externalAthleteId }
                     );
                   })()}
 
-                  {/* Export PDF — the same report the web produces, minus the
-                      comparison against earlier tests: choosing which two to
-                      compare is a full-editor job, and a single-test report is
-                      what you want from a phone anyway. */}
+                  {/* Export PDF — opens the report in the preview rather than
+                      downloading it straight away. A lactate report usually
+                      goes to someone else, so the last look before it leaves
+                      matters; the preview is also where the analysis override
+                      and Email to athlete live. That preview belongs to the
+                      full editor, so this routes there with ?pdf=1 instead of
+                      growing a second one for the phone that would drift. */}
                   {isOwnTests && (
                   <button
-                    onClick={async () => {
-                      if (pdfBusy) return;
-                      setPdfBusy(true);
-                      try {
-                        const { downloadLactateReportPdf } = await import('../components/Testing-page/LactateReportPdf');
-                        await downloadLactateReportPdf({
-                          test: selected,
-                          athlete: user,
-                          thresholds: desktopCalculateThresholds(selected),
-                          zones: calculateZonesFromTest(selected),
-                          prevTest: null,
-                          prevThresholds: null,
-                          prevTest2: null,
-                          prevThresholds2: null,
-                          customNote: null,
-                          customAnalysis: null,
-                          creatorEmail: user?.email || null,
-                          preTestSummary: null,
-                          coachBranding: user?.coachBranding || null,
-                        });
-                      } catch (e) {
-                        console.warn('[NativeTesting] PDF export failed:', e?.message || e);
-                      } finally {
-                        setPdfBusy(false);
-                      }
-                    }}
+                    onClick={() => navigate(
+                      `/testing?testId=${encodeURIComponent(selected._id || selected.id)}&full=1&pdf=1`,
+                    )}
                     style={{ ...styles.openBtn, marginBottom: 8 }}
                   >
-                    {pdfBusy ? 'Preparing PDF…' : 'Export PDF'}
+                    Export PDF
                   </button>
                   )}
 

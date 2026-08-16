@@ -855,7 +855,18 @@ const lactateZoneLtpOverlayPlugin = {
 
 ChartJS.register(lactateZoneLtpOverlayPlugin);
 
-const LactateCurveCalculator = ({ mockData, athleteId: athleteIdProp = null, demoMode = false }) => {
+const LactateCurveCalculator = ({
+  mockData,
+  athleteId: athleteIdProp = null,
+  demoMode = false,
+  /** Open the PDF preview as soon as the test is loaded. Defaults to reading
+   *  `?pdf=1`, which is how the app's Export PDF arrives here: this is the
+   *  preview that carries the analysis override and Email to athlete, and a
+   *  second one built for the phone would drift from it. Threading a prop
+   *  through TestingPage and PreviousTestingComponent buys nothing when the
+   *  URL already says it. */
+  autoOpenPdfPreview = null,
+}) => {
   const { user } = useAuth();
   const effectiveAthleteId = athleteIdProp || mockData?.athleteId || user?._id || user?.id || null;
   const { isPremium, gate, UpgradeModalProps } = usePremium();
@@ -883,6 +894,27 @@ const LactateCurveCalculator = ({ mockData, athleteId: athleteIdProp = null, dem
   // Lets coaches rewrite the boilerplate sentence with their own commentary.
   const [pdfCustomAnalysis, setPdfCustomAnalysis] = useState('');
   const [pdfPreviewLoading, setPdfPreviewLoading] = useState(false);
+
+  // Arriving from the app's Export PDF: open the preview once the test has
+  // loaded. Up here with the other hooks because the component returns early
+  // further down. handleDownloadPdf is declared later in the body but assigned
+  // before any effect runs, so calling it here is safe.
+  const autoPdfFiredRef = useRef(false);
+  useEffect(() => {
+    const wanted = autoOpenPdfPreview !== null
+      ? autoOpenPdfPreview
+      : (() => {
+        try { return new URLSearchParams(window.location.search).get('pdf') === '1'; }
+        catch { return false; }
+      })();
+    // Guarded by a ref: mockData settles over several renders and firing on
+    // each would regenerate the blob every time.
+    if (!wanted || autoPdfFiredRef.current || !mockData) return;
+    autoPdfFiredRef.current = true;
+    handleDownloadPdf();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoOpenPdfPreview, mockData]);
+
   const [athleteProfile, setAthleteProfile] = useState(null);
   const [prevTestData, setPrevTestData] = useState(null);
   const [allPrevTests, setAllPrevTests] = useState([]);       // all previous same-sport tests (desc)

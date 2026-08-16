@@ -65,7 +65,17 @@ function fmtPace(sec, unitSystem = 'metric', sport = 'run') {
 
 function fmtRelativeDate(date) {
   const d = new Date(date);
-  const days = Math.floor((Date.now() - d) / 86400000);
+  // Calendar days, not elapsed hours. Dividing the raw gap by 86400000 counts
+  // 24-hour blocks, so a ride on Monday evening read "2d ago" on Thursday
+  // afternoon — 2 days and 22 hours, floored. It broke "Yesterday" the same
+  // way: a session at 22:00 read "Today" at 08:00 the next morning. Both dates
+  // are flattened to local midnight first, so the answer matches a calendar.
+  const startOfDay = (x) => {
+    const c = new Date(x);
+    c.setHours(0, 0, 0, 0);
+    return c.getTime();
+  };
+  const days = Math.round((startOfDay(Date.now()) - startOfDay(d)) / 86400000);
   if (days === 0) return 'Today';
   if (days === 1) return 'Yesterday';
   if (days < 7)  return `${days}d ago`;
@@ -100,38 +110,26 @@ function hasLaps(a) {
 }
 
 /**
- * Does this session have real structure, or is it just a ride that got
- * auto-lapped?
+ * Was this session explicitly marked up as intervals?
  *
- * hasLaps() cannot tell the difference: a steady two-hour ride lapped every
- * kilometre has twenty laps and nothing to compare. Two signals separate them:
+ * Only the hard signal: an intervalType or isRecovery flag on a lap, which a
+ * structured or hand-edited session carries and Strava's raw auto-laps never
+ * do.
  *
- *   - an explicit intervalType on any lap, which only a structured or
- *     hand-edited session carries — Strava's raw auto-laps have none;
- *   - failing that, laps of visibly uneven length, since work and rest differ
- *     while auto-laps are near-identical by construction.
+ * An earlier version also guessed from uneven lap lengths — work and rest
+ * differ, auto-laps do not. It guessed wrong: it skipped past a three-day-old
+ * interval run to land on a six-day-old ride, because real sessions are not as
+ * tidy as the rule assumed. A wrong guess here is worse than no guess, since
+ * it silently opens the page on the wrong workout. So the guess is gone: with
+ * evidence this returns true, without it the caller falls back to the plain
+ * newest session, which is at least predictable.
  */
 function looksLikeIntervals(a) {
   const laps = (Array.isArray(a?.results) && a.results.length > 1)
     ? a.results
     : (Array.isArray(a?.laps) ? a.laps : []);
   if (laps.length < 3) return false;
-
-  if (laps.some((l) => String(l?.intervalType || '').trim() !== '' || l?.isRecovery === true)) {
-    return true;
-  }
-
-  // Ignore the first and last — warm-up and cool-down are long by nature and
-  // would make any session look uneven.
-  const mid = laps.slice(1, -1)
-    .map((l) => Number(l?.duration ?? l?.movingTime ?? l?.elapsed_time ?? l?.time ?? 0))
-    .filter((s) => Number.isFinite(s) && s > 0);
-  if (mid.length < 2) return false;
-
-  const longest = Math.max(...mid);
-  const shortest = Math.min(...mid);
-  // Rest is rarely more than half the work interval; auto-laps sit near 1.0.
-  return longest >= shortest * 1.5;
+  return laps.some((l) => String(l?.intervalType || '').trim() !== '' || l?.isRecovery === true);
 }
 
 /** List API returns laps with lactate only — not enough for TrainingForm. */
@@ -1765,17 +1763,15 @@ export default function NativeTrainingPage({
       // single-session titles confused users who expected to see every recent
       // workout listed (e.g. a fresh "5×10min LT2" that they only did once).
       .filter(([, arr]) => arr.length >= 1)
-      // Prioritise titles that have lactate measurements first, then repeats,
-      // so the most "valuable to compare" sessions surface at the top of the
-      // workout selector dropdown.
+      // Newest first, full stop.
+      //
+      // This used to lead with titles that had lactate, then with the most
+      // repeated — "most valuable to compare". But the list is walked with
+      // prev/next arrows and counted "1 of 156", and both of those only make
+      // sense against an order the athlete can predict. Under the old sort,
+      // tapping next from the newest session landed somewhere arbitrary in the
+      // archive. Recency is the one order nobody has to be told.
       .sort((a, b) => {
-        const aHasLac = a[1].some(hasLactate);
-        const bHasLac = b[1].some(hasLactate);
-        if (aHasLac !== bHasLac) return aHasLac ? -1 : 1;
-        const aRepeats = a[1].length;
-        const bRepeats = b[1].length;
-        if (aRepeats !== bRepeats) return bRepeats - aRepeats;
-        // Equal repeats — show the most recently performed first
         const aLatest = Math.max(...a[1].map(getDate).map(d => d.getTime()));
         const bLatest = Math.max(...b[1].map(getDate).map(d => d.getTime()));
         return bLatest - aLatest;
@@ -1813,7 +1809,13 @@ export default function NativeTrainingPage({
         if (looksLikeIntervals(t) && at > bestAt) { bestAt = at; best = title; }
       }
     }
-    setSelectedTitle(best || newestTitle);
+    // Only prefer a marked-up interval session if it is roughly as recent as
+    // the newest. Without this bound the page reached back into the archive
+    // for the last workout that happened to carry lap markers, which reads as
+    // simply opening on the wrong session — the complaint that started this.
+    const WITHIN_MS = 14 * 86400000;
+    const useBest = best && (newestAt - bestAt) <= WITHIN_MS;
+    setSelectedTitle(useBest ? best : newestTitle);
   }, [grouped, selectedTitle, categoryFilterId]);
 
   const sessions = useMemo(() => {
@@ -2639,10 +2641,20 @@ export default function NativeTrainingPage({
                   <SearchableSelect
                     value={selectedTitle || ''}
                     onChange={(val) => setSelectedTitle(val)}
-                    options={grouped.map(([title, list]) => ({
-                      value: title,
-                      label: `${title} · ×${list.length}`,
-                    }))}
+                    // The date of the most recent one in each group. With the
+                    // list ordered by recency, the repeat count alone gave no
+                    // clue where in the archive a title sat — "×11" reads the
+                    // same whether it was last done yesterday or last winter.
+                    options={grouped.map(([title, list]) => {
+                      const last = list.reduce(
+                        (acc, t) => Math.max(acc, getDate(t).getTime()), -Infinity,
+                      );
+                      const when = Number.isFinite(last) ? fmtRelativeDate(new Date(last)) : null;
+                      return {
+                        value: title,
+                        label: `${title} · ×${list.length}${when ? ` · ${when}` : ''}`,
+                      };
+                    })}
                     placeholder="Pick a workout title"
                   />
                 </div>
