@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { PlusIcon } from '@heroicons/react/24/outline';
+import { dedupeCalendarActivities, planSportMatchesActivity } from '../../utils/calendarDayOrdering';
 import PlannerWeekSummary from './PlannerWeekSummary';
 import {
   addDays,
@@ -18,7 +19,6 @@ import {
   MiniWorkoutChart,
   PlannerSportIcon,
   plannerSportColor,
-  sportMatchesPlanner,
 } from './WorkoutPlanModal';
 
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -152,14 +152,22 @@ export default function PlannerWeekRow({
         const dateStr = toLocalDateStr(day);
         const isToday = isSameDay(day, today);
         const dayPlanned = weekPlanned.filter((p) => isSameDay(new Date(p.date), day));
-        const dayCompleted = weekTrainings.filter((t) => isSameDay(new Date(t.date || t.startDate || t.start_date), day));
+        // Deduped exactly as the calendar does. One ride that arrived from
+        // both Strava and a FIT upload is two records of one session; without
+        // this the planner listed it twice, with two different TSS values, and
+        // the day looked like it held twice the training it did.
+        const dayCompleted = dedupeCalendarActivities(
+          weekTrainings.filter((t) => isSameDay(new Date(t.date || t.startDate || t.start_date), day)),
+        );
         const isPastDay = dateStr < todayStr;
         const ckey = (t) => String(t._id || t.id || t.stravaId || '');
         const claimedDone = new Set();
         const planMatch = new Map();
         for (const pw of dayPlanned) {
           let m = dayCompleted.find((t) => !claimedDone.has(ckey(t)) && pw.completedTrainingId && String(pw.completedTrainingId) === ckey(t));
-          if (!m) m = dayCompleted.find((t) => !claimedDone.has(ckey(t)) && sportMatchesPlanner(pw.sport, t.sport || t.type));
+          // Same matcher as the calendar, so a plan pairs with the same
+          // session on both screens — brick, MTB and strength/gym included.
+          if (!m) m = dayCompleted.find((t) => !claimedDone.has(ckey(t)) && planSportMatchesActivity(pw.sport, t.sport || t.type));
           if (m) { claimedDone.add(ckey(m)); planMatch.set(pw._id, m); }
         }
         const standaloneCompleted = dayCompleted.filter((t) => !claimedDone.has(ckey(t)));
