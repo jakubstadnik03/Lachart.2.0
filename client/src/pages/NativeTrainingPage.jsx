@@ -99,6 +99,41 @@ function hasLaps(a) {
          (Array.isArray(a.results) && a.results.length > 1);
 }
 
+/**
+ * Does this session have real structure, or is it just a ride that got
+ * auto-lapped?
+ *
+ * hasLaps() cannot tell the difference: a steady two-hour ride lapped every
+ * kilometre has twenty laps and nothing to compare. Two signals separate them:
+ *
+ *   - an explicit intervalType on any lap, which only a structured or
+ *     hand-edited session carries — Strava's raw auto-laps have none;
+ *   - failing that, laps of visibly uneven length, since work and rest differ
+ *     while auto-laps are near-identical by construction.
+ */
+function looksLikeIntervals(a) {
+  const laps = (Array.isArray(a?.results) && a.results.length > 1)
+    ? a.results
+    : (Array.isArray(a?.laps) ? a.laps : []);
+  if (laps.length < 3) return false;
+
+  if (laps.some((l) => String(l?.intervalType || '').trim() !== '' || l?.isRecovery === true)) {
+    return true;
+  }
+
+  // Ignore the first and last — warm-up and cool-down are long by nature and
+  // would make any session look uneven.
+  const mid = laps.slice(1, -1)
+    .map((l) => Number(l?.duration ?? l?.movingTime ?? l?.elapsed_time ?? l?.time ?? 0))
+    .filter((s) => Number.isFinite(s) && s > 0);
+  if (mid.length < 2) return false;
+
+  const longest = Math.max(...mid);
+  const shortest = Math.min(...mid);
+  // Rest is rarely more than half the work interval; auto-laps sit near 1.0.
+  return longest >= shortest * 1.5;
+}
+
 /** List API returns laps with lactate only — not enough for TrainingForm. */
 function lapHasMetrics(lap) {
   if (!lap || typeof lap !== 'object') return false;
@@ -1761,15 +1796,24 @@ export default function NativeTrainingPage({
       return;
     }
     if (selectedTitle && grouped.find(([t]) => t === selectedTitle)) return;
+
+    // Newest session that is actually structured. A ride auto-lapped every
+    // kilometre passes hasLaps but has nothing to compare — the chart wants a
+    // session with work and rest in it. Falls back to the plain newest, and
+    // then to the list's own order, so the page is never left empty.
+    let best = null;
+    let bestAt = -Infinity;
     let newestTitle = grouped[0][0];
     let newestAt = -Infinity;
     for (const [title, arr] of grouped) {
       for (const t of arr) {
         const at = getDate(t).getTime();
-        if (Number.isFinite(at) && at > newestAt) { newestAt = at; newestTitle = title; }
+        if (!Number.isFinite(at)) continue;
+        if (at > newestAt) { newestAt = at; newestTitle = title; }
+        if (looksLikeIntervals(t) && at > bestAt) { bestAt = at; best = title; }
       }
     }
-    setSelectedTitle(newestTitle);
+    setSelectedTitle(best || newestTitle);
   }, [grouped, selectedTitle, categoryFilterId]);
 
   const sessions = useMemo(() => {
