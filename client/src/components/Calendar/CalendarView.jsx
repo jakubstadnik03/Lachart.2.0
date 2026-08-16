@@ -69,7 +69,7 @@ import { useAuth } from '../../context/AuthProvider';
 import { useCategories, hexToRgba } from '../../context/CategoryContext';
 import { DAY_THEME_PRESETS, dayThemePresetColor, PERIOD_TYPES, periodColor, buildPeriodsByDate } from '../../utils/calendarThemes';
 import { computePowerTss, computeHrTss, canToggleTss, resolveActivityTss, getAvailableTssModes, getActivityTssDisplayMode, cycleTssMode, tssModeLabel, tssToggleDisabledReason } from '../../utils/computeTss';
-import { compareActivitiesChronologically, buildChronologicalDayItems, matchesCalendarSportFilter, activitySportBucket, plannedSportBucket, sportFilterChip, sortPlannedWorkoutsForDay, reorderPlannedWorkoutIds, pairPlannedWithActivities, planSportMatchesActivity } from '../../utils/calendarDayOrdering';
+import { compareActivitiesChronologically, buildChronologicalDayItems, matchesCalendarSportFilter, activitySportBucket, plannedSportBucket, sportFilterChip, sortPlannedWorkoutsForDay, reorderPlannedWorkoutIds, pairPlannedWithActivities, planSportMatchesActivity, dedupeCalendarActivities } from '../../utils/calendarDayOrdering';
 import { stravaHalfCadenceToSpm, cadenceDisplayUnit } from '../../utils/cadenceDisplay';
 import { notifyTssDisplayModeChanged, clearFormFitnessCache } from '../../utils/uiPrefs';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -8500,7 +8500,12 @@ export default function CalendarView({
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   const filteredActivities = useMemo(() => {
-    let list = activities;
+    // Deduped first. The week summary sums this list, and one session that
+    // reached the app twice — a Strava sync plus the Training created by
+    // adding lactate — would otherwise be counted twice in both the hours and
+    // the TSS. Same function the day rows and the planner use, so a week's
+    // total agrees with the days it is made of.
+    let list = dedupeCalendarActivities(activities);
     if (sportFilter !== 'all') list = list.filter((a) => matchesCalendarSportFilter(a, sportFilter));
     if (categoryFilter && categoryFilter !== 'all') {
       list = list.filter(a => a.category === categoryFilter);
@@ -8935,7 +8940,14 @@ export default function CalendarView({
 
     // Get FTP and threshold pace from user profile — used by resolveActivityTss
     const summary = filteredActivities.reduce((acc, act) => {
-      const actDate = act.date ? new Date(act.date) : null;
+      // Every date spelling, not just `date`. Strava activities carry
+      // startDate and FIT ones timestamp, and this read only `date` — so those
+      // were dropped from the week entirely, taking their time and their TSS
+      // with them. It showed as 24.1h / 1281 TSS against the dashboard's
+      // 25h27m / 1425 for the same seven days, with nothing to say which was
+      // right. Same fallback chain the rest of the app uses.
+      const rawDate = act.date || act.startDate || act.start_date || act.timestamp;
+      const actDate = rawDate ? new Date(rawDate) : null;
       if (!actDate || isNaN(actDate.getTime())) return acc;
       const weekStart = startOfWeek(actDate);
       const key = weekStart.toISOString().slice(0,10);
