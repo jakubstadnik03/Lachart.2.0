@@ -230,13 +230,21 @@ export function looksLikeSameSession(a, b) {
 
   // Heart rate and power only vote when both records carry them. A missing
   // value is not evidence either way, so it abstains rather than blocking.
+  //
+  // Loose on purpose. By this point the two records agree on the day, the
+  // sport, the distance to within 1% and the duration to within three
+  // minutes — two genuinely different sessions matching all of that is
+  // already vanishingly unlikely, so these are a guard against the
+  // pathological case, not the deciding evidence. Set tight (3 bpm, 3%) they
+  // vetoed real pairs instead: two devices recording one ride smooth and
+  // start and stop differently, and their averages drift by more than that.
   const hrA = dupHr(a);
   const hrB = dupHr(b);
-  if (hrA > 0 && hrB > 0 && Math.abs(hrA - hrB) > 3) return false;
+  if (hrA > 0 && hrB > 0 && Math.abs(hrA - hrB) > 12) return false;
 
   const wA = dupWatts(a);
   const wB = dupWatts(b);
-  if (wA > 0 && wB > 0 && Math.abs(wA - wB) > Math.max(wA, wB) * 0.03) return false;
+  if (wA > 0 && wB > 0 && Math.abs(wA - wB) > Math.max(wA, wB) * 0.15) return false;
 
   return true;
 }
