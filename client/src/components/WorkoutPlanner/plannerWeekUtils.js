@@ -49,9 +49,23 @@ export function plannedWorkoutTss(pw, context) {
   return 0;
 }
 
+/**
+ * How long a session took.
+ *
+ * The order matters more than it looks. moving_time excludes every pause, and
+ * in a pool that means the rest at the wall — which is most of the difference
+ * between a 1h swim and a 1h32m one. Reading it before the session's own
+ * duration made the calendar's week hours come out short against the
+ * dashboard's for the same seven days.
+ *
+ * So: the recorded total first, moving time only as a fallback for records
+ * that carry nothing else. This matches WeekStrip, which is the reading the
+ * athlete confirmed as correct.
+ */
 export function completedSecs(t) {
-  const v = t?.totalTimerTime || t?.moving_time || t?.movingTime
-    || t?.totalElapsedTime || t?.elapsedTime || t?.elapsed_time || t?.duration || t?.durationSeconds;
+  const v = t?.totalTime || t?.duration || t?.durationSeconds
+    || t?.totalTimerTime || t?.totalElapsedTime || t?.elapsedTime || t?.elapsed_time
+    || t?.movingTime || t?.moving_time;
   const n = Number(v);
   return Number.isFinite(n) ? n : 0;
 }
