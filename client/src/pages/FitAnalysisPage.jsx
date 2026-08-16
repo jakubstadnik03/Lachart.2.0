@@ -3594,8 +3594,17 @@ const FitAnalysisPage = () => {
           category: a.category || linked?.category || null,
           type: source === 'garmin' ? 'garmin' : source === 'apple_health' ? 'apple_health' : 'strava',
           distance: a.distance,
-          totalElapsedTime: a.movingTime || a.elapsedTime || a.totalTime,
-          totalTime: a.movingTime || a.elapsedTime || a.totalTime,
+          // totalTime means the whole session. It was being filled from
+          // movingTime first, which is the opposite — so by the time anything
+          // downstream asked "how long did this take", the answer had already
+          // been replaced with the moving time. In a pool that drops the rest
+          // at the wall: 5:40 of swimming a week where the dashboard, reading
+          // the untouched activity, said 7:00.
+          //
+          // No amount of reordering the field chain further down could have
+          // helped, because the field it reads was overwritten here first.
+          totalElapsedTime: a.elapsedTime || a.totalTime || a.movingTime,
+          totalTime: a.totalTime || a.elapsedTime || a.movingTime,
           movingTime: a.movingTime || a.elapsedTime,
           metricsManualized: a.metricsManualized ?? false,
           tss: a.manualTss ?? a.tss ?? a.totalTSS,
