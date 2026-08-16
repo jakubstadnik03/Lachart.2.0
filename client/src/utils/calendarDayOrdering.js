@@ -230,6 +230,7 @@ export function looksLikeSameSession(a, b) {
 
   // Heart rate and power only vote when both records carry them. A missing
   // value is not evidence either way, so it abstains rather than blocking.
+<<<<<<< HEAD
   //
   // Loose on purpose. By this point the two records agree on the day, the
   // sport, the distance to within 1% and the duration to within three
@@ -245,6 +246,15 @@ export function looksLikeSameSession(a, b) {
   const wA = dupWatts(a);
   const wB = dupWatts(b);
   if (wA > 0 && wB > 0 && Math.abs(wA - wB) > Math.max(wA, wB) * 0.15) return false;
+=======
+  const hrA = dupHr(a);
+  const hrB = dupHr(b);
+  if (hrA > 0 && hrB > 0 && Math.abs(hrA - hrB) > 3) return false;
+
+  const wA = dupWatts(a);
+  const wB = dupWatts(b);
+  if (wA > 0 && wB > 0 && Math.abs(wA - wB) > Math.max(wA, wB) * 0.03) return false;
+>>>>>>> origin/main
 
   return true;
 }
