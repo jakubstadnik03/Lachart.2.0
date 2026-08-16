@@ -110,38 +110,26 @@ function hasLaps(a) {
 }
 
 /**
- * Does this session have real structure, or is it just a ride that got
- * auto-lapped?
+ * Was this session explicitly marked up as intervals?
  *
- * hasLaps() cannot tell the difference: a steady two-hour ride lapped every
- * kilometre has twenty laps and nothing to compare. Two signals separate them:
+ * Only the hard signal: an intervalType or isRecovery flag on a lap, which a
+ * structured or hand-edited session carries and Strava's raw auto-laps never
+ * do.
  *
- *   - an explicit intervalType on any lap, which only a structured or
- *     hand-edited session carries — Strava's raw auto-laps have none;
- *   - failing that, laps of visibly uneven length, since work and rest differ
- *     while auto-laps are near-identical by construction.
+ * An earlier version also guessed from uneven lap lengths — work and rest
+ * differ, auto-laps do not. It guessed wrong: it skipped past a three-day-old
+ * interval run to land on a six-day-old ride, because real sessions are not as
+ * tidy as the rule assumed. A wrong guess here is worse than no guess, since
+ * it silently opens the page on the wrong workout. So the guess is gone: with
+ * evidence this returns true, without it the caller falls back to the plain
+ * newest session, which is at least predictable.
  */
 function looksLikeIntervals(a) {
   const laps = (Array.isArray(a?.results) && a.results.length > 1)
     ? a.results
     : (Array.isArray(a?.laps) ? a.laps : []);
   if (laps.length < 3) return false;
-
-  if (laps.some((l) => String(l?.intervalType || '').trim() !== '' || l?.isRecovery === true)) {
-    return true;
-  }
-
-  // Ignore the first and last — warm-up and cool-down are long by nature and
-  // would make any session look uneven.
-  const mid = laps.slice(1, -1)
-    .map((l) => Number(l?.duration ?? l?.movingTime ?? l?.elapsed_time ?? l?.time ?? 0))
-    .filter((s) => Number.isFinite(s) && s > 0);
-  if (mid.length < 2) return false;
-
-  const longest = Math.max(...mid);
-  const shortest = Math.min(...mid);
-  // Rest is rarely more than half the work interval; auto-laps sit near 1.0.
-  return longest >= shortest * 1.5;
+  return laps.some((l) => String(l?.intervalType || '').trim() !== '' || l?.isRecovery === true);
 }
 
 /** List API returns laps with lactate only — not enough for TrainingForm. */
@@ -1821,7 +1809,13 @@ export default function NativeTrainingPage({
         if (looksLikeIntervals(t) && at > bestAt) { bestAt = at; best = title; }
       }
     }
-    setSelectedTitle(best || newestTitle);
+    // Only prefer a marked-up interval session if it is roughly as recent as
+    // the newest. Without this bound the page reached back into the archive
+    // for the last workout that happened to carry lap markers, which reads as
+    // simply opening on the wrong session — the complaint that started this.
+    const WITHIN_MS = 14 * 86400000;
+    const useBest = best && (newestAt - bestAt) <= WITHIN_MS;
+    setSelectedTitle(useBest ? best : newestTitle);
   }, [grouped, selectedTitle, categoryFilterId]);
 
   const sessions = useMemo(() => {
