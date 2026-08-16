@@ -1576,28 +1576,6 @@ export default function NativeDashboardPage({
           user={user}
           onClose={closePlanned}
           onOpenLinkedActivity={(act) => { closePlanned(); openActivity(act); }}
-          // Record a session that happened but never reached the app — a pool
-          // swim, a watch left at home. Reuses the TrainingForm every other
-          // manual entry goes through, prefilled from the plan, so what lands
-          // in the database has the same shape as everything else.
-          onAddCompleted={(pw) => {
-            const d = pw?.date ? new Date(pw.date) : new Date();
-            closePlanned();
-            setLactateModal({
-              isOpen: true,
-              initialData: {
-                sport: pw?.sport === 'strength' ? 'gym' : (pw?.sport || 'bike'),
-                type: 'interval',
-                category: pw?.category || '',
-                title: pw?.title || 'Untitled Training',
-                customTitle: '',
-                description: pw?.description || '',
-                date: (Number.isNaN(d.getTime()) ? new Date() : d).toISOString().slice(0, 16),
-                specifics: { specific: '', weather: '', customSpecific: '', customWeather: '' },
-                results: [],
-              },
-            });
-          }}
           onSaved={(updated) => {
             onPlannedWorkoutChanged && onPlannedWorkoutChanged({ type: 'updated', planned: updated });
           }}
