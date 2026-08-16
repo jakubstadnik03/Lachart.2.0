@@ -52,20 +52,22 @@ export function plannedWorkoutTss(pw, context) {
 /**
  * How long a session took.
  *
- * The order matters more than it looks. moving_time excludes every pause, and
- * in a pool that means the rest at the wall — which is most of the difference
- * between a 1h swim and a 1h32m one. Reading it before the session's own
- * duration made the calendar's week hours come out short against the
- * dashboard's for the same seven days.
+ * This is WeekStrip's chain, character for character, because WeekStrip is the
+ * reading confirmed as correct — swim 7:00 where the calendar's week summary
+ * said 5:40, over an hour a week on the same activities.
  *
- * So: the recorded total first, moving time only as a fallback for records
- * that carry nothing else. This matches WeekStrip, which is the reading the
- * athlete confirmed as correct.
+ * Reasoning out a "better" order got it wrong twice: which field means what
+ * varies by source, and arguing about it does not settle the question.
+ * WeekStrip imports this function rather than keeping its own copy, so the two
+ * cannot drift apart again.
+ *
+ * The three at the end only fire when every field above is absent, so they
+ * extend the chain without changing any answer it already gives.
  */
 export function completedSecs(t) {
-  const v = t?.totalTime || t?.duration || t?.durationSeconds
-    || t?.totalTimerTime || t?.totalElapsedTime || t?.elapsedTime || t?.elapsed_time
-    || t?.movingTime || t?.moving_time;
+  const v = t?.totalTime || t?.duration || t?.movingTime || t?.moving_time
+    || t?.elapsedTime || t?.elapsed_time
+    || t?.totalTimerTime || t?.totalElapsedTime || t?.durationSeconds;
   const n = Number(v);
   return Number.isFinite(n) ? n : 0;
 }
