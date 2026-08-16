@@ -71,6 +71,20 @@ describe('looksLikeSameSession', () => {
     expect(looksLikeSameSession(ride(), other)).toBe(false);
   });
 
+<<<<<<< HEAD
+  it('tolerates the drift between two devices recording one ride', () => {
+    // Averages from two head units over the same session are close but not
+    // equal — they smooth differently and start and stop seconds apart. Tight
+    // tolerances here vetoed real pairs, which is how duplicates survived.
+    const other = ride({
+      id: 'fit-b', stravaId: undefined, duration: 8100,
+      avgHeartRate: 149, avgPower: 246,
+    });
+    expect(looksLikeSameSession(ride(), other)).toBe(true);
+  });
+
+=======
+>>>>>>> origin/main
   it('abstains when only one side carries heart rate', () => {
     // A missing value is not evidence of a mismatch.
     const other = ride({ id: 'fit-b', stravaId: undefined, avgHeartRate: 0, duration: 8100 });
