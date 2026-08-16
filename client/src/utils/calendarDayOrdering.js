@@ -172,7 +172,18 @@ export function dedupeCalendarActivities(acts) {
   const indexByKey = new Map();
 
   for (const act of list) {
-    const stravaId = act?.stravaId != null ? String(act.stravaId) : null;
+    // Follow the link back to the source activity.
+    //
+    // Adding lactate to a Strava ride creates a Training that carries
+    // sourceStravaActivityId. Its app id is `regular-<_id>` while the original
+    // is `strava-<id>`, so keying on the app id alone kept both and the day
+    // listed one ride twice — with two different TSS values, because the two
+    // records are scored differently. The link is the evidence that they are
+    // one session, so it decides the key.
+    const linkedStravaId = act?.sourceStravaActivityId != null
+      ? String(act.sourceStravaActivityId)
+      : null;
+    const stravaId = act?.stravaId != null ? String(act.stravaId) : linkedStravaId;
     const dedupeKey = stravaId
       ? `strava:${stravaId}`
       : (getActivityAppId(act) || String(act?.id ?? act?._id ?? ''));

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { PlusIcon } from '@heroicons/react/24/outline';
+import { buildChronologicalDayItems, pairPlannedWithActivities } from '../../utils/calendarDayOrdering';
 import PlannerWeekSummary from './PlannerWeekSummary';
 import {
   addDays,
@@ -18,7 +19,6 @@ import {
   MiniWorkoutChart,
   PlannerSportIcon,
   plannerSportColor,
-  sportMatchesPlanner,
 } from './WorkoutPlanModal';
 
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -151,18 +151,31 @@ export default function PlannerWeekRow({
       {days.map((day, di) => {
         const dateStr = toLocalDateStr(day);
         const isToday = isSameDay(day, today);
-        const dayPlanned = weekPlanned.filter((p) => isSameDay(new Date(p.date), day));
-        const dayCompleted = weekTrainings.filter((t) => isSameDay(new Date(t.date || t.startDate || t.start_date), day));
+        const dayPlannedRaw = weekPlanned.filter((p) => isSameDay(new Date(p.date), day));
+        // Built by the calendar's own function, not a copy of it.
+        //
+        // The planner used to pair and dedupe with its own loop, and the copy
+        // had drifted: it never deduped, so one ride that reached the app
+        // twice — a Strava sync plus the Training created by adding lactate —
+        // was listed as two sessions with two different TSS values. It also
+        // matched sports by different rules, so a plan could pair with one
+        // activity in the calendar and another here. Two implementations of
+        // one behaviour will always end up disagreeing; there is now one.
+        const dayCompletedRaw = weekTrainings.filter(
+          (t) => isSameDay(new Date(t.date || t.startDate || t.start_date), day),
+        );
+        const { items: dayItems } = buildChronologicalDayItems(
+          dayPlannedRaw, dayCompletedRaw, pairPlannedWithActivities,
+        );
+        const dayPlanned = dayItems.filter((i) => i.kind !== 'activity').map((i) => i.pw);
+        const dayCompleted = dayItems.filter((i) => i.kind !== 'planned').map((i) => i.act);
+        const planMatch = new Map(
+          dayItems.filter((i) => i.kind === 'pair').map((i) => [i.pw._id, i.act]),
+        );
+        const standaloneCompleted = dayItems
+          .filter((i) => i.kind === 'activity')
+          .map((i) => i.act);
         const isPastDay = dateStr < todayStr;
-        const ckey = (t) => String(t._id || t.id || t.stravaId || '');
-        const claimedDone = new Set();
-        const planMatch = new Map();
-        for (const pw of dayPlanned) {
-          let m = dayCompleted.find((t) => !claimedDone.has(ckey(t)) && pw.completedTrainingId && String(pw.completedTrainingId) === ckey(t));
-          if (!m) m = dayCompleted.find((t) => !claimedDone.has(ckey(t)) && sportMatchesPlanner(pw.sport, t.sport || t.type));
-          if (m) { claimedDone.add(ckey(m)); planMatch.set(pw._id, m); }
-        }
-        const standaloneCompleted = dayCompleted.filter((t) => !claimedDone.has(ckey(t)));
         const isWeekend = di >= 5;
         const isEmpty = dayPlanned.length === 0 && dayCompleted.length === 0;
 
@@ -226,7 +239,7 @@ export default function PlannerWeekRow({
             })}
 
             {standaloneCompleted.map((t) => (
-              <CompletedCard key={ckey(t)} training={t} user={user} userProfile={userProfile} onOpen={(tr) => onOpenCompleted(tr)} />
+              <CompletedCard key={String(t._id || t.id || t.stravaId || '')} training={t} user={user} userProfile={userProfile} onOpen={(tr) => onOpenCompleted(tr)} />
             ))}
 
             {isEmpty && !isMobile ? (

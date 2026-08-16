@@ -412,7 +412,7 @@ export default function WorkoutPlannerPage() {
           way back was the bottom tab bar. Calendar and Charts are one page, so
           they navigate with the tab in the query string. */}
       {isMobile && (
-        <div className="flex bg-gray-100 rounded-xl p-0.5 mx-3 mt-2">
+        <div className="sticky top-0 z-20 flex bg-gray-100 rounded-xl p-0.5 mx-3 mt-2 shadow-sm">
           {[['calendar', 'Calendar'], ['charts', 'Charts'], ['planner', 'Planner']].map(([tab, label]) => (
             <button
               key={tab}
