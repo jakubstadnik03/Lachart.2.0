@@ -103,6 +103,9 @@ export default function PlannedWorkoutEditor({
   onSaved,
   onDeleted,
   onOpenLinkedActivity,
+  /** Opens the shared TrainingForm prefilled from this plan. Omit to hide the
+   *  manual-entry button — the comparison columns still render. */
+  onAddCompleted = null,
 }) {
   const isOpen = !!plannedWorkout;
   const navigate = useNavigate();
@@ -267,6 +270,31 @@ export default function PlannedWorkoutEditor({
 
   const isCompleted = !!linkedActivity;
   const tint = SPORT_TINT[sport === 'strength' ? 'gym' : sport] || SPORT_TINT.other;
+
+  // Planned vs completed, in the same three units so the columns line up.
+  const dash = '—';
+  const fmtHm = (secs) => {
+    const s = Number(secs);
+    if (!Number.isFinite(s) || s <= 0) return dash;
+    const h = Math.floor(s / 3600);
+    const m = Math.round((s % 3600) / 60);
+    return h > 0 ? `${h}h ${m}m` : `${m}m`;
+  };
+  const fmtKm = (metres) => {
+    const m = Number(metres);
+    if (!Number.isFinite(m) || m <= 0) return dash;
+    return m < 2000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(1)} km`;
+  };
+  const plannedSummary = {
+    time: fmtHm((Number(durH) || 0) * 3600 + (Number(durM) || 0) * 60),
+    distance: fmtKm(plannedDist),
+    tss: Number(targetTss) > 0 ? String(Math.round(Number(targetTss))) : dash,
+  };
+  const completedSummary = {
+    time: fmtHm(linkedActivity?.movingTime || linkedActivity?.elapsedTime || linkedActivity?.duration),
+    distance: fmtKm(linkedActivity?.distance),
+    tss: Number(linkedActivity?.tss) > 0 ? String(Math.round(Number(linkedActivity.tss))) : dash,
+  };
 
   // Live readout under the duration/distance pair — recalculates as either edits.
   const paceReadout = plannedPaceReadout({
@@ -483,6 +511,48 @@ export default function PlannedWorkoutEditor({
               <line x1="6" y1="6" x2="18" y2="18" /><line x1="18" y1="6" x2="6" y2="18" />
             </svg>
           </button>
+        </div>
+
+        {/* Planned vs completed — shown whether or not anything has been done
+            yet. An empty right-hand column is the point: it states what is
+            still outstanding, and offers the way to record it when the session
+            happened but never reached the app (pool swim, watch left at home).
+            The manual entry opens the same TrainingForm used everywhere else;
+            a second, simpler form would produce a different shape of Training
+            and quietly skew TSS. */}
+        <div style={{ padding: '0 18px 10px' }}>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <div style={{ flex: 1, padding: '10px 12px', borderRadius: 12, background: '#f8fafc', border: '1px solid #eef2f7' }}>
+              <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: .6, color: '#94a3b8', textTransform: 'uppercase', marginBottom: 6 }}>Planned</div>
+              <PvcRow label="Time" value={plannedSummary.time} />
+              <PvcRow label="Distance" value={plannedSummary.distance} />
+              <PvcRow label="TSS" value={plannedSummary.tss} />
+            </div>
+            <div style={{
+              flex: 1, padding: '10px 12px', borderRadius: 12,
+              background: isCompleted ? 'rgba(34,197,94,.06)' : '#fff',
+              border: `1px solid ${isCompleted ? 'rgba(34,197,94,.25)' : '#eef2f7'}`,
+            }}>
+              <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: .6, color: isCompleted ? '#15803d' : '#94a3b8', textTransform: 'uppercase', marginBottom: 6 }}>Completed</div>
+              <PvcRow label="Time" value={completedSummary.time} muted={!isCompleted} />
+              <PvcRow label="Distance" value={completedSummary.distance} muted={!isCompleted} />
+              <PvcRow label="TSS" value={completedSummary.tss} muted={!isCompleted} />
+            </div>
+          </div>
+
+          {!isCompleted && onAddCompleted && (
+            <button
+              onClick={() => onAddCompleted(plannedWorkout)}
+              style={{
+                marginTop: 8, width: '100%', padding: '10px 12px', borderRadius: 12,
+                background: '#fff', border: '1px dashed #cbd5e1', color: '#475569',
+                fontFamily: 'inherit', fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                WebkitTapHighlightColor: 'transparent', touchAction: 'manipulation',
+              }}
+            >
+              + Enter what you actually did
+            </button>
+          )}
         </div>
 
         {/* Linked activity quick-open */}
@@ -935,6 +1005,19 @@ export default function PlannedWorkoutEditor({
 }
 
 // ─── Field wrapper ────────────────────────────────────────────────────────────
+
+/** One line of the planned/completed comparison. */
+function PvcRow({ label, value, muted = false }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8, padding: '2px 0' }}>
+      <span style={{ fontSize: 11, color: '#94a3b8', fontWeight: 600 }}>{label}</span>
+      <span style={{
+        fontSize: 13, fontWeight: 800, fontVariantNumeric: 'tabular-nums',
+        color: muted ? '#cbd5e1' : '#0f172a',
+      }}>{value}</span>
+    </div>
+  );
+}
 
 function Field({ label, children }) {
   return (
