@@ -6937,7 +6937,7 @@ function WeekSummaryCell({ weekSummary, formatHours, formatKm, user, tab = 'done
 
   const { totalSeconds, totalTSS, runSeconds, bikeSeconds, swimSeconds, strengthSeconds,
     distanceRun, distanceBike, distanceSwim, tssRun, tssBike, tssSwim, tssStrength,
-    volumeChange, plannedSeconds, plannedTSS } = weekSummary;
+    volumeChange, plannedSeconds, plannedTSS, sessionCount } = weekSummary;
 
   const hasPlan = plannedSeconds > 0;
   const completionPct = hasPlan ? Math.min(100, Math.round((totalSeconds / plannedSeconds) * 100)) : null;
@@ -7057,6 +7057,9 @@ function WeekSummaryCell({ weekSummary, formatHours, formatKm, user, tab = 'done
                 {plannedTSS > 0 && <span className={`${cls.micro} text-gray-400`}>/{Math.round(plannedTSS)}</span>}
                 <span className={`${cls.micro} text-gray-400`}>TSS</span>
               </div>
+            )}
+            {sessionCount > 0 && (
+              <span className={`${cls.micro} text-gray-400`}>· {sessionCount} sessions</span>
             )}
             {completionPct !== null && (
               <span className={`${cls.micro} font-bold px-1.5 py-0.5 rounded-full ${completionPct >= 100 ? 'bg-green-100 text-green-600' : completionPct >= 70 ? 'bg-yellow-100 text-yellow-600' : 'bg-gray-100 text-gray-400'}`}>
@@ -8969,6 +8972,11 @@ export default function CalendarView({
           tssSwim: 0,
           tssStrength: 0,
           totalTSS: 0,
+          // How many sessions this total is made of. The dashboard shows its
+          // own count and the two have been disagreeing on hours and TSS with
+          // nothing on screen to say why — a count separates "a session is
+          // missing" from "a session scored zero", which need different fixes.
+          sessionCount: 0,
           hasTss: false
         };
       }
@@ -8981,6 +8989,7 @@ export default function CalendarView({
       const tssVal = resolveActivityTss(act, userProfile, { user: userProfile });
 
       entry.totalSeconds += duration;
+      entry.sessionCount += 1;
       if (sport.includes('run') || sport.includes('walk') || sport.includes('hike')) {
         entry.runSeconds += duration;
         entry.distanceRun += distance;
