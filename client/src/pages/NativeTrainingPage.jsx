@@ -23,7 +23,7 @@ import {
 } from '../components/NativeDashboard/animations';
 import api from '../services/api';
 import { buildActivityMatcher, metricsPatchFromDetail } from '../utils/activityEventPatches';
-import { addTraining, updateTraining, getStravaActivityDetail, createFieldLactateMeasurement, updateStravaLactateValues, getFieldLactateMeasurements, deleteFieldLactateMeasurement, assignFieldLactateMeasurement } from '../services/api';
+import { addTraining, updateTraining, getStravaActivityDetail, getGarminActivityDetail, createFieldLactateMeasurement, updateStravaLactateValues, getFieldLactateMeasurements, deleteFieldLactateMeasurement, assignFieldLactateMeasurement } from '../services/api';
 import { useCategories, hexToRgba } from '../context/CategoryContext';
 import { normalizeCategoryKey } from '../utils/trainingCategory';
 import {
@@ -178,6 +178,23 @@ function isStravaActivityShape(act) {
     !!act.stravaId ||
     /^strava-/i.test(idStr) ||
     (act.source === 'strava' && !!act.sourceId);
+}
+
+function isGarminActivityShape(act) {
+  if (!act) return false;
+  const idStr = String(act.id || act._id || '');
+  return act.type === 'garmin' ||
+    act.source === 'garmin' ||
+    !!act.garminId ||
+    /^garmin-/i.test(idStr);
+}
+
+function resolveGarminActivityId(act) {
+  if (!act) return '';
+  if (act.source === 'garmin' && act.sourceId) {
+    return String(act.sourceId).replace(/^garmin-/i, '');
+  }
+  return String(act.garminId || act.id || act._id || '').replace(/^garmin-/i, '');
 }
 
 function mergeLapsPreserveLactate(freshLaps, stubLaps) {
@@ -399,13 +416,23 @@ function getIntervals(t) {
 
 // Training History chart: list API often ships lactate-only stub laps. Pull the
 // cached Strava detail laps when available and merge saved lactate/RPE edits.
-function getIntervalsForChart(t, stravaLapsCache = {}) {
+function getIntervalsForChart(t, stravaLapsCache = {}, garminLapsCache = {}) {
   if (!t) return [];
 
   let intervals = [];
   if (isStravaActivityShape(t)) {
     const rawId = resolveStravaNumericId(t);
     const cached = rawId ? stravaLapsCache[rawId] : null;
+    if (Array.isArray(cached) && cached.length > 0) {
+      const stubLaps = Array.isArray(t.laps) ? t.laps : [];
+      intervals = mergeLapsPreserveLactate(cached, stubLaps);
+    }
+  } else if (isGarminActivityShape(t)) {
+    // Garmin ships the same lactate-only stubs in the list as Strava does, so
+    // it needs the same detail fetch behind it — without one, a Garmin ride
+    // charted as a flat row of empty laps.
+    const rawId = resolveGarminActivityId(t);
+    const cached = rawId ? garminLapsCache[rawId] : null;
     if (Array.isArray(cached) && cached.length > 0) {
       const stubLaps = Array.isArray(t.laps) ? t.laps : [];
       intervals = mergeLapsPreserveLactate(cached, stubLaps);
@@ -445,6 +472,14 @@ function needsStravaLapFetch(t, stravaLapsCache = {}) {
   const rawId = resolveStravaNumericId(t);
   if (!rawId) return false;
   return !(rawId in stravaLapsCache);
+}
+
+function needsGarminLapFetch(t, garminLapsCache = {}) {
+  if (!isGarminActivityShape(t)) return false;
+  if (hasDetailedLaps(t)) return false;
+  const rawId = resolveGarminActivityId(t);
+  if (!rawId) return false;
+  return !(rawId in garminLapsCache);
 }
 
 // ─── chart palette ────────────────────────────────────────────────────────────
@@ -667,7 +702,7 @@ function valueShade(value, lo, hi, base, invert = false) {
   return _mixHex(_mixHex('#ffffff', base, 0.32), _mixHex(base, '#1e1b4b', 0.18), r);
 }
 
-function SessionBarChart({ sessions, metric, sport, user = null, unitSystem = 'metric', highlightId, onSessionTap, onLapEditLactate, hideWarmCool = false, stravaLapsCache = {} }) {
+function SessionBarChart({ sessions, metric, sport, user = null, unitSystem = 'metric', highlightId, onSessionTap, onLapEditLactate, hideWarmCool = false, stravaLapsCache = {}, garminLapsCache = {} }) {
   // Wider left gutter so pace ("4:35/km") and 3-digit power Y labels fit.
   const W = 320, H = 230, padLeft = 46, padRight = 14, padTop = 14, padBottom = 28;
   const padX = padLeft;
@@ -688,7 +723,7 @@ function SessionBarChart({ sessions, metric, sport, user = null, unitSystem = 'm
   // strip can show distance, time, HR, lactate, RPE alongside the active metric.
   const data = useMemo(() => {
     return sessions.map((s, i) => {
-      let intervals = getIntervalsForChart(s, stravaLapsCache);
+      let intervals = getIntervalsForChart(s, stravaLapsCache, garminLapsCache);
       if (hideWarmCool) {
         // Drop warm-up + cool-down (and recovery) intervals from the
         // comparison chart so we only compare the meat of the workout.
@@ -725,7 +760,7 @@ function SessionBarChart({ sessions, metric, sport, user = null, unitSystem = 'm
         meta: s,
       };
     }).filter(s => s.laps.length > 0);
-  }, [sessions, metric, isPace, sport, hideWarmCool, stravaLapsCache]);
+  }, [sessions, metric, isPace, sport, hideWarmCool, stravaLapsCache, garminLapsCache]);
 
   if (data.length === 0) {
     return (
@@ -1311,7 +1346,7 @@ function BarGroupChart({ sessions, metric, highlightId, onBarTap }) {
 // ─── multi-line SVG chart ─────────────────────────────────────────────────────
 // Each session is a colored polyline; X = interval index (1..n), Y = metric.
 
-function MultiLineChart({ sessions, metric, sport = 'bike', user = null, unitSystem = 'metric', highlightId, onPointTap, hideWarmCool = false, stravaLapsCache = {} }) {
+function MultiLineChart({ sessions, metric, sport = 'bike', user = null, unitSystem = 'metric', highlightId, onPointTap, hideWarmCool = false, stravaLapsCache = {}, garminLapsCache = {} }) {
   const W = 320, H = 170, padX = 26, padY = 18;
 
   // For run/swim the 'power' slot stores pace in seconds — same logic as SessionBarChart.
@@ -1330,7 +1365,7 @@ function MultiLineChart({ sessions, metric, sport = 'bike', user = null, unitSys
   const series = useMemo(() => {
     return sessions.map((s, i) => {
       const sportKey = normSport(s.sport);
-      let intervals = getIntervalsForChart(s, stravaLapsCache);
+      let intervals = getIntervalsForChart(s, stravaLapsCache, garminLapsCache);
       if (hideWarmCool) {
         const total = intervals.length;
         intervals = intervals.filter((iv, i) => !isWarmupOrCooldown(iv, i, total));
@@ -1362,7 +1397,7 @@ function MultiLineChart({ sessions, metric, sport = 'bike', user = null, unitSys
         meta: s,
       };
     }).filter(s => s.points.length >= 1);
-  }, [sessions, metric, hideWarmCool, isPace, stravaLapsCache]);
+  }, [sessions, metric, hideWarmCool, isPace, stravaLapsCache, garminLapsCache]);
 
   // Domain
   const allXs = series.flatMap(s => s.points.map(p => p.x));
@@ -1616,6 +1651,7 @@ export default function NativeTrainingPage({
   // Cache Strava lap fetches between renders / re-opens of the sheet — the
   // assignment list shows compact summaries, the laps are pulled lazily once.
   const [stravaLapsCache, setStravaLapsCache] = useState({});
+  const [garminLapsCache, setGarminLapsCache] = useState({});
 
   const handleAssignField = async ({ measurement, training, lapIndex }) => {
     if (!measurement || !training) return;
@@ -1847,6 +1883,30 @@ export default function NativeTrainingPage({
     });
     return () => { cancelled = true; };
   }, [intervalTrainingsBase, stravaLapsCache, athleteId, user]);
+
+  // The same for Garmin. Its rides carry real laps on the server — 18 of this
+  // account's 24 have more than one — but the list ships the same lactate-only
+  // stubs Strava does, so without a detail fetch the charts had nothing to draw.
+  useEffect(() => {
+    const needed = intervalTrainingsBase.filter(t => needsGarminLapFetch(t, garminLapsCache));
+    if (!needed.length) return;
+    let cancelled = false;
+    const isCoachViewing = athleteId && user && String(athleteId) !== String(user._id || user.id || '');
+    const integAthleteId = isCoachViewing ? String(athleteId) : null;
+    needed.forEach(t => {
+      const rawId = resolveGarminActivityId(t);
+      if (!rawId) return;
+      getGarminActivityDetail(rawId, integAthleteId).then(data => {
+        if (cancelled) return;
+        const laps = Array.isArray(data?.laps) ? data.laps : [];
+        setGarminLapsCache(prev => ({ ...prev, [rawId]: laps }));
+      }).catch(() => {
+        // Cache the miss too, so a ride Garmin cannot detail is asked about once.
+        if (!cancelled) setGarminLapsCache(prev => ({ ...prev, [rawId]: [] }));
+      });
+    });
+    return () => { cancelled = true; };
+  }, [intervalTrainingsBase, garminLapsCache, athleteId, user]);
 
   const intervalTrainingsAll = categoryFilteredTrainings;
 
@@ -2348,7 +2408,7 @@ export default function NativeTrainingPage({
     if (!s) return null;
     const sportKey = normSport(s.sport);
     const isPace = (sportKey === 'run' || sportKey === 'swim') && metric === 'power';
-    const ivs = getIntervalsForChart(s, stravaLapsCache);
+    const ivs = getIntervalsForChart(s, stravaLapsCache, garminLapsCache);
     const vals = ivs.map(iv => (isPace ? intervalPaceSec(iv, sportKey) : getIntervalMetric(iv, metric))).filter(v => v != null);
     if (vals.length === 0) return null;
     return vals.reduce((a, b) => a + b, 0) / vals.length;
@@ -2830,7 +2890,7 @@ export default function NativeTrainingPage({
                   trainings={sessions}
                   metric={selectedMetric}
                   workOnly={hideWarmCool}
-                  intervalsFor={(t) => getIntervalsForChart(t, stravaLapsCache)}
+                  intervalsFor={(t) => getIntervalsForChart(t, stravaLapsCache, garminLapsCache)}
                   sport={currentSport}
                 />
 
@@ -2866,7 +2926,7 @@ export default function NativeTrainingPage({
                     if (chartType === 'trace') {
                       const target = visibleSessions.find(s => activityKey(s) === safeHighlight)
                         || visibleSessions[visibleSessions.length - 1];
-                      const ivs = getIntervalsForChart(target, stravaLapsCache);
+                      const ivs = getIntervalsForChart(target, stravaLapsCache, garminLapsCache);
                       const isPace = currentSport === 'run' || currentSport === 'swim';
 
                       // Each interval becomes a step at its own elapsed offset:
@@ -2925,6 +2985,7 @@ export default function NativeTrainingPage({
                           highlightId={safeHighlight}
                           hideWarmCool={hideWarmCool}
                           stravaLapsCache={stravaLapsCache}
+                          garminLapsCache={garminLapsCache}
                           onSessionTap={(s) => openActivity(s)}
                           onLapEditLactate={(s) => openTrainingForm(s)}
                         />
@@ -2937,6 +2998,7 @@ export default function NativeTrainingPage({
                           highlightId={safeHighlight}
                           hideWarmCool={hideWarmCool}
                           stravaLapsCache={stravaLapsCache}
+                          garminLapsCache={garminLapsCache}
                           onPointTap={(s) => openActivity(s)}
                         />;
                   })()}
@@ -2983,7 +3045,7 @@ export default function NativeTrainingPage({
                           const id = activityKey(s);
                           const avg = isPaceMetric
                             ? (() => {
-                                const ivs = getIntervalsForChart(s, stravaLapsCache);
+                                const ivs = getIntervalsForChart(s, stravaLapsCache, garminLapsCache);
                                 const vals = ivs.map(iv => intervalPaceSec(iv, currentSport)).filter(v => v != null);
                                 return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
                               })()
@@ -2991,7 +3053,7 @@ export default function NativeTrainingPage({
                           const baseAvg = isPaceMetric
                             ? (() => {
                                 if (!baselineSession) return null;
-                                const ivs = getIntervalsForChart(baselineSession, stravaLapsCache);
+                                const ivs = getIntervalsForChart(baselineSession, stravaLapsCache, garminLapsCache);
                                 const vals = ivs.map(iv => intervalPaceSec(iv, currentSport)).filter(v => v != null);
                                 return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
                               })()
@@ -3265,6 +3327,7 @@ export default function NativeTrainingPage({
                           onToggle={() => toggleExpanded(id)}
                           onOpenFull={() => openActivity(t)}
                           stravaLapsCache={stravaLapsCache}
+                          garminLapsCache={garminLapsCache}
                         />
                       );
                     })}
@@ -3661,7 +3724,7 @@ function ActivityRow({ activity, user = null, onTap, onAddLactate, delay = 0, sh
 // Used in the "Interval trainings" card. Tap header → expands showing per-lap
 // values + lactate. Tap "Open full training" → opens activity modal.
 
-function ExpandableLactateRow({ activity, user = null, delay = 0, expanded, onToggle, onOpenFull, stravaLapsCache = {} }) {
+function ExpandableLactateRow({ activity, user = null, delay = 0, expanded, onToggle, onOpenFull, stravaLapsCache = {}, garminLapsCache = {} }) {
   const unitSystem = resolveDistanceUnitSystem(user);
   const t = activity;
   const sport = normSport(t.sport);
@@ -3678,7 +3741,7 @@ function ExpandableLactateRow({ activity, user = null, delay = 0, expanded, onTo
   // Interval trainings often have no totalTime/duration on the activity
   // itself — derive the duration by summing the intervals/laps instead so the
   // card shows the real workout length instead of "0m".
-  const intervalsAll = getIntervalsForChart(t, stravaLapsCache);
+  const intervalsAll = getIntervalsForChart(t, stravaLapsCache, garminLapsCache);
   const summedSecs = intervalsAll.reduce(
     (a, iv) => a + parseResultDurationSec(iv),
     0
@@ -3803,7 +3866,7 @@ function ExpandableLactateRow({ activity, user = null, delay = 0, expanded, onTo
               {lactateValue.toFixed(1)} mmol
             </span>
           )}
-          <LapStrip activity={activity} sport={sport} width={120} height={34} stravaLapsCache={stravaLapsCache} />
+          <LapStrip activity={activity} sport={sport} width={120} height={34} stravaLapsCache={stravaLapsCache} garminLapsCache={garminLapsCache} />
         </div>
 
         {/* Chevron — rotates 90° when expanded */}
@@ -3937,8 +4000,8 @@ function ExpandableLactateRow({ activity, user = null, delay = 0, expanded, onTo
 // Bars colored by relative intensity (low=blue, mid=green/yellow, high=orange/red),
 // with a small lactate badge floating above any lap that has a measured value.
 
-function LapStrip({ activity, sport, height = 38, width = 130, stravaLapsCache = {} }) {
-  const intervals = getIntervalsForChart(activity, stravaLapsCache);
+function LapStrip({ activity, sport, height = 38, width = 130, stravaLapsCache = {}, garminLapsCache = {} }) {
+  const intervals = getIntervalsForChart(activity, stravaLapsCache, garminLapsCache);
   if (intervals.length < 2) return null;
 
   const sportIsPace = sport === 'run' || sport === 'swim';

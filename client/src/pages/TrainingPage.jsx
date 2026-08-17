@@ -257,13 +257,25 @@ export default function TrainingPage() {
         })),
         // Normalize Strava fields to match DashboardPage so shared cache entries
         // are always valid regardless of which page writes them first.
-        // Garmin/Apple entries are excluded: this page's detail + field-lactate
-        // flows only load Strava/FIT sessions, so a Garmin ride would show up
-        // in the Training History picker but never load (no laps, 0 W).
+        // Garmin rides belong here too. They were excluded on the grounds that
+        // they arrive with "no laps, 0 W" — that was true of the page, not of
+        // the data: the list ships Garmin the same lactate-only lap stubs it
+        // ships for Strava, and the ride behind them has real laps (18 of this
+        // account's 24 Garmin activities have more than one). What was missing
+        // was the detail fetch that Strava already had, which
+        // NativeTrainingPage now does for both.
+        //
+        // Apple Health stays out: those workouts genuinely have no laps —
+        // AppleHealthActivity stores a summary and nothing else.
         ...(stravaResponse.data || [])
           .filter(a => {
-            const src = a.source || (a.stravaId != null ? 'strava' : a.garminId != null ? 'garmin' : 'strava');
-            return src === 'strava';
+            const src = a.source || (
+              a.stravaId != null ? 'strava'
+              : a.garminId != null ? 'garmin'
+              : a.healthKitId != null ? 'apple_health'
+              : 'strava'
+            );
+            return src === 'strava' || src === 'garmin';
           })
           .map(a => ({
           ...a,
