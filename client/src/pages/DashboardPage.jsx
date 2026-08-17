@@ -3,7 +3,8 @@ import ReactDOM from 'react-dom';
 import { isCapacitorNative } from '../utils/isNativeApp';
 import { writeFormFitnessToWidget } from '../utils/widgetCache';
 import { compareActivitiesChronologically } from '../utils/calendarDayOrdering';
-import { mapExternalActivitiesToCalendar, mapExternalActivityToCalendar, inferExternalSource } from '../utils/mapExternalActivityToCalendar';
+import { mapExternalActivitiesToCalendar } from '../utils/mapExternalActivityToCalendar';
+import { buildCalendarActivitiesFromTrainings } from '../utils/calendarActivitiesFromTrainings';
 import NativeDashboardPage from './NativeDashboardPage';
 import { useAthleteSelection } from '../context/AthleteSelectionContext';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
@@ -94,111 +95,6 @@ function normaliseSportForWidget(raw) {
   if (s.includes('bike') || s.includes('ride') || s.includes('cycl') || s.includes('virtual') || s.includes('mtb')) return 'bike';
   // Truly unknown → 'other' (the widget shows a neutral icon, not a bike).
   return 'other';
-}
-
-/** Reuse merged trainings from loadTrainings() as calendar feed — avoids a second Strava/FIT round-trip. */
-function buildCalendarActivitiesFromTrainings(allTrainings, regTrainings) {
-  if (!Array.isArray(allTrainings) || allTrainings.length === 0) return [];
-
-  const trainingByStravaId = new Map();
-  (regTrainings || []).forEach((t) => {
-    const sid = t?.sourceStravaActivityId;
-    if (sid) trainingByStravaId.set(String(sid), t);
-  });
-
-  const linkedStravaIds = new Set(
-    (regTrainings || [])
-      .map((t) => t?.sourceStravaActivityId)
-      .filter(Boolean)
-      .map(String),
-  );
-
-  return allTrainings
-    .filter((t) => t && !t.sourceStravaActivityId)
-    .map((t) => {
-      const idStr = String(t.id || '');
-      const stravaId = t.stravaId || (idStr.startsWith('strava-') ? idStr.replace(/^strava-/, '') : null);
-      const garminId = t.garminId || (idStr.startsWith('garmin-') ? idStr.replace(/^garmin-/, '') : null);
-      const source = inferExternalSource(t);
-      const isExternal = Boolean(
-        source === 'garmin' || source === 'apple_health' || source === 'strava'
-        || stravaId || garminId || t.startDate,
-      );
-      const isFit = Boolean(
-        t.type === 'fit' || t.source === 'fit' || idStr.startsWith('fit-')
-        || (t.timestamp && (t.originalFileName || t.titleAuto)),
-      );
-      const isStrava = source === 'strava' || Boolean(t.type === 'strava' || stravaId);
-      const isGarmin = source === 'garmin' || Boolean(t.type === 'garmin' || garminId);
-
-      if (isFit && !isExternal) {
-        return {
-          ...t,
-          type: 'fit',
-          date: t.timestamp || t.date,
-          title: t.titleManual || t.titleAuto || t.originalFileName || t.title || 'Untitled Training',
-          sport: t.sport,
-          avgPower: t.avgPower,
-          maxPower: t.maxPower,
-          avgHeartRate: t.avgHeartRate,
-          maxHeartRate: t.maxHeartRate,
-          totalTime: t.totalElapsedTime || t.totalTimerTime,
-          distance: t.totalDistance,
-          tss: t.trainingStressScore ?? t.tss ?? t.totalTSS,
-          tssDisplayMode: t.tssDisplayMode ?? null,
-        };
-      }
-
-      if (isGarmin && garminId) {
-        return mapExternalActivityToCalendar({ ...t, garminId, source: 'garmin' }, trainingByStravaId);
-      }
-
-      if (isStrava && stravaId) {
-        const linkedTraining = trainingByStravaId.get(String(stravaId));
-        return {
-          ...t,
-          type: 'strava',
-          date: t.startDate || t.date || t.timestamp,
-          title: linkedTraining?.title || t.titleManual || t.name || t.title || 'Untitled Activity',
-          linkedTrainingTitle: linkedTraining?.title || null,
-          sport: t.sport,
-          stravaId,
-          id: idStr.startsWith('strava-') ? idStr : `strava-${stravaId}`,
-          avgPower: t.averagePower || t.average_watts || t.avgPower,
-          weightedAveragePower: t.weightedAveragePower ?? t.weighted_average_watts ?? null,
-          avgSpeed: t.averageSpeed || t.average_speed || t.avgSpeed,
-          maxPower: t.maxPower || t.max_watts,
-          avgHeartRate: t.averageHeartRate || t.average_heartrate || t.avgHeartRate,
-          maxHeartRate: t.maxHeartRate || t.max_heartrate,
-          totalTime: t.movingTime || t.elapsedTime || t.totalTime,
-          movingTime: t.movingTime || t.elapsedTime || t.totalTime,
-          metricsManualized: t.metricsManualized ?? false,
-          distance: t.distance,
-          tss: t.manualTss ?? (linkedTraining?.tss || linkedTraining?.totalTSS || t.tss || t.totalTSS || t.total_tss || null),
-          tssDisplayMode: t.tssDisplayMode ?? linkedTraining?.tssDisplayMode ?? null,
-          kilojoules: t.kilojoules ?? t.raw?.kilojoules,
-        };
-      }
-
-      if (linkedStravaIds.has(String(t._id))) return null;
-
-      return {
-        ...t,
-        id: idStr || `regular-${t._id}`,
-        type: 'regular',
-        date: t.date || t.timestamp,
-        title: t.title || t.titleManual || 'Untitled Training',
-        sport: t.sport,
-        category: t.category || null,
-        distance: t.totalDistance || t.distance,
-        totalTime: t.totalElapsedTime || t.totalTimerTime || t.duration,
-        tss: t.tss || t.totalTSS,
-        tssDisplayMode: t.tssDisplayMode ?? null,
-        avgPower: t.avgPower || t.averagePower || null,
-        avgSpeed: t.avgSpeed || t.averageSpeed || null,
-      };
-    })
-    .filter(Boolean);
 }
 
 /** Build the array the widget renders under "DONE" — completed activities

@@ -23,6 +23,8 @@ jest.mock('../components/shared/SportIcon', () => ({
 // eslint-disable-next-line import/first
 import { mapExternalActivitiesToCalendar } from './mapExternalActivityToCalendar';
 // eslint-disable-next-line import/first
+import { buildCalendarActivitiesFromTrainings } from './calendarActivitiesFromTrainings';
+// eslint-disable-next-line import/first
 import { dedupeCalendarActivities } from './calendarDayOrdering';
 // eslint-disable-next-line import/first
 import { completedSecs } from './completedSessionStats';
@@ -68,5 +70,20 @@ describe('what a week of activities adds up to', () => {
   it('adds up to the hours the calendar prints', () => {
     const total = week().reduce((sum, a) => sum + completedSecs(a), 0);
     expect(total).toBe(88010); // 24h 26m 50s — "24:27" on screen
+  });
+
+  it('gives the dashboard the same week as the calendar', () => {
+    // The dashboard re-uses the trainings it already fetched rather than
+    // asking again, so the same activities reach it down a second path. That
+    // path had its own copy of the mapping, and the copy still measured a ride
+    // by its moving time: 24h07m here against 24h27m there, twice over, in two
+    // different files. One number, whichever way the rows arrive.
+    const viaTrainings = dedupeCalendarActivities(
+      buildCalendarActivitiesFromTrainings(WEEK, []),
+    );
+    const secs = (rows) => rows.reduce((sum, a) => sum + completedSecs(a), 0);
+
+    expect(viaTrainings).toHaveLength(week().length);
+    expect(secs(viaTrainings)).toBe(secs(week()));
   });
 });
