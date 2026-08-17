@@ -324,7 +324,10 @@ async function syncStravaForUser(user, opts = {}) {
       stravaActivityIds: importedActivityIds,
       message: cleanRun ? null : 'Sync stopped before all pages completed',
     });
-    return { imported, updated, latestActivityId: latestImportedId };
+    // The caller needs to know this user was refused, not just that nothing
+    // came back: a refusal applies to the whole application, so the rest of
+    // the batch has nothing to gain by asking.
+    return { imported, updated, latestActivityId: latestImportedId, rateLimited };
   } catch (error) {
     // Ensure we never crash the server - catch all errors
     const errorMessage = error.response?.data?.message || error.message || 'Unknown error';
@@ -437,7 +440,16 @@ async function syncStravaForAllUsers({ batchSize = 10, delayBetweenUsers = 5000 
         } else {
           skipped++;
         }
-        
+
+        // Our own budget refusing is the same news as Strava refusing: there is
+        // no allowance left. Without this the batch spent 80 seconds and ten
+        // log rows per tick learning it ten times over.
+        if (result.rateLimited) {
+          console.log(`[StravaAutoSync] Refused on user ${i + 1}/${users.length} — abandoning the rest of the batch`);
+          skipped += users.length - i - 1;
+          break;
+        }
+
         // Add delay between users to respect rate limits (except for last user)
         if (i < users.length - 1) {
           await delay(delayBetweenUsers);
