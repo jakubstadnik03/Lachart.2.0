@@ -3751,7 +3751,14 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
 
   // ── Seed completed-metadata form when opening a different activity ──
   useEffect(() => {
-    const distDisplayVal = dist > 0 ? formatDistanceInputFromMetres(dist, unitSystem, { isSwim: false }) : '';
+    // Written the way the Planned box beside it writes distance — with its
+    // unit. A bare number in one column and "5 km" in the other left the
+    // athlete to guess which unit the empty-looking box wanted, and a 5 km
+    // swim typed as 5000 into a field that meant kilometres is a session a
+    // thousand times too long.
+    const distDisplayVal = dist > 0
+      ? formatDistanceFieldDisplay(dist, unitSystem, { isSwim: isSwimForm })
+      : '';
     const durDisplay = dur > 0 ? fmtDur(dur) : '';
     const formTitle = String(plannedWorkout?.title || '').trim() || title || '';
     // Local wall-clock date + time of the activity (editable in the form).
@@ -3842,7 +3849,15 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
   }, [merged, plannedWorkout, athleteId, onPlannedSaved]);
 
   // Accept "1:30:00", "1:30", "90", "90m", "1h30", "1h 30m" → seconds.
-  // style 'hm' → H:MM (planned editor). style 'ms' → M:SS (completed under 1h).
+  // style 'hm' → H:MM (planned editor). style 'ms' → M:SS.
+  //
+  // The Completed box used to ask for 'ms', so "1:20" meant 1h20m in the
+  // Planned column and 1m20s in the Completed one — the same four characters,
+  // side by side in one row, saved as two lengths eighty seconds apart. It
+  // reads 'auto' now: three parts are exact, "45:30" is still forty-five
+  // minutes, and anything else is read as hours and minutes, the way the box
+  // next to it reads. The blur then rewrites it as H:MM:SS, so what was meant
+  // is on screen before it is saved.
   const parseDurationToSeconds = (raw, style = 'auto') => {
     if (raw == null) return null;
     const s = String(raw).trim();
@@ -3902,7 +3917,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
       }
 
       if (String(completedForm.durationDisplay || '').trim()) {
-        const secs = parseDurationToSeconds(completedForm.durationDisplay, 'ms');
+        const secs = parseDurationToSeconds(completedForm.durationDisplay, 'auto');
         if (secs == null) throw new Error('Invalid duration — use 1:30:00, 1:30, 90m or 2h30m');
         extraFields.movingTime = secs;
         extraFields.duration = secs;
@@ -4024,7 +4039,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
       if (savedDist != null) {
         setCompletedForm((p) => ({
           ...p,
-          distanceKm: formatDistanceInputFromMetres(savedDist, unitSystem, { isSwim: isSwimForm }),
+          distanceKm: formatDistanceFieldDisplay(savedDist, unitSystem, { isSwim: isSwimForm }),
         }));
       }
       if (savedTss != null && Number.isFinite(Number(savedTss)) && Number(savedTss) > 0) {
@@ -4116,11 +4131,13 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
       return '#059669';
     };
     const durColor = ratioColor(durMins(completedForm.durationDisplay), planForm.durationMins || durMins(planForm.durationDisplay));
+    // Both sides in metres. Comparing the two boxes as typed compared "5" with
+    // "5 km" — and now that the completed box spells its unit out, comparing
+    // them as bare numbers would not survive the first blur.
     const distColor = ratioColor(
-      num(completedForm.distanceKm),
-      num(planForm.distanceKm) ?? (parsePlanDistanceToMetres(planForm.distanceDisplay) != null
-        ? formatDistanceInputFromMetres(parsePlanDistanceToMetres(planForm.distanceDisplay), unitSystem, { isSwim: isSwimForm })
-        : null),
+      parseDistanceInputToMetres(completedForm.distanceKm, unitSystem, { isSwim: isSwimForm }),
+      parsePlanDistanceToMetres(planForm.distanceDisplay)
+        ?? parseDistanceInputToMetres(planForm.distanceKm, unitSystem, { isSwim: isSwimForm }),
     );
     const tssColor = ratioColor(num(completedForm.tss), num(planForm.targetTss));
     const doneStyle = (c) => (c ? { color: c, fontWeight: 700 } : undefined);
@@ -4133,7 +4150,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
       return 0;
     };
     const completedDurationSecs = () => {
-      const parsed = parseDurationToSeconds(completedForm.durationDisplay, 'ms');
+      const parsed = parseDurationToSeconds(completedForm.durationDisplay, 'auto');
       return (parsed != null && parsed >= 0) ? parsed : 0;
     };
     const applyPlannedDurationSecs = (secs) => {
@@ -4288,7 +4305,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                 value={completedForm.durationDisplay}
                 onChange={(e) => setCompletedForm((p) => ({ ...p, durationDisplay: e.target.value }))}
                 onBlur={() => {
-                  const secs = parseDurationToSeconds(completedForm.durationDisplay, 'ms');
+                  const secs = parseDurationToSeconds(completedForm.durationDisplay, 'auto');
                   if (secs != null && secs > 0) {
                     setCompletedForm((p) => ({ ...p, durationDisplay: fmtDur(secs) }));
                   }
@@ -4327,8 +4344,20 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
               type="text"
               inputMode="decimal"
               value={completedForm.distanceKm}
-              onChange={(e) => setCompletedForm((p) => ({ ...p, distanceKm: sanitizeDecimalInput(e.target.value) }))}
-              placeholder={distanceInputUnitLabel(unitSystem, isSwimForm)}
+              onChange={(e) => setCompletedForm((p) => ({ ...p, distanceKm: e.target.value }))}
+              onBlur={() => {
+                // Normalised the same way as the Planned box, so the two
+                // columns always read in the same unit. Typing a bare number
+                // still works — it comes back with the unit spelled out.
+                const metres = parseDistanceInputToMetres(completedForm.distanceKm, unitSystem, { isSwim: isSwimForm });
+                if (metres != null && metres > 0) {
+                  setCompletedForm((p) => ({
+                    ...p,
+                    distanceKm: formatDistanceFieldDisplay(metres, unitSystem, { isSwim: isSwimForm }),
+                  }));
+                }
+              }}
+              placeholder={distanceInputPlaceholder(unitSystem, isSwimForm)}
               className={inputCls}
               style={doneStyle(distColor)}
             />
