@@ -14,6 +14,7 @@ import IntervalChart from '../components/FitAnalysis/IntervalChart';
 import { getIntegrationStatus } from '../services/api';
 import { listExternalActivities } from '../services/api';
 import { dedupeMergedCalendarActivities } from '../utils/dedupeMergedCalendarActivities';
+import { mapExternalActivitiesToCalendar } from '../utils/mapExternalActivityToCalendar';
 import { getStravaActivityDetail, updateStravaActivity, getAllTitles, createStravaLap, deleteStravaLap, getTrainingById, addTraining, updateTraining } from '../services/api';
 import api from '../services/api';
 import { getPlannedWorkouts, createPlannedWorkout, updatePlannedWorkout, deletePlannedWorkout, reorderPlannedWorkouts, getWorkoutTemplates, getDayPlans, setDayPlan as apiSetDayPlan, deleteDayPlan as apiDeleteDayPlan, getPeriods, savePeriod as apiSavePeriod, deletePeriod as apiDeletePeriod } from '../services/workoutPlannerApi';
@@ -3514,11 +3515,6 @@ const FitAnalysisPage = () => {
   );
 
   const calendarMergedActivities = React.useMemo(() => {
-    const trainingByStravaId = new Map();
-    (regularTrainings || []).forEach((t) => {
-      const sid = t?.sourceStravaActivityId;
-      if (sid) trainingByStravaId.set(String(sid), t);
-    });
     const hrFrom = (o) =>
       o?.avgHeartRate ??
       o?.averageHeartRate ??
@@ -3573,51 +3569,11 @@ const FitAnalysisPage = () => {
           avgSpeed: t.avgSpeed || t.averageSpeed || null,
           avgHeartRate: hrFrom(t),
         })),
-      ...externalActivities.map((a) => {
-        const linked = trainingByStravaId.get(String(a.stravaId));
-        const source = a.source || (a.stravaId != null ? 'strava' : a.garminId != null ? 'garmin' : 'strava');
-        const extId = source === 'garmin'
-          ? `garmin-${a.garminId}`
-          : source === 'apple_health'
-            ? `apple-${a.healthKitId || a.sourceId}`
-            : `strava-${a.stravaId}`;
-        return {
-          _id: a._id,
-          stravaId: a.stravaId ?? null,
-          garminId: a.garminId ?? null,
-          source,
-          id: extId,
-          date: a.startDate,
-          title: linked?.title || a.titleManual || a.name || 'Untitled Activity',
-          linkedTrainingTitle: linked?.title || null,
-          sport: a.sport || a.sport_type || a.sportType || null,
-          category: a.category || linked?.category || null,
-          type: source === 'garmin' ? 'garmin' : source === 'apple_health' ? 'apple_health' : 'strava',
-          distance: a.distance,
-          // totalTime means the whole session. It was being filled from
-          // movingTime first, which is the opposite — so by the time anything
-          // downstream asked "how long did this take", the answer had already
-          // been replaced with the moving time. In a pool that drops the rest
-          // at the wall: 5:40 of swimming a week where the dashboard, reading
-          // the untouched activity, said 7:00.
-          //
-          // No amount of reordering the field chain further down could have
-          // helped, because the field it reads was overwritten here first.
-          totalElapsedTime: a.elapsedTime || a.totalTime || a.movingTime,
-          totalTime: a.totalTime || a.elapsedTime || a.movingTime,
-          movingTime: a.movingTime || a.elapsedTime,
-          metricsManualized: a.metricsManualized ?? false,
-          tss: a.manualTss ?? a.tss ?? a.totalTSS,
-          manualTss: a.manualTss,
-          tssDisplayMode: a.tssDisplayMode,
-          normalizedPower: a.weighted_average_watts || a.normalizedPower || null,
-          weighted_average_watts: a.weighted_average_watts,
-          avgPower: a.averagePower || a.average_watts || null,
-          avgSpeed: a.averageSpeed || a.average_speed || null,
-          avgHeartRate: hrFrom(a),
-          calories: a.calories ?? null,
-        };
-      }),
+      // One mapper, shared with the dashboard. Two copies of this mapping is
+      // how the same week came to read 24:27 here and 24:08 there: they
+      // disagreed about which clock goes in totalTime, and every total
+      // downstream asks that field first.
+      ...mapExternalActivitiesToCalendar(externalActivities, regularTrainings),
     ];
     // The same workout can exist as a FIT upload AND a Strava/Garmin sync —
     // collapse cross-source duplicates so the calendar shows it once.

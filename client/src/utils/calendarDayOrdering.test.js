@@ -72,9 +72,21 @@ describe('looksLikeSameSession', () => {
     expect(looksLikeSameSession(ride(), twin)).toBe(false);
   });
 
-  it('refuses a different distance', () => {
-    const other = ride({ id: 'fit-b', stravaId: undefined, distance: 79000 });
+  it('refuses a different distance when the clocks cannot vouch for the pair', () => {
+    // 77.17 km against 79 km. Nothing here says these two records belong
+    // together except that they fall on one day, so the distance has to carry
+    // the decision alone and 2.4% is not close enough.
+    const other = ride({ id: 'fit-b', stravaId: undefined, distance: 79000, date: '2026-08-13T13:20:00' });
     expect(looksLikeSameSession(ride(), other)).toBe(false);
+  });
+
+  it('accepts that drift when both records start at the same minute', () => {
+    // Same minute, same sport, same duration, same heart rate, same power —
+    // one athlete cannot begin two sessions at once, so the start time is the
+    // evidence and a device that lost GPS for two kilometres is not a reason
+    // to list the ride twice. This is the rule the server has always used.
+    const other = ride({ id: 'fit-b', stravaId: undefined, distance: 79000 });
+    expect(looksLikeSameSession(ride(), other)).toBe(true);
   });
 
   it('refuses a different day', () => {

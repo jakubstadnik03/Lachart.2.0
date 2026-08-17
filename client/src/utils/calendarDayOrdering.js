@@ -187,9 +187,7 @@ function dupSecsCandidates(a) {
 }
 
 /** Smallest gap between any clock on A and any clock on B, or Infinity. */
-function closestDupSecsGap(a, b) {
-  const xs = dupSecsCandidates(a);
-  const ys = dupSecsCandidates(b);
+function closestDupSecsGap(xs, ys) {
   if (!xs.length || !ys.length) return Infinity;
   let best = Infinity;
   for (const x of xs) for (const y of ys) best = Math.min(best, Math.abs(x - y));
@@ -207,6 +205,16 @@ function dupSource(a) {
   return String(a?.type || 'regular');
 }
 
+/**
+ * Providers whose stored start is a real instant.
+ *
+ * Garmin and Apple store the moment the session began. Strava rows are saved
+ * from start_date_local — a local wall clock in a UTC-shaped field — and FIT
+ * files carry device local time the same way. When one record of a pair comes
+ * from each kind, this is what says whose timestamp to believe.
+ */
+const TRUE_UTC_SOURCES = new Set(['garmin', 'apple_health']);
+
 function dupMetres(a) {
   return Number(a?.distance || a?.totalDistance || a?.total_distance || 0) || 0;
 }
@@ -219,11 +227,68 @@ function dupWatts(a) {
   return Number(a?.avgPower || a?.averagePower || a?.average_watts || a?.weighted_average_watts || 0) || 0;
 }
 
-function dupDayKey(a) {
+function dupStartMs(a) {
   const raw = a?.date || a?.startDate || a?.start_date || a?.timestamp;
-  const d = raw ? new Date(raw) : null;
-  if (!d || Number.isNaN(d.getTime())) return null;
-  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+  const t = raw ? new Date(raw).getTime() : NaN;
+  return Number.isFinite(t) ? t : NaN;
+}
+
+/** Local calendar day as a number, so neighbouring days are ±1. */
+function dupDayIndex(ms) {
+  if (!Number.isFinite(ms)) return null;
+  const d = new Date(ms);
+  d.setHours(0, 0, 0, 0);
+  return Math.round(d.getTime() / 86400000);
+}
+
+/** Only these three are classified confidently enough to veto a pair. */
+function isConfidentSport(bucket) {
+  return bucket === 'bike' || bucket === 'run' || bucket === 'swim';
+}
+
+/**
+ * Everything the comparison needs, read off a record once.
+ *
+ * Dedup is quadratic in the worst case and a calendar payload runs to
+ * thousands of rows, so parsing the same date and walking the same field
+ * chains inside the inner loop is the difference between instant and
+ * noticeable.
+ */
+export function sessionSignals(act) {
+  const ms = dupStartMs(act);
+  return {
+    act,
+    src: dupSource(act),
+    sport: activitySportBucket(act),
+    ms,
+    dayIdx: dupDayIndex(ms),
+    secs: dupSecsCandidates(act),
+    metres: dupMetres(act),
+    hr: dupHr(act),
+    watts: dupWatts(act),
+  };
+}
+
+/**
+ * The gap you get when one provider stores local wall time and the other
+ * stores UTC.
+ *
+ * The same ride reaches the app 2h apart in Czech summer — 15:42 from Strava,
+ * 13:42 from Garmin — so nothing gated on "starts within five minutes" can
+ * pair them, and a late-evening session lands on two different days. The
+ * offset is not slack in the rules: it is one specific number, the athlete's
+ * own UTC offset for that date, which is why matching it is evidence of a pair
+ * rather than a hole. When the athlete is abroad it simply does not match, and
+ * the stricter same-day fingerprint below is what decides instead.
+ */
+function clocksOffsetByTimezone(A, B) {
+  if (!Number.isFinite(A.ms) || !Number.isFinite(B.ms)) return false;
+  // Exactly one side can be on the offset clock. Garmin and Apple both store
+  // real instants, so two of those hours apart are two sessions.
+  if (TRUE_UTC_SOURCES.has(A.src) === TRUE_UTC_SOURCES.has(B.src)) return false;
+  const offset = Math.abs(new Date(Math.min(A.ms, B.ms)).getTimezoneOffset()) * 60000;
+  if (offset === 0) return false;
+  return Math.abs(Math.abs(A.ms - B.ms) - offset) <= 5 * 60 * 1000;
 }
 
 /**
@@ -233,59 +298,116 @@ function dupDayKey(a) {
  * Strava. Nothing joins them — different ids, different names, no shared
  * reference — so the only evidence is that they describe the same effort.
  *
- * Every available signal has to agree, and a disagreement anywhere is a veto.
- * That asymmetry is deliberate: showing a duplicate is a visible annoyance,
- * but merging two genuinely different sessions makes one disappear, and the
- * athlete has no way to notice what is gone. So the rule errs toward leaving
- * both.
+ * A disagreement in sport, heart rate or power is always a veto. That
+ * asymmetry is deliberate: showing a duplicate is a visible annoyance, but
+ * merging two genuinely different sessions makes one disappear, and the
+ * athlete has no way to notice what is gone.
  *
- * Distance is required on both. Without it — a gym session, a treadmill hour —
- * two 45-minute entries on one day are as likely to be two real sessions as
- * one duplicated, and there is nothing left to tell them apart.
+ * What counts as agreement depends on whether the two clocks can be compared
+ * at all, which is what the tiers below are for.
  */
-export function looksLikeSameSession(a, b) {
+function sameSessionSignals(A, B) {
   // Two records from the same place are two different sessions. Strava never
   // returns one ride twice, and neither does Garmin — so whatever the numbers
   // say, there is nothing to collapse here, and collapsing would delete a real
-  // session. This is also what lets the duration rule below stay generous.
-  const srcA = dupSource(a);
-  if (srcA && srcA === dupSource(b)) return false;
+  // session. This is also what lets the duration rules below stay generous.
+  if (!A.src || A.src === B.src) return false;
 
-  const dayA = dupDayKey(a);
-  if (!dayA || dayA !== dupDayKey(b)) return false;
-  if (activitySportBucket(a) !== activitySportBucket(b)) return false;
+  // Sports must agree when both are classified confidently. A legacy Garmin
+  // row carrying a raw typeKey resolves to 'other', and that is not evidence
+  // of a different sport — it abstains rather than vetoing.
+  if (isConfidentSport(A.sport) && isConfidentSport(B.sport) && A.sport !== B.sport) return false;
 
-  const mA = dupMetres(a);
-  const mB = dupMetres(b);
-  if (mA <= 0 || mB <= 0) return false;
-  // 1%: two laps of the same loop in one day differ by far more than this.
-  if (Math.abs(mA - mB) > Math.max(mA, mB) * 0.01) return false;
+  const startGap = Math.abs(A.ms - B.ms);
+  const startsTogether = Number.isFinite(startGap) && startGap <= 5 * 60 * 1000;
+  const offsetClocks = clocksOffsetByTimezone(A, B);
+  const sameDay = A.dayIdx != null && A.dayIdx === B.dayIdx;
+  // Two sessions a day apart are two sessions — unless the clocks are offset,
+  // which is exactly how one evening session ends up on two dates.
+  if (!sameDay && !offsetClocks) return false;
 
-  // 3 minutes, because the two devices rarely start and stop together — the
-  // real pair that prompted this was 2h14m against 2h15m. Compared across
-  // every clock each side carries, so a stop-inclusive elapsed time on one
-  // side cannot veto a match its own moving time confirms.
-  if (closestDupSecsGap(a, b) > 180) return false;
+  // Duration compared across every clock each side carries, so a
+  // stop-inclusive elapsed time on one side cannot veto a match its own moving
+  // time confirms: one ride through Prague reads 8948s from Strava against
+  // 8062s from Garmin, while Strava's own moving time is 85s from Garmin's.
+  const durGap = closestDupSecsGap(A.secs, B.secs);
+  const hasDur = A.secs.length > 0 && B.secs.length > 0;
+  const longest = Math.max(...A.secs, ...B.secs, 0);
+  const durAgrees = !hasDur || durGap <= Math.max(180, 0.1 * longest);
+  const durAgreesTightly = hasDur && durGap <= Math.max(180, 0.05 * longest);
+
+  const mA = A.metres;
+  const mB = B.metres;
+  const distGap = Math.abs(mA - mB);
+  const farthest = Math.max(mA, mB);
+  const bothHaveDistance = mA > 0 && mB > 0;
+  // A missing distance abstains: a gym hour has none, and requiring it would
+  // leave every strength session duplicated.
+  const distAgrees = !bothHaveDistance || distGap <= farthest * 0.05;
+
+  // Tier 1 — the timestamps agree, which is most of the evidence on its own.
+  const tier1 = startsTogether && durAgrees && distAgrees;
+
+  // Tier 2 — starts close enough to be one session and the same route to
+  // within 3.5%, which is as far apart as provider GPS trimming puts the same
+  // race. Apple Health is exempt from the duration check: it reports the
+  // elapsed hour where Strava and Garmin report the moving one, so its
+  // durations for a single session can be hours out and no rule can hold
+  // them. For everyone else a duration that disagrees is the evidence that
+  // these are two different sessions — two laps of one loop, not one lap
+  // recorded twice.
+  const routeMatches = mA > 200 && mB > 200 && distGap <= farthest * 0.035;
+  const applePair = A.src === 'apple_health' || B.src === 'apple_health';
+  const tier2 = (applePair || durAgrees) && Number.isFinite(startGap)
+    && startGap <= 15 * 60 * 1000 && routeMatches;
+
+  // Tier 3 — the offset-clock pair. The gap is the athlete's UTC offset, the
+  // sports agree, the route matches to 3.5% and some pair of clocks agrees on
+  // the length. Two devices recording one session differ by more than the 1%
+  // the same-day rule below demands — 10.01 km against 10.18 km for one run —
+  // which is how these survived every earlier attempt.
+  const tier3 = offsetClocks && routeMatches && durAgrees;
+
+  // Tier 4 — the timestamps cannot be compared at all (a FIT file's device
+  // clock, hours from Strava's). Same day, the same route to within 1% and a
+  // duration that agrees to within 3 minutes is a unique fingerprint, and the
+  // same-provider guard above already excludes commute-style repeats.
+  const tier4 = sameDay && durAgreesTightly
+    && bothHaveDistance && distGap <= farthest * 0.01;
+
+  if (!tier1 && !tier2 && !tier3 && !tier4) return false;
 
   // Heart rate and power only vote when both records carry them. A missing
   // value is not evidence either way, so it abstains rather than blocking.
   //
   // Loose on purpose. By this point the two records agree on the day, the
-  // sport, the distance to within 1% and the duration to within three
-  // minutes — two genuinely different sessions matching all of that is
-  // already vanishingly unlikely, so these are a guard against the
-  // pathological case, not the deciding evidence. Set tight (3 bpm, 3%) they
-  // vetoed real pairs instead: two devices recording one ride smooth and
-  // start and stop differently, and their averages drift by more than that.
-  const hrA = dupHr(a);
-  const hrB = dupHr(b);
-  if (hrA > 0 && hrB > 0 && Math.abs(hrA - hrB) > 12) return false;
-
-  const wA = dupWatts(a);
-  const wB = dupWatts(b);
-  if (wA > 0 && wB > 0 && Math.abs(wA - wB) > Math.max(wA, wB) * 0.15) return false;
+  // sport, the route and the length — two genuinely different sessions
+  // matching all of that is already vanishingly unlikely, so these are a guard
+  // against the pathological case, not the deciding evidence. Set tight (3
+  // bpm, 3%) they vetoed real pairs instead: two devices recording one ride
+  // smooth and start and stop differently, and their averages drift by more.
+  if (A.hr > 0 && B.hr > 0 && Math.abs(A.hr - B.hr) > 12) return false;
+  if (A.watts > 0 && B.watts > 0
+    && Math.abs(A.watts - B.watts) > Math.max(A.watts, B.watts) * 0.15) return false;
 
   return true;
+}
+
+export function looksLikeSameSession(a, b) {
+  return sameSessionSignals(sessionSignals(a), sessionSignals(b));
+}
+
+/**
+ * When an offset-clock pair straddles midnight, the survivor has to be dated
+ * by the provider that stores real instants — otherwise collapsing the pair
+ * silently moves the session onto the wrong day, which is the bug the merge
+ * was supposed to fix wearing a different hat.
+ */
+function withTrueStart(winner, other) {
+  if (!other || TRUE_UTC_SOURCES.has(winner.src) || !TRUE_UTC_SOURCES.has(other.src)) return winner.act;
+  if (winner.dayIdx === other.dayIdx) return winner.act; // same day on screen — leave it be
+  const trueStart = other.act?.date || other.act?.startDate || new Date(other.ms).toISOString();
+  return { ...winner.act, date: trueStart, startDate: trueStart };
 }
 
 export function dedupeCalendarActivities(acts) {
@@ -328,15 +450,48 @@ export function dedupeCalendarActivities(acts) {
   // both Garmin and Strava. Nothing above can catch those, because there is
   // nothing to key on; only the numbers say they are one session. Runs after
   // the id pass so it only ever sees records already known to be distinct.
+  //
+  // Candidates come from the day itself and the two days either side, because
+  // an offset clock can date the two records of one evening session a day
+  // apart. Anything with no usable date skips the numeric pass entirely.
   const merged = [];
+  const seenByDay = new Map(); // day index -> [{ sig, idx }]
   for (const act of kept) {
-    const twinIdx = merged.findIndex((m) => looksLikeSameSession(m, act));
+    const sig = sessionSignals(act);
+    let twinIdx = -1;
+    let twinSig = null;
+    if (sig.dayIdx != null) {
+      for (const day of [sig.dayIdx, sig.dayIdx - 1, sig.dayIdx + 1]) {
+        const bucket = seenByDay.get(day);
+        if (!bucket) continue;
+        const hit = bucket.find((entry) => sameSessionSignals(entry.sig, sig));
+        if (hit) { twinIdx = hit.idx; twinSig = hit.sig; break; }
+      }
+    }
+
     if (twinIdx === -1) {
+      const entry = { sig, idx: merged.length };
       merged.push(act);
+      if (sig.dayIdx != null) {
+        const bucket = seenByDay.get(sig.dayIdx) || [];
+        bucket.push(entry);
+        seenByDay.set(sig.dayIdx, bucket);
+      }
       continue;
     }
-    if (activityDedupeScore(act) > activityDedupeScore(merged[twinIdx])) {
-      merged[twinIdx] = act;
+
+    if (activityDedupeScore(act) > activityDedupeScore(twinSig.act)) {
+      merged[twinIdx] = withTrueStart(sig, twinSig);
+      twinSig.act = merged[twinIdx];
+      twinSig.src = sig.src;
+      twinSig.sport = isConfidentSport(sig.sport) ? sig.sport : twinSig.sport;
+      twinSig.secs = sig.secs;
+      twinSig.metres = sig.metres || twinSig.metres;
+      twinSig.hr = sig.hr || twinSig.hr;
+      twinSig.watts = sig.watts || twinSig.watts;
+    } else {
+      merged[twinIdx] = withTrueStart(twinSig, sig);
+      twinSig.act = merged[twinIdx];
     }
   }
   return merged;

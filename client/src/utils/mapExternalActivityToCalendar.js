@@ -68,11 +68,19 @@ export function mapExternalActivityToCalendar(a, trainingByStravaId = new Map())
     category: a.category || linkedTraining?.category || null,
     avgPower: a.averagePower || a.average_watts || a.avgPower,
     weightedAveragePower: a.weightedAveragePower ?? a.weighted_average_watts ?? null,
+    normalizedPower: a.weightedAveragePower ?? a.weighted_average_watts ?? a.normalizedPower ?? null,
     avgSpeed: a.averageSpeed || a.average_speed || a.avgSpeed,
     maxPower: a.maxPower || a.max_watts,
     avgHeartRate: hrFrom(a),
     maxHeartRate: a.maxHeartRate || a.max_heartrate,
-    totalTime: a.movingTime || a.elapsedTime || a.totalTime,
+    // totalTime means the whole session, so the elapsed clock comes first.
+    // Filling it from movingTime instead is how the dashboard's week came to
+    // read 19 minutes short of the calendar's for the same seven activities:
+    // both summaries ask this field first, so whatever is put here IS the
+    // week's hours. The calendar page builds its rows from this same mapper
+    // for exactly that reason — one answer, not two.
+    totalTime: a.totalTime || a.elapsedTime || a.movingTime,
+    totalElapsedTime: a.elapsedTime || a.totalTime || a.movingTime,
     movingTime: a.movingTime || a.elapsedTime,
     metricsManualized: a.metricsManualized ?? false,
     distance: a.distance,

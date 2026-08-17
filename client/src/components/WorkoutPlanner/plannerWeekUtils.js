@@ -1,5 +1,5 @@
-import { resolveActivityTss } from '../../utils/computeTss';
 import { formatDistanceForUser } from '../../utils/unitsConverter';
+import { completedSecs, completedDistM, completedTss } from '../../utils/completedSessionStats';
 import { computeEstTSS } from './WorkoutBuilder';
 import { plannerSportKey, stepTotalSecs } from './WorkoutPlanModal';
 
@@ -49,47 +49,10 @@ export function plannedWorkoutTss(pw, context) {
   return 0;
 }
 
-/**
- * How long a session took.
- *
- * This is WeekStrip's chain, character for character, because WeekStrip is the
- * reading confirmed as correct — swim 7:00 where the calendar's week summary
- * said 5:40, over an hour a week on the same activities.
- *
- * Reasoning out a "better" order got it wrong twice: which field means what
- * varies by source, and arguing about it does not settle the question.
- * WeekStrip imports this function rather than keeping its own copy, so the two
- * cannot drift apart again.
- *
- * The three at the end only fire when every field above is absent, so they
- * extend the chain without changing any answer it already gives.
- */
-export function completedSecs(t) {
-  const v = t?.totalTime || t?.duration || t?.movingTime || t?.moving_time
-    || t?.elapsedTime || t?.elapsed_time
-    || t?.totalTimerTime || t?.totalElapsedTime || t?.durationSeconds;
-  const n = Number(v);
-  return Number.isFinite(n) ? n : 0;
-}
-
-export function completedDistM(t) {
-  const d = t?.distance ?? t?.totalDistance ?? t?.total_distance;
-  if (d == null) return 0;
-  if (typeof d === 'string') {
-    const s = d.trim().toLowerCase();
-    const km = s.match(/^([\d.]+)\s*km$/);
-    if (km) return parseFloat(km[1]) * 1000;
-    const m = s.match(/^([\d.]+)\s*m$/);
-    if (m) return parseFloat(m[1]);
-  }
-  const n = Number(d);
-  if (!Number.isFinite(n) || n <= 0) return 0;
-  return n > 500 ? n : n * 1000;
-}
-
-export function completedTss(t, userProfile, user) {
-  return resolveActivityTss(t, userProfile, { user }) || Number(t?.tss || t?.TSS || t?.totalTSS) || 0;
-}
+// How long, how far, how hard a completed session was — re-exported from the
+// leaf module they moved to, so the planner's own callers keep importing them
+// from here while a week total can be summed without loading a modal.
+export { completedSecs, completedDistM, completedTss };
 
 const SPORT_COLORS = { bike: '#767EB5', run: '#f97316', swim: '#38bdf8', other: '#94a3b8' };
 

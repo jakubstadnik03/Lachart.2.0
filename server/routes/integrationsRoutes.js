@@ -4658,6 +4658,14 @@ router.get('/activities', verifyToken, activitiesCacheMiddleware, async (req, re
       return best;
     };
 
+    /** A YYYY-MM-DD key and its two neighbours, for lookups that cross midnight. */
+    const neighbouringDayKeys = (dayKey) => {
+      const t = Date.parse(`${dayKey}T00:00:00Z`);
+      if (!Number.isFinite(t)) return [dayKey];
+      const asKey = (ms) => new Date(ms).toISOString().slice(0, 10);
+      return [dayKey, asKey(t - 86400000), asKey(t + 86400000)];
+    };
+
     // Helper function to create a deduplication key
     const createDedupKey = (activity, source) => {
       const startDate = new Date(activity.startDate);
@@ -4766,9 +4774,14 @@ router.get('/activities', verifyToken, activitiesCacheMiddleware, async (req, re
         continue;
       }
 
-      // Check only same-day/same-sport candidates, not the full activity set.
+      // Check only nearby candidates, not the full activity set. Nearby means
+      // the day either side as well: a session that starts before the
+      // athlete's UTC offset — 00:30 in Prague — is stamped on one date by
+      // Strava's local clock and the date before by Garmin's UTC one, and a
+      // strictly same-day lookup can never see the pair.
       let isDuplicate = false;
-      const bucket = similarBuckets.get(bucketKey) || [];
+      const bucket = neighbouringDayKeys(bucketKey)
+        .flatMap((k) => similarBuckets.get(k) || []);
       const actStartMs = new Date(act.startDate).getTime();
       const isConfidentSport = (s) => s === 'run' || s === 'bike' || s === 'swim';
       for (const candidate of bucket) {
@@ -4807,18 +4820,47 @@ router.get('/activities', verifyToken, activitiesCacheMiddleware, async (req, re
         const strongDistanceMatch = parseInt(actDistance) > 2 && parseInt(distance) > 2
           && distanceDiff <= 0.035;
 
-        // Fingerprint for the offset-clock case: the same route to within 1%
-        // and a duration that agrees on some pair of clocks to within 3 min.
-        // Compared across clocks because the providers do not mean the same
-        // thing by "duration" — Strava's elapsed time counts the traffic
-        // lights, Garmin's does not, so one ride through town reads 8948s
-        // against 8062s while Strava's own moving time, 8147s, is 85s from
-        // Garmin's. Riding an identical route twice in a day to within 1% and
-        // 3 minutes is not something that happens.
+        // Fingerprint for the offset-clock case: the same route and a duration
+        // that agrees on some pair of clocks to within 3 min. Compared across
+        // clocks because the providers do not mean the same thing by
+        // "duration" — Strava's elapsed time counts the traffic lights,
+        // Garmin's does not, so one ride through town reads 8948s against
+        // 8062s while Strava's own moving time, 8147s, is 85s from Garmin's.
         const sameRouteExactly = parseInt(actDistance) > 2 && parseInt(distance) > 2
           && distanceDiff <= 0.01;
-        const offsetClockMatch = !startsTogether && sameRouteExactly
-          && closestDurationGap(act, candidate.activity) <= 180;
+
+        // A gap of a whole or half hour is a clock offset, not two sessions.
+        // Every UTC offset on earth is one of those, and two real sessions
+        // landing on one by accident — to the minute, at the same length, over
+        // the same route — is not something that happens. This is what lets
+        // the distance rule below be honest about two devices: they disagree
+        // about the route by more than 1%, 10.01 km against 10.18 km for one
+        // run, and demanding 1% is why those pairs were listed twice.
+        //
+        // Only a Strava row can be on the offset clock — it is the one saved
+        // from start_date_local; Garmin and Apple both store real instants, so
+        // two of those drifting apart by hours means two sessions.
+        const offsetMinutes = startGapMs / 60000;
+        const offMinuteBoundary = offsetMinutes % 30;
+        const oneSideIsStrava = (act.source === 'strava') !== (candidate.activity.source === 'strava');
+        const looksLikeClockOffset = !startsTogether
+          && oneSideIsStrava
+          && offsetMinutes >= 20
+          && (offMinuteBoundary <= 5 || offMinuteBoundary >= 25);
+
+        // Heart rate only votes when both records carry one — a missing value
+        // is not evidence either way. Loose, because two devices smooth and
+        // start and stop differently; it is a guard against the pathological
+        // case, not the deciding evidence.
+        const hrA = Number(act?.averageHeartRate) || 0;
+        const hrB = Number(candidate.activity?.averageHeartRate) || 0;
+        const hrDoesNotVeto = !(hrA > 0 && hrB > 0) || Math.abs(hrA - hrB) <= 12;
+        const bothSportsKnown = isConfidentSport(actSport) && isConfidentSport(candSport)
+          && actSport === candSport;
+
+        const offsetClockMatch = looksLikeClockOffset
+          && closestDurationGap(act, candidate.activity) <= 180
+          && (sameRouteExactly || (strongDistanceMatch && bothSportsKnown && hrDoesNotVeto));
 
         if ((startsTogether && ((durationDiff <= 0.1 && distanceDiff <= 0.05) || strongDistanceMatch))
           || offsetClockMatch) {

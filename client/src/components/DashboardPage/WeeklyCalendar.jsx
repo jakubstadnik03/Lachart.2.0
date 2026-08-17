@@ -29,7 +29,8 @@ import { getFitTraining, getStravaActivityDetail, updateFitTraining, updateStrav
 import RaceDetailModal from '../Calendar/RaceDetailModal';
 import api from '../../services/api';
 import { resolveActivityTss } from '../../utils/computeTss';
-import { compareActivitiesChronologically, buildChronologicalDayItems } from '../../utils/calendarDayOrdering';
+import { compareActivitiesChronologically, buildChronologicalDayItems, dedupeCalendarActivities } from '../../utils/calendarDayOrdering';
+import { completedSecs } from '../../utils/completedSessionStats';
 import { TSS_DISPLAY_MODE_EVENT, getTssDisplayMode } from '../../utils/uiPrefs';
 import RecordLactateModal from '../training/RecordLactateModal';
 import { useAuth } from '../../context/AuthProvider';
@@ -183,9 +184,13 @@ function RecoveryDot({ status, size = 7 }) {
 }
 
 
+/**
+ * How long a session took — the app's one answer, imported rather than
+ * re-derived. A private chain here is what let this week's hours drift from
+ * the calendar's for the same activities.
+ */
 function activityDurationSec(act) {
-  const v = act?.totalTime ?? act?.totalElapsedTime ?? act?.totalTimerTime ?? act?.movingTime ?? act?.elapsedTime;
-  const n = Number(v);
+  const n = completedSecs(act);
   return Number.isFinite(n) && n > 0 ? n : 0;
 }
 
@@ -664,9 +669,9 @@ function PlannedMiniCard({ pw, onSelect, onStart, onCopy, onDelete, onRepeat, pa
   const isCompleted = isCompletedPair; // keeps existing menu logic working
 
   // When merged with an actual activity, prefer real time/distance/sport/category
-  const actSecs = Number(linkedActivity?.duration || linkedActivity?.moving_time
-                || linkedActivity?.elapsed_time || linkedActivity?.movingTime
-                || linkedActivity?.totalTimerTime || linkedActivity?.totalElapsedTime || 0);
+  // — measured the way the week summary above measures it, so the cards in a
+  // week add up to the number printed beside them.
+  const actSecs = linkedActivity ? activityDurationSec(linkedActivity) : 0;
   const actDistMeters = Number(linkedActivity?.distance || linkedActivity?.totalDistance || 0);
   const actSport = linkedActivity?.sport || linkedActivity?.type || pw.sport;
   const fmtDist = (m) => m >= 1000 ? `${(m/1000).toFixed(m % 1000 === 0 ? 0 : 1)} km` : `${Math.round(m)} m`;
@@ -1308,8 +1313,15 @@ const WeeklyCalendar = ({
   // Parent (DashboardPage) owns calendar data + per-athlete localStorage cache.
   // Do NOT keep a separate fallback cache here — it caused coach "Me" view to
   // show the previous athlete's workouts while the empty-state banner was visible.
+  //
+  // Deduped here as well as upstream, with the same function the calendar page
+  // uses, so the two views cannot disagree about how many sessions a week held.
+  // The list arrives from a localStorage cache that can be a day old and
+  // predate any dedup fix, and a session that reached the app from both Garmin
+  // and Strava would otherwise be drawn twice on the day and counted twice in
+  // the week's hours and TSS.
   const effectiveActivities = useMemo(() => (
-    activitiesLoading ? [] : (activities || [])
+    activitiesLoading ? [] : dedupeCalendarActivities(activities || [])
   ), [activities, activitiesLoading]);
 
   // Debug logging removed to keep console clean in dev

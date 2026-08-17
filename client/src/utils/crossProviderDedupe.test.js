@@ -78,6 +78,25 @@ const toCalendarRow = (a) => {
 
 const WEEK = [...STRAVA, ...GARMIN].map(toCalendarRow);
 
+/** Local midnight of a YYYY-MM-DD, whatever timezone the tests run in. */
+const localMidnight = (day) => new Date(`${day}T00:00:00`).getTime();
+
+/**
+ * One session as its two providers store it: Garmin at the real instant,
+ * Strava at the same moment read off a local clock and saved into a UTC-shaped
+ * field. Built from the runtime's own UTC offset so the fixture means the same
+ * thing wherever the suite runs — including UTC, where the two stamps simply
+ * coincide.
+ */
+const offsetPair = (trueStartIso, { strava, garmin, extraGapMs = 0 }) => {
+  const trueMs = new Date(trueStartIso).getTime();
+  const offsetMs = -new Date(trueMs).getTimezoneOffset() * 60000;
+  return [
+    { stravaId: 91, name: 'Strava copy', startDate: new Date(trueMs + offsetMs + extraGapMs).toISOString(), ...strava },
+    { garminId: 'g91', name: 'Garmin copy', startDate: new Date(trueMs).toISOString(), ...garmin },
+  ].map(toCalendarRow);
+};
+
 // The four rides that arrived from both providers, by Strava id.
 const PAIRED = [19679064930, 19695174273, 19727285709, 19736361327];
 // The Garmin rides with no Strava twin — they must survive untouched.
@@ -111,5 +130,42 @@ describe.each([
     // two real sessions. Only the day tells them apart.
     expect(out.filter((r) => r.stravaId === 19722395373 || r.stravaId === 19722400988))
       .toHaveLength(2);
+  });
+
+  it('collapses a run whose two devices disagree about the distance', () => {
+    // The pair that survived every earlier rule: one run, 10.01 km by the
+    // phone and 10.18 km by the watch — 1.7% apart, where the offset-clock
+    // fingerprint demanded 1%. The two starts are the athlete's UTC offset
+    // apart, which is the evidence that this is one run and not two.
+    expect(dedupe(offsetPair('2026-08-18T05:30:27.000Z', {
+      strava: { sport: 'Run', elapsedTime: 3068, movingTime: 3068, distance: 10010, averageHeartRate: 132 },
+      garmin: { sport: 'running', elapsedTime: 3040, movingTime: 3040, distance: 10180, averageHeartRate: 133 },
+    }))).toHaveLength(1);
+  });
+
+  it('keeps two runs an hour further apart than that', () => {
+    // Same numbers, a gap that is not this athlete's offset. Nothing vouches
+    // for the pair now, so the numbers have to carry it alone — and 1.7%
+    // apart is not close enough to make one of them disappear.
+    expect(dedupe(offsetPair('2026-08-18T05:30:27.000Z', {
+      strava: { sport: 'Run', elapsedTime: 3068, movingTime: 3068, distance: 10010, averageHeartRate: 132 },
+      garmin: { sport: 'running', elapsedTime: 3040, movingTime: 3040, distance: 10180, averageHeartRate: 133 },
+      extraGapMs: 60 * 60 * 1000,
+    }))).toHaveLength(2);
+  });
+
+  it('collapses an evening session its two providers date a day apart', () => {
+    // A swim that starts 40 minutes before midnight local time. Strava writes
+    // the local clock and Garmin the real instant, so the calendar drew the
+    // same swim on two dates — and no same-day rule could ever have seen it.
+    const trueStart = localMidnight('2026-08-19') - 40 * 60 * 1000;
+    const kept = dedupe(offsetPair(new Date(trueStart).toISOString(), {
+      strava: { sport: 'Swim', elapsedTime: 3600, movingTime: 3600, distance: 3000, averageHeartRate: 128 },
+      garmin: { sport: 'swimming', elapsedTime: 3590, movingTime: 3590, distance: 3000, averageHeartRate: 129 },
+    }));
+    expect(kept).toHaveLength(1);
+    // Dated by the provider that stores real instants, so the survivor lands
+    // on the day the athlete actually swam rather than the one after.
+    expect(new Date(kept[0].date).getDate()).toBe(18);
   });
 });

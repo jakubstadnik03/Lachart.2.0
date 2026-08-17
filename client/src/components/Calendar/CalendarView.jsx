@@ -71,7 +71,7 @@ import { DAY_THEME_PRESETS, dayThemePresetColor, PERIOD_TYPES, periodColor, buil
 import { computePowerTss, computeHrTss, canToggleTss, resolveActivityTss, getAvailableTssModes, getActivityTssDisplayMode, cycleTssMode, tssModeLabel, tssToggleDisabledReason } from '../../utils/computeTss';
 import { compareActivitiesChronologically, buildChronologicalDayItems, matchesCalendarSportFilter, activitySportBucket, plannedSportBucket, sportFilterChip, sortPlannedWorkoutsForDay, reorderPlannedWorkoutIds, pairPlannedWithActivities, planSportMatchesActivity, dedupeCalendarActivities } from '../../utils/calendarDayOrdering';
 import { stravaHalfCadenceToSpm, cadenceDisplayUnit } from '../../utils/cadenceDisplay';
-import { completedSecs } from '../WorkoutPlanner/plannerWeekUtils';
+import { completedSecs } from '../../utils/completedSessionStats';
 import { notifyTssDisplayModeChanged, clearFormFitnessCache } from '../../utils/uiPrefs';
 import { motion, AnimatePresence } from 'framer-motion';
 import TrainingComments from '../TrainingComments';
@@ -225,10 +225,11 @@ function distDisplayParts(meters, unitSystem) {
 /** Compact completed line: time · distance · avg power/pace · TSS. */
 function activityCompletedStats(activity, profile = null) {
   if (!activity) return null;
-  const dur = Number(
-    activity.movingTime || activity.moving_time || activity.duration
-    || activity.elapsed_time || activity.totalTimerTime || activity.totalElapsedTime || 0,
-  );
+  // The whole session, the same clock the week summary sums. Showing the
+  // moving time here instead meant a week's cards added up to less than the
+  // week's own total — 15:03 of rides against the 15:20 printed beside them —
+  // with nothing on screen to say the two were answering different questions.
+  const dur = completedSecs(activity);
   const dist = Number(activity.distance || activity.totalDistance || 0);
   const power = Number(
     activity.normalizedPower || activity.avgPower || activity.average_watts || activity.averagePower || 0,
@@ -248,10 +249,16 @@ function activityCompletedStats(activity, profile = null) {
   } else if (isSwim || isRun) {
     const avgSpeed = Number(activity.avgSpeed || activity.average_speed || 0);
     const sport = activity.sport || activity.type || '';
+    // Pace is a different question from how long the session took: it asks how
+    // fast the athlete was while moving, so it keeps the moving clock and only
+    // falls back to the whole session when there is no other number.
+    const paceSecs = Number(
+      activity.movingTime || activity.moving_time || activity.totalTimerTime || dur,
+    );
     if (avgSpeed > 0) {
       paceOrPower = formatPaceFromSpeedMps(avgSpeed, unitSystem, sport);
-    } else if (dist > 0 && dur > 0) {
-      paceOrPower = formatPaceFromDistanceAndDuration(dist, dur, unitSystem, sport);
+    } else if (dist > 0 && paceSecs > 0) {
+      paceOrPower = formatPaceFromDistanceAndDuration(dist, paceSecs, unitSystem, sport);
     }
   }
 
@@ -476,11 +483,10 @@ function findCompliance(pw, acts) {
   if (!plannedSecs) return null;
   const match = acts.find(a => planSportMatchesActivity(pw.sport, a.sport || a.type || ''));
   if (!match) return null;
-  const actualSecs = Number(
-    match.duration || match.moving_time || match.elapsed_time ||
-    match.movingTime || match.totalTimerTime || 0
-  );
-  return getCompliance(plannedSecs, actualSecs);
+  // Judged on the number the card prints, not a second reading of the same
+  // session: a card saying 2h29m against a 2h15m plan cannot be coloured as
+  // if it were short.
+  return getCompliance(plannedSecs, completedSecs(match));
 }
 
 /** Pairing state for a planned workout vs. the day's recorded activities.
@@ -530,9 +536,8 @@ function PlannedWorkoutCard({ pw, onSelect, onStart, compact = false, onDragStar
   const isSkipped   = pw.status === 'skipped';
 
   // When merged with an actual activity, prefer real metrics for the card
-  const actSecs = Number(linkedActivity?.duration || linkedActivity?.moving_time
-                || linkedActivity?.elapsed_time || linkedActivity?.movingTime
-                || linkedActivity?.totalTimerTime || linkedActivity?.totalElapsedTime || 0);
+  // The whole session, the clock the week summary sums.
+  const actSecs = linkedActivity ? completedSecs(linkedActivity) : 0;
   const sport = linkedActivity ? (linkedActivity.sport || linkedActivity.type || plannedSport) : plannedSport;
   const duration = linkedActivity ? actSecs : plannedDur;
   // Category: prefer linked activity's category (user may set it after completing)
@@ -6107,11 +6112,9 @@ function ActivityDetailPopup({ activity, anchorRect, onClose, onSelectActivity, 
     return () => { clearTimeout(timer); document.removeEventListener('mousedown', handleClickOutside); };
   }, [onClose]);
 
-  // Duration first — plannedDur heal needs completed seconds.
-  const dur = Number(
-    a.duration || a.elapsed_time || a.movingTime || a.moving_time ||
-    a.totalTimerTime || a.totalElapsedTime || a.elapsedTime || 0
-  );
+  // Duration first — plannedDur heal needs completed seconds. Whole session,
+  // like the card underneath it and the week total beside it.
+  const dur = completedSecs(a);
 
   // Planned vs completed — computed early so POPUP_W/H can depend on hasPlanned
   const plannedDur = plannedWorkout ? plannedWorkoutDurationSecs(plannedWorkout, dur) : 0;
@@ -10190,7 +10193,7 @@ export default function CalendarView({
                           );
                         }
                         // Month view card — enriched with duration + distance + TSS
-                        const dur = a.duration || a.elapsed_time || a.movingTime || 0;
+                        const dur = completedSecs(a);
                         const durStr = dur > 0 ? `${Math.floor(dur/3600)}:${String(Math.floor((dur%3600)/60)).padStart(2,'0')}` : null;
                         const dist = a.distance || a.totalDistance || 0;
                         const distStr = dist > 0 ? formatDistanceForUser(dist, user) : null;
