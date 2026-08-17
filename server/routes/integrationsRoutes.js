@@ -22,6 +22,9 @@ const { notifyStravaImportedPush } = require('../utils/stravaImportNotifications
 const { stravaHalfCadenceToSpm } = require('../utils/cadenceDisplay');
 const { sanitizeSavedAutoLaps } = require('../utils/sanitizeSavedAutoLaps');
 const { findExternalDuplicate } = require('../utils/appleHealthDuplicate');
+// Every Strava read goes through this so the shared budget sees it — see
+// utils/stravaRequest for why hand-rolled axios.get calls were a problem.
+const { stravaGetInteractive } = require('../utils/stravaRequest');
 const router = express.Router();
 
 // Process-wide token bucket so no single hot path can drain Strava's quota.
@@ -40,35 +43,12 @@ const stravaBudget = require('../utils/stravaBudget');
 // that moment, returning 429 to the client instantly without contacting
 // Strava at all.
 // ────────────────────────────────────────────────────────────────────────────
-let stravaUnlockAt = 0; // Unix ms — earliest time we're allowed to retry Strava.
-
-function stravaIsLockedNow() {
-  return Date.now() < stravaUnlockAt;
-}
-
-function stravaLockoutSecondsRemaining() {
-  return Math.max(0, Math.ceil((stravaUnlockAt - Date.now()) / 1000));
-}
-
-/** Record a 429 from Strava and stop talking to them for `retryAfterSec`.
- *  Clamped to 60 s..30 min so a busted Retry-After header can't lock us out
- *  for half a day. */
-function stravaNoteRateLimit(retryAfterSec) {
-  const sec = Math.min(Math.max(Number(retryAfterSec) || 300, 60), 30 * 60);
-  const candidate = Date.now() + sec * 1000;
-  // Honour the LATEST 429 even if it's longer — Strava sometimes escalates.
-  if (candidate > stravaUnlockAt) stravaUnlockAt = candidate;
-  console.warn(`[StravaRateLimit] locked for ${sec}s (until ${new Date(stravaUnlockAt).toISOString()})`);
-}
-
-/** Clear the lockout — call after any successful Strava response so a single
- *  conservative 429 estimate doesn't keep us idle once Strava is happy again. */
-function stravaClearRateLimit() {
-  if (stravaUnlockAt > 0) {
-    console.log('[StravaRateLimit] cleared');
-    stravaUnlockAt = 0;
-  }
-}
+// The lockout itself now lives in utils/stravaBudget so that background
+// workers share it. These wrappers keep the call sites in this file unchanged.
+const stravaIsLockedNow = () => stravaBudget.isLocked();
+const stravaLockoutSecondsRemaining = () => stravaBudget.lockoutSecondsRemaining();
+const stravaNoteRateLimit = (retryAfterSec) => stravaBudget.noteRateLimit(retryAfterSec);
+const stravaClearRateLimit = () => stravaBudget.clearRateLimit();
 
 /** Shared 429 short-circuit for Express handlers. Returns true if the
  *  handler should bail; the response is already sent. */
@@ -1297,6 +1277,7 @@ async function startStravaHistoricalBackfill(userId, initialBefore = null, opts 
 
       if (status === 429) {
         // Rate limited — exponential backoff: double the delay each time, cap at 30 minutes
+        stravaBudget.noteRateLimitedResponse(error);
         const nextRetry = Math.min(retryDelay * 2, 30 * 60 * 1000);
         console.log(`[StravaBackfill] Rate limited for user ${userId}, backing off ${Math.round(nextRetry / 1000)}s`);
         stravaBackfillTouch(lockKey); // waiting, not dead — keep the lock ours
@@ -2562,7 +2543,7 @@ router.post('/strava/sync', verifyToken, async (req, res) => {
 
           // Remember the lockout app-wide so every subsequent request
           // short-circuits without burning more quota on the same 429.
-          stravaNoteRateLimit(retryAfter);
+          stravaBudget.noteRateLimitedResponse(requestErr) || stravaNoteRateLimit(retryAfter);
 
           console.error('Strava rate limit exceeded', {
             retryAfter,
@@ -2644,7 +2625,7 @@ router.post('/strava/sync', verifyToken, async (req, res) => {
     if (err.response?.status === 429 ||
         (err.response?.data?.message && err.response.data.message.includes('Rate Limit'))) {
       const retryAfter = err.response?.headers?.['retry-after'] || 900;
-      stravaNoteRateLimit(retryAfter);
+      stravaBudget.noteRateLimitedResponse(err) || stravaNoteRateLimit(retryAfter);
       recordStravaSyncLogSafe({
         userId: user?._id || req.user?.userId || null,
         source: 'manual',
@@ -2854,7 +2835,7 @@ router.get('/strava/activity-status', verifyToken, activityStatusCacheMiddleware
     const status = err.response?.status;
     if (status === 429) {
       const retryAfter = err.response?.headers?.['retry-after'] || 900;
-      stravaNoteRateLimit(retryAfter);
+      stravaBudget.noteRateLimitedResponse(err) || stravaNoteRateLimit(retryAfter);
       return res.status(429).json({
         error: 'Strava rate limit exceeded',
         message: `Strava API quota is exhausted. Try again in about ${Math.ceil(retryAfter / 60)} min.`,
@@ -2919,7 +2900,7 @@ router.post('/strava/activities/:id/import', verifyToken, async (req, res) => {
     const status = err.response?.status;
     if (status === 429) {
       const retryAfter = err.response?.headers?.['retry-after'] || 900;
-      stravaNoteRateLimit(retryAfter);
+      stravaBudget.noteRateLimitedResponse(err) || stravaNoteRateLimit(retryAfter);
       return res.status(429).json({
         error: 'Strava rate limit exceeded',
         message: `Strava API quota is exhausted. Try again in about ${Math.ceil(retryAfter / 60)} min.`,
@@ -5581,7 +5562,7 @@ router.get('/strava/activities/:id', verifyToken, async (req, res) => {
       detailResp = { data: savedActivity.raw };
     }
     if (!cached && !detailResp) try {
-      detailResp = await axios.get(`https://www.strava.com/api/v3/activities/${stravaId}`, {
+      detailResp = await stravaGetInteractive(`https://www.strava.com/api/v3/activities/${stravaId}`, {
         headers: { Authorization: `Bearer ${token}` },
         timeout: 30000
       });
@@ -5599,7 +5580,7 @@ router.get('/strava/activities/:id', verifyToken, async (req, res) => {
         token = await getValidStravaToken(refreshedTargetUser);
         if (token) {
           try {
-            detailResp = await axios.get(`https://www.strava.com/api/v3/activities/${stravaId}`, {
+            detailResp = await stravaGetInteractive(`https://www.strava.com/api/v3/activities/${stravaId}`, {
               headers: { Authorization: `Bearer ${token}` },
               timeout: 30000
             });
@@ -5728,7 +5709,7 @@ router.get('/strava/activities/:id', verifyToken, async (req, res) => {
         laps = persistedLaps;
       } else {
         try {
-          const lapsResp = await axios.get(`https://www.strava.com/api/v3/activities/${stravaId}/laps`, {
+          const lapsResp = await stravaGetInteractive(`https://www.strava.com/api/v3/activities/${stravaId}/laps`, {
             headers: { Authorization: `Bearer ${token}` }
           });
           laps = lapsResp.data || [];
@@ -6329,7 +6310,7 @@ router.put('/strava/activities/:id/lactate', verifyToken, async (req, res) => {
       // Try to get laps from Strava API
       const token = await getValidStravaToken(user);
       try {
-        const lapsResp = await axios.get(`https://www.strava.com/api/v3/activities/${stravaId}/laps`, {
+        const lapsResp = await stravaGetInteractive(`https://www.strava.com/api/v3/activities/${stravaId}/laps`, {
           headers: { Authorization: `Bearer ${token}` }
         });
         activity.laps = lapsResp.data || [];
@@ -6442,7 +6423,7 @@ router.post('/strava/activities/:id/laps', verifyToken, async (req, res) => {
     const token = await getValidStravaToken(user);
     let streams = null;
     try {
-      const streamsResp = await axios.get(`https://www.strava.com/api/v3/activities/${stravaId}/streams`, {
+      const streamsResp = await stravaGetInteractive(`https://www.strava.com/api/v3/activities/${stravaId}/streams`, {
         headers: { Authorization: `Bearer ${token}` },
         params: { keys: 'time,velocity_smooth,heartrate,watts,altitude,cadence', key_by_type: true }
       });
@@ -6496,7 +6477,7 @@ router.post('/strava/activities/:id/laps', verifyToken, async (req, res) => {
     // Get activity start date from Strava API detail
     let activityStartDate = null;
     try {
-      const detailResp = await axios.get(`https://www.strava.com/api/v3/activities/${stravaId}`, {
+      const detailResp = await stravaGetInteractive(`https://www.strava.com/api/v3/activities/${stravaId}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       // Use start_date_local if available (more accurate), otherwise start_date
@@ -6573,7 +6554,7 @@ router.post('/strava/activities/:id/laps/bulk', verifyToken, async (req, res) =>
     const token = await getValidStravaToken(user);
     let streams = null;
     try {
-      const streamsResp = await axios.get(`https://www.strava.com/api/v3/activities/${stravaId}/streams`, {
+      const streamsResp = await stravaGetInteractive(`https://www.strava.com/api/v3/activities/${stravaId}/streams`, {
         headers: { Authorization: `Bearer ${token}` },
         params: { keys: 'time,velocity_smooth,heartrate,watts,altitude,cadence', key_by_type: true }
       });
@@ -6585,7 +6566,7 @@ router.post('/strava/activities/:id/laps/bulk', verifyToken, async (req, res) =>
     // Fetch activity detail once to determine start date
     let activityStartDate = null;
     try {
-      const detailResp = await axios.get(`https://www.strava.com/api/v3/activities/${stravaId}`, {
+      const detailResp = await stravaGetInteractive(`https://www.strava.com/api/v3/activities/${stravaId}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       const startDateStr = detailResp.data.start_date_local || detailResp.data.start_date;

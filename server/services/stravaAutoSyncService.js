@@ -218,6 +218,10 @@ async function syncStravaForUser(user, opts = {}) {
         }
       } catch (pageErr) {
         if (pageErr.code === 'STRAVA_BUDGET_EXHAUSTED' || pageErr.response?.status === 429) {
+          // Teach the shared budget what Strava just said. Without this the
+          // estimator learned only from successes, so a run that was refused
+          // every time kept reporting "0 % used" and the scheduler kept firing.
+          stravaBudget.noteRateLimitedResponse(pageErr);
           console.log('[StravaAutoSync] Rate/budget limit during sync, stopping at page', page);
           cleanRun = false;
           rateLimited = true;
@@ -403,7 +407,18 @@ async function syncStravaForAllUsers({ batchSize = 10, delayBetweenUsers = 5000 
     
     for (let i = 0; i < users.length; i++) {
       const user = users[i];
-      
+
+      // One 429 means the whole app is refused, not just this user. Walking
+      // the rest of the batch anyway is what turned a rate limit into 5 719
+      // rejected calls a day, each one pushing the recovery further out.
+      if (stravaBudget.isLocked()) {
+        console.log(
+          `[StravaAutoSync] Strava locked for ${stravaBudget.lockoutSecondsRemaining()}s — abandoning batch after ${i} user(s)`
+        );
+        skipped += users.length - i;
+        break;
+      }
+
       try {
         // Reload user to get fresh data
         const freshUser = await User.findById(user._id);
@@ -411,7 +426,7 @@ async function syncStravaForAllUsers({ batchSize = 10, delayBetweenUsers = 5000 
           skipped++;
           continue;
         }
-        
+
         const result = await syncStravaForUser(freshUser, { source: 'scheduler' });
         results.push({ userId: user._id, ...result });
         

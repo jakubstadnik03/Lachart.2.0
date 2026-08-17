@@ -37,6 +37,7 @@ const StravaStream = require('../models/StravaStream');
 const User = require('../models/UserModel');
 const stravaBudget = require('../utils/stravaBudget');
 const { backfillStreams } = require('../utils/streamBackfill');
+const { claimSchedulerLock } = require('../utils/schedulerLock');
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -89,7 +90,20 @@ async function missingFor(userId, since, limit) {
 }
 
 async function backfillDueStreams() {
-  const { users, perUser, days, headroom } = cfg();
+  const { users, perUser, days, headroom, intervalMs } = cfg();
+
+  // Lowest-priority work in the system: when Strava is refusing calls, this is
+  // the first thing that should stop asking.
+  if (stravaBudget.isLocked()) {
+    console.log(`[StreamBackfill] skipped — Strava rate limit, ${stravaBudget.lockoutSecondsRemaining()}s left`);
+    return { attempted: 0, fetched: 0 };
+  }
+
+  // One instance at a time — the quota is shared, the work is not urgent.
+  if (!await claimSchedulerLock('strava-stream-backfill', Math.max(intervalMs * 2, 60_000))) {
+    console.log('[StreamBackfill] another instance holds the lease — skipping tick');
+    return { attempted: 0, fetched: 0 };
+  }
 
   if (!hasHeadroom(headroom)) {
     const s = stravaBudget.snapshot();

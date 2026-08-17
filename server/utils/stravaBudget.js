@@ -152,6 +152,21 @@ function ceilingsFor(priority) {
  */
 async function take(opts = {}) {
   const { bypass = false, priority = 'interactive' } = opts;
+
+  // Strava is currently refusing us. Every call made now is a rejected call
+  // that still counts against the quota and pushes recovery further out, so
+  // refuse centrally — a caller that forgets to check cannot reopen the loop.
+  // Bypass callers (a user watching a spinner) are let through: routes gate
+  // those on the lockout themselves and answer without touching Strava.
+  if (!bypass && isLocked()) {
+    const err = new Error('Strava rate limit active');
+    err.code = 'STRAVA_BUDGET_EXHAUSTED';
+    err.priority = priority;
+    err.retryAfterSec = lockoutSecondsRemaining();
+    err.rateLimited = true;
+    throw err;
+  }
+
   if (bypass) {
     rollWindowsIfDue();
     windowUsed += 1;
@@ -194,6 +209,7 @@ async function take(opts = {}) {
 function reset() {
   windowUsed = 0;
   dayUsed = 0;
+  unlockAt = 0;
   windowStart = Math.floor(Date.now() / WINDOW_MS) * WINDOW_MS;
   const d = new Date();
   d.setUTCHours(0, 0, 0, 0);
@@ -214,16 +230,17 @@ function reset() {
  * the read-only counter is the binding one — prefer it if present, else
  * fall back to overall.
  */
+/** @returns {boolean} true when Strava's own numbers were applied */
 function reconcileFromHeaders(headers = {}) {
-  if (!headers || typeof headers !== 'object') return;
+  if (!headers || typeof headers !== 'object') return false;
   // Header names are case-insensitive — axios normalises to lowercase.
   const readUsage = headers['x-readratelimit-usage'] || headers['X-ReadRateLimit-Usage'];
   // Never fall back to X-RateLimit-Usage (overall 600/15m bucket). Snapping that
   // into our 90-cap read estimator falsely marks the budget exhausted and breaks
   // webhooks + scheduler for the rest of the window.
-  if (!readUsage || typeof readUsage !== 'string') return;
+  if (!readUsage || typeof readUsage !== 'string') return false;
   const parts = readUsage.split(',').map((s) => Number(s.trim()));
-  if (parts.length < 2 || !Number.isFinite(parts[0]) || !Number.isFinite(parts[1])) return;
+  if (parts.length < 2 || !Number.isFinite(parts[0]) || !Number.isFinite(parts[1])) return false;
   const [stravaWindowUsed, stravaDayUsed] = parts;
 
   // Learn Strava's actual allowance so we measure usage against the real
@@ -248,6 +265,77 @@ function reconcileFromHeaders(headers = {}) {
   // still had well over a thousand read calls left.
   if (stravaWindowUsed > windowUsed) windowUsed = stravaWindowUsed;
   if (stravaDayUsed > dayUsed) dayUsed = stravaDayUsed;
+  return true;
+}
+
+// ── Rate-limit lockout ──────────────────────────────────────────────────────
+// Shared by every caller — routes, schedulers, backfillers — because a 429 is
+// a fact about the whole application, not about the request that happened to
+// receive it. It used to live in the routes module, where background workers
+// could not see it: the polling scheduler spent 24 hours firing at a Strava
+// that refused every single call (5 719 refusals, 0 activities imported)
+// because nothing in its path had any way to know.
+let unlockAt = 0;
+
+function isLocked() {
+  return Date.now() < unlockAt;
+}
+
+function lockoutSecondsRemaining() {
+  return Math.max(0, Math.ceil((unlockAt - Date.now()) / 1000));
+}
+
+/**
+ * Stop talking to Strava for `retryAfterSec`. Clamped to 60 s..30 min so a
+ * busted Retry-After header can't idle us for half a day, and never shortened
+ * — Strava sometimes escalates, and the longest answer is the honest one.
+ */
+function noteRateLimit(retryAfterSec) {
+  const sec = Math.min(Math.max(Number(retryAfterSec) || 300, 60), 30 * 60);
+  const candidate = Date.now() + sec * 1000;
+  if (candidate > unlockAt) {
+    unlockAt = candidate;
+    console.warn(`[StravaBudget] locked for ${sec}s (until ${new Date(unlockAt).toISOString()})`);
+  }
+}
+
+/** A success proves Strava is answering again. */
+function clearRateLimit() {
+  if (unlockAt > 0) {
+    console.log('[StravaBudget] lockout cleared');
+    unlockAt = 0;
+  }
+}
+
+/**
+ * Handle a 429 from Strava: learn the real usage where possible, and assume
+ * the window is spent where it isn't.
+ *
+ * The estimator used to update only on success, so a run that was refused
+ * every time learned nothing and kept its counter near zero — the brake read
+ * "0 % used" while Strava was turning away every request.
+ *
+ * @param {any} err axios error (or anything; non-429s are ignored)
+ * @returns {boolean} true when the error was a rate limit
+ */
+function noteRateLimitedResponse(err) {
+  const res = err?.response;
+  if (!res || res.status !== 429) return false;
+
+  const headers = res.headers || {};
+  if (!reconcileFromHeaders(headers)) {
+    // No usable counters: Strava just told us we are over, so treat the
+    // window as spent rather than believing a stale local count.
+    rollWindowsIfDue();
+    windowUsed = Math.max(windowUsed, effectiveWindowLimit());
+  }
+
+  const retryAfter = Number(headers['retry-after'] || headers['Retry-After']);
+  // Without a header, wait out the current 15-minute window — that is when
+  // Strava's read bucket actually refills.
+  const untilWindowRoll = Math.ceil((windowStart + WINDOW_MS - Date.now()) / 1000);
+  noteRateLimit(Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : untilWindowRoll);
+  return true;
 }
 
 /** Snapshot for /strava/status diagnostics. */
@@ -265,7 +353,19 @@ function snapshot() {
     stravaReportedDayLimit: observedDayLimit,
     bulkWindowLimit: ceilingsFor('bulk').window,
     bulkDayLimit: ceilingsFor('bulk').day,
+    locked: isLocked(),
+    lockedForSec: lockoutSecondsRemaining(),
   };
 }
 
-module.exports = { take, snapshot, reconcileFromHeaders, reset };
+module.exports = {
+  take,
+  snapshot,
+  reconcileFromHeaders,
+  reset,
+  isLocked,
+  lockoutSecondsRemaining,
+  noteRateLimit,
+  noteRateLimitedResponse,
+  clearRateLimit,
+};

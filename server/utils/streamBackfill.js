@@ -73,6 +73,9 @@ async function fetchStreams(token, stravaId) {
       return {};
     } catch (err) {
       const status = err?.response?.status;
+      // Tell the shared budget about a rate limit so every other Strava caller
+      // stands down too, not just this loop.
+      stravaBudget.noteRateLimitedResponse(err);
       // 400 means this key set does not apply to the activity — try a narrower
       // one. Anything else (429, 401, network) is not fixed by asking again.
       if (status !== 400) {

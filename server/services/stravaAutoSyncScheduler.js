@@ -12,6 +12,7 @@ const {
   STRAVA_AUTO_SYNC_STALE_FORCE_MS,
 } = require('../config/stravaAutoSyncConfig');
 const User = require('../models/UserModel');
+const { claimSchedulerLock } = require('../utils/schedulerLock');
 
 /**
  * Start the Strava auto-sync scheduler
@@ -47,8 +48,43 @@ function startStravaAutoSyncScheduler() {
   const batchSize = STRAVA_AUTO_SYNC_BATCH_SIZE;
   const delayBetweenUsers = STRAVA_AUTO_SYNC_DELAY_BETWEEN_USERS_MS;
 
+  /** Rate-limited skips are logged at most once per lockout, not once per tick. */
+  let lockoutLoggedUntil = 0;
+
   const tick = async () => {
     try {
+      // Strava is refusing the whole application right now. Ticking anyway is
+      // how a 15-minute rate limit became a 24-hour outage: 5 719 refused
+      // calls, nothing imported, and the quota never free long enough for the
+      // webhook bootstrap to register.
+      if (stravaBudget.isLocked()) {
+        const left = stravaBudget.lockoutSecondsRemaining();
+        if (Date.now() > lockoutLoggedUntil) {
+          console.log(`[StravaAutoSyncScheduler] Skipping ticks — Strava rate limit, ${left}s left.`);
+          recordStravaSyncLogSafe({
+            source: 'scheduler',
+            status: 'rate_limited',
+            rateLimited: true,
+            retryAfterSec: left,
+            error: `Scheduler paused — Strava rate limit active for ${left}s`,
+            budgetSnapshot: stravaBudget.snapshot(),
+          });
+          // One row per lockout: the old code wrote one per skipped tick, which
+          // is how the sync log filled with thousands of identical entries.
+          lockoutLoggedUntil = Date.now() + left * 1000;
+        }
+        return;
+      }
+
+      // Only one instance may poll. The Strava allowance is per application,
+      // so a second Render instance doubles the spend against the same quota
+      // while each process believes it is well inside budget.
+      const gotLock = await claimSchedulerLock('strava-auto-sync', Math.max(intervalMs * 2, 60_000));
+      if (!gotLock) {
+        console.log('[StravaAutoSyncScheduler] Another instance holds the polling lease — skipping tick.');
+        return;
+      }
+
       // Defence against budget exhaustion — if the local Strava token bucket
       // is already > 85 % used for the current 15-min window (typically
       // because a historical backfill is in flight, or a morning upload
