@@ -75,6 +75,9 @@ function stravaClearRateLimit() {
 function bailIfStravaLocked(res) {
   if (!stravaIsLockedNow()) return false;
   const sec = stravaLockoutSecondsRemaining();
+  // Without the header a client retry policy has to guess, and guessing short
+  // means hammering an endpoint that is already saying "come back later".
+  res.set('Retry-After', String(sec));
   res.status(429).json({
     error: 'Strava rate limit active',
     message: `Strava API quota was exhausted. Retry in about ${Math.max(1, Math.ceil(sec / 60))} min.`,
@@ -198,16 +201,29 @@ function invalidateActivityStatusCache(userId) {
   }
 }
 
-const makeActivitiesCacheMiddleware = (ttlSeconds = 120) => (req, res, next) => {
+const makeActivitiesCacheMiddleware = (ttlSeconds = 120, { probeParam = null } = {}) => (req, res, next) => {
   // User-scoped cache key (prevents cross-user status/activity leaks)
   const userId = req.user?.userId ? String(req.user.userId) : 'anonymous';
-  const cacheKey = `${req.method}:${req.path}:${userId}:${JSON.stringify(req.query || {})}`;
+  const query = { ...(req.query || {}) };
+  // The probe flag must not change the key — a probe has to be able to find
+  // what a live request stored.
+  if (probeParam) delete query[probeParam];
+  const cacheKey = `${req.method}:${req.path}:${userId}:${JSON.stringify(query)}`;
   const cachedResponse = activitiesCache.get(cacheKey);
 
   if (cachedResponse) {
     res.set('X-Cache', 'HIT');
     res.set('Cache-Control', `private, max-age=${ttlSeconds}`);
     return res.json(cachedResponse);
+  }
+
+  // Cache-only probe: answer "not checked yet" instead of spending a provider
+  // API call. Opening a settings screen must never cost Strava quota — that
+  // quota is shared by every user of the app, and the screen paints far more
+  // often than the answer changes.
+  if (probeParam && String(req.query?.[probeParam]) === '1') {
+    res.set('X-Cache', 'MISS');
+    return res.json({ notChecked: true });
   }
 
   // Store original json method
@@ -233,7 +249,7 @@ const activitiesCacheMiddleware = makeActivitiesCacheMiddleware(120);
  * that quietly re-queries on each visit is exactly how that budget gets drained
  * — 10 minutes is far fresher than the data changes.
  */
-const activityStatusCacheMiddleware = makeActivitiesCacheMiddleware(600);
+const activityStatusCacheMiddleware = makeActivitiesCacheMiddleware(600, { probeParam: 'cachedOnly' });
 
 // Bust every cached `/activities` response for a single user. Called from
 // every mutation endpoint (title edit, category, lactate update, delete)
@@ -2615,7 +2631,10 @@ router.post('/strava/sync', verifyToken, async (req, res) => {
       totalFetched: total,
       stravaActivityIds: importedActivityIds,
     });
-    
+    // The "what is missing" list would otherwise keep offering activities this
+    // sync just imported.
+    invalidateActivityStatusCache(user._id);
+
     res.json({ imported, updated, totalFetched: total, status: 'ok' });
   } catch (err) {
     console.error('Strava sync error:', err);
@@ -3892,6 +3911,8 @@ router.post('/garmin/sync', verifyToken, async (req, res) => {
     if (imported > 0 || updated > 0) {
       await User.findByIdAndUpdate(user._id, { 'garmin.lastSyncDate': new Date() });
     }
+    // Keep the "what is missing" list from offering what this sync just took.
+    invalidateActivityStatusCache(user._id);
 
     if (imported > 0) {
       const body = imported === 1

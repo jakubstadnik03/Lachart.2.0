@@ -1431,28 +1431,73 @@ export const syncStravaActivities = async (since=null) => {
 
 // Manually (re)start the full historical import of all Strava activities.
 // Runs in the background on the server; progress shows via /strava/status.
+/** Strava's read quota is shared by every user of the app; this is the wall. */
+const STRAVA_LOCKOUT_KEY = 'strava_auto_sync_unlock_at';
+
+/** @returns {number} ms until Strava calls are worth attempting again, 0 when clear */
+export function stravaLockoutRemainingMs() {
+  try {
+    const unlockAt = parseInt(localStorage.getItem(STRAVA_LOCKOUT_KEY) || '0', 10);
+    const left = unlockAt - Date.now();
+    return left > 0 ? left : 0;
+  } catch {
+    return 0;
+  }
+}
+
+/** Remember a 429 so every other Strava caller backs off too, not just this one. */
+function noteStravaLockout(error) {
+  const retryAfter = Number(
+    error?.response?.data?.retryAfter ?? error?.response?.headers?.['retry-after'] ?? 0
+  );
+  if (!Number.isFinite(retryAfter) || retryAfter <= 0) return;
+  try {
+    const until = Date.now() + retryAfter * 1000;
+    const current = parseInt(localStorage.getItem(STRAVA_LOCKOUT_KEY) || '0', 10);
+    if (until > current) localStorage.setItem(STRAVA_LOCKOUT_KEY, String(until));
+  } catch { /* ignore */ }
+}
+
 /**
  * What Strava has vs. what LaChart imported — powers the activity list in
  * Settings, where a missed activity can be pulled in by hand.
- * @param {{ days?: number, signal?: AbortSignal }} [opts]
- * @returns {Promise<{ connected: boolean, truncated?: boolean, activities: Array<{ id: string, name: string, sport: string, startDate: string, distanceMeters: number, durationSeconds: number, state: 'imported'|'importable' }>, counts: { imported: number, importable: number, total: number } }>}
+ *
+ * `cachedOnly` asks the server to answer from its own cache and never call
+ * Strava: that is what a screen paint is allowed to cost. A live check happens
+ * only when the athlete asks for one.
+ *
+ * @param {{ days?: number, cachedOnly?: boolean, signal?: AbortSignal }} [opts]
+ * @returns {Promise<{ connected?: boolean, notChecked?: boolean, truncated?: boolean, activities?: Array<{ id: string, name: string, sport: string, startDate: string, distanceMeters: number, durationSeconds: number, state: 'imported'|'importable' }>, counts?: { imported: number, importable: number, total: number } }>}
  */
 export const getStravaActivityStatus = async (opts = {}) => {
-  const cfg = { params: {}, timeout: 60000 };
+  // A 429 here means the app-wide Strava quota is gone; retrying in 3 s only
+  // burns more of it. The generic GET retry must stay out of this one.
+  const cfg = { params: {}, timeout: 60000, noRetry: true };
   if (opts.days != null) cfg.params.days = opts.days;
+  if (opts.cachedOnly) cfg.params.cachedOnly = 1;
   if (opts.signal) cfg.signal = opts.signal;
-  const { data } = await api.get('/api/integrations/strava/activity-status', cfg);
-  return data;
+  try {
+    const { data } = await api.get('/api/integrations/strava/activity-status', cfg);
+    return data;
+  } catch (e) {
+    if (e?.response?.status === 429) noteStravaLockout(e);
+    throw e;
+  }
 };
 
 /** Import one Strava activity that never reached LaChart. */
 export const importStravaActivity = async (activityId) => {
-  const { data } = await api.post(
-    `/api/integrations/strava/activities/${encodeURIComponent(activityId)}/import`,
-    {},
-    { timeout: 90000 },
-  );
-  return data; // { imported, updated, activity }
+  try {
+    const { data } = await api.post(
+      `/api/integrations/strava/activities/${encodeURIComponent(activityId)}/import`,
+      {},
+      { timeout: 90000 },
+    );
+    return data; // { imported, updated, activity }
+  } catch (e) {
+    if (e?.response?.status === 429) noteStravaLockout(e);
+    throw e;
+  }
 };
 
 /**
@@ -1461,8 +1506,9 @@ export const importStravaActivity = async (activityId) => {
  * @param {{ days?: number, signal?: AbortSignal }} [opts]
  */
 export const getGarminActivityStatus = async (opts = {}) => {
-  const cfg = { params: {}, timeout: 60000 };
+  const cfg = { params: {}, timeout: 60000, noRetry: true };
   if (opts.days != null) cfg.params.days = opts.days;
+  if (opts.cachedOnly) cfg.params.cachedOnly = 1;
   if (opts.signal) cfg.signal = opts.signal;
   const { data } = await api.get('/api/integrations/garmin/activity-status', cfg);
   return data;
