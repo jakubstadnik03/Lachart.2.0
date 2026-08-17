@@ -104,6 +104,17 @@ const trainingSchema = new mongoose.Schema({
         type: String,
         default: null
     },
+    /**
+     * The Garmin ride this training was annotated from.
+     *
+     * Without it a lactate session created from a Garmin activity had nothing
+     * linking it back, so re-opening the ride could not find the training it
+     * had already written and the calendar could not tell the two apart.
+     */
+    sourceGarminActivityId: {
+        type: String,
+        default: null
+    },
 
     // ── Apple Watch sync ──────────────────────────────────────────────
     // Idempotency key for /training/from-watch. Re-receiving the same

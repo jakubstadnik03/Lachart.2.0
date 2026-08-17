@@ -7,7 +7,7 @@ import TrainingStats from '../components/DashboardPage/TrainingStats';
 import UpgradeModal from '../components/UpgradeModal';
 import api from '../services/api';
 import { useAuth } from '../context/AuthProvider';
-import { addTraining, updateTraining, getStravaActivityDetail, createFieldLactateMeasurement, autoSyncStravaActivities, updateStravaLactateValues, assignFieldLactateMeasurement } from '../services/api';
+import { addTraining, updateTraining, getStravaActivityDetail, createFieldLactateMeasurement, autoSyncStravaActivities, assignFieldLactateMeasurement } from '../services/api';
 import { maybeNotifyStravaActivitiesImported } from '../utils/stravaImportLocalNotification';
 import { useNotification } from '../context/NotificationContext';
 import { useParams, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
@@ -21,6 +21,7 @@ import RecordLactateModal from '../components/training/RecordLactateModal';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useCategories } from '../context/CategoryContext';
 import { useAthleteSelection } from '../context/AthleteSelectionContext';
+import { mirrorLactateToSource } from '../utils/mirrorLactateToSource';
 
 const TrainingComparison = lazy(() => import('../components/Training-log/TrainingComparison'));
 const LapComparison = lazy(() => import('../components/Training-log/LapComparison'));
@@ -591,27 +592,10 @@ export default function TrainingPage() {
           }
         }
 
-        // Push lactate into the linked StravaActivity.laps so the calendar
-        // view (which renders Strava laps directly) shows them everywhere.
-        const stravaId = formData?.sourceStravaActivityId;
-        if (stravaId && Array.isArray(cleanedResults)) {
-          const lactateValues = cleanedResults
-            .map((r) => {
-              const lapIdx = Number.isInteger(r?.sourceLapIndex)
-                ? r.sourceLapIndex
-                : (Number(r?.interval) > 0 ? Number(r.interval) - 1 : null);
-              if (lapIdx == null || !Number.isFinite(r?.lactate)) return null;
-              return { lapIndex: lapIdx, lactate: r.lactate };
-            })
-            .filter(Boolean);
-          if (lactateValues.length > 0) {
-            try {
-              await updateStravaLactateValues(stravaId, lactateValues);
-            } catch (syncErr) {
-              console.warn('[lactate] Strava sync failed (non-blocking):', syncErr?.message);
-            }
-          }
-        }
+        // Push lactate onto the source activity's laps so the calendar view
+        // (which renders laps directly) shows them everywhere — Strava or
+        // Garmin, see utils/mirrorLactateToSource.
+        await mirrorLactateToSource(formData, cleanedResults);
 
         // "Chart" flow: a FieldLactateMeasurement was stashed when the
         // user opened this modal from AssignLactateModal → "Chart". Find
@@ -634,8 +618,11 @@ export default function TrainingPage() {
                 trainingTitle: formData.title || 'Training',
                 trainingDate: formData.date || null,
               };
-              if (stravaId) payload.stravaActivityId = String(stravaId);
-              else if (formData._id) payload.trainingId = formData._id;
+              if (formData?.sourceStravaActivityId) {
+                payload.stravaActivityId = String(formData.sourceStravaActivityId);
+              } else if (formData._id) {
+                payload.trainingId = formData._id;
+              }
               await assignFieldLactateMeasurement(pendingFieldLactate._id, payload);
             } catch (e) {
               console.warn('[field-lactate] post-form assign failed:', e?.message);

@@ -22,7 +22,7 @@ import StravaConnectModal from '../components/NativeDashboard/StravaConnectModal
 import PremiumLock from '../components/PremiumLock';
 import { NATIVE_DASHBOARD_KEYFRAMES, cardEntry } from '../components/NativeDashboard/animations';
 import TrainingForm from '../components/TrainingForm';
-import { getStravaActivityDetail, addTraining, updateTraining, updateStravaLactateValues, getTrainingCommentCounts } from '../services/api';
+import { getStravaActivityDetail, addTraining, updateTraining, getTrainingCommentCounts } from '../services/api';
 import { fetchWellness } from '../services/wellnessData';
 import { useCategories, hexToRgba } from '../context/CategoryContext';
 import { dayThemePresetColor, periodColor, buildPeriodsByDate } from '../utils/calendarThemes';
@@ -34,6 +34,7 @@ import { useAuth } from '../context/AuthProvider';
 import { compareActivitiesChronologically, buildChronologicalDayItems, pairPlannedWithActivities, dedupeCalendarActivities } from '../utils/calendarDayOrdering';
 import { findCompliance, outlineBorder, planSportColor, SPORT_PLAN_COLORS } from '../utils/planCompliance';
 import { plannedDistanceMetres, formatPlannedDistanceMetres } from '../utils/plannedWorkoutDistance';
+import { mirrorLactateToSource } from '../utils/mirrorLactateToSource';
 import {
   activityPaceOrPowerDisplay,
   formatActivityDistance,
@@ -1286,28 +1287,10 @@ export default function NativeDashboardPage({
         await addTraining(payload);
       }
 
-      // If this Training is linked to a Strava activity, push lactate values
-      // back into the StravaActivity.laps so the calendar view (which renders
-      // Strava laps, not Training results) displays them on PC and mobile.
-      const stravaId = formData?.sourceStravaActivityId;
-      if (stravaId && Array.isArray(cleanedResults)) {
-        const lactateValues = cleanedResults
-          .map((r) => {
-            const lapIdx = Number.isInteger(r?.sourceLapIndex)
-              ? r.sourceLapIndex
-              : (Number(r?.interval) > 0 ? Number(r.interval) - 1 : null);
-            if (lapIdx == null || !Number.isFinite(r?.lactate)) return null;
-            return { lapIndex: lapIdx, lactate: r.lactate };
-          })
-          .filter(Boolean);
-        if (lactateValues.length > 0) {
-          try {
-            await updateStravaLactateValues(stravaId, lactateValues);
-          } catch (syncErr) {
-            console.warn('[lactate] Strava sync failed (non-blocking):', syncErr?.message);
-          }
-        }
-      }
+      // Push lactate back onto the source activity's laps so the calendar view
+      // (which renders laps, not Training results) displays them on PC and
+      // mobile — Strava or Garmin, see utils/mirrorLactateToSource.
+      await mirrorLactateToSource(formData, cleanedResults);
 
       closeLactateModal();
     } catch (err) {

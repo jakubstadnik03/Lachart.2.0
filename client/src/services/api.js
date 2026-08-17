@@ -2081,6 +2081,42 @@ export const deleteStravaLap = async (stravaId, lapIndex) => {
   }
 };
 
+/**
+ * Write lactate onto a Garmin ride's laps — the twin of
+ * updateStravaLactateValues. Without it a reading typed against a Garmin
+ * session saved to the training but never reached the ride, so the calendar,
+ * which renders laps rather than training results, showed it as unmeasured.
+ *
+ * @param {string|number} garminId
+ * @param {Array<{ lapIndex: number, lactate: number }>} lactateValues
+ */
+export const updateGarminLactateValues = async (garminId, lactateValues) => {
+  try {
+    const id = String(garminId).replace(/^garmin-/i, '');
+    const response = await api.put(
+      `/api/integrations/garmin/activities/${encodeURIComponent(id)}/lactate`,
+      { lactateValues },
+    );
+    return response.data;
+  } catch (error) {
+    console.error('Error updating Garmin lactate values:', error);
+    throw error;
+  }
+};
+
+export const deleteGarminLap = async (garminId, lapIndex) => {
+  try {
+    const id = String(garminId).replace(/^garmin-/i, '');
+    const response = await api.delete(
+      `/api/integrations/garmin/activities/${encodeURIComponent(id)}/laps/${lapIndex}`,
+    );
+    return response.data;
+  } catch (error) {
+    console.error('Error deleting Garmin lap:', error);
+    throw error;
+  }
+};
+
 // Workout Clustering API
 export const extractWorkoutPattern = async (workoutId, ftp = null) => {
   const { data } = await api.post(`/api/workout-clustering/extract/${workoutId}`, { ftp });

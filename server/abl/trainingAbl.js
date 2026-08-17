@@ -419,11 +419,14 @@ class TrainingAbl {
                 if (fitSport === 'cycling') sport = 'bike';
                 else if (fitSport === 'running') sport = 'run';
                 else if (fitSport === 'swimming') sport = 'swim';
-            } else if (sourceType === 'strava') {
-                const stravaSport = sourceData.sport || '';
-                if (stravaSport.toLowerCase().includes('ride') || stravaSport.toLowerCase().includes('bike')) sport = 'bike';
-                else if (stravaSport.toLowerCase().includes('run')) sport = 'run';
-                else if (stravaSport.toLowerCase().includes('swim')) sport = 'swim';
+            } else if (sourceType === 'strava' || sourceType === 'garmin') {
+                // Garmin sports are already normalised to bike/run/swim on
+                // import, but the same keyword test costs nothing and covers a
+                // doc written before that normalisation existed.
+                const srcSport = sourceData.sport || '';
+                if (srcSport.toLowerCase().includes('ride') || srcSport.toLowerCase().includes('bike')) sport = 'bike';
+                else if (srcSport.toLowerCase().includes('run')) sport = 'run';
+                else if (srcSport.toLowerCase().includes('swim')) sport = 'swim';
             }
 
             // Get title
@@ -742,6 +745,8 @@ class TrainingAbl {
                     updateData.sourceFitTrainingId = sourceData._id.toString();
                 } else if (sourceType === 'strava' && sourceData._id && !matchingTraining.sourceStravaActivityId) {
                     updateData.sourceStravaActivityId = sourceData._id.toString();
+                } else if (sourceType === 'garmin' && sourceData._id && !matchingTraining.sourceGarminActivityId) {
+                    updateData.sourceGarminActivityId = sourceData._id.toString();
                 }
                 
                 updateData.athleteId = matchingTraining.athleteId;
@@ -772,6 +777,8 @@ class TrainingAbl {
                     trainingData.sourceFitTrainingId = sourceData._id.toString();
                 } else if (sourceType === 'strava' && sourceData._id) {
                     trainingData.sourceStravaActivityId = sourceData._id.toString();
+                } else if (sourceType === 'garmin' && sourceData._id) {
+                    trainingData.sourceGarminActivityId = sourceData._id.toString();
                 }
 
                 return await this.trainingDao.createTraining(trainingData);

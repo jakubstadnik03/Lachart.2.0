@@ -6292,6 +6292,132 @@ router.put('/garmin/activities/:id', verifyToken, async (req, res) => {
   }
 });
 
+/**
+ * PUT /api/integrations/garmin/activities/:id/lactate
+ * Body: { lactateValues: [{ lapIndex, lactate }] }
+ *
+ * The Garmin twin of the Strava route below. Lactate typed against a Garmin
+ * ride used to have nowhere to go: the training saved, but the reading never
+ * reached the ride's laps, so the calendar — which renders laps, not training
+ * results — showed the session as unmeasured.
+ *
+ * Unlike Strava there is no fetching laps on demand: Garmin pushes what it has
+ * at import time, so if the ride has no laps stored, nothing can be attached
+ * to one and the caller is told so.
+ */
+router.put('/garmin/activities/:id/lactate', verifyToken, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.userId);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const garminId = String(req.params.id || '').replace(/^garmin-/i, '').trim();
+    if (!garminId) return res.status(400).json({ error: 'Invalid Garmin activity ID' });
+
+    const lactateValues = Array.isArray(req.body?.lactateValues) ? req.body.lactateValues : [];
+
+    const activity = await GarminActivity.findOne({ userId: user._id, garminId });
+    if (!activity) return res.status(404).json({ error: 'Garmin activity not found' });
+    if (!Array.isArray(activity.laps) || activity.laps.length === 0) {
+      return res.status(400).json({ error: 'No laps available for this activity' });
+    }
+
+    let applied = 0;
+    lactateValues.forEach(({ lapIndex, lactate }) => {
+      const i = Number(lapIndex);
+      if (!Number.isInteger(i) || i < 0 || i >= activity.laps.length) return;
+      activity.laps[i].lactate = (lactate === '' || lactate == null) ? null : Number(lactate);
+      applied += 1;
+    });
+
+    activity.markModified('laps');
+    await activity.save();
+    invalidateActivitiesCacheForUser(user._id);
+
+    // Mirror into the Training collection, exactly as the Strava path does, so
+    // the session appears wherever trainings are read rather than only where
+    // activities are.
+    try {
+      const TrainingAbl = require('../abl/trainingAbl');
+      await TrainingAbl.syncTrainingFromSource('garmin', {
+        ...activity.toObject(),
+        laps: activity.laps,
+      }, user._id.toString());
+    } catch (syncError) {
+      console.error('[GarminLactate] Training sync failed:', syncError.message);
+      // A failed mirror must not lose the reading that was just saved.
+    }
+
+    // Coaches hear about a measured session the same way they do for Strava.
+    ;(async () => {
+      try {
+        const actorFull = await User.findById(user._id).select('name surname role').lean();
+        const actorName = actorFull ? `${actorFull.name} ${actorFull.surname}`.trim() : 'Your athlete';
+        const trainingTitle = activity.titleManual || activity.name || 'a Garmin activity';
+        if (!actorFull || actorFull.role !== 'coach') {
+          await notifyCoachesOfAthlete(String(user._id), {
+            type: 'lactate_added',
+            title: 'Lactate added to training',
+            body: `${actorName} added lactate values to "${trainingTitle}"`,
+            resourceId: `garmin-${garminId}`,
+            resourceType: 'garmin',
+            fromName: actorName,
+          });
+        } else if (activity.userId && String(activity.userId) !== String(user._id)) {
+          await notifyAthlete(String(activity.userId), {
+            type: 'lactate_added',
+            title: 'Lactate added to your training',
+            body: `${actorName} added lactate values to "${trainingTitle}"`,
+            resourceId: `garmin-${garminId}`,
+            resourceType: 'garmin',
+            fromName: actorName,
+          });
+        }
+      } catch (e) {
+        console.error('[GarminLactate] notification error:', e.message);
+      }
+    })();
+
+    res.json({ success: true, applied, activity });
+  } catch (error) {
+    console.error('Error updating Garmin activity lactate:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * DELETE /api/integrations/garmin/activities/:id/laps/:lapIndex
+ * Garmin twin of the Strava lap deletion — same renumbering, same cache bust.
+ */
+router.delete('/garmin/activities/:id/laps/:lapIndex', verifyToken, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.userId);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const garminId = String(req.params.id || '').replace(/^garmin-/i, '').trim();
+    const lapIndex = parseInt(req.params.lapIndex, 10);
+
+    const activity = await GarminActivity.findOne({ userId: user._id, garminId });
+    if (!activity) return res.status(404).json({ error: 'Garmin activity not found' });
+    if (!Array.isArray(activity.laps) || activity.laps.length === 0) {
+      return res.status(400).json({ error: 'No laps available for this activity' });
+    }
+    if (!Number.isInteger(lapIndex) || lapIndex < 0 || lapIndex >= activity.laps.length) {
+      return res.status(400).json({ error: 'Invalid lap index' });
+    }
+
+    activity.laps.splice(lapIndex, 1);
+    activity.laps.forEach((lap, index) => { lap.lapNumber = index + 1; });
+    activity.markModified('laps');
+    await activity.save();
+    invalidateActivitiesCacheForUser(user._id);
+
+    res.json({ success: true, message: 'Lap deleted successfully', activity });
+  } catch (error) {
+    console.error('Error deleting Garmin lap:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Update Strava activity laps lactate values
 router.put('/strava/activities/:id/lactate', verifyToken, async (req, res) => {
   try {

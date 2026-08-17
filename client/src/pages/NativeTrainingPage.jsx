@@ -23,7 +23,7 @@ import {
 } from '../components/NativeDashboard/animations';
 import api from '../services/api';
 import { buildActivityMatcher, metricsPatchFromDetail } from '../utils/activityEventPatches';
-import { addTraining, updateTraining, getStravaActivityDetail, getGarminActivityDetail, createFieldLactateMeasurement, updateStravaLactateValues, getFieldLactateMeasurements, deleteFieldLactateMeasurement, assignFieldLactateMeasurement } from '../services/api';
+import { addTraining, updateTraining, getStravaActivityDetail, getGarminActivityDetail, createFieldLactateMeasurement, getFieldLactateMeasurements, deleteFieldLactateMeasurement, assignFieldLactateMeasurement } from '../services/api';
 import { useCategories, hexToRgba } from '../context/CategoryContext';
 import { normalizeCategoryKey } from '../utils/trainingCategory';
 import {
@@ -36,6 +36,7 @@ import RecordLactateModal from '../components/training/RecordLactateModal';
 import { SearchableSelect } from '../components/SearchableSelect';
 import NativeComparisonVerdict from '../components/native/NativeComparisonVerdict';
 import InteractiveChart from '../components/charts/InteractiveChart';
+import { mirrorLactateToSource } from '../utils/mirrorLactateToSource';
 // Lazy-load — keeps the heavy editor/modal chunks out of this page's bundle
 const ActivityFullModal = lazy(() =>
   import('../components/Calendar/CalendarView').then(m => ({ default: m.ActivityFullModal }))
@@ -1973,6 +1974,12 @@ export default function NativeTrainingPage({
       if (sid && looksLikeStrava && !clean.sourceStravaActivityId) {
         clean.sourceStravaActivityId = sid;
       }
+      // Same stamp for Garmin, for the same reason: without the link the next
+      // open of the same ride cannot find what was already saved.
+      if (!looksLikeStrava && isGarminActivityShape(clean) && !clean.sourceGarminActivityId) {
+        const gid = resolveGarminActivityId(clean);
+        if (gid) clean.sourceGarminActivityId = gid;
+      }
     }
 
     // Re-hydrate from a previously saved Training when one matches.
@@ -2198,27 +2205,10 @@ export default function NativeTrainingPage({
       }
     }
 
-    // Mirror lactate into the linked StravaActivity laps so the calendar
-    // (which renders Strava laps, not Training results) shows them on PC.
-    const stravaId = formData?.sourceStravaActivityId;
-    if (stravaId && Array.isArray(cleanedResults)) {
-      const lactateValues = cleanedResults
-        .map((r) => {
-          const lapIdx = Number.isInteger(r?.sourceLapIndex)
-            ? r.sourceLapIndex
-            : (Number(r?.interval) > 0 ? Number(r.interval) - 1 : null);
-          if (lapIdx == null || !Number.isFinite(r?.lactate)) return null;
-          return { lapIndex: lapIdx, lactate: r.lactate };
-        })
-        .filter(Boolean);
-      if (lactateValues.length > 0) {
-        try {
-          await updateStravaLactateValues(stravaId, lactateValues);
-        } catch (syncErr) {
-          console.warn('[lactate] Strava sync failed (non-blocking):', syncErr?.message);
-        }
-      }
-    }
+    // Mirror lactate onto the source activity's laps so the calendar (which
+    // renders laps, not Training results) shows them. Strava or Garmin —
+    // see utils/mirrorLactateToSource.
+    await mirrorLactateToSource(formData, cleanedResults);
 
     // If the user came in here via "Just measured → Chart" the pending
     // FieldLactateMeasurement is still 'pending'. Find which lap the user
