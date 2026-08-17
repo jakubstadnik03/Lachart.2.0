@@ -69,6 +69,12 @@ function invalidatePlannedWorkoutsCache() {
   _plannedCache.clear();
   _plannedInflight.clear();
   clearGetCacheMatching('/api/workout-planner/planned');
+  // Every planned-workout mutation funnels through here, so this is the one
+  // place that has to announce a calendar change. The Apple Watch auto-sync
+  // listens for it and re-mirrors the rolling window onto the watch.
+  try {
+    window.dispatchEvent(new CustomEvent('lachart:planned-workouts-changed'));
+  } catch { /* non-browser context */ }
 }
 
 /**
@@ -182,10 +188,27 @@ export const downloadPlannedWorkoutFit = async (id, { athleteId = null, suggeste
 export const exportPlannedWorkout = async (id, { format = 'tcx', athleteId = null, suggestedName = null } = {}) => {
   const params = { format };
   if (athleteId) params.athleteId = athleteId;
-  const res = await api.get(`${BASE}/planned/${id}/export`, {
-    params,
-    responseType: 'blob',
-  });
+  let res;
+  try {
+    res = await api.get(`${BASE}/planned/${id}/export`, {
+      params,
+      responseType: 'blob',
+    });
+  } catch (err) {
+    // With responseType 'blob' the JSON error body arrives as a Blob, so the
+    // usual err.response.data.code is undefined and the paywall 403 would
+    // surface as an opaque failure. Re-hydrate it so callers can show the
+    // upgrade prompt.
+    const data = err?.response?.data;
+    if (data instanceof Blob) {
+      try {
+        const parsed = JSON.parse(await data.text());
+        err.response.data = parsed;
+        if (parsed?.message || parsed?.error) err.message = parsed.message || parsed.error;
+      } catch { /* genuinely binary or empty — leave as-is */ }
+    }
+    throw err;
+  }
   // Filename: prefer the server-side Content-Disposition; fall back to the
   // suggested name or a generic "workout.<ext>".
   let filename = `${suggestedName || 'workout'}.${format}`;

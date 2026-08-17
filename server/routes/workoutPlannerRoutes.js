@@ -14,6 +14,25 @@ const CalendarPeriod  = require('../models/CalendarPeriod');
 const User       = require('../models/UserModel');
 const { requireFeature } = require('../middleware/featureGate');
 const { maybeNotifyCoachPlanUpdate } = require('../utils/coachPlanNotifications');
+const intervalsIcuPush = require('../services/intervalsIcuPushService');
+const garminWorkoutPush = require('../services/garminWorkoutPushService');
+
+/**
+ * Mirror a planned-workout change to every outbound destination the athlete
+ * has connected. Fire-and-forget: a delivery problem is recorded on the user
+ * document and surfaced in Settings, and must never fail the athlete's save.
+ *
+ *   • Garmin Training API — the direct route. No-ops until Garmin grants
+ *     LaChart Training API access (GARMIN_TRAINING_API_ENABLED).
+ *   • intervals.icu — the indirect route that works today, and which itself
+ *     forwards to Garmin Connect and Zwift.
+ *
+ * Both run: they are independent, and an athlete may have either or both.
+ */
+function syncPlannedWorkoutOutbound(plannedWorkoutId) {
+  intervalsIcuPush.pushPlannedWorkout(plannedWorkoutId).catch(() => {});
+  garminWorkoutPush.pushPlannedWorkout(plannedWorkoutId).catch(() => {});
+}
 
 /**
  * Workout planning is a Pro-tier feature. Free users can READ what's been
@@ -271,6 +290,7 @@ router.post('/planned', verifyToken, requirePlanWorkouts, async (req, res) => {
       }).catch(() => {});
     }
 
+    syncPlannedWorkoutOutbound(pw._id);
     res.status(201).json(pw);
   } catch (e) {
     console.error('[WorkoutPlanner] POST /planned error:', e);
@@ -335,6 +355,7 @@ router.put('/planned/:id', verifyToken, requirePlanWorkouts, async (req, res) =>
       }).catch(() => {});
     }
 
+    syncPlannedWorkoutOutbound(pw._id);
     res.json(pw);
   } catch (e) {
     console.error('[WorkoutPlanner] PUT /planned/:id error:', e);
@@ -360,7 +381,10 @@ router.put('/planned/:id', verifyToken, requirePlanWorkouts, async (req, res) =>
  * unless `ftp=NNN` is provided in the query string (lets a coach
  * override on the fly).
  */
-router.get('/planned/:id/export', verifyToken, async (req, res) => {
+// Sending a plan to a device/platform is a Pro capability. Reads of the plan
+// itself stay open (see the note above), but the export is gated — previously
+// this route had only verifyToken, so it was free by accident.
+router.get('/planned/:id/export', verifyToken, requirePlanWorkouts, async (req, res) => {
   try {
     const Test = require('../models/test');
     const { buildZwo, buildTcx, buildFit } = require('../utils/workoutExporters');
@@ -382,7 +406,16 @@ router.get('/planned/:id/export', verifyToken, async (req, res) => {
     //   1. Explicit ?ftp=NNN query (coach override)
     //   2. Most recent test with LT2 / FTP for this athlete
     //   3. Hard fallback 250 W
-    let ctx = { ftp: 250, lt1Power: null, lt2Power: null };
+    let ctx = { ftp: 250, lt1Power: null, lt2Power: null, cyclingZones: null };
+
+    // The athlete's PROFILE zones are what the live workout screen treats as
+    // primary, so the exporter has to read them too — otherwise a Zone-2 step
+    // is exported at a different wattage than the athlete rides it at in-app.
+    try {
+      const athlete = await User.findById(pw.athleteId).select('powerZones').lean();
+      ctx.cyclingZones = athlete?.powerZones?.cycling || null;
+    } catch (_) { /* profile zones are optional */ }
+
     const ftpOverride = Number(req.query.ftp);
     if (Number.isFinite(ftpOverride) && ftpOverride > 0) {
       ctx.ftp = ftpOverride;
@@ -391,13 +424,15 @@ router.get('/planned/:id/export', verifyToken, async (req, res) => {
         const tests = await Test.find({ userId: pw.athleteId }).sort({ date: -1 }).limit(10).lean();
         const latest = tests.find((t) => t.lt2Power || t.ltPower || t.ftp);
         if (latest) {
-          ctx = {
-            ftp: Number(latest.lt2Power || latest.ltPower || latest.ftp) || 250,
-            lt1Power: latest.ltPower || latest.lt1Power || null,
-            lt2Power: latest.lt2Power || latest.ltPower || null,
-          };
+          ctx.ftp = Number(latest.lt2Power || latest.ltPower || latest.ftp) || 250;
+          ctx.lt1Power = latest.ltPower || latest.lt1Power || null;
+          ctx.lt2Power = latest.lt2Power || latest.ltPower || null;
         }
       } catch (_) { /* keep defaults */ }
+      // Profile thresholds win over the test fallback, matching the live screen.
+      ctx.lt1Power = ctx.cyclingZones?.lt1 || ctx.lt1Power;
+      ctx.lt2Power = ctx.cyclingZones?.lt2 || ctx.lt2Power;
+      if (ctx.lt2Power) ctx.ftp = Number(ctx.lt2Power);
     }
 
     const format = String(req.query.format || 'tcx').toLowerCase();
@@ -697,7 +732,18 @@ router.delete('/planned/:id', verifyToken, requirePlanWorkouts, async (req, res)
     const pw = await PlannedWorkout.findById(req.params.id);
     if (!pw) return res.status(404).json({ error: 'Not found' });
     if (String(pw.athleteId) !== athleteId) return res.status(403).json({ error: 'Forbidden' });
+    // Capture the outbound ids BEFORE deleting — they are needed to withdraw
+    // the workout from Garmin, and are gone once the document is removed.
+    const deleted = {
+      _id: pw._id,
+      garminWorkoutId: pw.garminWorkoutId,
+      garminScheduleId: pw.garminScheduleId,
+    };
     await pw.deleteOne();
+    // Withdraw it everywhere too, otherwise a workout deleted in LaChart still
+    // shows up on the athlete's watch.
+    intervalsIcuPush.removePlannedWorkout(athleteId, deleted._id).catch(() => {});
+    garminWorkoutPush.removePlannedWorkout(athleteId, deleted).catch(() => {});
     res.json({ success: true });
   } catch (e) {
     res.status(500).json({ error: 'Failed to delete planned workout' });

@@ -3075,6 +3075,17 @@ router.get('/garmin/auth-url', (req, res) => {
       code_challenge_method: 'S256'
     });
 
+    // Workout-write scope for the Training API (pushing planned workouts into
+    // Garmin Connect). Only sent once Garmin has actually granted Training API
+    // access on our key: requesting a scope the key does not hold can make
+    // Garmin reject the whole authorization, which would break the read-only
+    // activity sync users already depend on. Set GARMIN_WORKOUT_SCOPE after
+    // approval, then have users reconnect once.
+    const { isTrainingApiEnabled, workoutScope } = require('../services/garminTrainingApiClient');
+    if (isTrainingApiEnabled() && workoutScope()) {
+      params.set('scope', workoutScope());
+    }
+
     const url = `${getGarminAuthorizeUrl()}?${params.toString()}`;
     res.json({ url });
   } catch (error) {
@@ -4195,6 +4206,128 @@ router.put('/garmin/auto-sync', verifyToken, async (req, res) => {
   } catch (error) {
     console.error('Error updating Garmin auto-sync setting:', error);
     res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /api/integrations/garmin/training-status
+ *
+ * Diagnostic for the Training API (pushing planned workouts INTO Garmin).
+ * Re-reads the user's live Garmin permissions rather than trusting the cached
+ * copy, so we can tell the difference between:
+ *   • the server flag being off,
+ *   • the athlete never having granted workout access, and
+ *   • a genuine API failure.
+ *
+ * Garmin derives permissions from what is enabled on the developer key, so a
+ * user who authorised BEFORE "Training" was switched on will not have the
+ * workout permission until they reconnect. This endpoint is how we detect that
+ * instead of guessing.
+ */
+router.get('/garmin/training-status', verifyToken, async (req, res) => {
+  try {
+    const { isTrainingApiEnabled } = require('../services/garminTrainingApiClient');
+    const user = await User.findById(req.user.userId);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const connected = !!user.garmin?.accessToken;
+    const out = {
+      trainingApiEnabled: isTrainingApiEnabled(),
+      connected,
+      permissions: null,
+      hasWorkoutPermission: false,
+      needsReconnect: false,
+      error: null,
+    };
+    if (!connected) return res.json(out);
+
+    let permissions = null;
+    try {
+      const tokenData = await getValidGarminToken(user);
+      permissions = await fetchGarminUserPermissions(tokenData);
+    } catch (e) {
+      out.error = e?.message || 'Could not read Garmin permissions';
+      return res.json(out);
+    }
+
+    if (Array.isArray(permissions)) {
+      out.permissions = permissions;
+      // Match loosely: the exact permission string is set by Garmin and we
+      // would rather detect a renamed one than hardcode a guess.
+      out.hasWorkoutPermission = permissions.some((p) =>
+        /WORKOUT|TRAINING/i.test(String(p)));
+      out.needsReconnect = !out.hasWorkoutPermission;
+      // Keep the cached copy fresh for the Settings card.
+      try {
+        user.garmin = { ...user.garmin, permissions, permissionsCheckedAt: new Date() };
+        await user.save();
+      } catch (_) { /* cache only */ }
+    }
+    res.json(out);
+  } catch (error) {
+    console.error('Garmin training-status error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /api/integrations/garmin/workout-inspect?workoutId=123
+ * GET /api/integrations/garmin/workout-inspect?from=2026-08-01&to=2026-09-01
+ *
+ * Development aid for the Training API integration. With `workoutId` it dumps
+ * a single workout exactly as Garmin stores it; otherwise it lists scheduled
+ * workouts in a date range so you can find an id.
+ *
+ * Why it exists: the partner Swagger does not show how a WorkoutRepeatStep
+ * carries the steps it repeats (the schema has no nested `steps` array), and
+ * guessing wrong means every interval workout is rejected or silently
+ * flattened. Build a repeating workout by hand in Garmin Connect, read it back
+ * here, and copy whatever Garmin actually does.
+ */
+router.get('/garmin/workout-inspect', verifyToken, async (req, res) => {
+  try {
+    const client = require('../services/garminTrainingApiClient');
+    const user = await User.findById(req.user.userId);
+    if (!user?.garmin?.accessToken) {
+      return res.status(400).json({ error: 'Garmin is not connected' });
+    }
+    const tokenData = await getValidGarminToken(user);
+
+    const workoutId = req.query.workoutId;
+    if (workoutId) {
+      const workout = await client.getWorkout(tokenData, workoutId);
+      // Summarise the step encoding so the answer is obvious at a glance.
+      const steps = Array.isArray(workout?.steps) ? workout.steps : [];
+      return res.json({
+        workout,
+        _analysis: {
+          topLevelStepCount: steps.length,
+          stepTypes: steps.map((s) => s?.type),
+          repeatStepsHaveNestedSteps: steps
+            .filter((s) => /repeat/i.test(String(s?.type)))
+            .map((s) => ({
+              type: s.type,
+              repeatType: s.repeatType,
+              repeatValue: s.repeatValue,
+              hasNestedSteps: Array.isArray(s.steps),
+              nestedCount: Array.isArray(s.steps) ? s.steps.length : 0,
+              keys: Object.keys(s),
+            })),
+        },
+      });
+    }
+
+    const from = req.query.from || new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
+    const to = req.query.to || new Date(Date.now() + 60 * 86400000).toISOString().slice(0, 10);
+    const schedules = await client.listSchedules(tokenData, from, to);
+    res.json({ from, to, schedules });
+  } catch (error) {
+    const client = require('../services/garminTrainingApiClient');
+    res.status(500).json({
+      error: client.describeError(error),
+      status: error?.response?.status || null,
+      body: error?.response?.data || null,
+    });
   }
 });
 
@@ -8178,3 +8311,7 @@ module.exports.resumeShallowStravaBackfills = resumeShallowStravaBackfills;
 module.exports._acCategorizeByTitle = _acCategorizeByTitle;
 // Exported for unit testing the Garmin Activity Details → laps/streams parser.
 module.exports.parseGarminActivityDetails = parseGarminActivityDetails;
+// Exported so the Training API push service can reuse the one refresh path
+// rather than duplicating token-expiry handling.
+module.exports.getValidGarminToken = getValidGarminToken;
+module.exports.fetchGarminUserPermissions = fetchGarminUserPermissions;

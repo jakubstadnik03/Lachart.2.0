@@ -183,6 +183,24 @@ const userSchema = new mongoose.Schema({
     lastWellnessSyncAt: { type: Date, default: null },
     lastWorkoutSyncAt: { type: Date, default: null },
   },
+  /**
+   * intervals.icu — the bridge that carries LaChart's PLANNED workouts onward
+   * to Garmin Connect and Zwift. Garmin Connect has no workout importer and
+   * Garmin's Training API is closed to new partners, so pushing through
+   * intervals.icu (an approved partner) is the only route from a planned
+   * workout in LaChart to a scheduled workout on a Garmin watch.
+   *
+   * Auth is the athlete's own personal API key (HTTP Basic, username literally
+   * "API_KEY"), which needs no approval from anyone.
+   */
+  intervalsIcu: {
+    athleteId: { type: String, default: null },   // e.g. "i123456"
+    apiKey: { type: String, default: null },      // stored encrypted at rest
+    autoPush: { type: Boolean, default: true },
+    connectedAt: { type: Date, default: null },
+    lastPushAt: { type: Date, default: null },
+    lastPushError: { type: String, default: null },
+  },
   // Power zones from lactate tests
   powerZones: {
     cycling: {
