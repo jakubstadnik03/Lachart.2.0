@@ -1431,6 +1431,53 @@ export const syncStravaActivities = async (since=null) => {
 
 // Manually (re)start the full historical import of all Strava activities.
 // Runs in the background on the server; progress shows via /strava/status.
+/**
+ * What Strava has vs. what LaChart imported — powers the activity list in
+ * Settings, where a missed activity can be pulled in by hand.
+ * @param {{ days?: number, signal?: AbortSignal }} [opts]
+ * @returns {Promise<{ connected: boolean, truncated?: boolean, activities: Array<{ id: string, name: string, sport: string, startDate: string, distanceMeters: number, durationSeconds: number, state: 'imported'|'importable' }>, counts: { imported: number, importable: number, total: number } }>}
+ */
+export const getStravaActivityStatus = async (opts = {}) => {
+  const cfg = { params: {}, timeout: 60000 };
+  if (opts.days != null) cfg.params.days = opts.days;
+  if (opts.signal) cfg.signal = opts.signal;
+  const { data } = await api.get('/api/integrations/strava/activity-status', cfg);
+  return data;
+};
+
+/** Import one Strava activity that never reached LaChart. */
+export const importStravaActivity = async (activityId) => {
+  const { data } = await api.post(
+    `/api/integrations/strava/activities/${encodeURIComponent(activityId)}/import`,
+    {},
+    { timeout: 90000 },
+  );
+  return data; // { imported, updated, activity }
+};
+
+/**
+ * Garmin counterpart. `pullSupported: false` means Garmin only pushes to us —
+ * the UI must say so rather than showing an empty "nothing missing" list.
+ * @param {{ days?: number, signal?: AbortSignal }} [opts]
+ */
+export const getGarminActivityStatus = async (opts = {}) => {
+  const cfg = { params: {}, timeout: 60000 };
+  if (opts.days != null) cfg.params.days = opts.days;
+  if (opts.signal) cfg.signal = opts.signal;
+  const { data } = await api.get('/api/integrations/garmin/activity-status', cfg);
+  return data;
+};
+
+/** Import one Garmin activity that never reached LaChart. */
+export const importGarminActivity = async (activityId, { days } = {}) => {
+  const { data } = await api.post(
+    `/api/integrations/garmin/activities/${encodeURIComponent(activityId)}/import`,
+    days != null ? { days } : {},
+    { timeout: 90000 },
+  );
+  return data; // { imported, updated }
+};
+
 export const backfillStravaHistory = async ({ fromNow = true, force = true } = {}) => {
   const { data } = await api.post('/api/integrations/strava/backfill', { fromNow, force }, { timeout: 15000 });
   return data; // { started, alreadyRunning?, restarted? }
@@ -1765,6 +1812,26 @@ export const getGarminWellness = async (opts = {}) => {
 
 export const getAppleHealthStatus = async () => {
   const { data } = await api.get('/api/integrations/apple-health/status');
+  return data;
+};
+
+/**
+ * Per-workout import state for the Health workout list in Settings.
+ * @param {Array<{ id: string, startDate: string, durationSeconds?: number, distanceMeters?: number }>} workouts
+ * @param {{ signal?: AbortSignal }} [opts]
+ * @returns {Promise<{ statuses: Array<{ id: string, state: 'imported'|'duplicate'|'importable', importedAt?: string, source?: string }>, counts: { imported: number, duplicate: number, importable: number, total: number } }>}
+ */
+export const getAppleHealthWorkoutStatus = async (workouts, opts = {}) => {
+  // Only the fields the server matches on — no need to ship calories/HR back.
+  const payload = (workouts || []).map((w) => ({
+    id: w.id,
+    startDate: w.startDate,
+    durationSeconds: w.durationSeconds,
+    distanceMeters: w.distanceMeters,
+  }));
+  const cfg = {};
+  if (opts.signal) cfg.signal = opts.signal;
+  const { data } = await api.post('/api/integrations/apple-health/workout-status', { workouts: payload }, cfg);
   return data;
 };
 

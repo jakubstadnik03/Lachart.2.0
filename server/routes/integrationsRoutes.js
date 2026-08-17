@@ -21,6 +21,7 @@ const { recordStravaSyncLogSafe } = require('../services/stravaSyncLogService');
 const { notifyStravaImportedPush } = require('../utils/stravaImportNotifications');
 const { stravaHalfCadenceToSpm } = require('../utils/cadenceDisplay');
 const { sanitizeSavedAutoLaps } = require('../utils/sanitizeSavedAutoLaps');
+const { findExternalDuplicate } = require('../utils/appleHealthDuplicate');
 const router = express.Router();
 
 // Process-wide token bucket so no single hot path can drain Strava's quota.
@@ -179,18 +180,36 @@ function stravaBackfillStopBeforeUnix(lookbackDays = STRAVA_BACKFILL_LOOKBACK_DA
 }
 
 // Cache middleware for activities
-const activitiesCacheMiddleware = (req, res, next) => {
+/**
+ * Drop this user's cached Strava/Garmin activity-status pages.
+ *
+ * Without it, importing a missing activity leaves the row saying "Import" for
+ * up to two minutes because the list is served from the response cache.
+ */
+function invalidateActivityStatusCache(userId) {
+  if (!userId) return;
+  const needle = `:${String(userId)}:`;
+  try {
+    activitiesCache.keys()
+      .filter((k) => k.includes('activity-status') && k.includes(needle))
+      .forEach((k) => activitiesCache.del(k));
+  } catch (e) {
+    console.warn('[cache] activity-status invalidation failed:', e?.message);
+  }
+}
+
+const makeActivitiesCacheMiddleware = (ttlSeconds = 120) => (req, res, next) => {
   // User-scoped cache key (prevents cross-user status/activity leaks)
   const userId = req.user?.userId ? String(req.user.userId) : 'anonymous';
   const cacheKey = `${req.method}:${req.path}:${userId}:${JSON.stringify(req.query || {})}`;
   const cachedResponse = activitiesCache.get(cacheKey);
-  
+
   if (cachedResponse) {
     res.set('X-Cache', 'HIT');
-    res.set('Cache-Control', 'private, max-age=120');
+    res.set('Cache-Control', `private, max-age=${ttlSeconds}`);
     return res.json(cachedResponse);
   }
-  
+
   // Store original json method
   const originalJson = res.json.bind(res);
   res.json = (body) => {
@@ -198,14 +217,23 @@ const activitiesCacheMiddleware = (req, res, next) => {
     const isErrorStatus = res.statusCode < 200 || res.statusCode >= 300;
     const isErrorBody = body && typeof body === 'object' && (body.error || body.errors);
     if (!isErrorStatus && !isErrorBody) {
-      activitiesCache.set(cacheKey, body);
+      activitiesCache.set(cacheKey, body, ttlSeconds);
     }
     res.set('X-Cache', 'MISS');
-    res.set('Cache-Control', 'private, max-age=120');
+    res.set('Cache-Control', `private, max-age=${ttlSeconds}`);
     return originalJson(body);
   };
   next();
 };
+
+const activitiesCacheMiddleware = makeActivitiesCacheMiddleware(120);
+/**
+ * Longer window for the "what is missing" lists. Every miss costs Strava API
+ * calls out of a budget shared by every user of this app, and a settings screen
+ * that quietly re-queries on each visit is exactly how that budget gets drained
+ * — 10 minutes is far fresher than the data changes.
+ */
+const activityStatusCacheMiddleware = makeActivitiesCacheMiddleware(600);
 
 // Bust every cached `/activities` response for a single user. Called from
 // every mutation endpoint (title edit, category, lactate update, delete)
@@ -2717,6 +2745,176 @@ router.post('/strava/sync', verifyToken, async (req, res) => {
   }
 });
 
+/**
+ * GET /api/integrations/strava/activity-status?days=90
+ *
+ * What Strava has vs. what LaChart has. A missed webhook or a sync window that
+ * skipped a day leaves activities on Strava that never reached LaChart, and
+ * until now nothing in the UI could show that — let alone fix it. Each entry
+ * comes back as `imported` or `importable`, and the importable ones can be
+ * pulled in one by one via POST /strava/activities/:id/import.
+ *
+ * Costs 1–2 Strava API calls, so it runs behind the 2 min response cache and
+ * the shared request budget.
+ */
+router.get('/strava/activity-status', verifyToken, activityStatusCacheMiddleware, async (req, res) => {
+  const PER_PAGE = 100;
+  // Two pages covers ~200 activities; beyond that the list is a history import
+  // job (Backfill history), not a gap to patch by hand.
+  const MAX_PAGES = 2;
+
+  try {
+    const user = await User.findById(req.user.userId);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    if (!user.strava?.accessToken) {
+      return res.json({ connected: false, activities: [], counts: { imported: 0, importable: 0, total: 0 } });
+    }
+    if (bailIfStravaLocked(res)) return;
+
+    const token = await getValidStravaToken(user);
+    if (!token) {
+      return res.status(400).json({ error: 'Invalid or expired Strava token. Reconnect Strava in Settings.' });
+    }
+
+    const days = Math.min(Math.max(Number(req.query.days) || 90, 1), 180);
+    const after = Math.floor((Date.now() - days * 24 * 3600 * 1000) / 1000);
+
+    const summaries = [];
+    let truncated = false;
+    for (let page = 1; page <= MAX_PAGES; page += 1) {
+      let resp;
+      try {
+        // The user is looking at this screen right now — same reasoning as the
+        // manual sync: let the first page through and let Strava be the judge.
+        await stravaBudget.take({ bypass: page === 1 });
+        resp = await axios.get('https://www.strava.com/api/v3/athlete/activities', {
+          headers: { Authorization: `Bearer ${token}` },
+          params: { after, per_page: PER_PAGE, page },
+          timeout: 30000,
+        });
+      } catch (e) {
+        // Out of budget mid-listing: show what we already have rather than
+        // failing the whole screen — a partial list still surfaces gaps.
+        if (e?.code === 'STRAVA_BUDGET_EXHAUSTED' && summaries.length > 0) {
+          truncated = true;
+          break;
+        }
+        throw e;
+      }
+      try { stravaBudget.reconcileFromHeaders(resp.headers); } catch (_) { /* swallow */ }
+      const arr = resp.data || [];
+      summaries.push(...arr);
+      if (arr.length < PER_PAGE) break;
+      if (page === MAX_PAGES) truncated = true;
+    }
+    stravaClearRateLimit();
+
+    const local = await StravaActivity.find({
+      userId: user._id,
+      stravaId: { $in: summaries.map((a) => a.id) },
+    }).select('stravaId').lean();
+    const importedIds = new Set(local.map((d) => String(d.stravaId)));
+
+    const counts = { imported: 0, importable: 0, total: summaries.length };
+    const activities = summaries.map((a) => {
+      const imported = importedIds.has(String(a.id));
+      if (imported) counts.imported += 1; else counts.importable += 1;
+      return {
+        id: String(a.id),
+        name: a.name || 'Untitled Activity',
+        sport: a.sport_type || a.type || 'Ride',
+        startDate: a.start_date_local || a.start_date,
+        distanceMeters: Number(a.distance) || 0,
+        durationSeconds: Number(a.moving_time || a.elapsed_time) || 0,
+        state: imported ? 'imported' : 'importable',
+      };
+    });
+
+    res.json({ connected: true, days, truncated, activities, counts });
+  } catch (err) {
+    const status = err.response?.status;
+    if (status === 429) {
+      const retryAfter = err.response?.headers?.['retry-after'] || 900;
+      stravaNoteRateLimit(retryAfter);
+      return res.status(429).json({
+        error: 'Strava rate limit exceeded',
+        message: `Strava API quota is exhausted. Try again in about ${Math.ceil(retryAfter / 60)} min.`,
+        retryAfter,
+      });
+    }
+    if (err?.code === 'STRAVA_BUDGET_EXHAUSTED') {
+      const retryAfter = Number(err.retryAfterSec) || 900;
+      return res.status(429).json({
+        error: 'Strava request budget exhausted',
+        message: `LaChart is pacing its Strava requests. Try again in about ${Math.max(1, Math.ceil(retryAfter / 60))} min.`,
+        retryAfter,
+      });
+    }
+    console.error('[strava] activity-status error:', err.response?.data || err.message);
+    res.status(500).json({ error: 'Could not read the activity list from Strava', message: err.message });
+  }
+});
+
+/**
+ * POST /api/integrations/strava/activities/:id/import
+ * Pull one activity that never made it into LaChart. Same code path the
+ * webhook uses, so the activity arrives complete (laps + streams prewarmed).
+ */
+router.post('/strava/activities/:id/import', verifyToken, async (req, res) => {
+  try {
+    if (bailIfStravaLocked(res)) return;
+
+    const user = await User.findById(req.user.userId);
+    if (!user || !user.strava?.accessToken) {
+      return res.status(400).json({ error: 'Strava not connected' });
+    }
+
+    const stravaId = Number(stripStravaActivityIdPrefix(req.params.id));
+    if (!Number.isFinite(stravaId) || stravaId <= 0) {
+      return res.status(400).json({ error: 'Invalid activity id' });
+    }
+
+    const { activity, isNew } = await fetchAndSaveStravaActivity(user, stravaId, { bypassBudget: true });
+    stravaClearRateLimit();
+    await User.findByIdAndUpdate(user._id, { 'strava.lastSyncDate': new Date() });
+    invalidateActivityStatusCache(user._id);
+
+    recordStravaSyncLogSafe({
+      userId: user._id,
+      source: 'manual',
+      status: 'success',
+      startedAt: new Date(),
+      imported: isNew ? 1 : 0,
+      updated: isNew ? 0 : 1,
+      totalFetched: 1,
+      stravaActivityIds: [stravaId],
+      meta: { manualImport: true },
+    });
+
+    res.json({
+      imported: isNew ? 1 : 0,
+      updated: isNew ? 0 : 1,
+      activity: { id: String(stravaId), name: activity?.name, startDate: activity?.startDate },
+    });
+  } catch (err) {
+    const status = err.response?.status;
+    if (status === 429) {
+      const retryAfter = err.response?.headers?.['retry-after'] || 900;
+      stravaNoteRateLimit(retryAfter);
+      return res.status(429).json({
+        error: 'Strava rate limit exceeded',
+        message: `Strava API quota is exhausted. Try again in about ${Math.ceil(retryAfter / 60)} min.`,
+        retryAfter,
+      });
+    }
+    if (status === 404) {
+      return res.status(404).json({ error: 'That activity no longer exists on Strava.' });
+    }
+    console.error('[strava] single activity import error:', err.response?.data || err.message);
+    res.status(500).json({ error: 'Import failed', message: err.message });
+  }
+});
+
 // POST /api/integrations/strava/auto-sync (automatic sync for new activities only)
 router.post('/strava/auto-sync', verifyToken, async (req, res) => {
   // App-wide Strava lockout — bail before doing anything that would call Strava.
@@ -3789,6 +3987,130 @@ router.post('/garmin/sync-history', verifyToken, async (req, res) => {
   } catch (err) {
     console.error('Garmin history sync error:', err);
     res.status(500).json({ error: 'Garmin history sync failed', message: err.message });
+  }
+});
+
+/**
+ * GET /api/integrations/garmin/activity-status?days=90
+ *
+ * Garmin counterpart of /strava/activity-status. Note the honest degradation:
+ * with plain OAuth, Garmin does not allow a synchronous pull (the Health API
+ * pushes instead), so the answer is `pullSupported: false` plus the reason —
+ * never a fabricated "nothing missing". Credential-connected accounts do get
+ * a real list.
+ *
+ * Deliberately does NOT fall back to fetchGarminActivitiesForSync: that queues
+ * a backfill job, which must not happen every time someone opens Settings.
+ */
+router.get('/garmin/activity-status', verifyToken, activityStatusCacheMiddleware, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.userId);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    if (!user.garmin?.accessToken) {
+      return res.json({
+        connected: false,
+        pullSupported: false,
+        activities: [],
+        counts: { imported: 0, importable: 0, total: 0 },
+      });
+    }
+
+    const days = Math.min(Math.max(Number(req.query.days) || 90, 1), 180);
+    const since = new Date(Date.now() - days * 24 * 3600 * 1000);
+
+    let remote = [];
+    try {
+      remote = await getGarminActivities(user, since);
+    } catch (err) {
+      if (isGarminPullTokenError(err.message)) {
+        return res.json({
+          connected: true,
+          pullSupported: false,
+          days,
+          activities: [],
+          counts: { imported: 0, importable: 0, total: 0 },
+          message: 'Garmin pushes activities to LaChart automatically instead of letting apps list them. '
+            + 'New activities appear within minutes; use Import History to recover older ones.',
+        });
+      }
+      throw err;
+    }
+
+    const docs = (remote || []).map((a) => mapGarminActivityToDoc(user, a));
+    const local = await GarminActivity.find({
+      userId: user._id,
+      garminId: { $in: docs.map((d) => d.garminId) },
+    }).select('garminId').lean();
+    const importedIds = new Set(local.map((d) => String(d.garminId)));
+
+    const counts = { imported: 0, importable: 0, total: docs.length };
+    const activities = docs.map((d) => {
+      const imported = importedIds.has(String(d.garminId));
+      if (imported) counts.imported += 1; else counts.importable += 1;
+      return {
+        id: String(d.garminId),
+        name: d.name,
+        sport: d.sport,
+        startDate: d.startDate,
+        distanceMeters: Number(d.distance) || 0,
+        durationSeconds: Number(d.movingTime || d.elapsedTime) || 0,
+        state: imported ? 'imported' : 'importable',
+      };
+    }).sort((a, b) => new Date(b.startDate) - new Date(a.startDate));
+
+    res.json({ connected: true, pullSupported: true, days, activities, counts });
+  } catch (err) {
+    console.error('[garmin] activity-status error:', err.message);
+    res.status(500).json({ error: 'Could not read the activity list from Garmin', message: err.message });
+  }
+});
+
+/**
+ * POST /api/integrations/garmin/activities/:id/import
+ * Body: { days?: number } — how far back to look for the activity.
+ *
+ * Re-reads the window from Garmin and upserts only the requested activity, so
+ * the client can never write an arbitrary payload into the database.
+ */
+router.post('/garmin/activities/:id/import', verifyToken, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.userId);
+    if (!user || !user.garmin?.accessToken) {
+      return res.status(400).json({ error: 'Garmin not connected' });
+    }
+
+    const garminId = String(req.params.id || '').trim();
+    if (!garminId) return res.status(400).json({ error: 'Invalid activity id' });
+
+    const days = Math.min(Math.max(Number(req.body?.days) || 90, 1), 180);
+    const since = new Date(Date.now() - days * 24 * 3600 * 1000);
+
+    let remote = [];
+    try {
+      remote = await getGarminActivities(user, since);
+    } catch (err) {
+      if (isGarminPullTokenError(err.message)) {
+        return res.status(409).json({
+          error: 'Garmin does not allow LaChart to pull single activities',
+          message: 'Use Import History — Garmin delivers those activities to LaChart in the background.',
+        });
+      }
+      throw err;
+    }
+
+    const match = (remote || []).find((a) => mapGarminActivityToDoc(user, a).garminId === garminId);
+    if (!match) {
+      return res.status(404).json({ error: 'That activity is no longer in the Garmin window we can read.' });
+    }
+
+    const { imported, updated } = await upsertGarminActivities(user, [match]);
+    await User.findByIdAndUpdate(user._id, { 'garmin.lastSyncDate': new Date() });
+    invalidateActivityStatusCache(user._id);
+
+    res.json({ imported, updated });
+  } catch (err) {
+    console.error('[garmin] single activity import error:', err.message);
+    res.status(500).json({ error: 'Import failed', message: err.message });
   }
 });
 
@@ -7418,6 +7740,43 @@ const APPLE_HEALTH_SPORT_MAP = {
 };
 
 /**
+ * Loads the Strava/Garmin activities that could be duplicates of the given
+ * Apple Health workouts and returns a matcher over them. Shared by the import
+ * route and the status route so the workout list never offers an import that
+ * the sync would silently skip. Matching rules live in
+ * utils/appleHealthDuplicate (unit-tested there).
+ *
+ * @returns {Promise<(startMs: number, distMeters: number, durSec: number) => object | null>}
+ *   matcher returning the duplicate external activity (with `source`) or null
+ */
+async function buildAppleHealthDuplicateMatcher(userId, workouts) {
+  const startTimes = workouts
+    .map((w) => new Date(w.startDate).getTime())
+    .filter(Number.isFinite);
+  let externalNearby = [];
+  if (startTimes.length > 0) {
+    const from = new Date(Math.min(...startTimes) - 15 * 60 * 1000);
+    const to = new Date(Math.max(...startTimes) + 15 * 60 * 1000);
+    const [stravaNearby, garminNearby] = await Promise.all([
+      StravaActivity.find({ userId, startDate: { $gte: from, $lte: to } })
+        .select('startDate distance movingTime elapsedTime name').lean().catch(() => []),
+      GarminActivity.find({ userId, startDate: { $gte: from, $lte: to } })
+        .select('startDate distance duration durationSeconds movingTime elapsedTime name').lean().catch(() => []),
+    ]);
+    externalNearby = [
+      ...stravaNearby.map((a) => ({ ...a, source: 'strava' })),
+      ...garminNearby.map((a) => ({ ...a, source: 'garmin' })),
+    ];
+  }
+
+  return (startMs, distMeters, durSec) => findExternalDuplicate(externalNearby, {
+    startMs,
+    distanceMeters: distMeters,
+    durationSeconds: durSec,
+  });
+}
+
+/**
  * POST /api/integrations/apple-health/sync
  * Receives workouts from the iOS app and upserts them as StravaActivity-like docs.
  * Body: { workouts: HealthWorkout[] }
@@ -7431,38 +7790,10 @@ router.post('/apple-health/sync', verifyToken, async (req, res) => {
       return res.json({ imported: 0, message: 'No workouts provided' });
     }
 
-    // Skip Apple workouts that duplicate an already-synced Strava/Garmin
-    // activity (the same session recorded by the watch AND imported from
-    // Strava/Garmin). Apple reports elapsed time while Strava reports moving
-    // time, so match on start proximity + distance rather than duration.
-    const startTimes = workouts
-      .map((w) => new Date(w.startDate).getTime())
-      .filter(Number.isFinite);
-    let externalNearby = [];
-    if (startTimes.length > 0) {
-      const from = new Date(Math.min(...startTimes) - 15 * 60 * 1000);
-      const to = new Date(Math.max(...startTimes) + 15 * 60 * 1000);
-      const [stravaNearby, garminNearby] = await Promise.all([
-        StravaActivity.find({ userId, startDate: { $gte: from, $lte: to } })
-          .select('startDate distance movingTime elapsedTime').lean().catch(() => []),
-        GarminActivity.find({ userId, startDate: { $gte: from, $lte: to } })
-          .select('startDate distance duration durationSeconds movingTime elapsedTime').lean().catch(() => []),
-      ]);
-      externalNearby = [...stravaNearby, ...garminNearby];
-    }
-    const duplicatesExternal = (startMs, distMeters, durSec) => externalNearby.some((ext) => {
-      const extStart = new Date(ext.startDate).getTime();
-      if (!Number.isFinite(extStart) || Math.abs(extStart - startMs) > 10 * 60 * 1000) return false;
-      const extDist = Number(ext.distance) || 0;
-      if (distMeters > 100 && extDist > 100) {
-        return Math.abs(extDist - distMeters) <= 0.035 * Math.max(extDist, distMeters);
-      }
-      const extDur = Number(ext.movingTime || ext.elapsedTime || ext.duration || ext.durationSeconds) || 0;
-      if (durSec > 0 && extDur > 0) {
-        return Math.abs(extDur - durSec) <= Math.max(180, 0.15 * Math.max(extDur, durSec));
-      }
-      return true; // started within 10 min, no comparable metrics — same session
-    });
+    const findExternalDuplicate = await buildAppleHealthDuplicateMatcher(userId, workouts);
+    const duplicatesExternal = (startMs, distMeters, durSec) => Boolean(
+      findExternalDuplicate(startMs, distMeters, durSec)
+    );
 
     let imported = 0;
     let skippedDuplicates = 0;
@@ -7534,6 +7865,75 @@ router.post('/apple-health/sync', verifyToken, async (req, res) => {
     res.json({ imported, skippedDuplicates, total: workouts.length });
   } catch (err) {
     console.error('[apple-health] sync error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /api/integrations/apple-health/workout-status
+ * Body: { workouts: [{ id, startDate, durationSeconds?, distanceMeters? }] }
+ *
+ * Tells the app, for every workout it can see in HealthKit, whether LaChart
+ * already has it. Lets Settings render the Health workout list with a state
+ * per row instead of a blind "Sync now":
+ *   imported   — already stored as an Apple Health activity
+ *   duplicate  — the same session is already here from Strava/Garmin, so
+ *                importing it would only create a second copy
+ *   importable — not in LaChart yet
+ */
+router.post('/apple-health/workout-status', verifyToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { workouts } = req.body;
+
+    if (!Array.isArray(workouts)) {
+      return res.status(400).json({ error: 'workouts array required' });
+    }
+
+    const candidates = workouts
+      .filter((w) => w?.id && w?.startDate && Number.isFinite(new Date(w.startDate).getTime()))
+      .slice(0, 500);
+
+    if (candidates.length === 0) {
+      return res.json({ statuses: [], counts: { imported: 0, duplicate: 0, importable: 0, total: 0 } });
+    }
+
+    const existing = await AppleHealthActivity.find({
+      userId,
+      healthKitId: { $in: candidates.map((w) => String(w.id)) },
+    }).select('healthKitId createdAt startDate').lean();
+    const importedById = new Map(existing.map((a) => [String(a.healthKitId), a]));
+
+    // Only the not-yet-imported ones need the (more expensive) cross-source check.
+    const unimported = candidates.filter((w) => !importedById.has(String(w.id)));
+    const findExternalDuplicate = unimported.length > 0
+      ? await buildAppleHealthDuplicateMatcher(userId, unimported)
+      : () => null;
+
+    const counts = { imported: 0, duplicate: 0, importable: 0, total: candidates.length };
+    const statuses = candidates.map((w) => {
+      const id = String(w.id);
+      const already = importedById.get(id);
+      if (already) {
+        counts.imported += 1;
+        return { id, state: 'imported', importedAt: already.createdAt ?? null };
+      }
+      const dup = findExternalDuplicate(
+        new Date(w.startDate).getTime(),
+        Number(w.distanceMeters) || 0,
+        Number(w.durationSeconds) || 0
+      );
+      if (dup) {
+        counts.duplicate += 1;
+        return { id, state: 'duplicate', source: dup.source, name: dup.name ?? null };
+      }
+      counts.importable += 1;
+      return { id, state: 'importable' };
+    });
+
+    res.json({ statuses, counts });
+  } catch (err) {
+    console.error('[apple-health] workout-status error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });

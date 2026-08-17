@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Heart } from 'lucide-react';
+import { Activity, Heart } from 'lucide-react';
 import {
   collectAppleHealthWellness,
   collectAppleHealthWorkouts,
@@ -12,6 +12,7 @@ import {
   wellnessPermissionHint,
 } from '../../services/appleHealthCapacitor';
 import { clearFormFitnessCache } from '../../utils/uiPrefs';
+import { getAppleHealthPrefs, setAppleHealthPref } from '../../utils/appleHealthPrefs';
 import {
   deleteAppleHealthWorkouts,
   disconnectAppleHealth,
@@ -20,6 +21,14 @@ import {
   syncAppleHealth,
   syncAppleHealthWellness,
 } from '../../services/api';
+import AppleHealthWorkoutList from './AppleHealthWorkoutList';
+import {
+  DoneCheck,
+  RowButton,
+  SettingsRow,
+  SettingsSection,
+  ToggleRow,
+} from './HealthSettingsRows';
 
 function fmtSleep(mins) {
   if (mins == null || mins <= 0) return '—';
@@ -40,15 +49,14 @@ export default function AppleHealthCard({ isMobile = false, onStatusChange }) {
   const [status, setStatus] = useState(null);
   const [latest, setLatest] = useState(null);
   const [diagInfo, setDiagInfo] = useState(null);
-  // Off by default: most people who connect Apple Health already get workouts
-  // from Strava/Garmin, so importing Apple's copies just creates duplicates.
-  // Persisted per device.
-  const [importWorkouts, setImportWorkouts] = useState(() => {
-    try { return localStorage.getItem('appleHealth_importWorkouts') === '1'; } catch { return false; }
-  });
-  const toggleImportWorkouts = (next) => {
-    setImportWorkouts(next);
-    try { localStorage.setItem('appleHealth_importWorkouts', next ? '1' : '0'); } catch { /* ignore */ }
+  // Bumped whenever an import/removal changes what LaChart holds, so the
+  // workout list re-reads its per-row states instead of going stale.
+  const [listRefreshKey, setListRefreshKey] = useState(0);
+  // Automation settings — per device, see utils/appleHealthPrefs.
+  const [prefs, setPrefs] = useState(() => getAppleHealthPrefs());
+  const setPref = (key, value) => {
+    setAppleHealthPref(key, value);
+    setPrefs((p) => ({ ...p, [key]: value }));
   };
   const syncAbortRef = useRef(false);
   const syncStepRef = useRef(null);
@@ -175,12 +183,13 @@ export default function AppleHealthCard({ isMobile = false, onStatusChange }) {
       const permHint = wellnessPermissionHint(permStatus.types);
 
       // Workout leg is best-effort AND opt-in: skipped entirely unless the user
-      // turned on workout import (recovery data is the common case, and Apple's
-      // workouts usually duplicate Strava/Garmin).
+      // turned on automatic import (recovery data is the common case, and Apple's
+      // workouts usually duplicate Strava/Garmin). Individual sessions can still
+      // be imported by hand from the workout list below.
       let workoutImported = 0;
       let workoutsFound = 0;
       let workoutWarning = null;
-      if (importWorkouts) {
+      if (prefs.importWorkouts) {
         try {
           step('Reading workouts…');
           const since = new Date(Date.now() - 90 * 24 * 3600 * 1000).toISOString();
@@ -201,6 +210,7 @@ export default function AppleHealthCard({ isMobile = false, onStatusChange }) {
       }
 
       await refresh();
+      setListRefreshKey((k) => k + 1);
       try {
         window.dispatchEvent(new CustomEvent('appleHealth:synced', { detail: { imported: workoutImported, wellnessDays: wellness.length } }));
       } catch { /* ignore */ }
@@ -208,7 +218,7 @@ export default function AppleHealthCard({ isMobile = false, onStatusChange }) {
       const wCount = wellness.length;
       const msg = [
         wCount ? `${wCount} day(s) of wellness data` : null,
-        importWorkouts && workoutsFound ? `${workoutImported} workout(s)` : null,
+        prefs.importWorkouts && workoutsFound ? `${workoutImported} workout(s)` : null,
       ].filter(Boolean).join(', ');
 
       if (authWarning) {
@@ -303,6 +313,7 @@ export default function AppleHealthCard({ isMobile = false, onStatusChange }) {
       setConnected(false);
       setLatest(null);
       setStatus(null);
+      setListRefreshKey((k) => k + 1);
       onStatusChange?.(false);
     } catch (e) {
       setError(e?.response?.data?.error || e?.message || 'Disconnect failed');
@@ -330,8 +341,10 @@ export default function AppleHealthCard({ isMobile = false, onStatusChange }) {
     );
   }
 
+  const hasWellness = Boolean(latest) || (status?.wellnessCount ?? 0) > 0;
+
   return (
-    <div className={`bg-white ${isMobile ? 'rounded-md' : 'rounded-lg'} border border-gray-200 ${isMobile ? 'p-2.5' : 'p-6'}`}>
+    <div className={`md:col-span-2 bg-gray-50 ${isMobile ? 'rounded-md p-2.5' : 'rounded-lg p-4'} border border-gray-200`}>
       <div className={`flex items-center justify-between ${isMobile ? 'mb-2' : 'mb-4'}`}>
         <div className="flex items-center gap-2">
           <div className={`flex items-center justify-center ${isMobile ? 'w-6 h-6' : 'w-8 h-8'} bg-rose-50 rounded-lg`}>
@@ -344,15 +357,12 @@ export default function AppleHealthCard({ isMobile = false, onStatusChange }) {
         </span>
       </div>
 
-      <p className={`${isMobile ? 'text-[9px]' : 'text-sm'} text-gray-600 ${isMobile ? 'mb-2' : 'mb-4'}`}>
-        Import resting heart rate, sleep duration and heart-rate variability (recovery) from Apple Health.
-        Workouts from the last 90 days are imported too.
-      </p>
-
-      <p className={`${isMobile ? 'text-[9px] mb-2' : 'text-xs mb-3'} text-blue-900 bg-blue-50 border border-blue-200 rounded-lg px-2 py-1.5`}>
-        <strong>What you see in Health now</strong> (Workouts, Running Power, Heart Rate…) comes from your watch or other connected devices.
-        Sleep, Resting HR and HRV are requested from the <strong>iPhone</strong> — tap <strong>Enable recovery data</strong> first, then scroll down in Health → Apps → LaChart for the new toggles.
-      </p>
+      {!connected && (
+        <p className={`${isMobile ? 'text-[9px] mb-2' : 'text-xs mb-3'} text-blue-900 bg-blue-50 border border-blue-200 rounded-lg px-2 py-1.5`}>
+          <strong>What you see in Health now</strong> (Workouts, Running Power, Heart Rate…) comes from your watch or other connected devices.
+          Sleep, Resting HR and HRV are requested from the <strong>iPhone</strong> — tap <strong>Enable recovery data</strong> first, then scroll down in Health → Apps → LaChart for the new toggles.
+        </p>
+      )}
 
       {!available && unavailableReason && (
         <p className={`${isMobile ? 'text-[9px] mb-2' : 'text-xs mb-3'} text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5`}>
@@ -366,77 +376,115 @@ export default function AppleHealthCard({ isMobile = false, onStatusChange }) {
         </p>
       )}
 
-      {latest && (
-        <div className={`grid grid-cols-3 gap-2 ${isMobile ? 'mb-2' : 'mb-4'} text-center`}>
-          <div className="rounded-lg bg-gray-50 py-2 px-1">
-            <div className={`${isMobile ? 'text-[8px]' : 'text-xs'} text-gray-500`}>Resting HR</div>
-            <div className={`${isMobile ? 'text-sm' : 'text-base'} font-bold text-gray-900`}>
-              {latest.restingHeartRate != null ? `${latest.restingHeartRate}` : '—'}
-              {latest.restingHeartRate != null && <span className="text-[10px] font-normal text-gray-500"> bpm</span>}
+      <div className={isMobile ? 'space-y-2.5' : 'space-y-4'}>
+        <SettingsSection title="Permission status" isMobile={isMobile}>
+          <SettingsRow
+            isMobile={isMobile}
+            icon={<Heart className={`${isMobile ? 'w-4 h-4' : 'w-5 h-5'} text-rose-500`} />}
+            title="Health"
+            subtitle={connected ? 'Connected with Health.' : 'Not connected yet.'}
+            trailing={connected ? <DoneCheck isMobile={isMobile} label="Connected" /> : (
+              <RowButton isMobile={isMobile} onClick={runSync} disabled={syncing}>
+                {busyKind === 'sync' ? 'Connecting…' : 'Connect'}
+              </RowButton>
+            )}
+          />
+          <SettingsRow
+            isMobile={isMobile}
+            icon={<Activity className={`${isMobile ? 'w-4 h-4' : 'w-5 h-5'} text-gray-700`} />}
+            title="Recovery data"
+            subtitle={hasWellness
+              ? 'Sleep, resting HR and HRV are being read.'
+              : 'Allow sleep, resting HR and HRV in Health → Apps → LaChart.'}
+            trailing={hasWellness ? <DoneCheck isMobile={isMobile} label="Allowed" /> : (
+              <RowButton isMobile={isMobile} variant="ghost" onClick={runWellnessAuth} disabled={syncing}>
+                {busyKind === 'wellness' ? 'Working…' : 'Enable'}
+              </RowButton>
+            )}
+          />
+        </SettingsSection>
+
+        <SettingsSection title="Automation settings" isMobile={isMobile}>
+          <ToggleRow
+            isMobile={isMobile}
+            title="Automatic import"
+            subtitle="Import new Health workouts in the background. Leave off if your workouts already come from Strava or Garmin."
+            checked={prefs.importWorkouts}
+            disabled={syncing}
+            onChange={(v) => setPref('importWorkouts', v)}
+          />
+          <ToggleRow
+            isMobile={isMobile}
+            title="Sync recovery data"
+            subtitle="Keep sleep, resting heart rate and HRV up to date."
+            checked={prefs.syncWellness}
+            disabled={syncing}
+            onChange={(v) => setPref('syncWellness', v)}
+          />
+          <ToggleRow
+            isMobile={isMobile}
+            title="Notifications for new workouts"
+            subtitle="Notify when workouts are imported from Health."
+            checked={prefs.notifyImports}
+            disabled={syncing}
+            onChange={(v) => setPref('notifyImports', v)}
+          />
+        </SettingsSection>
+
+        {latest && (
+          <SettingsSection title="Latest recovery" isMobile={isMobile}>
+            <div className={`grid grid-cols-3 ${isMobile ? 'py-2' : 'py-3'} text-center divide-x divide-gray-100`}>
+              <div>
+                <div className={`${isMobile ? 'text-[8px]' : 'text-xs'} text-gray-500`}>Resting HR</div>
+                <div className={`${isMobile ? 'text-sm' : 'text-base'} font-bold text-gray-900`}>
+                  {latest.restingHeartRate != null ? `${latest.restingHeartRate}` : '—'}
+                  {latest.restingHeartRate != null && <span className="text-[10px] font-normal text-gray-500"> bpm</span>}
+                </div>
+              </div>
+              <div>
+                <div className={`${isMobile ? 'text-[8px]' : 'text-xs'} text-gray-500`}>Sleep</div>
+                <div className={`${isMobile ? 'text-sm' : 'text-base'} font-bold text-gray-900`}>{fmtSleep(latest.sleepMinutes)}</div>
+              </div>
+              <div>
+                <div className={`${isMobile ? 'text-[8px]' : 'text-xs'} text-gray-500`}>HRV</div>
+                <div className={`${isMobile ? 'text-sm' : 'text-base'} font-bold text-gray-900`}>
+                  {latest.hrvMs != null ? `${latest.hrvMs}` : '—'}
+                  {latest.hrvMs != null && <span className="text-[10px] font-normal text-gray-500"> ms</span>}
+                </div>
+              </div>
             </div>
-          </div>
-          <div className="rounded-lg bg-gray-50 py-2 px-1">
-            <div className={`${isMobile ? 'text-[8px]' : 'text-xs'} text-gray-500`}>Sleep</div>
-            <div className={`${isMobile ? 'text-sm' : 'text-base'} font-bold text-gray-900`}>{fmtSleep(latest.sleepMinutes)}</div>
-          </div>
-          <div className="rounded-lg bg-gray-50 py-2 px-1">
-            <div className={`${isMobile ? 'text-[8px]' : 'text-xs'} text-gray-500`}>HRV</div>
-            <div className={`${isMobile ? 'text-sm' : 'text-base'} font-bold text-gray-900`}>
-              {latest.hrvMs != null ? `${latest.hrvMs}` : '—'}
-              {latest.hrvMs != null && <span className="text-[10px] font-normal text-gray-500"> ms</span>}
-            </div>
-          </div>
-        </div>
-      )}
+          </SettingsSection>
+        )}
+
+        <AppleHealthWorkoutList
+          isMobile={isMobile}
+          refreshKey={listRefreshKey}
+          onImported={() => refresh()}
+        />
+      </div>
 
       {status?.lastWellnessSync && (
-        <p className={`${isMobile ? 'text-[9px] mb-2' : 'text-xs mb-3'} text-gray-400`}>
+        <p className={`${isMobile ? 'text-[9px] mt-2' : 'text-xs mt-3'} text-gray-400`}>
           Last sync: {new Date(status.lastWellnessSync).toLocaleString()}
-          {status.workoutCount > 0 ? ` · ${status.workoutCount} workouts` : ''}
+          {status.workoutCount > 0 ? ` · ${status.workoutCount} workouts imported` : ''}
         </p>
       )}
 
       {diagInfo && !available && process.env.NODE_ENV === 'development' && (
-        <pre className={`${isMobile ? 'text-[8px] mb-2' : 'text-[10px] mb-3'} text-gray-500 bg-gray-50 border border-gray-100 rounded-lg p-2 overflow-x-auto whitespace-pre-wrap`}>
+        <pre className={`${isMobile ? 'text-[8px] mt-2' : 'text-[10px] mt-3'} text-gray-500 bg-white border border-gray-100 rounded-lg p-2 overflow-x-auto whitespace-pre-wrap`}>
           {JSON.stringify(diagInfo, null, 2)}
         </pre>
       )}
 
       {syncStep && (
-        <p className={`${isMobile ? 'text-[9px] mb-2' : 'text-xs mb-3'} text-primary font-medium`}>{syncStep}</p>
+        <p className={`${isMobile ? 'text-[9px] mt-2' : 'text-xs mt-3'} text-primary font-medium`}>{syncStep}</p>
       )}
 
       {error && (
-        <p className={`${isMobile ? 'text-[9px] mb-2' : 'text-xs mb-3'} text-red-600`}>{error}</p>
+        <p className={`${isMobile ? 'text-[9px] mt-2' : 'text-xs mt-3'} text-red-600`}>{error}</p>
       )}
 
-      {/* Workout import is opt-in — Apple's workouts usually duplicate Strava/Garmin. */}
-      <label className={`flex items-start gap-2 ${isMobile ? 'mb-2' : 'mb-3'} cursor-pointer select-none`}>
-        <input
-          type="checkbox"
-          checked={importWorkouts}
-          onChange={(e) => toggleImportWorkouts(e.target.checked)}
-          disabled={syncing}
-          className="mt-0.5 h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary/40"
-        />
-        <span className={`${isMobile ? 'text-[9px]' : 'text-xs'} text-gray-600`}>
-          <span className="font-semibold text-gray-800">Also import workouts from Apple Health</span>
-          <br />
-          Leave off if your workouts already come from Strava or Garmin — Apple's copies would just duplicate them. Only sleep, resting HR and HRV are synced.
-        </span>
-      </label>
-
-      <div className={`flex flex-wrap gap-2 ${isMobile ? '' : ''}`}>
-        {!connected && (
-          <button
-            type="button"
-            disabled={syncing}
-            onClick={runWellnessAuth}
-            className={`${isMobile ? 'px-2.5 py-1.5 text-[10px] flex-1' : 'px-3 py-2 text-sm'} rounded-lg font-semibold bg-rose-600 text-white hover:bg-rose-700 disabled:opacity-50`}
-          >
-            {busyKind === 'wellness' ? (syncStep || 'Working…') : 'Enable recovery data'}
-          </button>
-        )}
+      <div className={`flex flex-wrap gap-2 ${isMobile ? 'mt-2' : 'mt-4'}`}>
         <button
           type="button"
           disabled={syncing}
@@ -449,7 +497,7 @@ export default function AppleHealthCard({ isMobile = false, onStatusChange }) {
           <button
             type="button"
             onClick={cancelSync}
-            className={`${isMobile ? 'px-2.5 py-1.5 text-[10px]' : 'px-3 py-2 text-sm'} rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50`}
+            className={`${isMobile ? 'px-2.5 py-1.5 text-[10px]' : 'px-3 py-2 text-sm'} rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50`}
           >
             Cancel
           </button>
@@ -458,7 +506,7 @@ export default function AppleHealthCard({ isMobile = false, onStatusChange }) {
           <button
             type="button"
             onClick={() => refresh()}
-            className={`${isMobile ? 'px-2.5 py-1.5 text-[10px]' : 'px-3 py-2 text-sm'} rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50`}
+            className={`${isMobile ? 'px-2.5 py-1.5 text-[10px]' : 'px-3 py-2 text-sm'} rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50`}
           >
             Retry
           </button>
@@ -467,7 +515,7 @@ export default function AppleHealthCard({ isMobile = false, onStatusChange }) {
           type="button"
           disabled={syncing}
           onClick={() => openAppleHealthSettings()}
-          className={`${isMobile ? 'px-2.5 py-1.5 text-[10px]' : 'px-3 py-2 text-sm'} rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50`}
+          className={`${isMobile ? 'px-2.5 py-1.5 text-[10px]' : 'px-3 py-2 text-sm'} rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50`}
         >
           Open Health app
         </button>
@@ -477,7 +525,7 @@ export default function AppleHealthCard({ isMobile = false, onStatusChange }) {
               type="button"
               disabled={syncing}
               onClick={handleRemoveWorkouts}
-              className={`${isMobile ? 'px-2.5 py-1.5 text-[10px]' : 'px-3 py-2 text-sm'} rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50`}
+              className={`${isMobile ? 'px-2.5 py-1.5 text-[10px]' : 'px-3 py-2 text-sm'} rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50`}
               title="Delete workouts imported from Apple Health; keeps sleep/RHR/HRV"
             >
               Remove imported workouts
@@ -486,7 +534,7 @@ export default function AppleHealthCard({ isMobile = false, onStatusChange }) {
               type="button"
               disabled={syncing}
               onClick={handleDisconnect}
-              className={`${isMobile ? 'px-2.5 py-1.5 text-[10px]' : 'px-3 py-2 text-sm'} rounded-lg border border-red-200 text-red-600 hover:bg-red-50`}
+              className={`${isMobile ? 'px-2.5 py-1.5 text-[10px]' : 'px-3 py-2 text-sm'} rounded-lg border border-red-200 bg-white text-red-600 hover:bg-red-50`}
             >
               Disconnect
             </button>

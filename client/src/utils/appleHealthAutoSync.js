@@ -12,6 +12,8 @@ import {
   collectAppleHealthWellness,
   collectAppleHealthWorkouts,
 } from '../services/appleHealthCapacitor';
+import { getAppleHealthPrefs } from './appleHealthPrefs';
+import { maybeNotifyAppleHealthWorkoutsImported } from './appleHealthImportLocalNotification';
 
 const THROTTLE_KEY = 'appleHealth_autoSync_ts';
 const MIN_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
@@ -49,9 +51,12 @@ export async function autoSyncAppleHealth({ force = false } = {}) {
     const status = await getAppleHealthStatus().catch(() => null);
     if (!status?.connected) return { skipped: 'not_connected' };
 
+    // Automation settings live on the device — see Settings → Integrations.
+    const { importWorkouts, syncWellness } = getAppleHealthPrefs();
+
     // HealthKit read status is opaque — skip the permission gate and try reading;
     // empty arrays simply mean no data or types disabled in Health → LaChart.
-    const wellness = await collectAppleHealthWellness(7).catch(() => []);
+    const wellness = syncWellness ? await collectAppleHealthWellness(7).catch(() => []) : [];
 
     if (wellness.length > 0) {
       await syncAppleHealthWellness({ wellness, markConnected: true }).catch(() => {});
@@ -59,8 +64,6 @@ export async function autoSyncAppleHealth({ force = false } = {}) {
 
     // Workout import is opt-in (same preference as the Settings card) — most
     // users get workouts from Strava/Garmin, so Apple's copies just duplicate.
-    let importWorkouts = false;
-    try { importWorkouts = localStorage.getItem('appleHealth_importWorkouts') === '1'; } catch { /* ignore */ }
     let imported = 0;
     if (importWorkouts) {
       const since = new Date(Date.now() - 14 * 24 * 3600 * 1000).toISOString();
@@ -69,6 +72,11 @@ export async function autoSyncAppleHealth({ force = false } = {}) {
         const res = await syncAppleHealth({ workouts });
         imported = res?.imported ?? 0;
       }
+    }
+
+    // The notification helper checks the "notify" preference itself.
+    if (imported > 0) {
+      maybeNotifyAppleHealthWorkoutsImported(imported).catch(() => {});
     }
 
     markSynced();

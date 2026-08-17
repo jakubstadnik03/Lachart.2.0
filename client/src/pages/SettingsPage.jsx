@@ -15,6 +15,8 @@ import { Skeleton, SkeletonCard } from '../components/common/Skeleton';
 import ReclassifyActivitiesCard from '../components/Settings/ReclassifyActivitiesCard';
 import AppleHealthCard from '../components/Settings/AppleHealthCard';
 import CategoryManager from '../components/Settings/CategoryManager';
+import ExternalActivityList from '../components/Settings/ExternalActivityList';
+import { RowButton, SettingsRow, SettingsSection, ToggleRow } from '../components/Settings/HealthSettingsRows';
 import { getIntegrationStatus, invalidateCache, listExternalActivities, uploadFitFile, getStravaAuthUrl, startGarminAuth, syncStravaActivities, backfillStravaHistory, autoSyncStravaActivities, updateAvatarFromStrava, syncGarminActivities, syncGarminHistory, autoSyncGarminActivities, fetchGdprExportJson, getCurrentSubscription, createCheckoutSession, getSubscriptionPortalUrl, cancelSubscription, reactivateSubscription, resetStravaBudget, updateUserProfile, syncSubscriptionFromStripe, fetchUserProfile, fetchStravaStatus } from '../services/api';
 import { saveUserToStorage } from '../utils/userStorage';
 import { isCapacitorNative } from '../utils/isNativeApp';
@@ -161,6 +163,9 @@ const SettingsPage = () => {
   const [stravaConnected, setStravaConnected] = useState(false);
   const [garminConnected, setGarminConnected] = useState(false);
   const [stravaAutoSync, setStravaAutoSync] = useState(false);
+  // Bumped after any sync/import so the Strava + Garmin activity lists re-check
+  // which sessions are still missing from LaChart.
+  const [activityListRefreshKey, setActivityListRefreshKey] = useState(0);
   // Real-time webhook health — populated by /api/integrations/strava/status.
   // {webhookHealthy:boolean, webhookLastEventAt:string|null}
   const [stravaWebhookStatus, setStravaWebhookStatus] = useState(null);
@@ -1018,6 +1023,8 @@ const SettingsPage = () => {
     } catch (e) {
       // ignore
     }
+    // Re-check what each provider still has that LaChart doesn't.
+    setActivityListRefreshKey((k) => k + 1);
   };
 
   const handleConnectStrava = async () => {
@@ -3356,7 +3363,7 @@ const SettingsPage = () => {
               <div className={`grid ${isMobile ? 'grid-cols-1 gap-2.5' : 'grid-cols-1 md:grid-cols-2 gap-4'}`}>
                 <div
                   data-tour="tour-strava-card"
-                  className={`bg-white ${isMobile ? 'rounded-md' : 'rounded-lg'} border border-gray-200 ${isMobile ? 'p-2.5' : 'p-6'}`}
+                  className={`md:col-span-2 bg-gray-50 ${isMobile ? 'rounded-md p-2.5' : 'rounded-lg p-4'} border border-gray-200`}
                 >
                   <div className={`flex items-center justify-between ${isMobile ? 'mb-2' : 'mb-4'}`}>
                     <div className="flex items-center gap-2">
@@ -3475,43 +3482,41 @@ const SettingsPage = () => {
                           })()}
                         </div>
                       )}
-                      <div className={`${isMobile ? 'mb-2 pb-2' : 'mb-4 pb-4'} border-b`}>
-                        <div className={`flex items-center justify-between ${isMobile ? 'flex-col gap-1.5' : ''}`}>
-                          <div className={isMobile ? 'w-full' : ''}>
-                            <label className={`${isMobile ? 'text-[10px]' : 'text-sm'} font-medium text-gray-900`}>Auto-sync</label>
-                            <p className={`${isMobile ? 'text-[9px]' : 'text-xs'} text-gray-500`}>Automatically sync new activities</p>
-                          </div>
-                          <label className={`relative inline-flex items-center cursor-pointer ${isMobile ? 'self-end' : ''}`}>
-                            <input
-                              type="checkbox"
-                              checked={stravaAutoSync}
-                              onChange={(e) => handleToggleAutoSync(e.target.checked)}
-                              disabled={isTogglingStravaAutoSync}
-                              className="sr-only peer"
-                            />
-                            <div className={[
-                              `${isMobile ? 'w-9 h-5' : 'w-11 h-6'} bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full`,
-                              `${isMobile ? 'after:h-4 after:w-4' : 'after:h-5 after:w-5'} after:transition-all peer-checked:bg-primary`,
-                              "after:content-['']"
-                            ].join(' ')}></div>
-                          </label>
-                        </div>
-                      </div>
-                      <div className={`${isMobile ? 'mb-2 pb-2' : 'mb-4 pb-4'} border-b`}>
-                        <div>
-                          <label className={`${isMobile ? 'text-[10px]' : 'text-sm'} font-medium text-gray-900 ${isMobile ? 'mb-0.5' : 'mb-2'} block`}>Profile Picture</label>
-                          <p className={`${isMobile ? 'text-[9px]' : 'text-xs'} text-gray-500 ${isMobile ? 'mb-1.5' : 'mb-3'}`}>Update your profile picture from Strava</p>
-                          <button
-                            onClick={handleUpdateAvatar}
-                            disabled={isLoading}
-                            className={`${isMobile ? 'px-2 py-1 text-[10px] w-full' : 'px-3 py-2 text-sm'} bg-gray-100 text-gray-800 ${isMobile ? 'rounded-md' : 'rounded'} hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed`}
-                          >
-                            {isLoading ? 'Updating...' : 'Update from Strava'}
-                          </button>
-                        </div>
-                      </div>
+                      <SettingsSection title="Automation settings" isMobile={isMobile} className={isMobile ? 'mb-2.5' : 'mb-4'}>
+                        <ToggleRow
+                          isMobile={isMobile}
+                          title="Auto-sync"
+                          subtitle="Automatically sync new activities."
+                          checked={stravaAutoSync}
+                          disabled={isTogglingStravaAutoSync}
+                          onChange={handleToggleAutoSync}
+                        />
+                        <SettingsRow
+                          isMobile={isMobile}
+                          title="Profile picture"
+                          subtitle="Update your profile picture from Strava."
+                          trailing={(
+                            <RowButton isMobile={isMobile} variant="ghost" onClick={handleUpdateAvatar} disabled={isLoading}>
+                              {isLoading ? 'Updating…' : 'Update'}
+                            </RowButton>
+                          )}
+                        />
+                      </SettingsSection>
                     </>
                   )}
+
+                  {/* What Strava has vs. what LaChart imported — a ride that
+                      slipped past the webhook can be pulled in from here. */}
+                  <div className={isMobile ? 'mb-2.5' : 'mb-4'}>
+                    <ExternalActivityList
+                      source="strava"
+                      isMobile={isMobile}
+                      connected={stravaConnected}
+                      refreshKey={activityListRefreshKey}
+                      onSyncAll={handleSyncStrava}
+                      onImported={handleSyncComplete}
+                    />
+                  </div>
                   
                   {/* Historical backfill progress banner */}
                   {stravaBackfill?.state === 'running' && (
@@ -3558,7 +3563,7 @@ const SettingsPage = () => {
                     <button
                       onClick={handleSyncStrava}
                       disabled={isSyncingStrava || stravaSecondsLeft > 0}
-                      className={`${isMobile ? 'px-2.5 py-1.5 text-[10px] w-full' : 'px-3 py-2'} bg-gray-100 text-gray-800 ${isMobile ? 'rounded-md' : 'rounded'} hover:bg-gray-200 disabled:opacity-60 disabled:cursor-not-allowed`}
+                      className={`${isMobile ? 'px-2.5 py-1.5 text-[10px] w-full' : 'px-3 py-2'} bg-white border border-gray-200 text-gray-800 ${isMobile ? 'rounded-md' : 'rounded'} hover:bg-gray-50 disabled:opacity-60 disabled:cursor-not-allowed`}
                       title={stravaSecondsLeft > 0 ? `Strava rate limit — retry in ${Math.ceil(stravaSecondsLeft / 60)} min` : undefined}
                     >
                       {isSyncingStrava
@@ -3571,7 +3576,7 @@ const SettingsPage = () => {
                       onClick={handleImportStravaHistory}
                       disabled={isStartingBackfill || !stravaConnected}
                       title="Download your last year of Strava history (runs in the background)"
-                      className={`${isMobile ? 'px-2.5 py-1.5 text-[10px] w-full' : 'px-3 py-2'} bg-gray-100 text-gray-800 ${isMobile ? 'rounded-md' : 'rounded'} hover:bg-gray-200 disabled:opacity-60 disabled:cursor-not-allowed`}
+                      className={`${isMobile ? 'px-2.5 py-1.5 text-[10px] w-full' : 'px-3 py-2'} bg-white border border-gray-200 text-gray-800 ${isMobile ? 'rounded-md' : 'rounded'} hover:bg-gray-50 disabled:opacity-60 disabled:cursor-not-allowed`}
                     >
                       {isStartingBackfill
                         ? 'Starting…'
@@ -3626,7 +3631,7 @@ const SettingsPage = () => {
                   </div>
                 </div>
 
-                <div className={`bg-white ${isMobile ? 'rounded-md' : 'rounded-lg'} border border-gray-200 ${isMobile ? 'p-2.5' : 'p-6'}`}>
+                <div className={`md:col-span-2 bg-gray-50 ${isMobile ? 'rounded-md p-2.5' : 'rounded-lg p-4'} border border-gray-200`}>
                   <div className={`flex items-center justify-between ${isMobile ? 'mb-2' : 'mb-4'}`}>
                     <div className="flex items-center gap-2">
                       {/* Garmin Logo */}
@@ -3650,28 +3655,30 @@ const SettingsPage = () => {
                   </div>
                   
                   {garminConnected && (
-                    <div className={`${isMobile ? 'mb-2 pb-2' : 'mb-4 pb-4'} border-b`}>
-                      <div className={`flex items-center justify-between ${isMobile ? 'flex-col gap-1.5' : ''}`}>
-                        <div className={isMobile ? 'w-full' : ''}>
-                          <label className={`${isMobile ? 'text-[10px]' : 'text-sm'} font-medium text-gray-900`}>Auto-sync</label>
-                          <p className={`${isMobile ? 'text-[9px]' : 'text-xs'} text-gray-500`}>Automatically sync new activities when you open the app</p>
-                        </div>
-                        <label className={`relative inline-flex items-center cursor-pointer ${isMobile ? 'self-end' : ''}`}>
-                          <input
-                            type="checkbox"
-                            checked={garminAutoSync}
-                            onChange={(e) => handleToggleGarminAutoSync(e.target.checked)}
-                            className="sr-only peer"
-                          />
-                          <div className={[
-                            `${isMobile ? 'w-9 h-5' : 'w-11 h-6'} bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full`,
-                            `${isMobile ? 'after:h-4 after:w-4' : 'after:h-5 after:w-5'} after:transition-all peer-checked:bg-primary`,
-                            "after:content-['']"
-                          ].join(' ')}></div>
-                        </label>
-                      </div>
-                    </div>
+                    <SettingsSection title="Automation settings" isMobile={isMobile} className={isMobile ? 'mb-2.5' : 'mb-4'}>
+                      <ToggleRow
+                        isMobile={isMobile}
+                        title="Auto-sync"
+                        subtitle="Automatically sync new activities when you open the app."
+                        checked={garminAutoSync}
+                        onChange={handleToggleGarminAutoSync}
+                      />
+                    </SettingsSection>
                   )}
+
+                  {/* Garmin pushes rather than letting us pull, so this list is
+                      only populated for credential-connected accounts — the
+                      component says so instead of showing a false empty state. */}
+                  <div className={isMobile ? 'mb-2.5' : 'mb-4'}>
+                    <ExternalActivityList
+                      source="garmin"
+                      isMobile={isMobile}
+                      connected={garminConnected}
+                      refreshKey={activityListRefreshKey}
+                      onSyncAll={handleSyncGarmin}
+                      onImported={handleSyncComplete}
+                    />
+                  </div>
 
                   <p className={`${isMobile ? 'text-[9px] mb-2' : 'text-xs mb-3'} text-gray-500`}>
                     Import workouts from Garmin Connect. You can connect both Strava and Garmin — overlapping activities are merged automatically.
@@ -3744,7 +3751,7 @@ const SettingsPage = () => {
                       <button
                         onClick={handleSyncGarmin}
                         disabled={isSyncingGarmin || isSyncingGarminHistory}
-                        className={`${isMobile ? 'px-2.5 py-1.5 text-[10px] w-full' : 'px-3 py-2'} bg-gray-100 text-gray-800 ${isMobile ? 'rounded-md' : 'rounded'} hover:bg-gray-200 disabled:opacity-60 disabled:cursor-not-allowed`}
+                        className={`${isMobile ? 'px-2.5 py-1.5 text-[10px] w-full' : 'px-3 py-2'} bg-white border border-gray-200 text-gray-800 ${isMobile ? 'rounded-md' : 'rounded'} hover:bg-gray-50 disabled:opacity-60 disabled:cursor-not-allowed`}
                       >
                         {isSyncingGarmin ? 'Syncing...' : 'Sync Now'}
                       </button>
@@ -3754,7 +3761,7 @@ const SettingsPage = () => {
                         onClick={handleSyncGarminHistory}
                         disabled={isSyncingGarminHistory || isSyncingGarmin}
                         title="Import Garmin activity history (Garmin allows roughly the last month)"
-                        className={`${isMobile ? 'px-2.5 py-1.5 text-[10px] w-full' : 'px-3 py-2'} bg-gray-100 text-gray-800 ${isMobile ? 'rounded-md' : 'rounded'} hover:bg-gray-200 disabled:opacity-60 disabled:cursor-not-allowed`}
+                        className={`${isMobile ? 'px-2.5 py-1.5 text-[10px] w-full' : 'px-3 py-2'} bg-white border border-gray-200 text-gray-800 ${isMobile ? 'rounded-md' : 'rounded'} hover:bg-gray-50 disabled:opacity-60 disabled:cursor-not-allowed`}
                       >
                         {isSyncingGarminHistory ? 'Importing...' : 'Import History'}
                       </button>
@@ -3764,7 +3771,7 @@ const SettingsPage = () => {
                         onClick={handleTestGarminConnection}
                         disabled={isTestingGarmin || isSyncingGarmin || isSyncingGarminHistory}
                         title="Test whether the Garmin API token is valid"
-                        className={`${isMobile ? 'px-2.5 py-1.5 text-[10px] w-full' : 'px-3 py-2'} bg-gray-100 text-gray-800 ${isMobile ? 'rounded-md' : 'rounded'} hover:bg-gray-200 disabled:opacity-60 disabled:cursor-not-allowed`}
+                        className={`${isMobile ? 'px-2.5 py-1.5 text-[10px] w-full' : 'px-3 py-2'} bg-white border border-gray-200 text-gray-800 ${isMobile ? 'rounded-md' : 'rounded'} hover:bg-gray-50 disabled:opacity-60 disabled:cursor-not-allowed`}
                       >
                         {isTestingGarmin ? 'Testing…' : 'Test Connection'}
                       </button>
