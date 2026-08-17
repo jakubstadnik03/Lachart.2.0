@@ -78,6 +78,23 @@ const trainingSchema = new mongoose.Schema({
         default: 'pace',
         required: false
     },
+    // ── Completed metrics, edited on the calendar card ────────────────
+    // The editor offers these for every kind of activity, and Strava, Garmin
+    // and FIT documents all carry them. Training did not, so Mongoose dropped
+    // them on the way in: the save came back green and the TSS the athlete had
+    // just typed was gone on the next load. Reads never showed the gap because
+    // .lean() returns whatever is in the document, schema or not.
+    /** Seconds. `duration` above is the same length as a "H:MM:SS" string. */
+    movingTime: Number,
+    tss: Number,
+    tssDisplayMode: {
+        type: String,
+        enum: ['manual', 'power', 'hr', null],
+        default: null
+    },
+    rpe: Number,
+    lactate: Number,
+
     // References to source training data
     sourceFitTrainingId: {
         type: String,

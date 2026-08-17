@@ -118,7 +118,18 @@ const trainingController = {
             }
             res.json(updatedTraining);
         } catch (error) {
-            res.status(500).json({ error: 'Error updating training' });
+            // A bare 500 with nothing logged is why this needed a bug report to
+            // find: the browser said "Request failed with status code 500" and
+            // the server said nothing at all. Rejected input is the request's
+            // fault, so it answers 400 and says which field.
+            console.error('Error in updateTraining:', error);
+            const isBadInput = error?.name === 'ValidationError'
+                || error?.name === 'CastError'
+                || / is required$/.test(error?.message || '');
+            res.status(isBadInput ? 400 : 500).json({
+                error: 'Error updating training',
+                details: error.message,
+            });
         }
     },
 

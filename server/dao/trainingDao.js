@@ -130,9 +130,9 @@ class TrainingDao {
 
   async update(id, updateData) {
     try {
-      // Validate the update data
-      this.validateTrainingData(updateData);
-      
+      // Validate the update data — as a patch, not as a whole document.
+      this.validateTrainingData(updateData, { partial: true });
+
       return await this.Training.findByIdAndUpdate(id, updateData, { new: true });
     } catch (error) {
       console.error('Error in update:', error);
@@ -198,14 +198,28 @@ class TrainingDao {
     }
   }
 
-  validateTrainingData(trainingData) {
-    if (!trainingData.athleteId) {
+  /**
+   * @param {object} trainingData document to create, or the fields to change
+   * @param {{ partial?: boolean }} [opts] partial = this is an update patch
+   *
+   * A patch is not a document. Editing the completed values of a manual
+   * training from the calendar sends only what changed — a title, a duration,
+   * a TSS — and demanding athleteId, sport and date of it failed every one of
+   * those saves with a 500 the moment the user pressed Save. So on a patch the
+   * required fields are checked only when they are actually being written:
+   * absent means unchanged, but blanking one is still refused.
+   */
+  validateTrainingData(trainingData, { partial = false } = {}) {
+    const isBeingSet = (field) => !partial
+      || Object.prototype.hasOwnProperty.call(trainingData, field);
+
+    if (isBeingSet('athleteId') && !trainingData.athleteId) {
       throw new Error('athleteId is required');
     }
-    if (!trainingData.sport) {
+    if (isBeingSet('sport') && !trainingData.sport) {
       throw new Error('sport is required');
     }
-    if (!trainingData.date) {
+    if (isBeingSet('date') && !trainingData.date) {
       throw new Error('date is required');
     }
 
