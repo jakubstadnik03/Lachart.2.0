@@ -22,6 +22,7 @@ const { notifyStravaImportedPush } = require('../utils/stravaImportNotifications
 const { stravaHalfCadenceToSpm } = require('../utils/cadenceDisplay');
 const { sanitizeSavedAutoLaps } = require('../utils/sanitizeSavedAutoLaps');
 const { findExternalDuplicate } = require('../utils/appleHealthDuplicate');
+const { isAdminUser } = require('../utils/isAdminUser');
 // Every Strava read goes through this so the shared budget sees it — see
 // utils/stravaRequest for why hand-rolled axios.get calls were a problem.
 const { stravaGetInteractive } = require('../utils/stravaRequest');
@@ -1746,9 +1747,9 @@ router.get('/strava/status', verifyToken, async (req, res) => {
 // budget via /strava/status, but only admin can reset.
 router.post('/strava/budget/reset', verifyToken, async (req, res) => {
   try {
-    const user = await User.findById(req.user.userId).select('role email');
+    const user = await User.findById(req.user.userId).select('role admin email');
     if (!user) return res.status(404).json({ error: 'User not found' });
-    if (user.role !== 'admin') {
+    if (!isAdminUser(user)) {
       return res.status(403).json({ error: 'Admin only' });
     }
     const before = stravaBudget.snapshot();
@@ -2287,7 +2288,7 @@ router.post('/strava/webhook', async (req, res) => {
 router.post('/strava/webhook/subscribe', verifyToken, async (req, res) => {
   try {
     const u = await User.findById(req.user.userId).select('admin role').lean();
-    if (!u || !(u.admin === true || ['admin'].includes(String(u.role || '').toLowerCase()))) {
+    if (!isAdminUser(u)) {
       return res.status(403).json({ error: 'Admin only' });
     }
     const callbackUrl = process.env.STRAVA_WEBHOOK_CALLBACK_URL
@@ -2319,7 +2320,7 @@ router.post('/strava/webhook/subscribe', verifyToken, async (req, res) => {
 router.post('/strava/webhook/rebootstrap', verifyToken, async (req, res) => {
   try {
     const u = await User.findById(req.user.userId).select('admin role').lean();
-    if (!u || !(u.admin === true || ['admin'].includes(String(u.role || '').toLowerCase()))) {
+    if (!isAdminUser(u)) {
       return res.status(403).json({ error: 'Admin only' });
     }
     const { bootstrapStravaWebhook, getWebhookStatus } = require('../services/stravaWebhookBootstrap');
@@ -2335,7 +2336,7 @@ router.post('/strava/webhook/rebootstrap', verifyToken, async (req, res) => {
 router.get('/strava/webhook/subscriptions', verifyToken, async (req, res) => {
   try {
     const u = await User.findById(req.user.userId).select('admin role').lean();
-    if (!u || !(u.admin === true || ['admin'].includes(String(u.role || '').toLowerCase()))) {
+    if (!isAdminUser(u)) {
       return res.status(403).json({ error: 'Admin only' });
     }
     const params = new URLSearchParams({
@@ -5300,7 +5301,7 @@ router.delete('/strava/activities/:id', verifyToken, async (req, res) => {
       if (!athlete) return res.status(404).json({ error: 'Athlete not found' });
       const isLinkedCoach = Array.isArray(athlete.coaches) &&
         athlete.coaches.some((c) => String(c) === String(requester._id));
-      if (!isLinkedCoach && role !== 'admin') {
+      if (!isLinkedCoach && !isAdminUser(requester)) {
         return res.status(403).json({ error: 'Not authorised to manage this athlete' });
       }
       targetUserId = athlete._id;
@@ -5358,7 +5359,7 @@ router.delete('/garmin/activities/:id', verifyToken, async (req, res) => {
       if (!athlete) return res.status(404).json({ error: 'Athlete not found' });
       const isLinkedCoach = Array.isArray(athlete.coaches) &&
         athlete.coaches.some((c) => String(c) === String(requester._id));
-      if (!isLinkedCoach && role !== 'admin') {
+      if (!isLinkedCoach && !isAdminUser(requester)) {
         return res.status(403).json({ error: 'Not authorised to manage this athlete' });
       }
       targetUserId = athlete._id;
@@ -5977,7 +5978,7 @@ router.put('/strava/activities/:id', verifyToken, async (req, res) => {
         if (!athlete) return res.status(404).json({ error: 'Athlete not found' });
         const isLinkedCoach = Array.isArray(athlete.coaches) &&
           athlete.coaches.some((c) => String(c) === String(requester._id));
-        if (!isLinkedCoach && role !== 'admin') {
+        if (!isLinkedCoach && !isAdminUser(requester)) {
           return res.status(403).json({ error: 'Not authorised to manage this athlete' });
         }
         targetUserId = athlete._id;
@@ -6163,7 +6164,7 @@ router.get('/garmin/activities/:id', verifyToken, async (req, res) => {
       if (!athlete) return res.status(404).json({ error: 'Athlete not found' });
       const isLinkedCoach = Array.isArray(athlete.coaches) &&
         athlete.coaches.some((c) => String(c) === String(requester._id));
-      if (!isLinkedCoach && role !== 'admin') {
+      if (!isLinkedCoach && !isAdminUser(requester)) {
         return res.status(403).json({ error: 'Not authorised to view this athlete' });
       }
       targetUserId = athlete._id;
@@ -6227,7 +6228,7 @@ router.put('/garmin/activities/:id', verifyToken, async (req, res) => {
         if (!athlete) return res.status(404).json({ error: 'Athlete not found' });
         const isLinkedCoach = Array.isArray(athlete.coaches) &&
           athlete.coaches.some((c) => String(c) === String(requester._id));
-        if (!isLinkedCoach && role !== 'admin') {
+        if (!isLinkedCoach && !isAdminUser(requester)) {
           return res.status(403).json({ error: 'Not authorised to manage this athlete' });
         }
         targetUserId = athlete._id;
