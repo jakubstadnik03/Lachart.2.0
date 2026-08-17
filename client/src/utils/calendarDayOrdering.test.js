@@ -45,6 +45,33 @@ describe('looksLikeSameSession', () => {
     expect(looksLikeSameSession(ride(), second)).toBe(false);
   });
 
+  it('matches a stop-heavy ride whose providers disagree on the clock', () => {
+    // A real pair: one ride through Prague, arriving from both accounts.
+    // Strava counts the traffic lights (elapsed 8948s), Garmin does not
+    // (8062s) — 886s apart, and the two were listed as separate rides all
+    // week. Strava's own moving time, 8147s, is 85s from Garmin's.
+    const strava = {
+      id: 'strava-19727285709', source: 'strava', sport: 'Ride',
+      date: '2026-08-13T15:42:14.000Z',
+      distance: 77171.2, elapsedTime: 8948, movingTime: 8147,
+      avgHeartRate: 123.8, avgPower: 231.4,
+    };
+    const garmin = {
+      id: 'garmin-23964136116', source: 'garmin', sport: 'cycling',
+      date: '2026-08-13T13:42:14.000Z',
+      distance: 77174.87, elapsedTime: 8062, movingTime: 8062,
+      avgHeartRate: 124,
+    };
+    expect(looksLikeSameSession(strava, garmin)).toBe(true);
+  });
+
+  it('refuses two records from the same provider whatever the numbers say', () => {
+    // Strava never returns one ride twice, so a second Strava row is a second
+    // ride. Merging it would delete a session with nothing on screen to show.
+    const twin = ride({ id: 'strava-2', stravaId: 2 });
+    expect(looksLikeSameSession(ride(), twin)).toBe(false);
+  });
+
   it('refuses a different distance', () => {
     const other = ride({ id: 'fit-b', stravaId: undefined, distance: 79000 });
     expect(looksLikeSameSession(ride(), other)).toBe(false);

@@ -38,6 +38,30 @@ function secsOf(a) {
   );
 }
 
+/**
+ * Every clock a record offers, because the providers do not mean the same
+ * thing by "duration". Strava's elapsed time includes stops; Garmin sends the
+ * moving one. One ride through town arrives as 8948s and 8062s — 886s apart,
+ * enough to fail every tolerance below — while Strava's own moving time for
+ * it, 8147s, sits 85s from Garmin's. Comparing the closest pair keeps the
+ * duration test meaningful without letting two different clocks veto a match.
+ */
+function secsCandidatesOf(a) {
+  const vals = [
+    a?.totalElapsedTime, a?.totalTime, a?.movingTime, a?.moving_time,
+    a?.elapsedTime, a?.elapsed_time, a?.totalTimerTime, a?.duration,
+  ].map(Number).filter((n) => Number.isFinite(n) && n > 0);
+  return Array.from(new Set(vals));
+}
+
+/** Smallest gap between any clock on A and any clock on B, or Infinity. */
+function closestSecsGap(aSecs, bSecs) {
+  if (!aSecs.length || !bSecs.length) return Infinity;
+  let best = Infinity;
+  for (const x of aSecs) for (const y of bSecs) best = Math.min(best, Math.abs(x - y));
+  return best;
+}
+
 function distOf(a) {
   return Number(a?.distance || a?.totalDistance || 0);
 }
@@ -61,6 +85,7 @@ export function dedupeMergedCalendarActivities(list) {
     const sport = coreSport(act?.sport);
     const ms = new Date(act.date).getTime();
     const sec = secsOf(act);
+    const secs = secsCandidatesOf(act);
     const dist = distOf(act);
 
     const bucket = byDay.get(dk) || [];
@@ -72,8 +97,9 @@ export function dedupeMergedCalendarActivities(list) {
       // Tier 1 — timestamps agree: start within ±5 min, loose dur/dist checks.
       const closeStart = Number.isFinite(ms) && Number.isFinite(cand.ms)
         && Math.abs(ms - cand.ms) <= 5 * 60 * 1000;
+      const durGap = closestSecsGap(secs, cand.secs);
       const durLoose = !(sec && cand.sec)
-        || Math.abs(sec - cand.sec) <= Math.max(180, 0.1 * Math.max(sec, cand.sec));
+        || durGap <= Math.max(180, 0.1 * Math.max(sec, cand.sec));
       const distLoose = !(dist && cand.dist)
         || Math.abs(dist - cand.dist) <= 0.05 * Math.max(dist, cand.dist);
       const tier1 = closeStart && durLoose && distLoose;
@@ -84,7 +110,7 @@ export function dedupeMergedCalendarActivities(list) {
       // and the same-provider guard above already excludes commute-style
       // repeats recorded by one source.
       const tier2 = sec > 0 && cand.sec > 0
-        && Math.abs(sec - cand.sec) <= Math.max(180, 0.05 * Math.max(sec, cand.sec))
+        && durGap <= Math.max(180, 0.05 * Math.max(sec, cand.sec))
         && dist > 0 && cand.dist > 0
         && Math.abs(dist - cand.dist) <= 0.01 * Math.max(dist, cand.dist);
 
@@ -104,7 +130,7 @@ export function dedupeMergedCalendarActivities(list) {
     }
 
     if (!dup) {
-      const entry = { act, src, sport, ms, sec, dist, keepIdx: keep.length };
+      const entry = { act, src, sport, ms, sec, secs, dist, keepIdx: keep.length };
       bucket.push(entry);
       byDay.set(dk, bucket);
       keep.push(act);
@@ -117,7 +143,7 @@ export function dedupeMergedCalendarActivities(list) {
     if (acPr < exPr) {
       keep[dup.keepIdx] = act;
       dup.act = act; dup.src = src; dup.sport = sport ?? dup.sport;
-      dup.ms = ms; dup.sec = sec; dup.dist = dist;
+      dup.ms = ms; dup.sec = sec; dup.secs = secs; dup.dist = dist;
     }
   }
 

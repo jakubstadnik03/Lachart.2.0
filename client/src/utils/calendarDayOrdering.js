@@ -165,13 +165,46 @@ function activityDedupeScore(act) {
   return score;
 }
 
-/** Drop duplicate rows for the same Strava/FIT session before pairing. */
-/** Seconds a session lasted, for comparison only. */
-function dupSecs(a) {
-  return Number(
-    a?.totalTime || a?.duration || a?.movingTime || a?.moving_time
-    || a?.elapsedTime || a?.elapsed_time || a?.totalElapsedTime || 0,
-  ) || 0;
+/**
+ * Every clock a record offers for how long the session lasted.
+ *
+ * Picking one field and comparing it across sources does not work, because
+ * the sources do not mean the same thing by it. Strava's elapsedTime is wall
+ * clock including stops; Garmin sends one duration that is the moving one. A
+ * ride with 13 minutes of traffic lights arrives as 8948s from Strava and
+ * 8062s from Garmin — the same ride, 886s apart, vetoed by any 3-minute rule.
+ * Strava's own movingTime for it is 8147s, 85s from Garmin's.
+ *
+ * So collect what each side has and let the closest pair decide. The clocks a
+ * record does not carry simply do not vote.
+ */
+function dupSecsCandidates(a) {
+  const vals = [
+    a?.totalTime, a?.duration, a?.movingTime, a?.moving_time,
+    a?.elapsedTime, a?.elapsed_time, a?.totalElapsedTime, a?.totalTimerTime,
+  ].map(Number).filter((n) => Number.isFinite(n) && n > 0);
+  return Array.from(new Set(vals));
+}
+
+/** Smallest gap between any clock on A and any clock on B, or Infinity. */
+function closestDupSecsGap(a, b) {
+  const xs = dupSecsCandidates(a);
+  const ys = dupSecsCandidates(b);
+  if (!xs.length || !ys.length) return Infinity;
+  let best = Infinity;
+  for (const x of xs) for (const y of ys) best = Math.min(best, Math.abs(x - y));
+  return best;
+}
+
+/** Which place a calendar row arrived from. */
+function dupSource(a) {
+  if (a?.source) return String(a.source);
+  const id = String(a?.id ?? '');
+  if (id.startsWith('strava-') || a?.stravaId != null) return 'strava';
+  if (id.startsWith('garmin-') || a?.garminId != null) return 'garmin';
+  if (id.startsWith('apple-') || a?.healthKitId != null) return 'apple_health';
+  if (id.startsWith('fit-')) return 'fit';
+  return String(a?.type || 'regular');
 }
 
 function dupMetres(a) {
@@ -211,6 +244,13 @@ function dupDayKey(a) {
  * one duplicated, and there is nothing left to tell them apart.
  */
 export function looksLikeSameSession(a, b) {
+  // Two records from the same place are two different sessions. Strava never
+  // returns one ride twice, and neither does Garmin — so whatever the numbers
+  // say, there is nothing to collapse here, and collapsing would delete a real
+  // session. This is also what lets the duration rule below stay generous.
+  const srcA = dupSource(a);
+  if (srcA && srcA === dupSource(b)) return false;
+
   const dayA = dupDayKey(a);
   if (!dayA || dayA !== dupDayKey(b)) return false;
   if (activitySportBucket(a) !== activitySportBucket(b)) return false;
@@ -221,12 +261,11 @@ export function looksLikeSameSession(a, b) {
   // 1%: two laps of the same loop in one day differ by far more than this.
   if (Math.abs(mA - mB) > Math.max(mA, mB) * 0.01) return false;
 
-  const sA = dupSecs(a);
-  const sB = dupSecs(b);
-  if (sA <= 0 || sB <= 0) return false;
   // 3 minutes, because the two devices rarely start and stop together — the
-  // real pair that prompted this was 2h14m against 2h15m.
-  if (Math.abs(sA - sB) > 180) return false;
+  // real pair that prompted this was 2h14m against 2h15m. Compared across
+  // every clock each side carries, so a stop-inclusive elapsed time on one
+  // side cannot veto a match its own moving time confirms.
+  if (closestDupSecsGap(a, b) > 180) return false;
 
   // Heart rate and power only vote when both records carry them. A missing
   // value is not evidence either way, so it abstains rather than blocking.

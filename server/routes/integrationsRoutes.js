@@ -4644,6 +4644,20 @@ router.get('/activities', verifyToken, activitiesCacheMiddleware, async (req, re
       return s || 'unknown';
     };
 
+    // Every clock a provider offers for one session. Strava sends elapsed and
+    // moving separately; Garmin sends one duration; Apple sends its own. The
+    // closest pair is what "same length" has to mean across providers.
+    const durationCandidates = (a) => [a?.elapsedTime, a?.movingTime, a?.durationSeconds]
+      .map(Number).filter((n) => Number.isFinite(n) && n > 0);
+    const closestDurationGap = (a, b) => {
+      const xs = durationCandidates(a);
+      const ys = durationCandidates(b);
+      if (!xs.length || !ys.length) return Infinity;
+      let best = Infinity;
+      for (const x of xs) for (const y of ys) best = Math.min(best, Math.abs(x - y));
+      return best;
+    };
+
     // Helper function to create a deduplication key
     const createDedupKey = (activity, source) => {
       const startDate = new Date(activity.startDate);
@@ -4760,10 +4774,23 @@ router.get('/activities', verifyToken, activitiesCacheMiddleware, async (req, re
       for (const candidate of bucket) {
         // Never fuzzy-merge two activities from the same provider.
         if (!isCrossSource(candidate.activity, act)) continue;
-        // Same workout recorded by two providers starts within minutes.
+        // Same workout recorded by two providers starts within minutes —
+        // unless the two stamps are not on the same clock at all. Strava
+        // activities are stored from start_date_local (local wall time in a
+        // UTC-shaped field) while Garmin stores real UTC, so one ride arrives
+        // with its two records a whole timezone apart: 11:02 and 09:02 for the
+        // same 11:02 start. Nothing gated on ±5 min can ever collapse those,
+        // which is why the calendar listed the same ride twice all week.
+        // When the clocks disagree the numbers have to carry the decision
+        // alone, so the fingerprint below is required to be exact.
         const candStartMs = new Date(candidate.activity.startDate).getTime();
-        if (!Number.isFinite(actStartMs) || !Number.isFinite(candStartMs)
-          || Math.abs(actStartMs - candStartMs) > 5 * 60 * 1000) continue;
+        if (!Number.isFinite(actStartMs) || !Number.isFinite(candStartMs)) continue;
+        const startGapMs = Math.abs(actStartMs - candStartMs);
+        const startsTogether = startGapMs <= 5 * 60 * 1000;
+        // No timezone is further than 14h from UTC, and the bucket already
+        // limits this to one day — so this is "same day, offset clocks",
+        // never "two sessions a day apart".
+        if (!startsTogether && startGapMs > 14 * 60 * 60 * 1000) continue;
         const [, candSport, duration, distance] = candidate.key.split('_');
         // Sports must agree when BOTH are confidently classified; an unknown/
         // junk sport on either side acts as a wildcard — start within 5 min +
@@ -4780,7 +4807,21 @@ router.get('/activities', verifyToken, activitiesCacheMiddleware, async (req, re
         const strongDistanceMatch = parseInt(actDistance) > 2 && parseInt(distance) > 2
           && distanceDiff <= 0.035;
 
-        if ((durationDiff <= 0.1 && distanceDiff <= 0.05) || strongDistanceMatch) {
+        // Fingerprint for the offset-clock case: the same route to within 1%
+        // and a duration that agrees on some pair of clocks to within 3 min.
+        // Compared across clocks because the providers do not mean the same
+        // thing by "duration" — Strava's elapsed time counts the traffic
+        // lights, Garmin's does not, so one ride through town reads 8948s
+        // against 8062s while Strava's own moving time, 8147s, is 85s from
+        // Garmin's. Riding an identical route twice in a day to within 1% and
+        // 3 minutes is not something that happens.
+        const sameRouteExactly = parseInt(actDistance) > 2 && parseInt(distance) > 2
+          && distanceDiff <= 0.01;
+        const offsetClockMatch = !startsTogether && sameRouteExactly
+          && closestDurationGap(act, candidate.activity) <= 180;
+
+        if ((startsTogether && ((durationDiff <= 0.1 && distanceDiff <= 0.05) || strongDistanceMatch))
+          || offsetClockMatch) {
           isDuplicate = true;
           const seenAct = candidate.activity;
           const merged = choosePreferredActivity(seenAct, act);
