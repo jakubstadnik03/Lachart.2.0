@@ -5,6 +5,7 @@ import { writeFormFitnessToWidget } from '../utils/widgetCache';
 import { compareActivitiesChronologically } from '../utils/calendarDayOrdering';
 import { mapExternalActivitiesToCalendar } from '../utils/mapExternalActivityToCalendar';
 import { buildCalendarActivitiesFromTrainings } from '../utils/calendarActivitiesFromTrainings';
+import { dedupeTrainingHistory } from '../utils/dedupeTrainingHistory';
 import NativeDashboardPage from './NativeDashboardPage';
 import { useAthleteSelection } from '../context/AthleteSelectionContext';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
@@ -865,9 +866,14 @@ export default function DashboardPage() {
   // by date and cap. Otherwise a flood of recent Strava imports could
   // squeeze older exported records out of the 40-item window before the
   // filter even ran.
+  // One row per session. Adding lactate to a Strava ride has written the link
+  // back to the activity in two different id forms, so a single ride could
+  // arrive here as two Trainings — see utils/dedupeTrainingHistory. The full
+  // `trainings` array is passed in because it carries the Strava activities
+  // that translate one id form into the other.
   const exportedTrainings = React.useMemo(() => {
     if (!trainings || trainings.length === 0) return [];
-    return [...trainings]
+    const mine = [...trainings]
       .filter(t => {
         if (!t) return false;
         // Resolve an effective source even when the raw doc omits `source` but
@@ -888,8 +894,10 @@ export default function DashboardPage() {
         const dateA = new Date(a.date || a.startDate || a.timestamp || 0);
         const dateB = new Date(b.date || b.startDate || b.timestamp || 0);
         return dateB - dateA;
-      })
-      .slice(0, MAX_DASHBOARD_TRAININGS);
+      });
+    // Collapse before the cap, so the window holds 40 sessions rather than 40
+    // records of which some are the same session twice.
+    return dedupeTrainingHistory(mine, trainings).slice(0, MAX_DASHBOARD_TRAININGS);
   }, [trainings]);
 
   // Load athlete trainings with localStorage caching (shared with TrainingPage).
