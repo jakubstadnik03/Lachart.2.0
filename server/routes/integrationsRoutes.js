@@ -1719,7 +1719,9 @@ router.get('/strava/status', verifyToken, async (req, res) => {
       // App-wide Strava rate-limit lockout — when this is non-zero, every
       // /strava/sync and /strava/auto-sync call will short-circuit with 429.
       // UI can show a "Strava API quota — retry in N min" banner.
-      rateLimitedUntil: stravaUnlockAt > Date.now() ? new Date(stravaUnlockAt).toISOString() : null,
+      rateLimitedUntil: stravaIsLockedNow()
+        ? new Date(Date.now() + stravaLockoutSecondsRemaining() * 1000).toISOString()
+        : null,
       rateLimitedSecondsLeft: stravaLockoutSecondsRemaining(),
       // Live token-bucket usage — helpful for the diagnose-the-spike workflow.
       budget: stravaBudget.snapshot(),
