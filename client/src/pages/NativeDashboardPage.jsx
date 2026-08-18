@@ -35,6 +35,7 @@ import { compareActivitiesChronologically, buildChronologicalDayItems, pairPlann
 import { findCompliance, outlineBorder, planSportColor, SPORT_PLAN_COLORS } from '../utils/planCompliance';
 import { plannedDistanceMetres, formatPlannedDistanceMetres } from '../utils/plannedWorkoutDistance';
 import { mirrorLactateToSource } from '../utils/mirrorLactateToSource';
+import { completedSecs } from '../utils/completedSessionStats';
 import {
   activityPaceOrPowerDisplay,
   formatActivityDistance,
@@ -448,7 +449,7 @@ function DayActivitiesCard({ date, activities, plannedWorkouts, dayPlans = [], p
           const sport = act.sport || '';
           const color = getSportColor(sport);
           const title = act.title || act.name || act.titleManual || 'Training';
-          const secs = Number(act.totalTime || act.duration || act.movingTime || act.elapsed_time || act.elapsedTime || act.totalTimerTime || 0);
+          const secs = completedSecs(act);
           const dur = fmtDuration(secs);
           const dist = Number(act.distance || act.totalDistance || 0);
           const distStr = formatActivityDistance(dist, user);

@@ -32,8 +32,38 @@ export function completedSecs(t) {
   const v = t?.totalTime || t?.duration || t?.movingTime || t?.moving_time
     || t?.elapsedTime || t?.elapsed_time
     || t?.totalTimerTime || t?.totalElapsedTime || t?.durationSeconds;
-  const n = Number(v);
-  return Number.isFinite(n) ? n : 0;
+  return durationSecs(v);
+}
+
+/**
+ * Seconds from whatever a record calls a duration.
+ *
+ * A manually entered training stores its duration the way a person writes one
+ * — "4:10:12" — while every synced activity stores a number. Number("4:10:12")
+ * is NaN, and a sum with one NaN in it is NaN, which the formatters then print
+ * as "0m": one hand-entered session was enough to zero a whole week on the
+ * dashboard while its distance and session count stayed right.
+ *
+ * @param {unknown} value seconds, or "H:MM:SS" / "MM:SS"
+ * @returns {number} seconds, 0 when there is nothing usable
+ */
+export function durationSecs(value) {
+  if (value == null) return 0;
+
+  if (typeof value === 'string') {
+    const s = value.trim();
+    if (s.includes(':')) {
+      const parts = s.split(':').map((p) => Number(p.trim()));
+      if (parts.some((p) => !Number.isFinite(p) || p < 0)) return 0;
+      // "H:MM:SS" or "MM:SS" — anything longer is not a duration we wrote.
+      if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+      if (parts.length === 2) return parts[0] * 60 + parts[1];
+      return 0;
+    }
+  }
+
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n : 0;
 }
 
 export function completedDistM(t) {

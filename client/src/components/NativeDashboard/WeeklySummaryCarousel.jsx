@@ -21,6 +21,7 @@ import { plannedDistanceMetres } from '../../utils/plannedWorkoutDistance';
 import { useAuth } from '../../context/AuthProvider';
 import { formatDistance, resolveDistanceUnitSystem } from '../../utils/unitsConverter';
 import { TSS_DISPLAY_MODE_EVENT } from '../../utils/uiPrefs';
+import { completedSecs } from '../../utils/completedSessionStats';
 const ActivityShareSheet = lazy(() => import('../sharing/ActivityShareSheet'));
 
 // ─── glass card look (matches the rest of the dashboard) ─────────────────────
@@ -50,7 +51,7 @@ const actDate = (a) => {
   const k = activityCalendarDateKey(a);
   return k ? new Date(`${k}T12:00:00`) : new Date(0);
 };
-const actSecs = (a) => Number(a?.totalTime || a?.duration || a?.movingTime || a?.moving_time || a?.elapsedTime || a?.elapsed_time || a?.totalTimerTime || 0);
+const actSecs = (a) => completedSecs(a);
 const actDist = (a) => Number(a?.distance || a?.totalDistance || 0);
 // Planned-workout accessors
 const planDate = (p) => { const s = String(p?.date || ''); return new Date(s.length === 10 ? `${s}T12:00:00` : (s || 0)); };

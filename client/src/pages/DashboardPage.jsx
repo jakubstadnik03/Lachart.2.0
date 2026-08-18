@@ -58,6 +58,7 @@ import { plannedDistanceMetres, formatPlannedDistanceMetres } from '../utils/pla
 import ZoneDistributionChart from '../components/DashboardPage/ZoneDistributionChart';
 import IntensityDistributionChart from '../components/DashboardPage/IntensityDistributionChart';
 import TrainingForm from '../components/TrainingForm';
+import { completedSecs } from '../utils/completedSessionStats';
 import { motion, AnimatePresence } from 'framer-motion';
 
 // Lazy — avoids eagerly pulling the 4k-line CalendarView into the dashboard chunk.
@@ -119,7 +120,7 @@ function pickTodaysCompleted(activities, plannedWorkouts) {
         (p?.completedTrainingId && String(p.completedTrainingId) === aid) ||
         normaliseSportForWidget(p?.sport) === normaliseSportForWidget(a?.sport)
       );
-      const durSec = Number(a.totalTime || a.duration || a.movingTime || a.moving_time || a.elapsedTime || a.elapsed_time || 0);
+      const durSec = completedSecs(a);
       const distM  = Number(a.distance || a.totalDistance || 0);
       const fmtDist = distM >= 1000 ? `${(distM / 1000).toFixed(1)} km`
                     : distM > 0      ? `${Math.round(distM)} m` : null;

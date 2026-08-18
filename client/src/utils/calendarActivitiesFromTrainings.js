@@ -12,6 +12,7 @@
  * It lives here, out of the page, so it can be held to that in a test.
  */
 import { mapExternalActivityToCalendar, inferExternalSource } from './mapExternalActivityToCalendar';
+import { durationSecs } from './completedSessionStats';
 
 export function buildCalendarActivitiesFromTrainings(allTrainings, regTrainings) {
   if (!Array.isArray(allTrainings) || allTrainings.length === 0) return [];
@@ -58,7 +59,7 @@ export function buildCalendarActivitiesFromTrainings(allTrainings, regTrainings)
           maxPower: t.maxPower,
           avgHeartRate: t.avgHeartRate,
           maxHeartRate: t.maxHeartRate,
-          totalTime: t.totalElapsedTime || t.totalTimerTime,
+          totalTime: durationSecs(t.totalElapsedTime || t.totalTimerTime),
           distance: t.totalDistance,
           tss: t.trainingStressScore ?? t.tss ?? t.totalTSS,
           tssDisplayMode: t.tssDisplayMode ?? null,
@@ -88,7 +89,10 @@ export function buildCalendarActivitiesFromTrainings(allTrainings, regTrainings)
         sport: t.sport,
         category: t.category || null,
         distance: t.totalDistance || t.distance,
-        totalTime: t.totalElapsedTime || t.totalTimerTime || t.duration,
+        // A hand-entered training stores "4:10:12"; every consumer of this row
+        // expects seconds, so the clock is parsed here rather than in each of
+        // the six places that add these rows up.
+        totalTime: durationSecs(t.totalElapsedTime || t.totalTimerTime || t.duration),
         tss: t.tss || t.totalTSS,
         tssDisplayMode: t.tssDisplayMode ?? null,
         avgPower: t.avgPower || t.averagePower || null,

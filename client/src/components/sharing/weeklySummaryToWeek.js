@@ -4,6 +4,7 @@
  */
 
 import { pickSportKey } from './templates/ShareSportGlyph';
+import { completedSecs } from '../../utils/completedSessionStats';
 
 const DAY_KEYS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
 const SPORT_LABELS = {
@@ -49,10 +50,7 @@ function actDate(a) {
 }
 
 function actSecs(a) {
-  return Number(
-    a?.totalTime || a?.duration || a?.movingTime || a?.moving_time
-    || a?.elapsedTime || a?.elapsed_time || a?.totalTimerTime || 0,
-  );
+  return completedSecs(a);
 }
 
 function actDist(a) {

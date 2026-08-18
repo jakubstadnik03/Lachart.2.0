@@ -7,6 +7,7 @@ import { plannedDistanceMetres } from '../../utils/plannedWorkoutDistance';
 import { useAuth } from '../../context/AuthProvider';
 import { formatDistance, resolveDistanceUnitSystem } from '../../utils/unitsConverter';
 import { TSS_DISPLAY_MODE_EVENT } from '../../utils/uiPrefs';
+import { completedSecs } from '../../utils/completedSessionStats';
 
 // ─── date helpers ─────────────────────────────────────────────────────────────
 
@@ -42,15 +43,11 @@ function inWeek(date, monday, sunday) {
 
 // ─── value extractors ─────────────────────────────────────────────────────────
 
-// Use the normalized totalTime field first (set by DashboardPage for all activity types)
+// One definition of how long a session took — utils/completedSessionStats.
+// The copy that lived here had no guard, so a hand-entered duration like
+// "4:10:12" became NaN and printed the whole week as 0m.
 function actSecs(a) {
-  if (!a) return 0;
-  return Number(
-    a.totalTime ||
-    a.duration  || a.movingTime || a.moving_time ||
-    a.elapsedTime || a.elapsed_time ||
-    a.totalTimerTime || 0
-  );
+  return completedSecs(a);
 }
 
 function actDist(a) {

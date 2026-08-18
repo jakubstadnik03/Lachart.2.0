@@ -21,6 +21,7 @@ import { pmcAxisDomainsFromPoints, PMC_COLORS } from '../../utils/pmcChartAxes';
 import TrainingComments from '../TrainingComments';
 import SportIcon from '../shared/SportIcon';
 import { submitRaceFeedback } from '../../services/api';
+import { completedSecs } from '../../utils/completedSessionStats';
 
 const FEELING_OPTIONS = [
   { id: 'great', label: 'Great', emoji: '🔥' },
@@ -487,7 +488,7 @@ export default function RaceDetailModal({
               <div className="text-[10px] font-bold uppercase tracking-wide text-gray-400 mb-1.5">Race activities</div>
               <div className="space-y-1.5">
                 {raceDayActs.map((act, i) => {
-                  const secs = Number(act.totalTime || act.duration || act.movingTime || act.elapsedTime || act.totalElapsedTime || 0);
+                  const secs = completedSecs(act);
                   const durStr = secs > 0 ? `${Math.floor(secs / 3600) > 0 ? `${Math.floor(secs / 3600)}h ` : ''}${Math.floor((secs % 3600) / 60)}m` : null;
                   const dist = Number(act.distance || act.totalDistance || 0);
                   const distStr = dist > 0 ? `${(dist / 1000).toFixed(dist >= 100000 ? 0 : 1)} km` : null;
