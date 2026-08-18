@@ -292,6 +292,15 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
       iconWhite: "/icon/dashboard-white.svg",
       showFor: ["admin"]
     },
+    {
+      // Last on purpose: it is the answer to "what else is in here", which is a
+      // question people ask after the nav has already failed them.
+      name: "What you can do",
+      path: "/guide",
+      icon: "/icon/support.svg",
+      iconWhite: "/icon/support-white.svg",
+      showFor: ["coach", "athlete", "tester", "testing", "admin"]
+    },
   ];
 
   return (
