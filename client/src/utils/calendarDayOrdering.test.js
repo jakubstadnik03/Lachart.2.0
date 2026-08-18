@@ -6,19 +6,34 @@
 // calendarDayOrdering imports resolveSportKey from SportIcon, which pulls in
 // lucide-react — ESM that jest will not transform inside node_modules. Only the
 // sport-key mapping is needed here.
+// Mirrors SportIcon.resolveSportKey, order included — pairing depends on it.
 jest.mock('../components/shared/SportIcon', () => ({
   resolveSportKey: (s) => {
     const v = String(s || '').toLowerCase();
-    if (/ride|bike|cycl/.test(v)) return 'bike';
-    if (/run|walk|hike/.test(v)) return 'run';
+    if (/bike|ride|cycl|virtual/.test(v)) return 'bike';
     if (/swim/.test(v)) return 'swim';
-    if (/gym|workout|strength|weight/.test(v)) return 'gym';
+    if (/elliptical|cross-trainer|crosstrainer/.test(v)) return 'elliptical';
+    if (/nordic|backcountry|rollerski/.test(v) || (v.includes('ski') && !v.includes('kite'))) return 'ski';
+    if (/hike/.test(v)) return 'hike';
+    if (/walk/.test(v)) return 'walk';
+    if (/run|trail/.test(v)) return 'run';
+    if (/gym|weight|strength|workout|crossfit|yoga|fitness/.test(v)) return 'gym';
     return 'other';
   },
 }));
 
 // eslint-disable-next-line import/first
-import { looksLikeSameSession, dedupeCalendarActivities } from './calendarDayOrdering';
+import {
+  looksLikeSameSession,
+  dedupeCalendarActivities,
+  planSportMatchesActivity,
+  pairPlannedWithActivities,
+  buildChronologicalDayItems,
+} from './calendarDayOrdering';
+// eslint-disable-next-line import/first
+import fs from 'fs';
+// eslint-disable-next-line import/first
+import path from 'path';
 
 const ride = (over = {}) => ({
   id: 'strava-1',
@@ -154,5 +169,83 @@ describe('dedupeCalendarActivities', () => {
     // outranks any comparison of the values.
     const training = { id: 'regular-x', sourceStravaActivityId: 1, sport: 'Ride', date: '2026-08-13T09:00:00' };
     expect(dedupeCalendarActivities([ride(), training])).toHaveLength(1);
+  });
+});
+
+describe('planSportMatchesActivity', () => {
+  // The planner stores every gym-ish plan as 'strength'; Strava, Garmin and
+  // Apple Health all name the same session something else. Each of these was a
+  // session showing up twice on the dashboard week — once as the plan, once as
+  // the activity.
+  it.each([
+    ['strength', 'Workout'],            // Strava's name for a gym session
+    ['strength', 'WeightTraining'],
+    ['strength', 'Strength Training'],
+    ['strength', 'Crossfit'],
+    ['strength', 'Yoga'],
+  ])('pairs a %s plan with a %s activity', (plan, activity) => {
+    expect(planSportMatchesActivity(plan, activity)).toBe(true);
+  });
+
+  it('keeps sports that are genuinely different apart', () => {
+    expect(planSportMatchesActivity('strength', 'Ride')).toBe(false);
+    expect(planSportMatchesActivity('swim', 'Run')).toBe(false);
+    // Two unrecognised sports are not the same session just because neither maps.
+    expect(planSportMatchesActivity('kitesurf', 'Paddling')).toBe(false);
+  });
+});
+
+describe('pairPlannedWithActivities', () => {
+  // Monday 17 August 2026, straight from the athlete's own week.
+  const planned = [
+    { _id: 'p-core', title: 'Core + zadek', sport: 'strength', duration: 2700 },
+    { _id: 'p-bike', title: 'Heat training', sport: 'bike', duration: 2700 },
+  ];
+  const acts = [
+    { id: 'strava-19776176858', stravaId: 19776176858, sport: 'Workout', date: '2026-08-17T11:48:32', duration: 2707, distance: 0 },
+    { id: 'strava-19778686078', stravaId: 19778686078, sport: 'VirtualRide', date: '2026-08-17T14:05:37', duration: 2894, distance: 31730 },
+  ];
+
+  it('claims the gym session for the strength plan', () => {
+    const { pwToAct } = pairPlannedWithActivities(planned, acts);
+    expect(pwToAct.get('p-core')?.id).toBe('strava-19776176858');
+    expect(pwToAct.get('p-bike')?.id).toBe('strava-19778686078');
+  });
+
+  it('leaves the day with one card per session, not two', () => {
+    const { items } = buildChronologicalDayItems(planned, acts, pairPlannedWithActivities);
+    expect(items).toHaveLength(2);
+    expect(items.every((i) => i.kind === 'pair')).toBe(true);
+  });
+
+  it('honours an explicit link to a prefixed id', () => {
+    // completedTrainingId is stored as 'strava-<id>' once a plan is ticked off.
+    const linked = [{ _id: 'p-swim', sport: 'swim', completedTrainingId: 'strava-19789798017' }];
+    const swim = [{ id: 'strava-19789798017', stravaId: 19789798017, sport: 'Swim', date: '2026-08-18T09:00:00' }];
+    const { pwToAct } = pairPlannedWithActivities(linked, swim);
+    expect(pwToAct.get('p-swim')?.id).toBe('strava-19789798017');
+  });
+
+  it('does not hand one activity to two plans', () => {
+    const twoCore = [
+      { _id: 'p-a', sport: 'strength' },
+      { _id: 'p-b', sport: 'strength' },
+    ];
+    const { pwToAct } = pairPlannedWithActivities(twoCore, [acts[0]]);
+    expect(pwToAct.size).toBe(1);
+  });
+});
+
+describe('one pairing implementation', () => {
+  // The dashboard week used to carry its own copy of the matcher. It drifted:
+  // the calendar merged plan and activity into one card while the week showed
+  // both. Anything that pairs on a calendar day goes through this module.
+  const read = (rel) => fs.readFileSync(path.join(__dirname, '..', rel), 'utf8');
+
+  it('the dashboard week does not define its own matcher', () => {
+    const src = read('components/DashboardPage/WeeklyCalendar.jsx');
+    expect(src).not.toMatch(/function\s+planSportMatchesActivity/);
+    expect(src).not.toMatch(/function\s+pairPlannedWith/);
+    expect(src).toMatch(/pairPlannedWithActivities/);
   });
 });

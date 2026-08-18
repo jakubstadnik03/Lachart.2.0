@@ -29,7 +29,13 @@ import { getFitTraining, getStravaActivityDetail, updateFitTraining, updateStrav
 import RaceDetailModal from '../Calendar/RaceDetailModal';
 import api from '../../services/api';
 import { resolveActivityTss } from '../../utils/computeTss';
-import { compareActivitiesChronologically, buildChronologicalDayItems, dedupeCalendarActivities } from '../../utils/calendarDayOrdering';
+import {
+  compareActivitiesChronologically,
+  buildChronologicalDayItems,
+  dedupeCalendarActivities,
+  pairPlannedWithActivities,
+  planSportMatchesActivity,
+} from '../../utils/calendarDayOrdering';
 import { completedSecs } from '../../utils/completedSessionStats';
 import { TSS_DISPLAY_MODE_EVENT, getTssDisplayMode } from '../../utils/uiPrefs';
 import RecordLactateModal from '../training/RecordLactateModal';
@@ -453,39 +459,11 @@ function secsToHMShort(secs) {
 }
 
 
-// Local sport-match helper (mirrors CalendarView.sportMatches)
-function planSportMatchesActivity(pwSport, actSport) {
-  const p = String(pwSport || '').toLowerCase();
-  const a = String(actSport || '').toLowerCase();
-  if (!p || !a) return false;
-  if (p === 'run'  && (a.includes('run') || a.includes('walk') || a.includes('hike'))) return true;
-  if (p === 'bike' && (a.includes('ride') || a.includes('cycl') || a.includes('bike') || a.includes('virtual'))) return true;
-  if (p === 'swim' && a.includes('swim')) return true;
-  if (p === 'strength' && (a.includes('weight') || a.includes('strength') || a.includes('gym'))) return true;
-  return p === a;
-}
-
-// Pair planned workouts with same-sport activities for one day.
-// Returns { pwToAct: Map<pw_id, activity>, claimedKeys: Set<activityKey> }
-function pairPlannedWithDayActivities(planned, activities) {
-  const pwToAct = new Map();
-  const claimedKeys = new Set();
-  if (!planned?.length || !activities?.length) return { pwToAct, claimedKeys };
-  const actKey = (a) => String(a?.id ?? a?._id ?? '');
-  for (const pw of planned) {
-    if (!pw?._id) continue;
-    const explicit = pw.completedTrainingId
-      ? activities.find(a => actKey(a) === String(pw.completedTrainingId))
-      : null;
-    const candidate = explicit
-      || activities.find(a => !claimedKeys.has(actKey(a)) && planSportMatchesActivity(pw.sport, a.sport || a.type || ''));
-    if (candidate) {
-      pwToAct.set(String(pw._id), candidate);
-      claimedKeys.add(actKey(candidate));
-    }
-  }
-  return { pwToAct, claimedKeys };
-}
+// Plan ↔ activity pairing is deliberately NOT reimplemented here. The dashboard
+// week and the training calendar show the same day; when they disagree about
+// whether a planned session was done, the week silently doubles it — one card
+// for the plan, one for the activity. That is what a private copy drifting from
+// the shared matcher looks like from the outside.
 
 function WeeklyDayChronologicalList({
   dayPlanned,
@@ -505,7 +483,7 @@ function WeeklyDayChronologicalList({
   catLabel,
   overflowClassName = 'text-[11px] text-gray-400 text-center',
 }) {
-  const { items, pwToAct } = buildChronologicalDayItems(dayPlanned, allActivities, pairPlannedWithDayActivities);
+  const { items, pwToAct } = buildChronologicalDayItems(dayPlanned, allActivities, pairPlannedWithActivities);
   const visible = itemLimit != null ? items.slice(0, itemLimit) : items;
   const overflow = itemLimit != null ? Math.max(0, items.length - itemLimit) : 0;
 
