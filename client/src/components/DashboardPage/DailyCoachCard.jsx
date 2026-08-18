@@ -11,7 +11,7 @@
  */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import ReactDOM from 'react-dom';
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, motion, useDragControls } from 'framer-motion';
 import {
   AdjustmentsHorizontalIcon,
   ChevronDownIcon,
@@ -272,6 +272,8 @@ export default function DailyCoachCard({
   const [prefs, setPrefs] = useState(() => readDailyCardPrefs(user));
   const [showSettings, setShowSettings] = useState(false);
   const [showMore, setShowMore] = useState(false);
+  // Drag is started by the grab handle alone — see the sheet below for why.
+  const dragControls = useDragControls();
   // Starts collapsed, before the stored state is read — otherwise the sheet
   // flashes open on every mount and closes itself a frame later.
   const [minimised, setMinimised] = useState(true);
@@ -399,21 +401,39 @@ export default function DailyCoachCard({
         exit={{ y: '110%' }}
         transition={{ type: 'spring', damping: 30, stiffness: 300 }}
         drag="y"
+        // Only the grab handle starts a drag. With the whole sheet listening,
+        // the drag gesture claimed every vertical touch — including the ones
+        // meant for the list — and a sheet taller than the screen could not be
+        // scrolled at all: it just resisted, because dragging up is
+        // constrained. The card is well past 88vh on a phone, so everything
+        // below "How did it feel?" was unreachable.
+        dragListener={false}
+        dragControls={dragControls}
         dragConstraints={{ top: 0 }}
         dragElastic={{ top: 0, bottom: 0.35 }}
         onDragEnd={(_, info) => { if (info.offset.y > 90 || info.velocity.y > 450) minimise(); }}
         onClick={(e) => e.stopPropagation()}
         role="dialog"
-        className="bg-white rounded-t-2xl shadow-2xl max-h-[88vh] overflow-y-auto"
-        style={{
-          borderTop: `3px solid ${card.readiness.color}`,
-          paddingBottom: 'max(16px, env(safe-area-inset-bottom))',
-        }}
+        className="bg-white rounded-t-2xl shadow-2xl max-h-[88vh] flex flex-col"
+        style={{ borderTop: `3px solid ${card.readiness.color}` }}
     >
-      {/* Grab handle — the affordance that says this drags away. */}
-      <div className="flex justify-center pt-2 pb-1 sticky top-0 bg-white z-10">
+      {/* Grab handle — the affordance that says this drags away, and now the
+          only thing that does. touch-action: none keeps iOS from treating the
+          same gesture as a page scroll. */}
+      <div
+        className="flex justify-center pt-2 pb-1 bg-white rounded-t-2xl shrink-0 cursor-grab active:cursor-grabbing"
+        style={{ touchAction: 'none' }}
+        onPointerDown={(e) => dragControls.start(e)}
+      >
         <div className="w-9 h-1 rounded-full bg-gray-300" />
       </div>
+      <div
+        className="overflow-y-auto overscroll-contain flex-1 min-h-0"
+        style={{
+          WebkitOverflowScrolling: 'touch',
+          paddingBottom: 'max(16px, env(safe-area-inset-bottom))',
+        }}
+      >
       <div className={compact ? 'p-3.5 pt-1' : 'p-4 sm:p-5 pt-1'}>
         {/* Header */}
         <div className="flex items-start justify-between gap-2 mb-1">
@@ -617,6 +637,7 @@ export default function DailyCoachCard({
           </div>
         </div>
       ) : null}
+      </div>
       </motion.div>
     </div>,
     document.body,
