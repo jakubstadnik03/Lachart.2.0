@@ -25,15 +25,48 @@ export const BLOCK_PHASES = [
   { id: 'taper', label: 'Taper', hint: 'Volume down, intensity kept' },
 ];
 
-/** Session shapes a rule-based block is assembled from. */
-const SESSION_LIBRARY = {
-  easy: { title: 'Endurance', hard: false, tssPerHour: 50 },
-  long: { title: 'Long ride', hard: false, tssPerHour: 55 },
-  tempo: { title: 'Tempo 3x12min', hard: true, tssPerHour: 75 },
-  threshold: { title: 'Threshold 4x8min', hard: true, tssPerHour: 85 },
-  vo2: { title: 'VO2max 5x4min', hard: true, tssPerHour: 95 },
-  recovery: { title: 'Recovery spin', hard: false, tssPerHour: 35 },
+/**
+ * Session shapes a rule-based block is assembled from, per sport.
+ *
+ * One library per sport rather than one library with the titles swapped: a
+ * threshold set is 4×8min on the bike, 3×10min cruise on the run and 8×100 on
+ * CSS in the pool, and the load per hour differs enough between them that
+ * pretending otherwise mis-sizes every week. Running costs more per hour than
+ * riding for the same effort; swimming, at the intensities most triathletes
+ * actually hold, costs less.
+ */
+const SPORT_LIBRARY = {
+  bike: {
+    easy:      { title: 'Endurance', hard: false, tssPerHour: 50 },
+    long:      { title: 'Long ride', hard: false, tssPerHour: 55, isLong: true },
+    tempo:     { title: 'Tempo 3x12min', hard: true, tssPerHour: 75 },
+    threshold: { title: 'Threshold 4x8min', hard: true, tssPerHour: 85 },
+    vo2:       { title: 'VO2max 5x4min', hard: true, tssPerHour: 95 },
+    recovery:  { title: 'Recovery spin', hard: false, tssPerHour: 35 },
+  },
+  run: {
+    easy:      { title: 'Easy run', hard: false, tssPerHour: 60 },
+    long:      { title: 'Long run', hard: false, tssPerHour: 68, isLong: true },
+    tempo:     { title: 'Tempo 2x15min', hard: true, tssPerHour: 85 },
+    threshold: { title: 'Threshold 3x10min', hard: true, tssPerHour: 95 },
+    vo2:       { title: 'VO2max 6x3min', hard: true, tssPerHour: 105 },
+    recovery:  { title: 'Recovery jog', hard: false, tssPerHour: 45 },
+  },
+  swim: {
+    easy:      { title: 'Technique + aerobic', hard: false, tssPerHour: 45 },
+    long:      { title: 'Long swim', hard: false, tssPerHour: 50, isLong: true },
+    tempo:     { title: 'Tempo 6x200', hard: true, tssPerHour: 65 },
+    threshold: { title: 'CSS 8x100', hard: true, tssPerHour: 75 },
+    vo2:       { title: 'Speed 12x50', hard: true, tssPerHour: 80 },
+    recovery:  { title: 'Easy swim', hard: false, tssPerHour: 35 },
+  },
 };
+
+const DEFAULT_SPORT = 'bike';
+
+function libraryFor(sport) {
+  return SPORT_LIBRARY[sport] || SPORT_LIBRARY[DEFAULT_SPORT];
+}
 
 /** Which sessions each phase leans on, in priority order. */
 const PHASE_MIX = {
@@ -42,6 +75,22 @@ const PHASE_MIX = {
   peak: ['vo2', 'easy', 'threshold', 'easy', 'long'],
   taper: ['threshold', 'easy', 'recovery', 'easy'],
 };
+
+/**
+ * The swim mix is its own: a swimmer's easy sessions are technique work rather
+ * than junk volume, and the long swim earns a place only in base.
+ */
+const SWIM_PHASE_MIX = {
+  base: ['easy', 'threshold', 'long', 'easy'],
+  build: ['threshold', 'easy', 'tempo', 'easy'],
+  peak: ['vo2', 'threshold', 'easy', 'easy'],
+  taper: ['threshold', 'easy', 'recovery'],
+};
+
+function phaseMixFor(sport, phase) {
+  const table = sport === 'swim' ? SWIM_PHASE_MIX : PHASE_MIX;
+  return table[phase] || table.base;
+}
 
 function isHardTitle(title) {
   return HARD_HINT.test(String(title || ''));
@@ -63,6 +112,100 @@ function addDays(date, n) {
 }
 
 /**
+ * Where each kind of session wants to land, Monday = 0.
+ *
+ * Key sessions go midweek and at the weekend with a day between them; long
+ * sessions want the weekend; easy sessions fill what is left. Swimming is the
+ * one sport that doubles up with another on the same day, which is how a
+ * triathlete's week actually works — nobody has nine free days.
+ */
+const DAY_PREFERENCE = {
+  key:  [1, 3, 5, 2, 4, 6, 0],
+  long: [5, 6, 4, 3, 1, 2, 0],
+  easy: [0, 2, 4, 6, 1, 3, 5],
+};
+
+/** A day already holding this much is full, unless the newcomer is a swim. */
+const MAX_SESSIONS_PER_DAY = 2;
+
+/**
+ * Spread a week's sessions across seven days.
+ *
+ * The rules that matter, in order: no two hard days back to back, no two
+ * sessions of the same sport on one day, and at most two sessions a day unless
+ * a swim is joining something easy. When they cannot all be honoured the
+ * earlier rule wins — a plan that stacks a threshold run onto a threshold ride
+ * is worse than one that puts an easy spin next to a hard run.
+ *
+ * @param {Array<{sport: string, key: string, hard: boolean, isLong: boolean}>} sessions
+ * @returns {Array<object>} the same sessions with a dayOffset each
+ */
+export function allocateWeekDays(sessions) {
+  const placed = [];
+  const dayLoad = new Map(); // dayOffset -> { count, hard, sports:Set }
+
+  const load = (d) => dayLoad.get(d) || { count: 0, hard: false, sports: new Set() };
+
+  // Hard first, then long, then easy: the sessions with the strongest opinion
+  // about where they go get to choose before the fillers take the good days.
+  const order = [...sessions].sort((a, b) => {
+    const rank = (s) => (s.hard ? 0 : s.isLong ? 1 : 2);
+    return rank(a) - rank(b);
+  });
+
+  for (const s of order) {
+    const bucket = s.hard ? 'key' : s.isLong ? 'long' : 'easy';
+    const prefs = DAY_PREFERENCE[bucket];
+
+    const acceptable = (d, strict) => {
+      const l = load(d);
+      if (l.sports.has(s.sport)) return false;
+      const roomy = l.count < MAX_SESSIONS_PER_DAY || (s.sport === 'swim' && !l.hard);
+      if (!roomy) return false;
+      if (!strict) return true;
+      if (s.hard) {
+        // Not next to another hard day, and never sharing one.
+        if (l.hard) return false;
+        if (load(d - 1).hard || load(d + 1).hard) return false;
+      }
+      return true;
+    };
+
+    let day = prefs.find((d) => acceptable(d, true));
+    if (day === undefined) day = prefs.find((d) => acceptable(d, false));
+    if (day === undefined) day = prefs[0];
+
+    const l = load(day);
+    dayLoad.set(day, {
+      count: l.count + 1,
+      hard: l.hard || Boolean(s.hard),
+      sports: new Set([...l.sports, s.sport]),
+    });
+    placed.push({ ...s, dayOffset: day });
+  }
+
+  return placed.sort((a, b) => a.dayOffset - b.dayOffset);
+}
+
+/** Normalise the sports argument, accepting the old single-sport shape. */
+function resolveSportPlan({ sports, sport, weeklyHours, sessionsPerWeek }) {
+  if (Array.isArray(sports) && sports.length > 0) {
+    return sports
+      .map((s) => ({
+        sport: SPORT_LIBRARY[s?.sport] ? s.sport : DEFAULT_SPORT,
+        hoursPerWeek: Math.max(0, Number(s?.hoursPerWeek) || 0),
+        sessionsPerWeek: Math.max(1, Math.min(7, Math.round(Number(s?.sessionsPerWeek) || 1))),
+      }))
+      .filter((s) => s.hoursPerWeek > 0);
+  }
+  return [{
+    sport: SPORT_LIBRARY[sport] ? sport : DEFAULT_SPORT,
+    hoursPerWeek: Math.max(0, Number(weeklyHours) || 0),
+    sessionsPerWeek: Math.max(2, Math.min(7, Math.round(Number(sessionsPerWeek) || 5))),
+  }];
+}
+
+/**
  * Build a periodised block.
  *
  * Rule-based on purpose: this is the preview and commit layer, and it has to
@@ -72,10 +215,12 @@ function addDays(date, n) {
  * @param {object} opts
  * @param {Date|string} opts.startDate     any day in the first week
  * @param {number} opts.weeks              total weeks including recovery
- * @param {number} opts.weeklyHours        target hours in a normal week
- * @param {number} opts.sessionsPerWeek
  * @param {number} opts.recoveryEvery      every Nth week is a recovery week (0 = none)
- * @param {string} opts.sport
+ * @param {Array<{sport: string, hoursPerWeek: number, sessionsPerWeek: number}>} [opts.sports]
+ *   what to plan, per sport — normally taken from the athlete's own history
+ * @param {number} [opts.weeklyHours]      single-sport shorthand
+ * @param {number} [opts.sessionsPerWeek]  single-sport shorthand
+ * @param {string} [opts.sport]            single-sport shorthand
  */
 export function buildBlockDraft({
   startDate = new Date(),
@@ -84,13 +229,18 @@ export function buildBlockDraft({
   sessionsPerWeek = 5,
   recoveryEvery = 4,
   sport = 'bike',
+  sports = null,
   name = 'New block',
 } = {}) {
   const monday = mondayOf(startDate);
   if (!monday) return null;
 
+  const sportPlan = resolveSportPlan({ sports, sport, weeklyHours, sessionsPerWeek });
+  if (sportPlan.length === 0) return null;
+
   const totalWeeks = Math.max(1, Math.min(24, Math.round(weeks)));
-  const perWeek = Math.max(2, Math.min(7, Math.round(sessionsPerWeek)));
+  const perWeek = sportPlan.reduce((n, s) => n + s.sessionsPerWeek, 0);
+  const totalWeeklyHours = sportPlan.reduce((h, s) => h + s.hoursPerWeek, 0);
 
   // Phase boundaries: roughly half base, a third build, the rest peak, and a
   // taper week only if the block is long enough to earn one.
@@ -102,10 +252,6 @@ export function buildBlockDraft({
     return 'peak';
   };
 
-  // Days used, spread so hard sessions don't land adjacent: Tue/Thu/Sat plus
-  // fillers. Index 0 = Monday.
-  const DAY_SLOTS = [1, 3, 5, 2, 6, 4, 0];
-
   /** Volume relative to a normal week, by phase. */
   const PHASE_VOLUME = { base: 1, build: 1, peak: 0.9, taper: 0.55 };
 
@@ -116,39 +262,63 @@ export function buildBlockDraft({
   for (let i = 0; i < totalWeeks; i += 1) {
     const isRecovery = recoveryEvery > 0 && (i + 1) % recoveryEvery === 0 && i !== totalWeeks - 1;
     const phase = isRecovery ? 'base' : phaseFor(i);
-    const mix = PHASE_MIX[phase] || PHASE_MIX.base;
 
     // Sawtooth, not a ramp to a ceiling. Volume climbs ~8% a week *within* a
     // cycle and each cycle starts a little above the last; a global ramp that
     // saturates produces three identical weeks in a row, which is a plateau
     // rather than periodisation and shows up immediately in the shape chart.
-    const rampedHours = weeklyHours * (1 + cycle * 0.05 + sinceRecovery * 0.08);
+    const ramp = 1 + cycle * 0.05 + sinceRecovery * 0.08;
     // Peak weeks trim volume to make room for intensity; the taper cuts it hard.
-    const hours = isRecovery ? rampedHours * 0.55 : rampedHours * (PHASE_VOLUME[phase] ?? 1);
-    const count = isRecovery ? Math.max(2, perWeek - 1) : perWeek;
+    const volumeFactor = isRecovery ? ramp * 0.55 : ramp * (PHASE_VOLUME[phase] ?? 1);
 
     if (isRecovery) { sinceRecovery = 0; cycle += 1; } else { sinceRecovery += 1; }
 
-    const sessions = [];
-    for (let s = 0; s < count; s += 1) {
-      const key = isRecovery && s > 0 ? 'easy' : (mix[s % mix.length] || 'easy');
-      const spec = SESSION_LIBRARY[key];
-      // Long sessions take a bigger slice of the week's hours.
-      const share = key === 'long' ? 0.32 : (1 - 0.32) / Math.max(1, count - 1);
-      const sessionHours = key === 'long' ? hours * share : hours * share;
-      const durationSeconds = Math.round(sessionHours * 3600);
-      sessions.push({
-        id: `w${i}-s${s}`,
-        dayOffset: DAY_SLOTS[s % DAY_SLOTS.length],
-        sport,
-        title: spec.title,
-        hard: spec.hard,
-        plannedDuration: durationSeconds,
-        targetTss: Math.round(sessionHours * spec.tssPerHour),
-      });
-    }
+    // Each sport is periodised on its own hours, then the week is laid out
+    // once across all of them — otherwise three sports each pick Tuesday.
+    const unplaced = [];
+    sportPlan.forEach((plan, sportIdx) => {
+      const lib = libraryFor(plan.sport);
+      const mix = phaseMixFor(plan.sport, phase);
+      const hours = plan.hoursPerWeek * volumeFactor;
+      const count = isRecovery ? Math.max(1, plan.sessionsPerWeek - 1) : plan.sessionsPerWeek;
+      if (hours <= 0 || count <= 0) return;
 
-    sessions.sort((a, b) => a.dayOffset - b.dayOffset);
+      // Pick the sessions first, then divide the hours between them. Asking
+      // whether the phase mix *contains* a long session is not the same as
+      // whether this week actually got one: a two-session swim week reserved
+      // the long session's third and then split the rest between two, which
+      // handed swimming a third more hours than it was given.
+      const keys = [];
+      for (let s = 0; s < count; s += 1) {
+        keys.push(isRecovery && s > 0 ? 'easy' : (mix[s % mix.length] || 'easy'));
+      }
+      const longIdx = isRecovery ? -1 : keys.findIndex((k) => lib[k]?.isLong);
+      const hasLong = count > 1 && longIdx >= 0;
+      // A single long session takes about a third of a sport's week; the rest
+      // split what is left evenly.
+      const longShare = hasLong ? 0.32 : 0;
+      const otherShare = hasLong ? (1 - longShare) / (count - 1) : 1 / count;
+
+      keys.forEach((key, s) => {
+        const spec = lib[key] || lib.easy;
+        const isLong = hasLong && s === longIdx;
+        const sessionHours = hours * (isLong ? longShare : otherShare);
+        unplaced.push({
+          id: `w${i}-${plan.sport}-${s}`,
+          sport: plan.sport,
+          key,
+          title: spec.title,
+          hard: Boolean(spec.hard),
+          isLong,
+          // Keeps the athlete's biggest sport first when days are contested.
+          priority: sportIdx,
+          plannedDuration: Math.round(sessionHours * 3600),
+          targetTss: Math.round(sessionHours * spec.tssPerHour),
+        });
+      });
+    });
+
+    const sessions = allocateWeekDays(unplaced);
 
     weeksOut.push({
       index: i,
@@ -163,7 +333,12 @@ export function buildBlockDraft({
   return {
     id: `draft-${localCalendarDateKey(monday)}-${totalWeeks}w`,
     name,
-    sport,
+    // Kept for anything still reading a block as single-sport; `sports` is the
+    // truth once there is more than one.
+    sport: sportPlan[0].sport,
+    sports: sportPlan,
+    weeklyHours: Math.round(totalWeeklyHours * 10) / 10,
+    sessionsPerWeek: perWeek,
     startDate: localCalendarDateKey(monday),
     weeks: weeksOut,
     createdAt: new Date().toISOString(),

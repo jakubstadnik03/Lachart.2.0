@@ -226,3 +226,132 @@ describe('nothing is committed by accident', () => {
     expect(build().committedAt).toBeNull();
   });
 });
+
+// ── Multi-sport ──────────────────────────────────────────────────────────────
+// A triathlete's week is not one sport with the titles changed: three sports
+// compete for seven days, and the plan is only useful if it keeps the hard
+// days apart and never asks for two of the same sport on one day.
+
+const tri = (over = {}) => buildBlockDraft({
+  startDate: '2026-08-17',
+  weeks: 4,
+  recoveryEvery: 0,
+  sports: [
+    { sport: 'bike', hoursPerWeek: 6, sessionsPerWeek: 3 },
+    { sport: 'run', hoursPerWeek: 3, sessionsPerWeek: 3 },
+    { sport: 'swim', hoursPerWeek: 2, sessionsPerWeek: 2 },
+  ],
+  ...over,
+});
+
+describe('planning three sports', () => {
+  it('plans every sport it was given', () => {
+    const week = tri().weeks[0];
+    expect(new Set(week.sessions.map((s) => s.sport))).toEqual(new Set(['bike', 'run', 'swim']));
+  });
+
+  it('gives each sport the number of sessions asked for', () => {
+    const week = tri().weeks[0];
+    const count = (sport) => week.sessions.filter((s) => s.sport === sport).length;
+    expect(count('bike')).toBe(3);
+    expect(count('run')).toBe(3);
+    expect(count('swim')).toBe(2);
+  });
+
+  it('splits the week by the hours each sport was given', () => {
+    const week = tri().weeks[0];
+    const hours = (sport) => week.sessions
+      .filter((s) => s.sport === sport)
+      .reduce((n, s) => n + s.plannedDuration, 0) / 3600;
+    // Ratios hold even though the ramp scales the whole week.
+    expect(hours('bike') / hours('run')).toBeCloseTo(2, 1);
+    expect(hours('bike') / hours('swim')).toBeCloseTo(3, 1);
+  });
+
+  it('titles sessions in the language of each sport', () => {
+    const titles = tri().weeks[0].sessions.map((s) => `${s.sport}:${s.title}`);
+    expect(titles.some((t) => t.startsWith('swim:') && /CSS|x\d+|Technique/.test(t))).toBe(true);
+    expect(titles.some((t) => t.startsWith('run:') && /run|min/i.test(t))).toBe(true);
+    expect(titles.every((t) => !(t.startsWith('run:') && /ride|spin/i.test(t)))).toBe(true);
+  });
+
+  it('never puts two sessions of the same sport on one day', () => {
+    for (const week of tri().weeks) {
+      const seen = new Set();
+      for (const s of week.sessions) {
+        const key = `${s.dayOffset}:${s.sport}`;
+        expect(seen.has(key)).toBe(false);
+        seen.add(key);
+      }
+    }
+  });
+
+  it('keeps hard days apart', () => {
+    for (const week of tri().weeks) {
+      const hardDays = [...new Set(week.sessions.filter((s) => s.hard).map((s) => s.dayOffset))]
+        .sort((a, b) => a - b);
+      for (let i = 1; i < hardDays.length; i += 1) {
+        expect(hardDays[i] - hardDays[i - 1]).toBeGreaterThan(1);
+      }
+    }
+  });
+
+  it('never stacks two hard sessions on the same day', () => {
+    for (const week of tri().weeks) {
+      const byDay = new Map();
+      week.sessions.filter((s) => s.hard).forEach((s) => {
+        byDay.set(s.dayOffset, (byDay.get(s.dayOffset) || 0) + 1);
+      });
+      for (const n of byDay.values()) expect(n).toBe(1);
+    }
+  });
+
+  it('leaves at least one day clear in a normal week', () => {
+    const week = tri().weeks[0];
+    expect(new Set(week.sessions.map((s) => s.dayOffset)).size).toBeLessThan(7);
+  });
+
+  it('puts the long session at the weekend', () => {
+    const week = tri().weeks[0];
+    const long = week.sessions.filter((s) => s.isLong);
+    expect(long.length).toBeGreaterThan(0);
+    long.forEach((s) => expect(s.dayOffset).toBeGreaterThanOrEqual(4));
+  });
+
+  it('records the sport plan on the draft', () => {
+    const d = tri();
+    expect(d.sports.map((s) => s.sport)).toEqual(['bike', 'run', 'swim']);
+    expect(d.weeklyHours).toBe(11);
+    expect(d.sessionsPerWeek).toBe(8);
+  });
+
+  it('still honours the old single-sport call', () => {
+    const d = buildBlockDraft({ startDate: '2026-08-17', weeks: 2, sport: 'run', weeklyHours: 5, sessionsPerWeek: 4 });
+    expect(d.weeks[0].sessions.every((s) => s.sport === 'run')).toBe(true);
+    expect(d.weeks[0].sessions).toHaveLength(4);
+  });
+
+  it('drops a sport with no hours rather than planning empty sessions', () => {
+    const d = buildBlockDraft({
+      startDate: '2026-08-17',
+      weeks: 1,
+      sports: [
+        { sport: 'bike', hoursPerWeek: 5, sessionsPerWeek: 3 },
+        { sport: 'swim', hoursPerWeek: 0, sessionsPerWeek: 2 },
+      ],
+    });
+    expect(d.weeks[0].sessions.every((s) => s.sport === 'bike')).toBe(true);
+  });
+
+  it('thins every sport in a recovery week', () => {
+    const d = tri({ weeks: 4, recoveryEvery: 2 });
+    const normal = d.weeks[0].sessions.length;
+    const recovery = d.weeks.find((w) => w.isRecovery).sessions.length;
+    expect(recovery).toBeLessThan(normal);
+  });
+
+  it('carries each session onto the calendar with its own sport', () => {
+    const planned = draftToPlannedWorkouts(tri());
+    expect(new Set(planned.map((p) => p.sport))).toEqual(new Set(['bike', 'run', 'swim']));
+  });
+});
