@@ -12,6 +12,7 @@ jest.mock('@heroicons/react/24/outline', () => new Proxy({}, {
 // Virtual: react-router-dom v7 is ESM with an exports map this jest cannot
 // resolve, and routing is not what this test is about.
 jest.mock('react-router-dom', () => ({ useNavigate: () => () => {} }), { virtual: true });
+jest.mock('../services/contactEmail', () => ({ sendContactEmail: jest.fn() }));
 
 // `mock`-prefixed so jest allows the factory to close over it.
 const mockAuth = { user: { role: 'athlete' } };
@@ -20,43 +21,59 @@ jest.mock('../context/AuthProvider', () => ({ useAuth: () => mockAuth }));
 // eslint-disable-next-line import/first
 import FeatureGuidePage from './FeatureGuidePage';
 
-const render = (user) => {
+const renderPage = (user) => {
   mockAuth.user = user;
   return renderToStaticMarkup(<FeatureGuidePage />);
 };
 
 describe('FeatureGuidePage', () => {
   it('renders the sections and their cards for an athlete', () => {
-    const html = render({ role: 'athlete' });
-    expect(html).toContain('What you can do in LaChart');
-    expect(html).toContain('Get your training in');
-    expect(html).toContain('Watch your lactate curve evolve');
-    expect(html).toContain('Build a whole training block');
+    const view = renderPage({ role: 'athlete' });
+    expect(view).toContain('What you can do in LaChart');
+    expect(view).toContain('Get your training in');
+    expect(view).toContain('Watch your lactate curve evolve');
+    expect(view).toContain('Build a whole training block');
   });
 
   it('puts a working destination on every card', () => {
-    const html = render({ role: 'athlete' });
+    const view = renderPage({ role: 'athlete' });
     // Each card's button carries its call to action; the count should match the
     // number of features, not be a single "learn more" at the bottom.
-    expect((html.match(/Open integrations|Build a block|View my tests/g) || []).length)
+    expect((view.match(/Open integrations|Build a block|View my tests/g) || []).length)
       .toBeGreaterThanOrEqual(3);
   });
 
   it('keeps coach-only cards away from an athlete', () => {
-    const athlete = render({ role: 'athlete' });
-    expect(athlete).not.toContain('Brand your PDF reports');
+    const view = renderPage({ role: 'athlete' });
+    expect(view).not.toContain('Brand your PDF reports');
+  });
 
-    const coach = render({ role: 'coach' });
-    expect(coach).toContain('Brand your PDF reports');
+  it('shows them to a coach', () => {
+    const view = renderPage({ role: 'coach' });
+    expect(view).toContain('Brand your PDF reports');
   });
 
   it('counts the features in the header', () => {
-    const html = render({ role: 'athlete' });
-    expect(html).toMatch(/\d+ things this app does/);
+    const view = renderPage({ role: 'athlete' });
+    expect(view).toMatch(/\d+ things this app does/);
   });
 
   it('survives a missing user rather than blanking the page', () => {
-    const html = render(null);
-    expect(html).toContain('What you can do in LaChart');
+    const view = renderPage(null);
+    expect(view).toContain('What you can do in LaChart');
+  });
+
+  it('ends with somewhere to ask what the guide did not answer', () => {
+    const view = renderPage({ role: 'athlete', email: 'jana@example.com' });
+    expect(view).toContain('Still have a question?');
+    expect(view).toContain('<textarea');
+    // The reply address is prefilled — nobody should have to type their own.
+    expect(view).toContain('value="jana@example.com"');
+  });
+
+  it('leaves the reply field empty when we have no address on file', () => {
+    const view = renderPage({ role: 'athlete' });
+    expect(view).toContain('Still have a question?');
+    expect(view).not.toContain('undefined');
   });
 });

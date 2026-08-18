@@ -324,7 +324,7 @@ function NativeNotificationsSheet({ open, onClose, notifs, loading, onNotifClick
 }
 
 // ─── Top Bar ───────────────────────────────────────────────────────────────────
-function NativeTopBar({ user, onProfileTap, onBellTap, onGuideTap, unreadCount }) {
+function NativeTopBar({ user, onProfileTap, onBellTap, onGuideTap, guideActive, unreadCount }) {
   const avatar = user ? getAvatarBySportAndGender(user) : null;
   return (
     <div
@@ -345,10 +345,18 @@ function NativeTopBar({ user, onProfileTap, onBellTap, onGuideTap, unreadCount }
           <button
             onClick={onGuideTap}
             aria-label="What you can do"
+            aria-current={guideActive ? 'page' : undefined}
             style={{ touchAction: 'manipulation' }}
-            className="w-9 h-9 flex items-center justify-center rounded-xl active:bg-gray-100"
+            className={`w-9 h-9 flex items-center justify-center rounded-xl ${
+              guideActive ? 'bg-primary/10' : 'active:bg-gray-100'
+            }`}
           >
-            <Icon d={ICONS.guide} size={22} stroke="#9ca3af" strokeWidth={1.8} />
+            <Icon
+              d={ICONS.guide}
+              size={22}
+              stroke={guideActive ? 'var(--color-primary, #6366f1)' : '#9ca3af'}
+              strokeWidth={guideActive ? 2.2 : 1.8}
+            />
           </button>
 
           {/* Notification bell */}
@@ -1073,6 +1081,7 @@ const NativeLayout = ({ athletes = [], athleteStatuses = {}, effectiveAthleteId,
           onProfileTap={() => setShowProfile(true)}
           onBellTap={handleBellTap}
           onGuideTap={() => navigate('/guide')}
+          guideActive={location.pathname === '/guide'}
           unreadCount={unreadCount}
         />
       )}

@@ -6,8 +6,9 @@
  */
 import React, { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowTopRightOnSquareIcon, MagnifyingGlassIcon, XMarkIcon } from '@heroicons/react/24/outline';
+import { ArrowTopRightOnSquareIcon, CheckCircleIcon, MagnifyingGlassIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import { useAuth } from '../context/AuthProvider';
+import { sendContactEmail } from '../services/contactEmail';
 import { buildFeatureGuide, countFeatures, isCoachViewer } from '../content/featureGuide';
 
 function FeatureCard({ entry, onOpen }) {
@@ -57,6 +58,110 @@ function FeatureCard({ entry, onOpen }) {
           : <span aria-hidden="true">→</span>}
       </button>
     </div>
+  );
+}
+
+/**
+ * The bottom of the guide, for the thing the guide did not answer.
+ *
+ * It goes to the same /feedback endpoint the app already has — which now
+ * emails it — rather than a mailto: link, because tapping mailto inside the
+ * iOS app leaves the app, and most people do not come back.
+ */
+function QuestionForm({ user }) {
+  const [message, setMessage] = useState('');
+  const [email, setEmail] = useState(user?.email || '');
+  const [state, setState] = useState('idle'); // idle | sending | sent | error
+  const [error, setError] = useState(null);
+
+  const canSend = message.trim().length > 0 && state !== 'sending';
+
+  const send = async (e) => {
+    e.preventDefault();
+    if (!canSend) return;
+    setState('sending');
+    setError(null);
+    try {
+      await sendContactEmail({
+        subject: 'Question from the guide',
+        message: message.trim(),
+        email: email.trim(),
+        name: [user?.name, user?.surname].filter(Boolean).join(' '),
+        page: '/guide',
+      });
+      setState('sent');
+      setMessage('');
+    } catch (err) {
+      setState('error');
+      setError(err?.text || err?.message || 'Could not send it. Please try again in a moment.');
+    }
+  };
+
+  if (state === 'sent') {
+    return (
+      <div className="bg-white rounded-2xl border border-green-200 p-6 text-center">
+        <CheckCircleIcon className="w-8 h-8 text-green-500 mx-auto" />
+        <p className="font-semibold text-gray-900 mt-2">Sent — thank you.</p>
+        <p className="text-sm text-gray-500 mt-1">
+          We read every one of these{email.trim() ? ` and will reply to ${email.trim()}` : ''}.
+        </p>
+        <button
+          type="button"
+          onClick={() => setState('idle')}
+          className="mt-3 text-sm font-semibold text-primary min-h-[44px]"
+        >
+          Ask something else
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <form onSubmit={send} className="bg-white rounded-2xl border border-gray-200 p-5 sm:p-6">
+      <h2 className="text-lg font-bold text-gray-900">Still have a question?</h2>
+      <p className="text-sm text-gray-500 mt-1">
+        Ask about anything above — or tell us what the app is missing. It lands in our inbox.
+      </p>
+
+      <label htmlFor="guide-question" className="sr-only">Your question</label>
+      <textarea
+        id="guide-question"
+        value={message}
+        onChange={(e) => setMessage(e.target.value)}
+        rows={4}
+        maxLength={5000}
+        placeholder="What would you like to know?"
+        className="mt-4 w-full rounded-xl border border-gray-200 p-3 text-base text-gray-900 placeholder:text-gray-400 focus:outline-none focus:border-primary/50 resize-y"
+      />
+
+      <label htmlFor="guide-email" className="block text-xs font-medium text-gray-500 mt-3">
+        Where should we reply?
+      </label>
+      <input
+        id="guide-email"
+        type="email"
+        value={email}
+        onChange={(e) => setEmail(e.target.value)}
+        autoCapitalize="none"
+        autoCorrect="off"
+        spellCheck={false}
+        placeholder="you@example.com"
+        className="mt-1 w-full min-h-[48px] px-3 rounded-xl border border-gray-200 text-base text-gray-900 placeholder:text-gray-400 focus:outline-none focus:border-primary/50"
+      />
+
+      {state === 'error' && (
+        <p className="text-sm text-red-600 mt-3">{error}</p>
+      )}
+
+      <button
+        type="submit"
+        disabled={!canSend}
+        style={{ touchAction: 'manipulation' }}
+        className="mt-4 w-full min-h-[48px] rounded-xl bg-primary text-white font-semibold disabled:opacity-40 active:opacity-80"
+      >
+        {state === 'sending' ? 'Sending…' : 'Send question'}
+      </button>
+    </form>
   );
 }
 
@@ -145,7 +250,7 @@ export default function FeatureGuidePage() {
           </div>
         )}
 
-        <div className="mt-6 space-y-8 pb-16">
+        <div className="mt-6 space-y-8">
           {sections.map((section) => (
             <section key={section.id}>
               <h2 className="text-lg font-bold text-gray-900">{section.title}</h2>
@@ -157,6 +262,10 @@ export default function FeatureGuidePage() {
               </div>
             </section>
           ))}
+        </div>
+
+        <div className="mt-10 pb-16">
+          <QuestionForm user={user} />
         </div>
       </div>
     </div>
