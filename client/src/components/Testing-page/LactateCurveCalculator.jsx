@@ -4,6 +4,7 @@ import { Line } from 'react-chartjs-2';
 import api from '../../services/api';
 import { calculateZonesFromTest } from './zoneCalculator';
 import { downloadLactateReportPdf, generatePdfBlob } from './LactateReportPdf';
+import { canShareFiles, makePdfFile, openPdfBlob } from '../../utils/openPdfBlob';
 import ThresholdMethodPicker from './ThresholdMethodPicker';
 import TestComparisonPanel from './TestComparisonPanel';
 import AiTestCoach from './AiTestCoach';
@@ -900,6 +901,9 @@ const LactateCurveCalculator = ({
   // further down. handleDownloadPdf is declared later in the body but assigned
   // before any effect runs, so calling it here is safe.
   const autoPdfFiredRef = useRef(false);
+  // The blob behind pdfPreviewUrl. Kept so "Open full PDF" can reach the native
+  // share sheet without an await first — iOS revokes user activation across one.
+  const pdfPreviewBlobRef = useRef(null);
   useEffect(() => {
     const wanted = autoOpenPdfPreview !== null
       ? autoOpenPdfPreview
@@ -1258,6 +1262,7 @@ const LactateCurveCalculator = ({
       const blob = await generatePdfBlob(buildPdfParams());
       const url  = URL.createObjectURL(blob);
       if (pdfPreviewUrl) URL.revokeObjectURL(pdfPreviewUrl);
+      pdfPreviewBlobRef.current = blob;
       setPdfPreviewUrl(url);
       setShowPdfPreview(true);
     } catch (e) {
@@ -1275,6 +1280,7 @@ const LactateCurveCalculator = ({
       const blob = await generatePdfBlob(buildPdfParams());
       const url  = URL.createObjectURL(blob);
       if (pdfPreviewUrl) URL.revokeObjectURL(pdfPreviewUrl);
+      pdfPreviewBlobRef.current = blob;
       setPdfPreviewUrl(url);
     } catch (e) {
       console.error('[handleRegeneratePdfPreview]', e);
@@ -1332,37 +1338,32 @@ const LactateCurveCalculator = ({
     }
   };
 
-  // On iOS Capacitor, blob URLs can't open in a new tab — convert to base64 and embed
+  // Show the full report. Inside the iOS app there is no tab to open it in, so
+  // the PDF goes to the native sheet instead — see utils/openPdfBlob.
   const handleOpenInBrowser = async () => {
-    if (!pdfPreviewUrl) return;
-    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
-      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-    if (isIOS) {
-      try {
-        const blob = await fetch(pdfPreviewUrl).then(r => r.blob());
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          const dataUrl = reader.result;
-          const win = window.open('', '_blank');
-          if (win) {
-            win.document.write(
-              `<html><head><title>Lactate Report</title></head>` +
-              `<body style="margin:0;background:#000">` +
-              `<embed src="${dataUrl}" type="application/pdf" width="100%" height="100%" />` +
-              `</body></html>`
-            );
-          } else {
-            window.location.href = dataUrl;
-          }
-        };
-        reader.readAsDataURL(blob);
-      } catch (e) {
-        console.error('[LactateCurveCalculator] Failed to open PDF:', e);
-      }
-    } else {
-      window.open(pdfPreviewUrl, '_blank', 'noopener');
+    const blob = pdfPreviewBlobRef.current;
+    if (!blob && !pdfPreviewUrl) return;
+    const date = mockData?.date ? new Date(mockData.date).toISOString().slice(0, 10) : 'report';
+    try {
+      // The preview blob is kept around precisely so this call is the first
+      // thing after the tap: iOS grants the share sheet only while the tap
+      // still counts as user activation.
+      const blobToOpen = blob || await fetch(pdfPreviewUrl).then(r => r.blob());
+      await openPdfBlob(blobToOpen, `lachart-report-${date}.pdf`, {
+        url: blob ? pdfPreviewUrl : undefined,
+        title: 'LaChart Report',
+      });
+    } catch (e) {
+      if (e?.name === 'AbortError') return; // user dismissed the sheet
+      console.error('[LactateCurveCalculator] Failed to open PDF:', e);
+      setPdfStatus({ type: 'error', message: e?.message || 'Could not open the PDF on this device.' });
     }
   };
+
+  // In the app the button opens the iOS sheet (Books, Files, Mail), not a tab.
+  const openPdfLabel = canShareFiles(makePdfFile(new Blob([], { type: 'application/pdf' })))
+    ? 'Open full PDF'
+    : 'Open full PDF in browser';
 
   const thresholds = calculateThresholds(mockDataWithOverrides);
   if (isThresholdDebugEnabled()) {
@@ -3811,7 +3812,7 @@ const LactateCurveCalculator = ({
                           className="flex items-center justify-center gap-2 w-full min-h-[44px] px-4 py-2 rounded-xl bg-primary/10 text-primary text-sm font-semibold touch-manipulation active:opacity-70"
                         >
                           <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
-                          Open full PDF in browser
+                          {openPdfLabel}
                         </button>
                       </div>
                     </div>
