@@ -1,13 +1,12 @@
 import React, { useState, useMemo } from 'react';
 import FormFitnessHelpSheet from '../shared/FormFitnessHelpSheet';
-import { resolveActivityTss } from '../../utils/computeTss';
 import { mergeProfileZones } from '../../utils/inferThresholdsFromActivities';
 import { activityCalendarDateKey, activityOnLocalDay, computePmcFromActivities } from '../../utils/formFitnessFromActivities';
 import { plannedDistanceMetres } from '../../utils/plannedWorkoutDistance';
 import { useAuth } from '../../context/AuthProvider';
 import { formatDistance, resolveDistanceUnitSystem } from '../../utils/unitsConverter';
 import { TSS_DISPLAY_MODE_EVENT } from '../../utils/uiPrefs';
-import { completedSecs } from '../../utils/completedSessionStats';
+import { completedSecs, completedTss } from '../../utils/completedSessionStats';
 
 // ─── date helpers ─────────────────────────────────────────────────────────────
 
@@ -55,14 +54,12 @@ function actDist(a) {
   return Number(a.distance || a.totalDistance || 0);
 }
 
-function actTss(a) {
-  if (!a) return 0;
-  return Number(a.tss || a.trainingLoad || a.totalTSS || a.hrTSS || a.hrTss || 0);
-}
-
-// TSS for an activity: same resolveActivityTss path as web dashboard / calendar.
+// One definition of how hard a session was — utils/completedSessionStats.
+// This card used to hold two: the headline totalled computed TSS while the
+// chart under it read whatever was stored on the activity, so the bars and the
+// number above them described different weeks.
 function tssOrCompute(a, profile, tssUser) {
-  return resolveActivityTss(a, profile, { user: tssUser || profile }) || 0;
+  return completedTss(a, profile, tssUser || profile);
 }
 
 // Planned workout accessors
@@ -226,7 +223,7 @@ export default function WeeklySummaryCard({ activities = [], plannedWorkouts = [
   const plannedTotalDist = weekPlanned.reduce((s, p) => s + pwDist(p), 0);
 
   // ── per-day values ─────────────────────────────────────────────────────────
-  const getVal = (a) => metric === 'TSS' ? actTss(a) : metric === 'Time' ? actSecs(a) : actDist(a);
+  const getVal = (a) => metric === 'TSS' ? tssOrCompute(a, profile, user) : metric === 'Time' ? actSecs(a) : actDist(a);
   const getPw  = (p) => metric === 'TSS' ? pwTss(p)  : metric === 'Time' ? pwSecs(p)  : pwDist(p);
 
   const dayCompleted = weekDays.map((d) => {

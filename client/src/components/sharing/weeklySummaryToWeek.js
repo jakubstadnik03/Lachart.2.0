@@ -4,7 +4,7 @@
  */
 
 import { pickSportKey } from './templates/ShareSportGlyph';
-import { completedSecs } from '../../utils/completedSessionStats';
+import { completedSecs, completedTss } from '../../utils/completedSessionStats';
 
 const DAY_KEYS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
 const SPORT_LABELS = {
@@ -57,8 +57,10 @@ function actDist(a) {
   return Number(a?.distance || a?.totalDistance || 0);
 }
 
-function actTss(a) {
-  return Number(a?.tss || a?.trainingLoad || a?.totalTSS || a?.hrTSS || a?.hrTss || 0);
+// Computed the same way every other week total is — a shared card that
+// disagrees with the app it came from is worse than no card.
+function actTss(a, profile = null, user = null) {
+  return completedTss(a, profile, user);
 }
 
 function activityRouteId(a) {
