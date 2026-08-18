@@ -30,6 +30,7 @@ import NotifIcon from '../Notifications/NotifIcon';
 import { SPORT_ICON_COLORS } from '../shared/SportIcon';
 import ActiveWorkoutBar from '../WorkoutExecution/ActiveWorkoutBar';
 import { Skeleton } from '../common/Skeleton';
+import { activateGuide } from '../../utils/guideEvents';
 import {
   OPEN_TRAINING_ZONES_MODAL_EVENT,
   profileNeedsTrainingZones,
@@ -1080,7 +1081,7 @@ const NativeLayout = ({ athletes = [], athleteStatuses = {}, effectiveAthleteId,
           user={user}
           onProfileTap={() => setShowProfile(true)}
           onBellTap={handleBellTap}
-          onGuideTap={() => navigate('/guide')}
+          onGuideTap={() => activateGuide({ active: location.pathname === '/guide', navigate })}
           guideActive={location.pathname === '/guide'}
           unreadCount={unreadCount}
         />

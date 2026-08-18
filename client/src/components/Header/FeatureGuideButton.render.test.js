@@ -34,4 +34,5 @@ describe('FeatureGuideButton', () => {
     expect(view).not.toContain('aria-current');
     expect(view).toContain('text-gray-500');
   });
+
 });

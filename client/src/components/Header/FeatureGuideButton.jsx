@@ -9,6 +9,7 @@ import React from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { LightBulbIcon } from '@heroicons/react/24/outline';
 import { LightBulbIcon as LightBulbSolid } from '@heroicons/react/24/solid';
+import { activateGuide } from '../../utils/guideEvents';
 
 export default function FeatureGuideButton() {
   const navigate = useNavigate();
@@ -17,10 +18,14 @@ export default function FeatureGuideButton() {
   const active = pathname === '/guide';
   const Icon = active ? LightBulbSolid : LightBulbIcon;
 
+  // Tapping it again on the page itself scrolls back to the top rather than
+  // re-navigating to where you already are — the iOS tab-bar convention.
+  const onClick = () => activateGuide({ active, navigate });
+
   return (
     <button
       type="button"
-      onClick={() => navigate('/guide')}
+      onClick={onClick}
       aria-label="What you can do in LaChart"
       aria-current={active ? 'page' : undefined}
       title="What you can do"

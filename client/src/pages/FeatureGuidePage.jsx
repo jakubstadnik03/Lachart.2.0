@@ -4,12 +4,20 @@
  * Every card ends in a button that opens the actual screen, because a feature
  * tour that leaves you to go find it yourself is a brochure.
  */
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowTopRightOnSquareIcon, CheckCircleIcon, MagnifyingGlassIcon, XMarkIcon } from '@heroicons/react/24/outline';
+import {
+  ArrowTopRightOnSquareIcon,
+  CheckCircleIcon,
+  EnvelopeIcon,
+  MagnifyingGlassIcon,
+  XMarkIcon,
+} from '@heroicons/react/24/outline';
 import { useAuth } from '../context/AuthProvider';
 import { sendContactEmail } from '../services/contactEmail';
 import { buildFeatureGuide, countFeatures, isCoachViewer } from '../content/featureGuide';
+import { pinShellDuringKeyboard, scrollIntoViewWithin, scrollToTopWithin } from '../utils/scrollWithin';
+import { GUIDE_SCROLL_TOP_EVENT } from '../utils/guideEvents';
 
 function FeatureCard({ entry, onOpen }) {
   const Icon = entry.icon;
@@ -64,11 +72,11 @@ function FeatureCard({ entry, onOpen }) {
 /**
  * The bottom of the guide, for the thing the guide did not answer.
  *
- * It goes to the same /feedback endpoint the app already has — which now
- * emails it — rather than a mailto: link, because tapping mailto inside the
- * iOS app leaves the app, and most people do not come back.
+ * It goes through the EmailJS service the app already uses for its feedback
+ * widget, rather than a mailto: link — tapping mailto inside the iOS app hands
+ * the athlete to Mail, and most people do not come back.
  */
-function QuestionForm({ user }) {
+const QuestionForm = React.forwardRef(function QuestionForm({ user, textareaRef }, ref) {
   const [message, setMessage] = useState('');
   const [email, setEmail] = useState(user?.email || '');
   const [state, setState] = useState('idle'); // idle | sending | sent | error
@@ -99,7 +107,7 @@ function QuestionForm({ user }) {
 
   if (state === 'sent') {
     return (
-      <div className="bg-white rounded-2xl border border-green-200 p-6 text-center">
+      <div ref={ref} className="bg-white rounded-2xl border border-green-200 p-6 text-center">
         <CheckCircleIcon className="w-8 h-8 text-green-500 mx-auto" />
         <p className="font-semibold text-gray-900 mt-2">Sent — thank you.</p>
         <p className="text-sm text-gray-500 mt-1">
@@ -117,7 +125,7 @@ function QuestionForm({ user }) {
   }
 
   return (
-    <form onSubmit={send} className="bg-white rounded-2xl border border-gray-200 p-5 sm:p-6">
+    <form ref={ref} onSubmit={send} className="bg-white rounded-2xl border border-gray-200 p-5 sm:p-6">
       <h2 className="text-lg font-bold text-gray-900">Still have a question?</h2>
       <p className="text-sm text-gray-500 mt-1">
         Ask about anything above — or tell us what the app is missing. It lands in our inbox.
@@ -125,6 +133,8 @@ function QuestionForm({ user }) {
 
       <label htmlFor="guide-question" className="sr-only">Your question</label>
       <textarea
+        ref={textareaRef}
+        onFocus={() => pinShellDuringKeyboard()}
         id="guide-question"
         value={message}
         onChange={(e) => setMessage(e.target.value)}
@@ -139,6 +149,7 @@ function QuestionForm({ user }) {
       </label>
       <input
         id="guide-email"
+        onFocus={() => pinShellDuringKeyboard()}
         type="email"
         value={email}
         onChange={(e) => setEmail(e.target.value)}
@@ -163,15 +174,38 @@ function QuestionForm({ user }) {
       </button>
     </form>
   );
-}
+});
 
 export default function FeatureGuidePage() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const [query, setQuery] = useState('');
 
+  const rootRef = useRef(null);
+  const formRef = useRef(null);
+  const questionRef = useRef(null);
+
   const isCoach = isCoachViewer(user);
   const isAdmin = user?.role === 'admin' || user?.admin === true;
+
+  // Tapping the header icon again, while already here, scrolls back to the top
+  // — the same thing tapping an active tab does everywhere else on iOS.
+  useEffect(() => {
+    const onScrollTop = () => scrollToTopWithin(rootRef.current);
+    window.addEventListener(GUIDE_SCROLL_TOP_EVENT, onScrollTop);
+    return () => window.removeEventListener(GUIDE_SCROLL_TOP_EVENT, onScrollTop);
+  }, []);
+
+  const goToForm = () => {
+    scrollIntoViewWithin(formRef.current);
+    // Focusing mid-scroll fights the animation on iOS; let it land first. The
+    // keyboard then scrolls the document to reveal the field, which in the
+    // fixed native shell only drags the chrome away — so put it back.
+    setTimeout(() => {
+      questionRef.current?.focus();
+      pinShellDuringKeyboard();
+    }, 450);
+  };
   // Only the profile's own token proves a connection here; the guide is not
   // worth an API round-trip, and "unknown" simply keeps the card visible.
   const stravaConnected = user?.strava?.accessToken || user?.strava?.athleteId ? true : undefined;
@@ -195,13 +229,26 @@ export default function FeatureGuidePage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div ref={rootRef} className="min-h-screen bg-gray-50">
       <div className="max-w-5xl mx-auto px-4 py-6 sm:py-10">
-        <header>
-          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">What you can do in LaChart</h1>
-          <p className="text-sm text-gray-500 mt-1.5 leading-relaxed">
-            {total} things this app does, each one a tap away. Tap any card to go straight there.
-          </p>
+        <header className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">What you can do in LaChart</h1>
+            <p className="text-sm text-gray-500 mt-1.5 leading-relaxed">
+              {total} things this app does, each one a tap away. Tap any card to go straight there.
+            </p>
+          </div>
+          {/* Up here as well as at the bottom: someone who cannot find what they
+              came for should not have to scroll past thirty cards to ask. */}
+          <button
+            type="button"
+            onClick={goToForm}
+            style={{ touchAction: 'manipulation' }}
+            className="flex-shrink-0 inline-flex items-center gap-1.5 min-h-[44px] px-3 sm:px-4 rounded-xl border border-gray-200 bg-white text-sm font-semibold text-primary active:opacity-70 hover:border-primary/40"
+          >
+            <EnvelopeIcon className="w-4 h-4" />
+            <span>Contact</span>
+          </button>
         </header>
 
         <div className="relative mt-5">
@@ -265,7 +312,7 @@ export default function FeatureGuidePage() {
         </div>
 
         <div className="mt-10 pb-16">
-          <QuestionForm user={user} />
+          <QuestionForm ref={formRef} textareaRef={questionRef} user={user} />
         </div>
       </div>
     </div>
