@@ -22,6 +22,7 @@ import {
 } from '../utils/planDraft';
 import { startOfWeek, addDays, filterItemsForWeek } from '../components/WorkoutPlanner/plannerWeekUtils';
 import { buildTrainingHistoryProfile } from '../utils/trainingHistoryProfile';
+import { attachStepsToPlannedWorkouts } from '../utils/planSessionSteps';
 import {
   getPlannedWorkouts, createPlannedWorkout, updatePlannedWorkout,
   deletePlannedWorkout, getWorkoutTemplates,
@@ -257,6 +258,9 @@ export default function WorkoutPlannerPage() {
   // calendar until the athlete commits it. Unfinished drafts survive a reload.
   const [draft, setDraft] = useState(() => listDrafts()[0] || null);
   const [committing, setCommitting] = useState(null); // { done, total }
+  // What the last commit created, so it can be taken back off the calendar.
+  const [lastCommit, setLastCommit] = useState(null); // { draft, ids, at, partial? }
+  const [undoing, setUndoing] = useState(false);
 
   const updateDraft = useCallback((next) => {
     setDraft(next);
@@ -300,7 +304,10 @@ export default function WorkoutPlannerPage() {
 
   const commitDraft = useCallback(async () => {
     if (!draft) return;
-    const payloads = draftToPlannedWorkouts(draft);
+    // Structure is attached here rather than in the draft: the preview is about
+    // the shape of the block, and a session only needs its intervals once it is
+    // a real workout someone might open.
+    const payloads = attachStepsToPlannedWorkouts(draftToPlannedWorkouts(draft));
     setCommitting({ done: 0, total: payloads.length });
     const created = [];
     try {
@@ -314,11 +321,18 @@ export default function WorkoutPlannerPage() {
         setCommitting({ done: created.length, total: payloads.length });
       }
       setPlanned((prev) => [...prev, ...created]);
+      // Keep what was created, and the draft that produced it, so the whole
+      // block can be taken back off the calendar in one action. Forty sessions
+      // deleted one at a time is not an undo.
+      setLastCommit({ draft, ids: created.map((c) => c._id).filter(Boolean), at: Date.now() });
       deleteDraft(draft.id);
       setDraft(null);
       addNotification(`${created.length} sessions added to your calendar`, 'success');
     } catch {
       setPlanned((prev) => [...prev, ...created]);
+      setLastCommit(created.length
+        ? { draft, ids: created.map((c) => c._id).filter(Boolean), at: Date.now(), partial: true }
+        : null);
       addNotification(
         `Saved ${created.length} of ${payloads.length} sessions — the rest are still in the draft`,
         'error',
@@ -327,6 +341,45 @@ export default function WorkoutPlannerPage() {
       setCommitting(null);
     }
   }, [draft, coachAthleteId, addNotification]);
+
+  /**
+   * Take the whole block back off the calendar.
+   *
+   * Deleting is best-effort per session: one that has already been edited or
+   * removed elsewhere must not stop the other thirty-nine from going, and the
+   * draft comes back either way so the block is not lost with it.
+   */
+  const undoCommit = useCallback(async () => {
+    if (!lastCommit?.ids?.length) return;
+    setUndoing(true);
+    const removed = new Set();
+    try {
+      for (const id of lastCommit.ids) {
+        try {
+          // eslint-disable-next-line no-await-in-loop
+          await deletePlannedWorkout(id, coachAthleteId);
+          removed.add(String(id));
+        } catch {
+          // Already gone, or someone else's now — either way, not ours to fix.
+        }
+      }
+      setPlanned((prev) => prev.filter((p) => !removed.has(String(p._id))));
+      if (lastCommit.draft) {
+        saveDraft(lastCommit.draft);
+        setDraft(lastCommit.draft);
+      }
+      const missed = lastCommit.ids.length - removed.size;
+      addNotification(
+        missed === 0
+          ? `${removed.size} sessions removed — the block is back as a draft`
+          : `${removed.size} removed, ${missed} could not be (already changed). The block is back as a draft`,
+        missed === 0 ? 'success' : 'warning',
+      );
+      setLastCommit(null);
+    } finally {
+      setUndoing(false);
+    }
+  }, [lastCommit, coachAthleteId, addNotification]);
 
   // ── CRUD handlers ─────────────────────────────────────────────────────────
   const handleSave = async (data) => {
@@ -518,6 +571,34 @@ export default function WorkoutPlannerPage() {
             onDiscard={discardDraft}
             committing={committing}
           />
+        </div>
+      ) : lastCommit ? (
+        /* The block is on the calendar. Until this is dismissed it can go back
+           off it in one action — the alternative is deleting forty sessions by
+           hand, which is not an undo. */
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-3 py-2.5">
+          <div className="text-sm text-emerald-900 min-w-0">
+            <span className="font-semibold">{lastCommit.ids.length} sessions</span> added to your calendar
+            {lastCommit.partial ? ' (some of the block did not save)' : ''}.
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={undoCommit}
+              disabled={undoing}
+              className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-white border border-emerald-300 text-emerald-800 hover:bg-emerald-100 disabled:opacity-50"
+            >
+              {undoing ? 'Removing…' : 'Undo — remove them again'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setLastCommit(null)}
+              disabled={undoing}
+              className="px-2 py-1.5 text-xs font-semibold text-emerald-700 hover:text-emerald-900 disabled:opacity-50"
+            >
+              Keep
+            </button>
+          </div>
         </div>
       ) : intakeOpen ? (
         <div className="mb-4">

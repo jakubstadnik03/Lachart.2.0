@@ -393,6 +393,10 @@ export function draftToPlannedWorkouts(draft) {
         title: s.title,
         targetTss: s.targetTss,
         plannedDuration: s.plannedDuration,
+        // What the generator meant by this session — the structure builder
+        // needs it to know that "Threshold 3x10min" is a run threshold set
+        // rather than a title to match against.
+        key: s.key,
       });
     }
   }
