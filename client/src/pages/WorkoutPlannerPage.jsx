@@ -22,6 +22,7 @@ import {
 } from '../utils/planDraft';
 import { startOfWeek, addDays, filterItemsForWeek } from '../components/WorkoutPlanner/plannerWeekUtils';
 import { buildTrainingHistoryProfile } from '../utils/trainingHistoryProfile';
+import { computePmcFromActivities } from '../utils/formFitnessFromActivities';
 import { attachStepsToPlannedWorkouts } from '../utils/planSessionSteps';
 import {
   getPlannedWorkouts, createPlannedWorkout, updatePlannedWorkout,
@@ -278,6 +279,21 @@ export default function WorkoutPlannerPage() {
     () => buildTrainingHistoryProfile(chartActivities, { userProfile, user }),
     [chartActivities, userProfile, user],
   );
+
+  /**
+   * Where the athlete's fitness actually is — the block projection continues
+   * from the last point of this rather than starting from zero, so the forecast
+   * joins the line they already know from the dashboard.
+   */
+  const pmcSeries = useMemo(() => {
+    const acts = calendarActivities.length ? calendarActivities : chartActivities;
+    if (!acts.length) return null;
+    try {
+      return computePmcFromActivities(acts, userProfile, { tssUser: user }).series;
+    } catch {
+      return null;
+    }
+  }, [calendarActivities, chartActivities, userProfile, user]);
 
   const startDraft = useCallback((opts) => {
     const built = buildBlockDraft(opts?.sports ? opts : {
@@ -570,6 +586,7 @@ export default function WorkoutPlannerPage() {
             onCommit={commitDraft}
             onDiscard={discardDraft}
             committing={committing}
+            pmcSeries={pmcSeries}
           />
         </div>
       ) : lastCommit ? (

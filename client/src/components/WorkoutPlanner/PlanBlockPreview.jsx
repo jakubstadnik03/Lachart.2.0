@@ -3,6 +3,7 @@
  *
  * Two views of the same draft, because they answer different questions:
  *   Shape  — is this a sensible block? volume and intensity, week by week
+ *   Form   — where does it leave me? fitness, fatigue and form day by day
  *   Dates  — does it actually fit my life? the same sessions on real days
  *
  * Nothing here writes to the server. The commit bar is the only path out, and
@@ -23,6 +24,7 @@ import {
   removeDraftSession,
   weekSummary,
 } from '../../utils/planDraft';
+import { projectBlock } from '../../utils/planBlockProjection';
 
 const PHASE_COLOR = {
   base: '#60A5FA',
@@ -57,16 +59,19 @@ function formatDay(key) {
  * share of that volume coming from hard work. One chart, both axes an athlete
  * actually plans around.
  */
-function ShapeChart({ weeks, selected, onSelect }) {
+function ShapeChart({ weeks, selected, onSelect, metric = 'tss' }) {
   const summaries = weeks.map(weekSummary);
-  const maxTss = Math.max(1, ...summaries.map((s) => s.tss));
+  // Hours and load do not rise together — a peak week can carry more load in
+  // fewer hours — so the bars are drawn against whichever the athlete asked for.
+  const valueOf = (s) => (metric === 'hours' ? s.hours : s.tss);
+  const max = Math.max(0.1, ...summaries.map(valueOf));
 
   return (
     <div>
       <div className="flex items-end gap-1.5" style={{ height: 130 }}>
         {weeks.map((week, i) => {
           const s = summaries[i];
-          const h = (s.tss / maxTss) * 100;
+          const h = (valueOf(s) / max) * 100;
           const hardH = (s.intensityPct / 100) * h;
           const active = selected === i;
           return (
@@ -108,15 +113,82 @@ function ShapeChart({ weeks, selected, onSelect }) {
           );
         })}
       </div>
-      <div className="flex gap-3 mt-2">
+      <div className="flex flex-wrap gap-3 mt-2">
         <span className="inline-flex items-center gap-1 text-[10px] text-gray-500">
-          <span className="w-2 h-2 rounded-sm" style={{ background: '#60A5FA', opacity: 0.35 }} /> Volume
+          <span className="w-2 h-2 rounded-sm" style={{ background: '#60A5FA', opacity: 0.35 }} />
+          {metric === 'hours' ? 'Hours' : 'Volume'}
         </span>
         <span className="inline-flex items-center gap-1 text-[10px] text-gray-500">
           <span className="w-2 h-2 rounded-sm" style={{ background: '#1D4ED8' }} /> From hard sessions
         </span>
         <span className="inline-flex items-center gap-1 text-[10px] text-sky-600">↓ Recovery week</span>
       </div>
+    </div>
+  );
+}
+
+/**
+ * What the block does to fitness, fatigue and form.
+ *
+ * Drawn by hand rather than through a chart library: three lines over six
+ * weeks needs no axis machinery, and the preview should not pull a charting
+ * bundle into the planner for it.
+ */
+function ProjectionChart({ projection }) {
+  const days = projection?.days || [];
+  if (days.length < 2) return null;
+
+  const W = 100;
+  const H = 46;
+  const values = days.flatMap((d) => [d.Fitness, d.Fatigue, d.Form]);
+  const min = Math.min(0, ...values);
+  const max = Math.max(1, ...values);
+  const span = Math.max(1, max - min);
+
+  const x = (i) => (i / (days.length - 1)) * W;
+  const y = (v) => H - ((v - min) / span) * H;
+  const path = (key) => days.map((d, i) => `${i === 0 ? 'M' : 'L'}${x(i).toFixed(2)},${y(d[key]).toFixed(2)}`).join(' ');
+  const zeroY = y(0);
+
+  const summary = [
+    { label: 'Fitness', from: projection.start.fitness, to: projection.end.fitness, color: '#2563EB' },
+    { label: 'Fatigue', from: projection.start.fatigue, to: projection.end.fatigue, color: '#F97316' },
+    { label: 'Form', from: projection.start.form, to: projection.end.form, color: '#059669' },
+  ];
+
+  return (
+    <div>
+      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="w-full" style={{ height: 130 }}>
+        {/* Form crossing zero is the line that matters: below it is fatigue
+            carried, above it is freshness. */}
+        <line x1="0" y1={zeroY} x2={W} y2={zeroY} stroke="#CBD5E1" strokeWidth="0.4" strokeDasharray="2 2" />
+        <path d={path('Fitness')} fill="none" stroke="#2563EB" strokeWidth="1.1" vectorEffect="non-scaling-stroke" />
+        <path d={path('Fatigue')} fill="none" stroke="#F97316" strokeWidth="1.1" vectorEffect="non-scaling-stroke" />
+        <path d={path('Form')} fill="none" stroke="#059669" strokeWidth="1.1" vectorEffect="non-scaling-stroke" />
+      </svg>
+
+      <div className="mt-2 grid grid-cols-3 gap-2">
+        {summary.map((s) => (
+          <div key={s.label} className="rounded-lg bg-gray-50 px-2 py-1.5">
+            <div className="flex items-center gap-1">
+              <span className="w-2 h-2 rounded-sm" style={{ background: s.color }} />
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">{s.label}</span>
+            </div>
+            <div className="text-sm font-bold text-gray-900">
+              {s.from} <span className="text-gray-300">→</span> {s.to}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <p className="mt-2 text-[11px] text-gray-500 leading-snug">
+        If every session lands: fitness peaks at{' '}
+        <span className="font-semibold text-gray-700">{projection.peakFitness}</span>, and form bottoms out at{' '}
+        <span className="font-semibold text-gray-700">{projection.lowestForm}</span>
+        {projection.lowestForm < -30
+          ? ' — deep enough that a week of it will feel like a hole, which is what the recovery weeks are for.'
+          : '.'}
+      </p>
     </div>
   );
 }
@@ -230,13 +302,17 @@ export default function PlanBlockPreview({
   onCommit,
   onDiscard,
   committing = null, // { done, total } while committing
+  /** The athlete's real PMC series — the projection continues from its last point. */
+  pmcSeries = null,
 }) {
   const [view, setView] = useState('shape');
+  const [metric, setMetric] = useState('tss');
   const [selectedWeek, setSelectedWeek] = useState(0);
 
   const summary = useMemo(() => draftSummary(draft), [draft]);
   const collisions = useMemo(() => draftCollisions(draft, existingPlanned), [draft, existingPlanned]);
   const collisionsByDate = useMemo(() => new Set(collisions.map((c) => c.date)), [collisions]);
+  const projection = useMemo(() => projectBlock(draft, pmcSeries), [draft, pmcSeries]);
 
   const selectWeek = useCallback((i) => {
     setSelectedWeek(i);
@@ -264,7 +340,13 @@ export default function PlanBlockPreview({
             </div>
           </div>
           <div className="inline-flex p-0.5 rounded-lg bg-gray-100 shrink-0">
-            {[{ id: 'shape', label: 'Shape' }, { id: 'dates', label: 'Dates' }].map((v) => (
+            {[
+              { id: 'shape', label: 'Shape' },
+              // Only offered when there is a real series to continue from —
+              // a projection seeded from nothing is a drawing, not a forecast.
+              ...(projection ? [{ id: 'form', label: 'Form' }] : []),
+              { id: 'dates', label: 'Dates' },
+            ].map((v) => (
               <button
                 key={v.id}
                 type="button"
@@ -281,9 +363,27 @@ export default function PlanBlockPreview({
 
         {view === 'shape' ? (
           <>
-            <ShapeChart weeks={draft.weeks} selected={selectedWeek} onSelect={selectWeek} />
+            <div className="flex justify-end mb-1">
+              <div className="inline-flex p-0.5 rounded-lg bg-gray-100">
+                {[{ id: 'tss', label: 'TSS' }, { id: 'hours', label: 'Hours' }].map((m) => (
+                  <button
+                    key={m.id}
+                    type="button"
+                    onClick={() => setMetric(m.id)}
+                    className={`px-2 py-0.5 rounded-md text-[10px] font-semibold transition-colors ${
+                      metric === m.id ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                    }`}
+                  >
+                    {m.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <ShapeChart weeks={draft.weeks} selected={selectedWeek} onSelect={selectWeek} metric={metric} />
             <WeekDetail draft={draft} weekIndex={selectedWeek} onChange={onChange} />
           </>
+        ) : view === 'form' ? (
+          <ProjectionChart projection={projection} />
         ) : (
           <DatesPreview draft={draft} collisionsByDate={collisionsByDate} />
         )}
