@@ -16,10 +16,12 @@ import WorkoutPlanModal, { stepTotalSecs, toLocalISO } from '../components/Worko
 import PlannerWeekRow from '../components/WorkoutPlanner/PlannerWeekRow';
 import PlannerProgressPanel from '../components/WorkoutPlanner/PlannerProgressPanel';
 import PlanBlockPreview from '../components/WorkoutPlanner/PlanBlockPreview';
+import PlannerIntake from '../components/WorkoutPlanner/PlannerIntake';
 import {
   buildBlockDraft, deleteDraft, draftToPlannedWorkouts, listDrafts, saveDraft,
 } from '../utils/planDraft';
 import { startOfWeek, addDays, filterItemsForWeek } from '../components/WorkoutPlanner/plannerWeekUtils';
+import { buildTrainingHistoryProfile } from '../utils/trainingHistoryProfile';
 import {
   getPlannedWorkouts, createPlannedWorkout, updatePlannedWorkout,
   deletePlannedWorkout, getWorkoutTemplates,
@@ -261,16 +263,34 @@ export default function WorkoutPlannerPage() {
     if (next) saveDraft(next);
   }, []);
 
-  const startDraft = useCallback(() => {
-    updateDraft(buildBlockDraft({
+  const [intakeOpen, setIntakeOpen] = useState(false);
+
+  /**
+   * What the athlete has actually been doing, read from the activities the
+   * page already holds — the intake form defaults from this rather than from
+   * constants, so a block starts where the athlete is.
+   */
+  const historyProfile = useMemo(
+    () => buildTrainingHistoryProfile(chartActivities, { userProfile, user }),
+    [chartActivities, userProfile, user],
+  );
+
+  const startDraft = useCallback((opts) => {
+    const built = buildBlockDraft(opts?.sports ? opts : {
       startDate: anchorWeek,
       weeks: 6,
       weeklyHours: 8,
       sessionsPerWeek: 5,
       recoveryEvery: 4,
       name: '6-week block',
-    }));
-  }, [anchorWeek, updateDraft]);
+    });
+    if (!built) {
+      addNotification('Could not build a block from those numbers', 'error');
+      return;
+    }
+    setIntakeOpen(false);
+    updateDraft(built);
+  }, [anchorWeek, updateDraft, addNotification]);
 
   const discardDraft = useCallback(() => {
     if (draft && !window.confirm('Discard this draft block?')) return;
@@ -499,13 +519,23 @@ export default function WorkoutPlannerPage() {
             committing={committing}
           />
         </div>
+      ) : intakeOpen ? (
+        <div className="mb-4">
+          <PlannerIntake
+            profile={historyProfile}
+            startDate={anchorWeek}
+            isMobile={isMobile}
+            onBuild={startDraft}
+            onCancel={() => setIntakeOpen(false)}
+          />
+        </div>
       ) : (
         <button
           type="button"
-          onClick={startDraft}
+          onClick={() => setIntakeOpen(true)}
           className="mb-4 w-full rounded-2xl border-2 border-dashed border-gray-200 py-3 text-sm font-semibold text-gray-500 hover:border-primary/40 hover:text-primary transition-colors"
         >
-          + Plan a block — build six weeks, review it, then commit
+          + Plan a block — from what you have actually been training
         </button>
       )}
 
