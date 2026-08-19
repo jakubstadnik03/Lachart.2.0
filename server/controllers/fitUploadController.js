@@ -3600,10 +3600,23 @@ function lapToInterval(dist, dur, avgSpeed, date, trainingId, type) {
 
 async function getRunMetrics(req, res) {
   try {
-    const userId = req.user?.id || req.user?._id;
+    // verifyToken puts the raw JWT payload on req.user, and every place that
+    // signs a token calls the field `userId` — never `id` or `_id`. Reading
+    // `req.user.id` here yielded undefined, athleteIdStr became the string
+    // "undefined", and the StravaActivity query below (userId is an ObjectId)
+    // threw a CastError straight into the catch: every self-view request came
+    // back 500 "Failed to compute run metrics" and the Run radar stayed empty.
+    // Only coaches passing an explicit ?athleteId ever got a result.
+    // getPowerMetrics reads req.user.userId, which is why Bike worked and Run
+    // did not. The extra fallbacks cost nothing and survive a payload change.
+    const userId = req.user?.userId || req.user?.id || req.user?._id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
     let athleteId = userId;
     if (req.query.athleteId) {
-      const isCoach = ['coach', 'tester', 'testing', 'admin'].includes(req.user?.role) || req.user?.admin;
+      const role = String(req.user?.role || '').toLowerCase();
+      const isCoach = ['coach', 'tester', 'testing', 'admin'].includes(role) || req.user?.admin;
       if (isCoach) athleteId = req.query.athleteId;
     }
     const athleteIdStr = String(athleteId);

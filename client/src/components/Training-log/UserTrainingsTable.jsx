@@ -193,8 +193,14 @@ const UserTrainingsTable = ({ trainings = [], onTrainingUpdate }) => {
   const { deleteTraining: removeTrainingFromContext } = useTrainings();
   const { addNotification } = useNotification(); // Přidáme hook pro notifikace
 
-  // Filter state — default to showing only "exported / curated" trainings
-  const [showExportedOnly, setShowExportedOnly] = useState(true);
+  // Filter state — default to showing everything the page loaded.
+  // This used to default to "curated only", which silently hid the whole log:
+  // /training already pulls the same activity feeds as the Training Calendar
+  // (manual + FIT + Strava/Garmin), but a freshly-synced Strava run has no
+  // laps, no category and no lactate yet, so isCurated() dropped it and the
+  // table read "0 sessions" next to a Field Lactate panel listing twelve runs.
+  // The toggle stays — it just no longer turns itself on.
+  const [showExportedOnly, setShowExportedOnly] = useState(false);
   const [filterCategory, setFilterCategory] = useState('all');
   const [filterSport,    setFilterSport]    = useState('all');
 

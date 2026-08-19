@@ -203,5 +203,37 @@ function filterWorkResults(results, sport = '') {
   return results;
 }
 
-export { filterWorkResults, getMetricValue as getWorkLapMetricValue };
+/**
+ * Same verdict as filterWorkResults, expressed as a tag rather than a deletion.
+ *
+ * filterWorkResults answers "which laps are the work?" by throwing the rest
+ * away, which is right for averages but wrong for a chart of a Strava interval
+ * session: the recoveries are half of what the session *was*. This keeps every
+ * lap and writes the answer onto it, so the charts' existing intervalType
+ * colours (grey recovery, amber warm-up, blue cool-down) and the tooltip's
+ * Work/Recovery chip light up for raw imports that carry no tags of their own.
+ *
+ * Delegating to filterWorkResults rather than re-deriving is the point — a
+ * second copy of the heuristics would drift, and then the bar the chart greys
+ * out and the lap the averages exclude would stop being the same lap.
+ *
+ * Laps that already carry an intervalType (device- or user-authored) are left
+ * exactly as they are; this only fills in the blanks.
+ *
+ * @param {LapResult[]|null|undefined} results
+ * @param {string} [sport]
+ * @returns {LapResult[]} same length and order as the input
+ */
+function classifyWorkLaps(results, sport = '') {
+  if (!Array.isArray(results) || results.length === 0) return results || [];
+
+  const work = new Set(filterWorkResults(results, sport));
+  return results.map((r) => {
+    if (!r || typeof r !== 'object') return r;
+    if (String(r.intervalType || '').trim()) return r;
+    return { ...r, intervalType: work.has(r) ? 'work' : 'recovery' };
+  });
+}
+
+export { filterWorkResults, classifyWorkLaps, getMetricValue as getWorkLapMetricValue };
 export default filterWorkResults;

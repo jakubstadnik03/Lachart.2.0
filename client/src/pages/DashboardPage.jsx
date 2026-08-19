@@ -6,6 +6,7 @@ import { compareActivitiesChronologically } from '../utils/calendarDayOrdering';
 import { mapExternalActivitiesToCalendar } from '../utils/mapExternalActivityToCalendar';
 import { buildCalendarActivitiesFromTrainings } from '../utils/calendarActivitiesFromTrainings';
 import { dedupeTrainingHistory } from '../utils/dedupeTrainingHistory';
+import { looksLikeIntervalSession } from '../utils/intervalSessionScore';
 import NativeDashboardPage from './NativeDashboardPage';
 import { useAthleteSelection } from '../context/AthleteSelectionContext';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
@@ -885,10 +886,23 @@ export default function DashboardPage() {
           : t.healthKitId != null ? 'apple_health'
           : null
         );
-        if (src === 'strava' || src === 'fit' || src === 'garmin' || src === 'apple_health') return false;
         const idStr = String(t.id || '');
-        if (idStr.startsWith('strava-') || idStr.startsWith('fit-')
-            || idStr.startsWith('garmin-') || idStr.startsWith('apple-')) return false;
+        const isExternal = src === 'strava' || src === 'fit' || src === 'garmin' || src === 'apple_health'
+          || idStr.startsWith('strava-') || idStr.startsWith('fit-')
+          || idStr.startsWith('garmin-') || idStr.startsWith('apple-');
+        if (isExternal) {
+          // Blanket exclusion used to be the rule here, because a synced ride
+          // arrives with no laps and lands in the picker as a chart with
+          // nothing in it. That is still true of a steady ride — but not of an
+          // interval session, which is exactly the session worth looking at.
+          // So the gate is structure, not provider: an import that scores as
+          // intervals (repeated, evenly-timed laps) is admitted, and its laps
+          // are fetched on selection like any other Strava-backed session.
+          //
+          // Apple Health can never qualify — those workouts store a summary and
+          // no laps — so it falls out here on lapCount rather than by name.
+          return (src === 'strava' || src === 'garmin') && looksLikeIntervalSession(t);
+        }
         return !!t._id || !t.source;
       })
       .sort((a, b) => {
@@ -963,8 +977,16 @@ export default function DashboardPage() {
       // Optionally enrich with FIT trainings and Strava activities (same as TrainingPage)
       const [fitResponse, stravaResponse] = await Promise.all([
         api.get(`/api/fit/trainings`, { params: { athleteId: targetId } }).catch(() => ({ data: [] })),
+        // withLapSignals adds lapCount + lapDurationCv per activity (two numbers,
+        // not the laps) so exportedTrainings below can tell an interval session
+        // from a steady ride without fetching each activity's detail.
         api.get(`/api/integrations/activities`, {
-          params: { athleteId: targetId, summaryOnly: true, limit: MAX_DASHBOARD_CALENDAR_ACTIVITIES },
+          params: {
+            athleteId: targetId,
+            summaryOnly: true,
+            limit: MAX_DASHBOARD_CALENDAR_ACTIVITIES,
+            withLapSignals: true,
+          },
           cacheTtlMs: 60000,
         }).catch(() => ({ data: [] }))
       ]);

@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { Line } from "react-chartjs-2";
 import {
   Chart as ChartJS,
@@ -15,7 +15,8 @@ import { useAuth } from '../../context/AuthProvider';
 import { resolveDistanceUnitSystem } from '../../utils/unitsConverter';
 import { SearchableSelect } from '../SearchableSelect';
 import { getStravaActivityDetail } from '../../services/api';
-import { filterWorkResults } from '../../utils/workLapFilter';
+import { classifyWorkLaps } from '../../utils/workLapFilter';
+import { canChartTraining, getChartIntervals } from '../../utils/trainingChartIntervals';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend);
 
@@ -235,6 +236,7 @@ const TrainingGraph = ({
     (training, sport) => sport === 'all' || trainingSport(training) === normalizeSport(sport),
     [trainingSport, normalizeSport]
   );
+
   // Strava activities use `id`, FIT/regular use `_id` — match either (+ stravaId).
   const matchesId = useCallback((t, id) => {
     if (t == null || id == null) return false;
@@ -264,6 +266,22 @@ const TrainingGraph = ({
   });
 
   const currentSelectedSport = selectedSport ? normalizeSport(selectedSport) : internalSelectedSport;
+
+  /**
+   * Drop sessions this chart has nothing to plot — the same rule the Training
+   * History picker applies. Listing one only to answer "No interval data for
+   * this training" is worse than not listing it at all.
+   *
+   * `cache` holds whatever Strava laps have already been fetched; a session
+   * still waiting on that fetch counts as unknown and stays listed.
+   */
+  const chartable = useCallback(
+    (list, cache = {}) => (list || []).filter(
+      (t) => canChartTraining(t, cache, resolveTrainingSport(t) || normalizeSport(currentSelectedSport)),
+    ),
+    [resolveTrainingSport, normalizeSport, currentSelectedSport],
+  );
+
   const setCurrentSelectedSport = (value) => {
     const v = normalizeSport(value);
     if (setSelectedSport) setSelectedSport(v); else setInternalSelectedSport(v);
@@ -276,6 +294,14 @@ const TrainingGraph = ({
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [fetchedLaps, setFetchedLaps] = useState(null); // { id, results } — lazy-loaded Strava laps
   const [lapsLoading, setLapsLoading] = useState(false);
+
+  // This panel fetches laps one activity at a time; getChartIntervals and
+  // canChartTraining both expect the keyed cache Training History keeps. Same
+  // contents, shape they can read.
+  const stravaLapsCache = useMemo(
+    () => (fetchedLaps?.id ? { [fetchedLaps.id]: fetchedLaps.results } : {}),
+    [fetchedLaps],
+  );
 
   // Convert Strava lap to TrainingGraph results format
   const stravaLapToResult = useCallback((lap, idx, sport) => {
@@ -386,7 +412,13 @@ const TrainingGraph = ({
   useEffect(() => {
     if (!trainingList || trainingList.length === 0) return;
     setLoading(false);
-    const sportTrainings = currentSelectedSport === 'all' ? trainingList : trainingList.filter((t) => matchesSport(t, currentSelectedSport));
+    // Same chartable filter the dropdowns use, so the default selection can't
+    // land on a session that renders "No interval data". Deliberately called
+    // with an empty lap cache: pending Strava fetches stay eligible here, which
+    // also keeps fetchedLaps out of this effect's dependencies.
+    const sportTrainings = chartable(
+      currentSelectedSport === 'all' ? trainingList : trainingList.filter((t) => matchesSport(t, currentSelectedSport)),
+    );
     if (sportTrainings.length === 0) {
       // Don't reset selectedTitle — a sibling may still have a valid match.
       if (setSelectedTraining) setSelectedTraining(null);
@@ -435,7 +467,7 @@ const TrainingGraph = ({
       if (setSelectedTitle) setSelectedTitle(newest.title);
       if (setSelectedTraining) setSelectedTraining(newest._id || newest.id);
     }
-  }, [currentSelectedSport, trainingList, selectedTraining, selectedTitle, setSelectedTitle, setSelectedTraining, matchesSport, matchesId, trainingDateMs]);
+  }, [currentSelectedSport, trainingList, selectedTraining, selectedTitle, setSelectedTitle, setSelectedTraining, matchesSport, matchesId, trainingDateMs, chartable]);
 
   const computeRanges = useCallback((resultsArr, sport) => {
     const sportKey = normalizeSport(sport);
@@ -471,9 +503,12 @@ const TrainingGraph = ({
     if (selectedTraining && trainingList?.length > 0) {
       const selectedData = trainingList.find(t => matchesId(t, selectedTraining));
       const sport = resolveTrainingSport(selectedData);
-      const resultsArr = filterWorkResults(
-        selectedData?.results?.length > 0 ? selectedData.results : (fetchedLaps?.results ?? []),
-        sport
+      // Must resolve the same laps effectiveResults does, or the axes get
+      // scaled to the work intervals while the chart also draws the recoveries
+      // — and every rest lap lands below the floor.
+      const resultsArr = classifyWorkLaps(
+        getChartIntervals(selectedData, stravaLapsCache, sport),
+        sport,
       );
       if (resultsArr.length > 0) {
         setRanges(computeRanges(resultsArr, selectedData?.sport));
@@ -484,7 +519,7 @@ const TrainingGraph = ({
     const handleClickOutside = (e) => { if (settingsRef.current && !settingsRef.current.contains(e.target)) setIsSettingsOpen(false); };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [selectedTraining, trainingList, fetchedLaps, normalizeSport, matchesId, computeRanges, resolveTrainingSport]);
+  }, [selectedTraining, trainingList, stravaLapsCache, normalizeSport, matchesId, computeRanges, resolveTrainingSport]);
 
   // ── Shared header button ────────────────────────────────────────────────
   const SettingsButton = () => (
@@ -532,9 +567,12 @@ const TrainingGraph = ({
     </div>
   );
 
-  const sportTrainings = currentSelectedSport === 'all'
-    ? (trainingList || [])
-    : (trainingList || []).filter((t) => matchesSport(t, currentSelectedSport));
+  const sportTrainings = chartable(
+    currentSelectedSport === 'all'
+      ? (trainingList || [])
+      : (trainingList || []).filter((t) => matchesSport(t, currentSelectedSport)),
+    stravaLapsCache,
+  );
   const uniqueTitles = [...new Set(sportTrainings.map(t => t.title))];
 
   if (trainingList.length === 0 || sportTrainings.length === 0) return (
@@ -554,14 +592,26 @@ const TrainingGraph = ({
 
   const selectedTrainingData = trainingList.find(t => matchesId(t, selectedTraining));
 
-  // Use fetched Strava laps when the activity has no local results.
-  // Only the work intervals are plotted — warm-up / recovery / cool-down / rest
-  // laps are filtered out (see filterWorkResults).
-  const effectiveResults = filterWorkResults(
-    (selectedTrainingData?.results?.length > 0)
-      ? selectedTrainingData.results
-      : (fetchedLaps?.results ?? []),
-    resolveTrainingSport(selectedTrainingData)
+  // Resolved by getChartIntervals — the same function Training History uses.
+  //
+  // This panel used to roll its own precedence: own `results`, else fetched
+  // Strava laps, and nothing else. Training History meanwhile merges results,
+  // the local `laps[]` and the fetch cache and keeps whichever is fullest. Same
+  // session, same array, two answers — which is why a training could draw
+  // sixteen bars on the left and read "No interval data for this training" on
+  // the right. One resolver removes the possibility rather than patching the
+  // symptom, and canChartTraining (which gates the dropdowns) is built on it
+  // too, so all three now agree by construction.
+  //
+  // The whole session is plotted, not just the work intervals: dropping the
+  // recoveries made sense while this only showed hand-entered sessions, where
+  // they were never typed in. Now that a Strava interval session can land here,
+  // the rests are half of what the session was — classifyWorkLaps tags them
+  // instead, and the bar colours and the Work/Recovery chip do the explaining.
+  const selectedTrainingSport = resolveTrainingSport(selectedTrainingData);
+  const effectiveResults = classifyWorkLaps(
+    getChartIntervals(selectedTrainingData, stravaLapsCache, selectedTrainingSport),
+    selectedTrainingSport,
   );
 
   // Sentinel option that lists every lactate-tagged training regardless of
