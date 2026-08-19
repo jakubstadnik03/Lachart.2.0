@@ -46,7 +46,10 @@ export const AuthProvider = ({ children }) => {
     // Nuclear wipe of localStorage — clears all user data, caches and preferences.
     // We keep only a tiny allow-list of keys that are NOT user-specific.
     // This is safer than a whitelist that always misses newly-added keys.
-    const KEEP_KEYS = new Set(['cookiesAccepted']);
+    // The APNs token identifies the phone, not the account: keeping it is what
+    // lets the next sign-in move the device to its new owner, and the logout
+    // above detach it from the old one.
+    const KEEP_KEYS = new Set(['cookiesAccepted', 'lachart_device_push_token']);
     try {
       const allKeys = [];
       for (let i = 0; i < localStorage.length; i++) {
@@ -360,6 +363,21 @@ export const AuthProvider = ({ children }) => {
 
   const logout = useCallback(async () => {
     try {
+      // Stop this phone from being the previous athlete's. Both halves matter:
+      // the server drops the device token so no more pushes are sent to it,
+      // and the queued local notifications — race countdowns, session
+      // reminders, the morning read — are cancelled, because those live on the
+      // device and would otherwise fire for whoever signs in next.
+      try {
+        const [{ detachPushTokenFromAccount }, { cancelAllLocalNotifications }] = await Promise.all([
+          import('../utils/pushTokenSync'),
+          import('../utils/localNotificationsHelper'),
+        ]);
+        await Promise.allSettled([detachPushTokenFromAccount(), cancelAllLocalNotifications()]);
+      } catch (e) {
+        console.warn('Could not clear notifications on logout:', e?.message || e);
+      }
+
       // Fire-and-forget – nečekáme na pomalý server, UX zůstane rychlé
       api.post('/user/logout').catch((error) => {
         console.error('Logout error (ignored for UX):', error);

@@ -2229,6 +2229,9 @@ export const deleteNotification = (id) => api.delete(`/api/notifications/${id}`)
 export const clearAllNotifications = () => api.delete('/api/notifications');
 
 // Mobile push token registration (Capacitor / Expo)
+export const unregisterPushToken = (expoPushToken) =>
+  api.delete('/user/push-token', { data: { expoPushToken } });
+
 export const registerPushToken = (expoPushToken, meta = {}) =>
   api.post('/user/push-token', { expoPushToken, ...meta });
 export const pingMobileApp = (meta) => api.post('/user/mobile-app-ping', meta);
