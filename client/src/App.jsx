@@ -28,6 +28,7 @@ const Athletes = lazy(() => import('./pages/AthletesPage'));
 const Profile = lazy(() => import('./pages/ProfilePage'));
 const Settings = lazy(() => import('./pages/SettingsPage'));
 const Support = lazy(() => import('./pages/SupportPage'));
+const FeatureGuide = lazy(() => import('./pages/FeatureGuidePage'));
 const SignUpPage = lazy(() => import('./pages/SignUpPage'));
 const AthleteProfile = lazy(() => import('./components/AthleteProfile'));
 const ForgotPasswordPage = lazy(() => import('./pages/ForgotPasswordPage'));
@@ -394,6 +395,7 @@ function AppRoutes() {
           <Route path="/athletes" element={<Athletes />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/support" element={<Support />} />
+          <Route path="/guide" element={<FeatureGuide />} />
           <Route path="/admin" element={<AdminDashboard />} />
           <Route path="/athlete-profile/:id" element={<Profile />} />
           <Route path="/dashboard/:athleteId?" element={<Dashboard />} />

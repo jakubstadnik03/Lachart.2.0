@@ -30,6 +30,7 @@ import NotifIcon from '../Notifications/NotifIcon';
 import { SPORT_ICON_COLORS } from '../shared/SportIcon';
 import ActiveWorkoutBar from '../WorkoutExecution/ActiveWorkoutBar';
 import { Skeleton } from '../common/Skeleton';
+import { activateGuide } from '../../utils/guideEvents';
 import {
   OPEN_TRAINING_ZONES_MODAL_EVENT,
   profileNeedsTrainingZones,
@@ -76,6 +77,7 @@ const ICONS = {
   admin:        ['M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z'],
   lactate:      'M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z',
   logout:       'M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1',
+  guide:        ['M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z'],
   chevronRight: 'M9 5l7 7-7 7',
 };
 
@@ -323,7 +325,7 @@ function NativeNotificationsSheet({ open, onClose, notifs, loading, onNotifClick
 }
 
 // ─── Top Bar ───────────────────────────────────────────────────────────────────
-function NativeTopBar({ user, onProfileTap, onBellTap, unreadCount }) {
+function NativeTopBar({ user, onProfileTap, onBellTap, onGuideTap, guideActive, unreadCount }) {
   const avatar = user ? getAvatarBySportAndGender(user) : null;
   return (
     <div
@@ -338,8 +340,26 @@ function NativeTopBar({ user, onProfileTap, onBellTap, unreadCount }) {
           <span className="text-base font-bold text-primary tracking-tight">LaChart</span>
         </div>
 
-        {/* Right side: bell + avatar */}
+        {/* Right side: guide + bell + avatar */}
         <div className="flex items-center gap-2">
+          {/* What you can do — the app's own contents page, one tap from anywhere */}
+          <button
+            onClick={onGuideTap}
+            aria-label="What you can do"
+            aria-current={guideActive ? 'page' : undefined}
+            style={{ touchAction: 'manipulation' }}
+            className={`w-9 h-9 flex items-center justify-center rounded-xl ${
+              guideActive ? 'bg-primary/10' : 'active:bg-gray-100'
+            }`}
+          >
+            <Icon
+              d={ICONS.guide}
+              size={22}
+              stroke={guideActive ? 'var(--color-primary, #6366f1)' : '#9ca3af'}
+              strokeWidth={guideActive ? 2.2 : 1.8}
+            />
+          </button>
+
           {/* Notification bell */}
           <button
             onClick={onBellTap}
@@ -670,6 +690,9 @@ function NativeProfileSheet({ open, onClose, user, logout, navigate }) {
   const go = (path) => { onClose(); navigate(path); };
 
   const items = [
+    // First, and deliberately: most of what the app does lives one tab deeper
+    // than anyone looks.
+    { label: 'What you can do', icon: ICONS.guide, path: '/guide' },
     { label: 'Profile',  icon: ICONS.profile,  path: '/profile' },
     { label: 'Settings', icon: ICONS.settings, path: '/settings' },
     { label: 'Support',  icon: ICONS.support,  path: '/support' },
@@ -1058,6 +1081,8 @@ const NativeLayout = ({ athletes = [], athleteStatuses = {}, effectiveAthleteId,
           user={user}
           onProfileTap={() => setShowProfile(true)}
           onBellTap={handleBellTap}
+          onGuideTap={() => activateGuide({ active: location.pathname === '/guide', navigate })}
+          guideActive={location.pathname === '/guide'}
           unreadCount={unreadCount}
         />
       )}

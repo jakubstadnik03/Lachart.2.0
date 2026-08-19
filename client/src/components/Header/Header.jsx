@@ -6,6 +6,7 @@ import { useAuth } from '../../context/AuthProvider';
 import { isCapacitorNative } from '../../utils/isNativeApp';
 import NotificationBell from './NotificationBell';
 import WhatsNewButton from './WhatsNewButton';
+import FeatureGuideButton from './FeatureGuideButton';
 import DownloadAppButton from './DownloadAppButton';
 
 const Header = ({ isMenuOpen, setIsMenuOpen, user: propUser }) => {
@@ -46,6 +47,7 @@ const Header = ({ isMenuOpen, setIsMenuOpen, user: propUser }) => {
               users on web. Hidden inside the Capacitor native build (those
               users obviously already have the app). */}
           {!isCapacitorNative() && <DownloadAppButton />}
+          {user?.role && <FeatureGuideButton />}
           {user?.role && <WhatsNewButton />}
           {user?.role && <NotificationBell />}
           <UserDropdown
