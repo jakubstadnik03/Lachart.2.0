@@ -4,11 +4,20 @@
 import { resolveNotificationTarget, applyNotificationNavigation } from './notificationNavigation';
 
 const PENDING_KEY = 'lachart_pending_push_token';
+/**
+ * The APNs token belongs to the phone, not to whoever is signed in, so it
+ * survives logout — that is the only way the logged-out device can tell the
+ * server to stop sending it the last athlete's notifications.
+ */
+export const DEVICE_TOKEN_KEY = 'lachart_device_push_token';
 let listenersAttached = false;
 
 export function cachePushToken(token) {
   if (!token) return;
-  try { localStorage.setItem(PENDING_KEY, String(token)); } catch { /* ignore */ }
+  try {
+    localStorage.setItem(PENDING_KEY, String(token));
+    localStorage.setItem(DEVICE_TOKEN_KEY, String(token));
+  } catch { /* ignore */ }
 }
 
 export async function syncPushTokenToServer(token) {
@@ -27,6 +36,29 @@ export async function syncPushTokenToServer(token) {
     return true;
   } catch (e) {
     console.warn('[Push] syncPushTokenToServer failed:', e?.message || e);
+    return false;
+  }
+}
+
+/**
+ * Tell the server this device is no longer that athlete's, on logout.
+ *
+ * Registering as the next athlete also moves the token (the server pulls it
+ * from every other account), but a phone left signed out would otherwise keep
+ * buzzing with the previous athlete's sessions.
+ */
+export async function detachPushTokenFromAccount() {
+  let value = '';
+  try {
+    value = (localStorage.getItem(DEVICE_TOKEN_KEY) || localStorage.getItem(PENDING_KEY) || '').trim();
+  } catch { /* ignore */ }
+  if (!value) return false;
+  try {
+    const { unregisterPushToken } = await import('../services/api');
+    await unregisterPushToken(value);
+    return true;
+  } catch (e) {
+    console.warn('[Push] detachPushTokenFromAccount failed:', e?.message || e);
     return false;
   }
 }

@@ -18,14 +18,30 @@ import { sendContactEmail } from '../services/contactEmail';
 import { buildFeatureGuide, countFeatures, isCoachViewer } from '../content/featureGuide';
 import { pinShellDuringKeyboard, scrollIntoViewWithin, scrollToTopWithin } from '../utils/scrollWithin';
 import { GUIDE_SCROLL_TOP_EVENT } from '../utils/guideEvents';
+import { requestTrainingZonesModal } from '../utils/trainingZonesSetup';
+import { openGuideEntry } from '../utils/guideOpen';
 
 function FeatureCard({ entry, onOpen }) {
   const Icon = entry.icon;
   const accent = entry.accent || '#6366f1';
-  const external = /^https?:\/\//.test(entry.href);
+  const external = /^https?:\/\//.test(entry.href || '');
+  // A screenshot that 404s would leave a broken-image box on a page whose whole
+  // job is to look inviting, so a failed load simply removes it.
+  const [shotFailed, setShotFailed] = useState(false);
+  const shot = entry.image && !shotFailed ? entry.image : null;
 
   return (
     <div className="flex flex-col bg-white rounded-2xl border border-gray-200 p-5 h-full">
+      {shot && (
+        <img
+          src={shot}
+          alt=""
+          loading="lazy"
+          decoding="async"
+          onError={() => setShotFailed(true)}
+          className="mb-4 w-full h-44 sm:h-52 object-contain rounded-xl bg-gray-50"
+        />
+      )}
       <div className="flex items-start gap-3">
         <div
           className="p-2.5 rounded-xl flex-shrink-0"
@@ -220,13 +236,14 @@ export default function FeatureGuidePage() {
   );
   const shown = sections.reduce((n, s) => n + s.items.length, 0);
 
-  const open = (entry) => {
-    if (/^https?:\/\//.test(entry.href)) {
-      window.open(entry.href, '_blank', 'noopener');
-      return;
-    }
-    navigate(entry.href);
-  };
+  // The decision lives in utils/guideOpen so its edge cases can be tested —
+  // a card that quietly does nothing is indistinguishable from one that is
+  // still loading, which is how the zones card stayed broken.
+  const open = (entry) => openGuideEntry(entry, {
+    isCoach,
+    navigate,
+    openZones: requestTrainingZonesModal,
+  });
 
   return (
     <div ref={rootRef} className="min-h-screen bg-gray-50">

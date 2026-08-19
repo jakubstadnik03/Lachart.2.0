@@ -30,6 +30,60 @@ describe('the catalogue itself', () => {
     }
   });
 
+  it('ships no screenshot it cannot actually load', () => {
+    // A missing file leaves a broken-image box on the one page whose job is to
+    // look inviting — and nothing else would tell us the asset was renamed.
+    const fs = require('fs');
+    const path = require('path');
+    const publicDir = path.join(__dirname, '..', '..', 'public');
+    for (const e of FEATURE_ENTRIES) {
+      if (!e.image) continue;
+      expect(e.image.startsWith('/')).toBe(true);
+      expect(fs.existsSync(path.join(publicDir, e.image))).toBe(true);
+    }
+  });
+
+  it('never shows the same picture on two cards', () => {
+    // Repeating one mockup across four features makes it decoration.
+    const shots = FEATURE_ENTRIES.map((e) => e.image).filter(Boolean);
+    expect(new Set(shots).size).toBe(shots.length);
+  });
+
+  it('illustrates the features people come looking for', () => {
+    const shotOf = (id) => FEATURE_ENTRIES.find((e) => e.id === id)?.image;
+    for (const id of ['plan-workout', 'lactate-curve', 'form-fitness', 'analyze-workout']) {
+      expect(shotOf(id)).toBeTruthy();
+    }
+  });
+
+  it('shows phone screenshots, not the desktop marketing shots', () => {
+    // Those are captured from a real account: the sidebar carries a name and
+    // an email address, and a card-sized crop of a browser window is unreadable.
+    for (const e of FEATURE_ENTRIES) {
+      if (!e.image) continue;
+      expect(e.image).toMatch(/^\/images\/ios-launch\//);
+    }
+  });
+
+  it('sends "plan a workout" to the form, not just the calendar', () => {
+    const plan = FEATURE_ENTRIES.find((e) => e.id === 'plan-workout');
+    expect(plan.href).toBe('/training-calendar?plan=new');
+  });
+
+  it('opens the zones where they live rather than in Settings', () => {
+    // The release slide pointed at /settings, which has no zones tab.
+    const zones = FEATURE_ENTRIES.find((e) => e.id === 'training-zones');
+    expect(zones.action).toBe('zones');
+    expect(zones.href).not.toContain('/settings');
+  });
+
+  it('keeps every destination inside the app or on a real site', () => {
+    for (const e of FEATURE_ENTRIES) {
+      if (e.action) continue;
+      expect(e.href).not.toMatch(/undefined|null/);
+    }
+  });
+
   it('has no duplicate ids', () => {
     const ids = FEATURE_ENTRIES.map((e) => e.id);
     expect(new Set(ids).size).toBe(ids.length);

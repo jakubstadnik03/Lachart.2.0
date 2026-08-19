@@ -15,6 +15,7 @@ const authActionLimiter = rateLimit({
 const registerAbl = require("../abl/user-abl/register-abl");
 const loginAbl = require("../abl/user-abl/login-abl");
 const verifyToken = require("../middleware/verifyToken");
+const { claimPushTokenForUser, releasePushTokenFromUser } = require("../utils/pushTokenOwnership");
 const { blacklistToken } = require("../middleware/authManager");
 const UserDao = require("../dao/userDao");
 const TrainingDao = require("../dao/trainingDao");
@@ -332,17 +333,40 @@ router.post("/push-token", verifyToken, async (req, res) => {
             return res.status(400).json({ error: "Invalid expoPushToken" });
         }
 
-        await User.findByIdAndUpdate(
-            req.user.userId,
-            { $addToSet: { expoPushTokens: tokenStr } },
-            { new: true }
-        );
+        // A device belongs to whoever is signed in on it *now*: claiming it
+        // takes it off every other account, or the phone keeps receiving the
+        // previous athlete's notifications — "workout completed" for a session
+        // its owner never did.
+        const { claimed, releasedFrom } = await claimPushTokenForUser(User, req.user.userId, tokenStr);
+        if (!claimed) {
+            return res.status(400).json({ error: "Invalid expoPushToken" });
+        }
+        if (releasedFrom > 0) {
+            console.log(`[Push] device token moved to ${req.user.userId}, released from ${releasedFrom} other account(s)`);
+        }
         await touchMobileAppUsage(req.user.userId, { platform, appVersion });
 
         res.status(200).json({ ok: true });
     } catch (error) {
         console.error("Error saving expo push token:", error);
         res.status(500).json({ error: "Failed to save push token" });
+    }
+});
+
+// Detach this device from the account on logout — otherwise a phone that
+// nobody is signed in on keeps receiving that account's pushes.
+router.delete("/push-token", verifyToken, async (req, res) => {
+    try {
+        const { expoPushToken } = req.body || {};
+        const tokenStr = typeof expoPushToken === "string" ? expoPushToken.trim() : "";
+        if (!tokenStr) {
+            return res.status(400).json({ error: "expoPushToken is required" });
+        }
+        await releasePushTokenFromUser(User, req.user.userId, tokenStr);
+        res.status(200).json({ ok: true });
+    } catch (error) {
+        console.error("Error removing expo push token:", error);
+        res.status(500).json({ error: "Failed to remove push token" });
     }
 });
 
