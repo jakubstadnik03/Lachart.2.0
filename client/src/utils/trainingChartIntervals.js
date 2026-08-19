@@ -164,6 +164,21 @@ export function getChartIntervals(training, stravaLapsCache = {}, sport = '') {
   return mergeResultMetadata(fullest, results);
 }
 
+/**
+ * Can this session actually draw bars — i.e. is it worth offering in a session
+ * picker at all?
+ *
+ * Built on getChartIntervals so a picker and the chart it feeds can never
+ * disagree about what has data. A Strava-linked session whose laps are still in
+ * flight is an unknown rather than a no: keep it, and let it fall out once the
+ * fetch lands empty and the cache says so.
+ */
+export function canChartTraining(training, stravaLapsCache = {}, sport = '') {
+  if (!training) return false;
+  if (needsStravaLapFetch(training, stravaLapsCache)) return true;
+  return resultsHaveContent(getChartIntervals(training, stravaLapsCache, sport));
+}
+
 /** Fetch Strava detail laps when list payload is missing or incomplete. */
 export function needsStravaLapFetch(training, stravaLapsCache = {}) {
   if (!isStravaBackedTraining(training)) return false;

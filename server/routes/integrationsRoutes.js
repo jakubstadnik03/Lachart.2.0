@@ -16,6 +16,7 @@ const User = require('../models/UserModel');
 const Training = require('../models/training');
 const TrainingAbl = require('../abl/trainingAbl');
 const { athleteHasCoachUser } = require('../utils/athleteCoachAccess');
+const { lapDurationCv, lapDurationSeconds } = require('../utils/lapDurationStats');
 const { notifyCoachesOfAthlete, notifyAthlete, sendNotification } = require('../utils/notificationHelper');
 const { recordStravaSyncLogSafe } = require('../services/stravaSyncLogService');
 const { notifyStravaImportedPush } = require('../utils/stravaImportNotifications');
@@ -511,6 +512,54 @@ function userIdMatch(id) {
   const forms = [str];
   if (mongooseRef.Types.ObjectId.isValid(str)) forms.push(new mongooseRef.Types.ObjectId(str));
   return forms.length > 1 ? { $in: forms } : str;
+}
+
+/**
+ * Per-activity lap structure, as two scalars instead of the laps themselves.
+ *
+ * The activities list deliberately never ships `laps[]` — it is a list view and
+ * those arrays are the bulk of the document. But a client that cannot see the
+ * laps also cannot tell an interval session from a steady ride, which is what
+ * the dashboard needs in order to decide which imports are worth charting. So
+ * the shape is computed where the data already is and only the verdict travels:
+ * how many laps, and how evenly timed they were.
+ *
+ * lapDurationCv is the coefficient of variation of lap durations — low means
+ * regular repeats, high means a ride someone happened to lap at random. Same
+ * definition the /strava/pending-lactate feed uses for its "Intervals?" badge.
+ *
+ * Returned as a Map keyed by `_id` string so callers can attach without
+ * disturbing their own query.
+ */
+async function lapSignalsById(Model, match, limit) {
+  const rows = await Model.aggregate([
+    { $match: match },
+    { $sort: { startDate: -1 } },
+    { $limit: limit },
+    {
+      $project: {
+        lapCount: { $size: { $ifNull: ['$laps', []] } },
+        lapDurations: {
+          $map: {
+            input: { $ifNull: ['$laps', []] },
+            as: 'l',
+            in: {
+              $ifNull: ['$$l.moving_time', { $ifNull: ['$$l.elapsed_time', 0] }],
+            },
+          },
+        },
+      },
+    },
+  ]).allowDiskUse(true);
+
+  const out = new Map();
+  for (const row of rows) {
+    out.set(String(row._id), {
+      lapCount: row.lapCount || 0,
+      lapDurationCv: lapDurationCv(row.lapDurations || []),
+    });
+  }
+  return out;
 }
 
 const garminBackfillJobs = new Map();
@@ -4390,17 +4439,14 @@ router.get('/strava/pending-lactate', verifyToken, async (req, res) => {
       const lapWatts = laps
         .map(l => l.avgPower ?? l.avg_power ?? l.average_watts ?? l.averageWatts ?? 0)
         .filter(v => Number(v) > 0).map(Number);
-      const lapTimes = laps
-        .map(l => l.moving_time ?? l.totalTimerTime ?? l.totalElapsedTime ?? l.elapsed_time ?? 0)
-        .filter(v => Number(v) > 0).map(Number);
+      const lapTimes = laps.map(lapDurationSeconds).filter(v => v > 0);
       const arrAvg = arr => arr.reduce((s, v) => s + v, 0) / arr.length;
       const avgHr = lapHrs.length ? Math.round(arrAvg(lapHrs)) : null;
       const maxHr = lapHrs.length ? Math.max(...lapHrs) : null;
       const avgWatts = lapWatts.length ? Math.round(arrAvg(lapWatts)) : null;
-      // Coefficient of variation of lap durations — low value = regular/structured intervals
-      const lapDurationCv = lapTimes.length >= 2
-        ? +( Math.sqrt(arrAvg(lapTimes.map(v => (v - arrAvg(lapTimes)) ** 2))) / arrAvg(lapTimes) ).toFixed(3)
-        : null;
+      // Shared with the activities list, so the "Intervals?" badge here and the
+      // dashboard's admission rule can't disagree about what "structured" means.
+      const cv = lapDurationCv(lapTimes);
 
       activities.push({
         _id: a._id,
@@ -4415,7 +4461,7 @@ router.get('/strava/pending-lactate', verifyToken, async (req, res) => {
         avgHr,
         maxHr,
         avgWatts,
-        lapDurationCv,
+        lapDurationCv: cv,
         movingTime: a.movingTime || a.moving_time || null,
         distance: a.distance || null,
       });
@@ -4950,6 +4996,28 @@ router.get('/activities', verifyToken, activitiesCacheMiddleware, async (req, re
           .limit(activityLimit)
           .lean()),
     ]);
+
+    // Opt-in: only the callers that score sessions for structure pay for this
+    // extra pass. The calendar asks for a list and gets exactly what it always
+    // got. Apple Health is left out — those workouts store a summary and no
+    // laps at all, so there is no structure to report.
+    if (req.query.withLapSignals === 'true') {
+      const externalMatch = { userId: userIdMatch(targetUserId), startDate: dateFilter };
+      const [stravaSignals, garminSignals] = await Promise.all([
+        lapSignalsById(StravaActivity, externalMatch, activityLimit).catch(() => new Map()),
+        lapSignalsById(GarminActivity, externalMatch, activityLimit).catch(() => new Map()),
+      ]);
+      const attach = (list, signals) => {
+        for (const a of list) {
+          const s = signals.get(String(a._id));
+          if (!s) continue;
+          a.lapCount = s.lapCount;
+          a.lapDurationCv = s.lapDurationCv;
+        }
+      };
+      attach(stravaActs, stravaSignals);
+      attach(garminActs, garminSignals);
+    }
 
     // Deduplicate activities from Strava and Garmin
     // Activities are considered duplicates if they have:

@@ -15,7 +15,8 @@ import { useAuth } from '../../context/AuthProvider';
 import { resolveDistanceUnitSystem } from '../../utils/unitsConverter';
 import { SearchableSelect } from '../SearchableSelect';
 import { getStravaActivityDetail } from '../../services/api';
-import { filterWorkResults } from '../../utils/workLapFilter';
+import { classifyWorkLaps } from '../../utils/workLapFilter';
+import { canChartTraining, normalizeLapsToResults } from '../../utils/trainingChartIntervals';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend);
 
@@ -235,6 +236,7 @@ const TrainingGraph = ({
     (training, sport) => sport === 'all' || trainingSport(training) === normalizeSport(sport),
     [trainingSport, normalizeSport]
   );
+
   // Strava activities use `id`, FIT/regular use `_id` — match either (+ stravaId).
   const matchesId = useCallback((t, id) => {
     if (t == null || id == null) return false;
@@ -264,6 +266,22 @@ const TrainingGraph = ({
   });
 
   const currentSelectedSport = selectedSport ? normalizeSport(selectedSport) : internalSelectedSport;
+
+  /**
+   * Drop sessions this chart has nothing to plot — the same rule the Training
+   * History picker applies. Listing one only to answer "No interval data for
+   * this training" is worse than not listing it at all.
+   *
+   * `cache` holds whatever Strava laps have already been fetched; a session
+   * still waiting on that fetch counts as unknown and stays listed.
+   */
+  const chartable = useCallback(
+    (list, cache = {}) => (list || []).filter(
+      (t) => canChartTraining(t, cache, resolveTrainingSport(t) || normalizeSport(currentSelectedSport)),
+    ),
+    [resolveTrainingSport, normalizeSport, currentSelectedSport],
+  );
+
   const setCurrentSelectedSport = (value) => {
     const v = normalizeSport(value);
     if (setSelectedSport) setSelectedSport(v); else setInternalSelectedSport(v);
@@ -386,7 +404,13 @@ const TrainingGraph = ({
   useEffect(() => {
     if (!trainingList || trainingList.length === 0) return;
     setLoading(false);
-    const sportTrainings = currentSelectedSport === 'all' ? trainingList : trainingList.filter((t) => matchesSport(t, currentSelectedSport));
+    // Same chartable filter the dropdowns use, so the default selection can't
+    // land on a session that renders "No interval data". Deliberately called
+    // with an empty lap cache: pending Strava fetches stay eligible here, which
+    // also keeps fetchedLaps out of this effect's dependencies.
+    const sportTrainings = chartable(
+      currentSelectedSport === 'all' ? trainingList : trainingList.filter((t) => matchesSport(t, currentSelectedSport)),
+    );
     if (sportTrainings.length === 0) {
       // Don't reset selectedTitle — a sibling may still have a valid match.
       if (setSelectedTraining) setSelectedTraining(null);
@@ -435,7 +459,7 @@ const TrainingGraph = ({
       if (setSelectedTitle) setSelectedTitle(newest.title);
       if (setSelectedTraining) setSelectedTraining(newest._id || newest.id);
     }
-  }, [currentSelectedSport, trainingList, selectedTraining, selectedTitle, setSelectedTitle, setSelectedTraining, matchesSport, matchesId, trainingDateMs]);
+  }, [currentSelectedSport, trainingList, selectedTraining, selectedTitle, setSelectedTitle, setSelectedTraining, matchesSport, matchesId, trainingDateMs, chartable]);
 
   const computeRanges = useCallback((resultsArr, sport) => {
     const sportKey = normalizeSport(sport);
@@ -471,8 +495,15 @@ const TrainingGraph = ({
     if (selectedTraining && trainingList?.length > 0) {
       const selectedData = trainingList.find(t => matchesId(t, selectedTraining));
       const sport = resolveTrainingSport(selectedData);
-      const resultsArr = filterWorkResults(
-        selectedData?.results?.length > 0 ? selectedData.results : (fetchedLaps?.results ?? []),
+      // Must resolve the same laps effectiveResults does, or the axes get
+      // scaled to the work intervals while the chart also draws the recoveries
+      // — and every rest lap lands below the floor.
+      const resultsArr = classifyWorkLaps(
+        selectedData?.results?.length > 0
+          ? selectedData.results
+          : (fetchedLaps?.results?.length > 0
+            ? fetchedLaps.results
+            : normalizeLapsToResults(selectedData?.laps, sport)),
         sport
       );
       if (resultsArr.length > 0) {
@@ -532,9 +563,12 @@ const TrainingGraph = ({
     </div>
   );
 
-  const sportTrainings = currentSelectedSport === 'all'
-    ? (trainingList || [])
-    : (trainingList || []).filter((t) => matchesSport(t, currentSelectedSport));
+  const sportTrainings = chartable(
+    currentSelectedSport === 'all'
+      ? (trainingList || [])
+      : (trainingList || []).filter((t) => matchesSport(t, currentSelectedSport)),
+    fetchedLaps?.id ? { [fetchedLaps.id]: fetchedLaps.results } : {},
+  );
   const uniqueTitles = [...new Set(sportTrainings.map(t => t.title))];
 
   if (trainingList.length === 0 || sportTrainings.length === 0) return (
@@ -555,12 +589,23 @@ const TrainingGraph = ({
   const selectedTrainingData = trainingList.find(t => matchesId(t, selectedTraining));
 
   // Use fetched Strava laps when the activity has no local results.
-  // Only the work intervals are plotted — warm-up / recovery / cool-down / rest
-  // laps are filtered out (see filterWorkResults).
-  const effectiveResults = filterWorkResults(
+  // The whole session is plotted, not just the work intervals. Dropping the
+  // recoveries made sense while this only ever showed hand-entered sessions,
+  // where the recoveries were never typed in to begin with. Now that a Strava
+  // interval session can land here, the rests are half of what the session was
+  // — so classifyWorkLaps tags them instead, and the bar colours and the
+  // tooltip's Work/Recovery chip do the explaining.
+  //
+  // Precedence is unchanged (own results, then fetched Strava laps); the local
+  // `laps[]` fallback is new. canChartTraining counts a session with laps as
+  // plottable, so without this last step the picker could still offer one that
+  // rendered "No interval data" — the exact mismatch this is meant to close.
+  const effectiveResults = classifyWorkLaps(
     (selectedTrainingData?.results?.length > 0)
       ? selectedTrainingData.results
-      : (fetchedLaps?.results ?? []),
+      : (fetchedLaps?.results?.length > 0
+        ? fetchedLaps.results
+        : normalizeLapsToResults(selectedTrainingData?.laps, resolveTrainingSport(selectedTrainingData))),
     resolveTrainingSport(selectedTrainingData)
   );
 

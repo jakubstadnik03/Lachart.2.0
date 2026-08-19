@@ -5,9 +5,9 @@ import { EllipsisVerticalIcon } from "@heroicons/react/24/outline";
 import { resolveDistanceUnitSystem, formatDistance, formatPaceMMSS, paceSecondsToDisplaySeconds, paceUnitShort, parseLapDistanceToMeters } from "../../utils/unitsConverter";
 import { getStravaActivityDetail } from "../../services/api";
 import { useCategories } from "../../context/CategoryContext";
-import { filterWorkResults, getWorkLapMetricValue } from "../../utils/workLapFilter";
+import { filterWorkResults, classifyWorkLaps, getWorkLapMetricValue } from "../../utils/workLapFilter";
 import { enrichTrainingsWithCategory, normalizeCategoryKey } from "../../utils/trainingCategory";
-import { getChartIntervals, needsStravaLapFetch, resolveStravaNumericId } from "../../utils/trainingChartIntervals";
+import { getChartIntervals, needsStravaLapFetch, resolveStravaNumericId, canChartTraining } from "../../utils/trainingChartIntervals";
 
 const CATEGORY_OPTION_PREFIX = '__category__:';
 const PICKER_ALL = "__all__";
@@ -825,11 +825,31 @@ export function TrainingStats({
     return false;
   }, []);
 
+  // Lazy-fetch Strava laps for filtered trainings that have no results.
+  // Declared up here because the picker pool below reads it: whether a session
+  // is worth offering depends on whether its laps have arrived yet.
+  const [stravaLapsCache, setStravaLapsCache] = useState({}); // { stravaId: [...results] }
+
+  /**
+   * The picker used to list every training in the category, including ones the
+   * chart has nothing to plot — pick one and both the history chart and the
+   * Training Graph go blank ("No interval data for this training"). Offering a
+   * session that renders as an empty panel is worse than not offering it.
+   *
+   * stravaLapsCache is a dependency, so a Strava-linked session that is kept
+   * while its laps are in flight drops out by itself once the fetch lands empty.
+   */
+  const hasChartIntervals = useCallback((t) => {
+    const sport = resolveTrainingSport(t) || normalizeSport(currentSelectedSport) || 'bike';
+    return canChartTraining(t, stravaLapsCache, sport);
+  }, [stravaLapsCache, currentSelectedSport]);
+
   const sportFilteredTrainings = useMemo(() => {
     return trainingsList.filter(t =>
-      currentSelectedSport === "all" || normalizeSport(t.sport) === normalizeSport(currentSelectedSport)
+      (currentSelectedSport === "all" || normalizeSport(t.sport) === normalizeSport(currentSelectedSport))
+      && hasChartIntervals(t)
     );
-  }, [trainingsList, currentSelectedSport]);
+  }, [trainingsList, currentSelectedSport, hasChartIntervals]);
 
   const categoryCounts = useMemo(() => {
     const counts = { [PICKER_ALL]: sportFilteredTrainings.length };
@@ -843,27 +863,37 @@ export function TrainingStats({
     return counts;
   }, [sportFilteredTrainings, hasLactateValue]);
 
+  // Built from sportFilteredTrainings, not trainingsList, so the pool and the
+  // per-category counts above are filtered identically — otherwise the chip
+  // reads "40" over a list of 12.
   const categoryPool = useMemo(() => {
-    const sportOk = (t) => currentSelectedSport === "all" || normalizeSport(t.sport) === normalizeSport(currentSelectedSport);
     let list;
     if (pickerCategoryId === PICKER_LACTATE) {
-      list = trainingsList.filter(t => sportOk(t) && hasLactateValue(t));
+      list = sportFilteredTrainings.filter(hasLactateValue);
     } else if (pickerCategoryId === PICKER_UNCATEGORIZED) {
-      list = trainingsList.filter(t => sportOk(t) && !normalizeCategoryKey(t.category));
+      list = sportFilteredTrainings.filter(t => !normalizeCategoryKey(t.category));
     } else if (pickerCategoryId === PICKER_ALL) {
-      list = trainingsList.filter(sportOk);
+      list = sportFilteredTrainings;
     } else {
-      list = trainingsList.filter(t => sportOk(t) && normalizeCategoryKey(t.category) === pickerCategoryId);
+      list = sportFilteredTrainings.filter(t => normalizeCategoryKey(t.category) === pickerCategoryId);
     }
-    return list.sort((a, b) => new Date(b.date || b.startDate || 0) - new Date(a.date || a.startDate || 0));
-  }, [trainingsList, currentSelectedSport, pickerCategoryId, hasLactateValue]);
+    return [...list].sort((a, b) => new Date(b.date || b.startDate || 0) - new Date(a.date || a.startDate || 0));
+  }, [sportFilteredTrainings, pickerCategoryId, hasLactateValue]);
 
   /* Default: only the newest session in the pool. */
   useEffect(() => {
     if (categoryPool.length === 0) return;
     const prev = categorySelectionRef.current;
     const filterChanged = prev.categoryId !== pickerCategoryId || prev.sport !== currentSelectedSport;
-    if (!filterChanged && selectedTrainingKeys !== null) return;
+    // A selected session can leave the pool underneath us: a Strava-linked one
+    // is offered while its laps are still in flight, then the fetch comes back
+    // empty and hasChartIntervals drops it. Without this the chart would sit on
+    // a selection that no longer exists and render nothing.
+    const poolKeys = new Set(categoryPool.map(trainingKey));
+    const selectionStranded = Array.isArray(selectedTrainingKeys)
+      && selectedTrainingKeys.length > 0
+      && !selectedTrainingKeys.some(k => poolKeys.has(k));
+    if (!filterChanged && !selectionStranded && selectedTrainingKeys !== null) return;
 
     categorySelectionRef.current = { categoryId: pickerCategoryId, sport: currentSelectedSport };
     const newest = categoryPool[0];
@@ -911,9 +941,6 @@ export function TrainingStats({
       }
     }
   };
-
-  // Lazy-fetch Strava laps for filtered trainings that have no results
-  const [stravaLapsCache, setStravaLapsCache] = useState({}); // { stravaId: [...results] }
 
   const stravaLapToResult = useCallback((lap, sport) => {
     const s = String(sport || '').toLowerCase();
@@ -974,9 +1001,16 @@ export function TrainingStats({
     return filtered.length > 0 ? filtered : arr;
   }, [hideWarmCool]);
 
+  // classifyWorkLaps tags each lap work/recovery without dropping any. This
+  // chart already drew the whole session, so nothing disappears — what changes
+  // is that raw Strava/Garmin laps, which carry no intervalType of their own,
+  // now get one. That lights up the grey recovery bars and the tooltip's
+  // Work/Recovery chip that were already built for hand-tagged sessions, and it
+  // gives filterWarmCool below real tags to read instead of falling back to its
+  // "drop the first and last lap" guess.
   const getAllIntervals = useCallback((t) => {
     const sport = resolveTrainingSport(t) || normalizeSport(currentSelectedSport) || 'bike';
-    return getChartIntervals(t, stravaLapsCache, sport);
+    return classifyWorkLaps(getChartIntervals(t, stravaLapsCache, sport), sport);
   }, [stravaLapsCache, currentSelectedSport]);
 
   const getResults = useCallback((t) => {

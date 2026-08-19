@@ -11,6 +11,7 @@ import {
 } from '../../services/api';
 import RecordLactateModal from './RecordLactateModal';
 import AssignLactateModal from './AssignLactateModal';
+import { scoreIntervalSession, LIKELY_TEST_SCORE, LIKELY_INTERVALS_SCORE } from '../../utils/intervalSessionScore';
 
 function formatWhen(iso) {
   if (!iso) return '—';
@@ -35,47 +36,18 @@ function formatDuration(seconds) {
   return h > 0 ? `${h}h ${m}m` : `${m}m`;
 }
 
-function scoreActivity(a) {
-  let score = 0;
-  const signals = [];
-  const name = (a.name || '').toLowerCase();
-
-  if (/lactate|lactát|lactat/.test(name)) { score += 5; signals.push('🧪 lactate in name'); }
-  else if (/interval|intervaly|intervals/.test(name)) { score += 4; signals.push('🔁 intervals'); }
-  else if (/tempo|threshold|lt[12]|ltp|ftp|vo2/.test(name)) { score += 3; signals.push('⚡ threshold'); }
-  else if (/test|testing|quality|race|effort/.test(name)) { score += 2; signals.push('🏁 test/race'); }
-  else if (/hard|fast|speed|sprint/.test(name)) { score += 1; }
-
-  if (a.lapCount >= 8) { score += 3; signals.push(`${a.lapCount} laps`); }
-  else if (a.lapCount >= 5) { score += 2; signals.push(`${a.lapCount} laps`); }
-  else if (a.lapCount >= 3) { score += 1; }
-
-  if (a.lapDurationCv != null) {
-    if (a.lapDurationCv < 0.12 && a.lapCount >= 3) { score += 3; signals.push('structured intervals'); }
-    else if (a.lapDurationCv < 0.25 && a.lapCount >= 3) { score += 1; }
-  }
-
-  if (a.avgHr) {
-    if (a.avgHr >= 165) { score += 3; signals.push(`❤️ ${a.avgHr} bpm avg`); }
-    else if (a.avgHr >= 150) { score += 2; signals.push(`❤️ ${a.avgHr} bpm avg`); }
-    else if (a.avgHr >= 135) { score += 1; }
-  }
-
-  if (a.avgWatts) {
-    if (a.avgWatts >= 220) { score += 2; signals.push(`⚡ ${a.avgWatts}W`); }
-    else if (a.avgWatts >= 160) { score += 1; }
-  }
-
-  return { score, signals: signals.slice(0, 3) };
-}
+// The scoring table moved to utils/intervalSessionScore so the dashboard can
+// apply the same "is this an interval session?" judgement when it decides which
+// Strava/Garmin activities to chart. This panel's badges are unchanged.
+const scoreActivity = scoreIntervalSession;
 
 function ConfidenceBadge({ score }) {
-  if (score >= 7) return (
+  if (score >= LIKELY_TEST_SCORE) return (
     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-violet-100 text-violet-700 border border-violet-200 shrink-0">
       🧪 Likely test
     </span>
   );
-  if (score >= 5) return (
+  if (score >= LIKELY_INTERVALS_SCORE) return (
     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-700 border border-amber-200 shrink-0">
       <BoltIcon className="w-3 h-3" /> Intervals?
     </span>
