@@ -13,6 +13,8 @@ import React, { useState, useEffect, useMemo, useRef, useCallback, lazy, Suspens
 import ReactDOM from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import useNativeTabScrollToTop from '../hooks/useNativeTabScrollToTop';
+import PremiumLock from '../components/PremiumLock';
+import { hasRadar } from '../utils/radarSport';
 
 import {
   GlassCard, SectionTitle, SportTile,
@@ -37,6 +39,10 @@ import { SearchableSelect } from '../components/SearchableSelect';
 import NativeComparisonVerdict from '../components/native/NativeComparisonVerdict';
 import InteractiveChart from '../components/charts/InteractiveChart';
 import { mirrorLactateToSource } from '../utils/mirrorLactateToSource';
+
+// Heavy: chart.js radial scale plus its own metric fetches. Only mounted when
+// the athlete is looking at a sport the radar can actually draw.
+const SpiderChart = lazy(() => import('../components/DashboardPage/SpiderChart'));
 // Lazy-load — keeps the heavy editor/modal chunks out of this page's bundle
 const ActivityFullModal = lazy(() =>
   import('../components/Calendar/CalendarView').then(m => ({ default: m.ActivityFullModal }))
@@ -2608,6 +2614,23 @@ export default function NativeTrainingPage({
                   })}
                 </div>
               </GlassCard>
+            </div>
+          )}
+
+          {/* ─── Power / Pace radar — the chart the web dashboard shows,
+                 following the sport filter above. Swim has no axes, and on
+                 "all" a radar of one sport beside a mixed list would lie. ─── */}
+          {hasRadar(selectedSport) && (
+            <div style={{ ...cardEntry(2), ...snap }}>
+              <PremiumLock feature="Performance Profile" plan="pro" minHeight={280}>
+                <Suspense fallback={<div style={{ height: 280 }} />}>
+                  <SpiderChart
+                    trainings={filtered}
+                    sport={selectedSport}
+                    athleteId={athleteId || null}
+                  />
+                </Suspense>
+              </PremiumLock>
             </div>
           )}
 
