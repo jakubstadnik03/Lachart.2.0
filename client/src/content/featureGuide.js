@@ -68,6 +68,55 @@ export const GUIDE_SECTIONS = [
   },
 ];
 
+/**
+ * Where a release slide's own CTA goes wrong.
+ *
+ * The slides were written to sell a feature, not to navigate to it: "plan a
+ * workout" dropped you on a calendar with no form open, and the zones slide
+ * pointed at Settings, which has no zones tab at all. The guide promises a tap
+ * lands on the thing, so these are corrected here rather than in the slides,
+ * which the What's New modal still shows with its own copy.
+ */
+const HREF_OVERRIDES = {
+  // The form itself, not the calendar around it.
+  'plan-workout': '/training-calendar?plan=new',
+  // Zones live in a modal any screen can open — see ACTION_BY_SLIDE.
+  'training-zones': '/profile',
+  // Races are added and tapered on the calendar, not the dashboard.
+  'race-planning': '/training-calendar',
+  // The lactate value is attached from the training list, where the sessions
+  // "ready for lactate" are counted.
+  'lactate-interval': '/training',
+};
+
+/** Slides that open an app-wide modal instead of navigating anywhere. */
+const ACTION_BY_SLIDE = {
+  'training-zones': 'zones',
+};
+
+/**
+ * The phone mockups from the App Store launch, one card each.
+ *
+ * Only these: the marketing screenshots of the web app are desktop-shaped, so
+ * a card-sized crop is unreadable, and they were captured from a real account
+ * — the sidebar carries a name and an email address that has no business
+ * shipping inside every athlete's copy of the app. No image is used twice,
+ * because the same picture on four cards reads as decoration rather than as a
+ * look at the feature.
+ */
+const SHOTS = {
+  'plan-workout': '/images/ios-launch/gallery/plan-workout.png',
+  'lactate-curve': '/images/ios-launch/gallery/lactate-test-pre-season.png',
+  'lactate-interval': '/images/ios-launch/gallery/laps-table.png',
+  'analyze-workout': '/images/ios-launch/gallery/laps-power.png',
+  'power-profile': '/images/ios-launch/gallery/charts-analytics.png',
+  'form-fitness': '/images/ios-launch/gallery/dashboard-fff.png',
+  'week-review': '/images/ios-launch/gallery/calendar.png',
+  'training-zones': '/images/ios-launch/gallery/threshold-trend.png',
+  'more-tests': '/images/ios-launch/gallery/lactate-test-entry.png',
+  'ios-app': '/images/ios-launch/iphone-dashboard.png',
+};
+
 /** Which section each What's New slide belongs to. */
 const SECTION_BY_SLIDE = {
   'strava-connect': 'start',
@@ -268,8 +317,8 @@ const EXTRA_ENTRIES = [
       'Attached to the interval they came from',
       'Feeds the same threshold model',
     ],
-    cta: 'Open the calendar',
-    href: '/training-calendar',
+    cta: 'Open trainings',
+    href: '/training',
     accent: '#ef4444',
   },
   {
@@ -397,22 +446,24 @@ export const FEATURE_ENTRIES = [
     body: slide.body,
     bullets: slide.bullets || [],
     cta: slide.cta,
-    href: slide.href,
+    href: HREF_OVERRIDES[slide.id] || slide.href,
+    action: ACTION_BY_SLIDE[slide.id] || null,
+    image: SHOTS[slide.id] || null,
     accent: slide.accent,
     coachOnly: Boolean(slide.coachOnly),
     stravaOnly: Boolean(slide.stravaOnly),
     adminOnly: false,
     video: slide.video || null,
-    image: slide.image || null,
   })),
   ...EXTRA_ENTRIES.map((e) => ({
     ...e,
+    action: e.action || null,
     bullets: e.bullets || [],
+    image: SHOTS[e.id] || null,
     coachOnly: Boolean(e.coachOnly),
     stravaOnly: Boolean(e.stravaOnly),
     adminOnly: Boolean(e.adminOnly),
     video: null,
-    image: null,
   })),
 ];
 

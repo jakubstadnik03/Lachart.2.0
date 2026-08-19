@@ -1588,6 +1588,25 @@ const FitAnalysisPage = () => {
     setRadarWatts(watts ? Number(watts) : null);
   }, [location.search]);
 
+  // `?plan=new` — open the planned-workout form straight away, optionally for
+  // a given day (`&date=YYYY-MM-DD`). The feature guide links here: "plan a
+  // workout" has to land on the form, not on a calendar the athlete then has
+  // to work out how to use. The param is dropped once it has been acted on so
+  // a refresh does not reopen it.
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    if (params.get('plan') !== 'new') return;
+    const dateParam = params.get('date');
+    const date = dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam)
+      ? new Date(`${dateParam}T12:00:00`)
+      : new Date();
+    setPlanModal({ date, workout: null });
+    params.delete('plan');
+    params.delete('date');
+    const rest = params.toString();
+    navigate(`${location.pathname}${rest ? `?${rest}` : ''}`, { replace: true });
+  }, [location.search, location.pathname, navigate]);
+
   // Reset selected lap when training changes
   useEffect(() => {
     setSelectedLapNumber(null);

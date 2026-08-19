@@ -18,14 +18,29 @@ import { sendContactEmail } from '../services/contactEmail';
 import { buildFeatureGuide, countFeatures, isCoachViewer } from '../content/featureGuide';
 import { pinShellDuringKeyboard, scrollIntoViewWithin, scrollToTopWithin } from '../utils/scrollWithin';
 import { GUIDE_SCROLL_TOP_EVENT } from '../utils/guideEvents';
+import { OPEN_TRAINING_ZONES_MODAL_EVENT } from '../utils/trainingZonesSetup';
 
 function FeatureCard({ entry, onOpen }) {
   const Icon = entry.icon;
   const accent = entry.accent || '#6366f1';
-  const external = /^https?:\/\//.test(entry.href);
+  const external = /^https?:\/\//.test(entry.href || '');
+  // A screenshot that 404s would leave a broken-image box on a page whose whole
+  // job is to look inviting, so a failed load simply removes it.
+  const [shotFailed, setShotFailed] = useState(false);
+  const shot = entry.image && !shotFailed ? entry.image : null;
 
   return (
     <div className="flex flex-col bg-white rounded-2xl border border-gray-200 p-5 h-full">
+      {shot && (
+        <img
+          src={shot}
+          alt=""
+          loading="lazy"
+          decoding="async"
+          onError={() => setShotFailed(true)}
+          className="mb-4 w-full h-44 sm:h-52 object-contain rounded-xl bg-gray-50"
+        />
+      )}
       <div className="flex items-start gap-3">
         <div
           className="p-2.5 rounded-xl flex-shrink-0"
@@ -221,6 +236,15 @@ export default function FeatureGuidePage() {
   const shown = sections.reduce((n, s) => n + s.items.length, 0);
 
   const open = (entry) => {
+    // Some features are a modal any screen can raise rather than a page —
+    // the training zones are the app's own example, and the layout already
+    // listens for it. Opening those in place beats navigating somewhere and
+    // leaving the athlete to find the button.
+    if (entry.action === 'zones') {
+      window.dispatchEvent(new CustomEvent(OPEN_TRAINING_ZONES_MODAL_EVENT));
+      return;
+    }
+    if (!entry.href) return;
     if (/^https?:\/\//.test(entry.href)) {
       window.open(entry.href, '_blank', 'noopener');
       return;
