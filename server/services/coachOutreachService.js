@@ -483,6 +483,102 @@ function renderOutreachHtml(person, { unsubscribeUrl, loginUrl }) {
 </body></html>`;
 }
 
+/**
+ * Which segment, if any, claims this user.
+ *
+ * The Coach Leads screen always knows the segment because you picked it from a
+ * tab. The user list does not — there you have a person and want the pitch that
+ * fits them. So walk the segments and let the first one that lists this user
+ * decide, most specific first: a coach with several athletes should get the
+ * Coach-plan letter, not the catch-all.
+ *
+ * Returns the person too, since every caller needs it and finding them cost a
+ * full candidate scan. null means nobody's candidate — already paying, opted
+ * out, or simply not a fit — which is a legitimate answer, not a failure.
+ */
+async function findSegmentForUser(userId) {
+  const id = String(userId);
+
+  // findQualifiedCoaches already labels each person coach or coach-solo by
+  // athlete count, so one scan settles both.
+  const coaches = await findQualifiedCoaches({ minAthletes: 1 });
+  const asCoach = coaches.find((c) => c.userId === id);
+  if (asCoach) return { segment: asCoach.segment, person: asCoach };
+
+  for (const [segment, find] of [
+    ['athlete', findQualifiedAthletes],
+    ['untested', findUntestedConnected],
+    ['others', findOthers],
+  ]) {
+    const people = await find();
+    const person = people.find((c) => c.userId === id);
+    if (person) return { segment, person };
+  }
+
+  return null;
+}
+
+/**
+ * A recipient for someone no segment claims.
+ *
+ * findSegmentForUser answers "which pitch fits this person" and null is a real
+ * answer — already paying, or simply not matching any of the four shapes. From
+ * the user list that is not a dead end though: an admin clicking Send on one
+ * named row means it. So build the same person object the catch-all segment
+ * would have produced and let the letter render from that; it is the version
+ * that already adapts to whatever the account actually has, and it carries the
+ * full plan and feature rundown.
+ *
+ * Reads the same fields findOthers() does, for one user instead of all of them.
+ * Opting out is carried through honestly — sendToPerson refuses on it, and that
+ * is the one thing this path must not be able to sidestep.
+ */
+async function buildFallbackPerson(userId) {
+  const u = await User.findById(userId)
+    .select('_id name email role createdAt lastLogin lastSeenAt notifications outreach strava garmin appleHealth')
+    .lean();
+  if (!u) return null;
+
+  const id = String(u._id);
+  const hasTest = (await Test.countDocuments({ athleteId: id }).catch(() => 0)) > 0;
+  const sources = [
+    u.strava?.accessToken && 'Strava',
+    u.garmin?.accessToken && 'Garmin',
+    u.appleHealth?.connectedAt && 'Apple Health',
+  ].filter(Boolean);
+
+  return {
+    segment: 'others',
+    userId: id,
+    name: u.name || '',
+    email: u.email,
+    role: u.role || 'athlete',
+    hasTest,
+    testCount: hasTest ? 1 : 0,
+    sources,
+    createdAt: u.createdAt || null,
+    lastLogin: u.lastSeenAt || u.lastLogin || null,
+    alreadySentAt: u.outreach?.othersOutreachSentAt || null,
+    optedOut: u.notifications?.marketingEmails === false,
+  };
+}
+
+/** Render for a person we already have — the half of renderPreview that does
+ *  not care where the person came from. Split out so a fallback recipient, who
+ *  by definition is in nobody's candidate list, can still be rendered. */
+function previewFromPerson(person) {
+  const { buildEmailLoginUrl } = require('../routes/emailLoginRoutes');
+  return {
+    to: person.email,
+    subject: subjectFor(person),
+    html: renderOutreachHtml(person, {
+      unsubscribeUrl: unsubscribeUrlFor(person.userId),
+      loginUrl: buildEmailLoginUrl(person.userId, '/settings?tab=subscription'),
+    }),
+    person,
+  };
+}
+
 /** Rendered preview for the admin dashboard — never sends. */
 async function renderPreview(segment, userId) {
   const all = segment === 'others'
@@ -496,29 +592,28 @@ async function renderPreview(segment, userId) {
     : await findQualifiedCoaches({ minAthletes: 1 });
   const person = all.find((c) => c.userId === String(userId));
   if (!person) return null;
-
-  const { buildEmailLoginUrl } = require('../routes/emailLoginRoutes');
-  return {
-    to: person.email,
-    subject: subjectFor(person),
-    html: renderOutreachHtml(person, {
-      unsubscribeUrl: unsubscribeUrlFor(person.userId),
-      loginUrl: buildEmailLoginUrl(person.userId, '/settings?tab=subscription'),
-    }),
-    person,
-  };
+  return previewFromPerson(person);
 }
 
 /** Send to exactly one person. One click at a time — no batch path by design. */
-async function sendOutreach(segment, userId, { force = false, overrideEmail = null } = {}) {
+async function sendOutreach(segment, userId, opts = {}) {
   const preview = await renderPreview(segment, userId);
   if (!preview) return { sent: false, reason: 'not_a_qualified_recipient' };
-  const { person } = preview;
+  return sendToPerson(preview.person, opts);
+}
 
+/** The send itself, for a person from any source — a segment's candidate list
+ *  or buildFallbackPerson(). Opting out is honoured here and nowhere else, so
+ *  no caller can route around it. */
+async function sendToPerson(person, { force = false, overrideEmail = null } = {}) {
+  // Refusals before rendering — there is no point building a letter for someone
+  // who will never be sent it.
   if (person.optedOut) return { sent: false, reason: 'opted_out' };
   if (person.alreadySentAt && !force) {
     return { sent: false, reason: 'already_sent', alreadySentAt: person.alreadySentAt };
   }
+
+  const preview = previewFromPerson(person);
 
   const transporter = createEmailTransporter();
   if (!transporter) return { sent: false, reason: 'email_not_configured' };
@@ -541,15 +636,16 @@ async function sendOutreach(segment, userId, { force = false, overrideEmail = nu
 
   // Only record real sends, so a test to your own inbox can't mark someone done.
   if (!overrideEmail) {
-    const field = segment === 'others'
+    const seg = person.segment || 'others';
+    const field = seg === 'others'
       ? 'outreach.othersOutreachSentAt'
-      : segment === 'untested'
+      : seg === 'untested'
       ? 'outreach.untestedOutreachSentAt'
-      : segment === 'athlete'
+      : seg === 'athlete'
       ? 'outreach.athleteOutreachSentAt'
       : 'outreach.coachOutreachSentAt';
     const update = { [field]: new Date() };
-    if (segment.startsWith('coach')) update['outreach.coachOutreachAthleteCount'] = person.athleteCount;
+    if (seg.startsWith('coach')) update['outreach.coachOutreachAthleteCount'] = person.athleteCount;
     await User.findByIdAndUpdate(person.userId, update).catch(() => {});
   }
 
@@ -660,6 +756,10 @@ module.exports = {
   findQualifiedCoaches,
   findQualifiedAthletes,
   renderPreview,
+  previewFromPerson,
+  findSegmentForUser,
+  buildFallbackPerson,
+  sendToPerson,
   renderOutreachHtml,
   sendOutreach,
   getOutreachStats,

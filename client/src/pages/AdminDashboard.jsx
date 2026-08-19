@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getEventStats } from '../utils/eventLogger';
 import { fetchCoachLeads, fetchCoachLeadPreview, sendCoachLeadTest, sendCoachLeadEmail, startCoachLeadBatch, fetchCoachLeadBatchStatus } from '../services/api';
-import { getAdminUsers, getAdminStats, getAdminHealth, getCoachAthletesPage, updateUserAdmin, deleteUserAdmin, deleteAthleteWithTests, sendReactivationEmail, sendThankYouEmail, sendThankYouEmailToAll, sendFeatureAnnouncementEmail, sendStravaReminderEmail, sendAppDownloadEmail, sendCoachOutreachEmail, getCoachOutreachLeads, updateCoachOutreachLead, importCoachOutreachLeads, startBulkOutreachCampaign, stopBulkCampaign, listBulkCampaigns, getDefaultOutreachTemplate, impersonateUser, sendRetentionEmailPreview, fetchWhatsNewMay2026Status, sendWhatsNewMay2026Preview, runWhatsNewMay2026Campaign, resetWhatsNewMay2026, fetchIosLaunchJun2026Status, sendIosLaunchJun2026Preview, runIosLaunchJun2026Campaign, resetIosLaunchJun2026, fetchPaidLaunchJul2026Status, sendPaidLaunchJul2026Preview, runPaidLaunchJul2026Campaign, resetPaidLaunchJul2026, fetchCampaignRecipients } from '../services/api';
+import { getAdminUsers, getAdminStats, getAdminHealth, getCoachAthletesPage, updateUserAdmin, deleteUserAdmin, deleteAthleteWithTests, sendReactivationEmail, sendThankYouEmail, sendPremiumEmail, sendThankYouEmailToAll, sendFeatureAnnouncementEmail, sendStravaReminderEmail, sendAppDownloadEmail, sendCoachOutreachEmail, getCoachOutreachLeads, updateCoachOutreachLead, importCoachOutreachLeads, startBulkOutreachCampaign, stopBulkCampaign, listBulkCampaigns, getDefaultOutreachTemplate, impersonateUser, sendRetentionEmailPreview, fetchWhatsNewMay2026Status, sendWhatsNewMay2026Preview, runWhatsNewMay2026Campaign, resetWhatsNewMay2026, fetchIosLaunchJun2026Status, sendIosLaunchJun2026Preview, runIosLaunchJun2026Campaign, resetIosLaunchJun2026, fetchPaidLaunchJul2026Status, sendPaidLaunchJul2026Preview, runPaidLaunchJul2026Campaign, resetPaidLaunchJul2026, fetchCampaignRecipients } from '../services/api';
 import { useAuth } from '../context/AuthProvider';
 import { useNotification } from '../context/NotificationContext';
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
@@ -424,6 +424,7 @@ const AdminDashboard = () => {
   const [premiumFilter, setPremiumFilter] = useState('all'); // 'all' | 'free' | 'manual' | 'paid' | 'trial' | 'any'
   const [emailLoadingUserId, setEmailLoadingUserId] = useState(null);
   const [thankYouEmailLoadingUserId, setThankYouEmailLoadingUserId] = useState(null);
+  const [premiumEmailLoadingUserId, setPremiumEmailLoadingUserId] = useState(null);
   const [featureAnnouncementEmailLoadingUserId, setFeatureAnnouncementEmailLoadingUserId] = useState(null);
   const [featureAnnouncementEmailType, setFeatureAnnouncementEmailType] = useState('newFeatures'); // 'newFeatures', 'googleLoginFix', 'improvements', 'tips', 'community', 'thresholdLogicUpdate'
   const [stravaReminderEmailLoadingUserId, setStravaReminderEmailLoadingUserId] = useState(null);
@@ -705,6 +706,39 @@ const AdminDashboard = () => {
       console.error('Reactivation email error:', err);
     } finally {
       setEmailLoadingUserId(null);
+    }
+  };
+
+  // Sends the Coach Leads letter — the Coach / Athlete plan pitch — to one user.
+  // The server picks the segment that fits them so the copy matches the person,
+  // and falls back to the general version when none does. Everyone gets an
+  // email; the notification says which version it was, since a coach-specific
+  // letter and the catch-all read quite differently.
+  //
+  // Opting out is the one refusal that stands, and it comes from the server.
+  const handleSendPremiumEmail = async (targetUser) => {
+    try {
+      setPremiumEmailLoadingUserId(targetUser._id);
+      const res = await sendPremiumEmail(targetUser._id);
+      const which = res?.matchedSegment ? `${res.segment} version` : 'general version';
+      addNotification(`Premium email sent to ${res?.to || targetUser.email} (${which})`, 'success');
+    } catch (err) {
+      const data = err?.response?.data;
+      const reason = data?.reason;
+      const message =
+        reason === 'opted_out'
+          ? `${targetUser.email} has opted out of product emails`
+          : reason === 'already_sent'
+          ? `Already sent to ${targetUser.email}${data?.alreadySentAt ? ` on ${new Date(data.alreadySentAt).toLocaleDateString()}` : ''}`
+          : reason === 'email_not_configured'
+          ? 'Email is not configured on the server'
+          : reason === 'user_not_found'
+          ? 'User not found'
+          : data?.message || data?.error || 'Failed to send premium email';
+      addNotification(message, reason ? 'warning' : 'error');
+      console.error('Premium email error:', data || err);
+    } finally {
+      setPremiumEmailLoadingUserId(null);
     }
   };
 
@@ -2735,15 +2769,16 @@ const AdminDashboard = () => {
                         </button>
                         <button
                           type="button"
-                          disabled={thankYouEmailLoadingUserId === user._id || user.notifications?.emailNotifications === false}
-                          onClick={() => handleSendThankYouEmail(user)}
+                          disabled={premiumEmailLoadingUserId === user._id || user.notifications?.emailNotifications === false}
+                          onClick={() => handleSendPremiumEmail(user)}
                           className={`w-full border text-xs font-medium py-1.5 rounded-md flex items-center justify-center ${
                             user.notifications?.emailNotifications === false
                               ? 'border-gray-300 text-gray-400 cursor-not-allowed bg-gray-50'
                               : 'border-green-600 text-green-600 hover:bg-green-50'
-                          } ${thankYouEmailLoadingUserId === user._id ? 'opacity-60 cursor-wait' : ''}`}
+                          } ${premiumEmailLoadingUserId === user._id ? 'opacity-60 cursor-wait' : ''}`}
+                          title="Send the Coach Leads letter — the Coach / Athlete plan pitch"
                         >
-                          {thankYouEmailLoadingUserId === user._id ? 'Sending…' : 'Send thank you email'}
+                          {premiumEmailLoadingUserId === user._id ? 'Sending…' : 'Send premium email'}
                         </button>
                         {(user.role === 'athlete' || (user.athletes && user.athletes.length > 0)) && (
                           <button
@@ -3203,15 +3238,16 @@ const AdminDashboard = () => {
                             </button>
                             <button
                               type="button"
-                              disabled={thankYouEmailLoadingUserId === user._id || user.notifications?.emailNotifications === false}
-                              onClick={() => handleSendThankYouEmail(user)}
+                              disabled={premiumEmailLoadingUserId === user._id || user.notifications?.emailNotifications === false}
+                              onClick={() => handleSendPremiumEmail(user)}
                               className={`block text-xs ${
                                 user.notifications?.emailNotifications === false
                                   ? 'text-gray-400 cursor-not-allowed'
                                   : 'text-green-600 hover:text-green-700'
-                              } ${thankYouEmailLoadingUserId === user._id ? 'opacity-60 cursor-wait' : ''}`}
+                              } ${premiumEmailLoadingUserId === user._id ? 'opacity-60 cursor-wait' : ''}`}
+                              title="Send the Coach Leads letter — the Coach / Athlete plan pitch"
                             >
-                              {thankYouEmailLoadingUserId === user._id ? 'Sending…' : 'Send thank you email'}
+                              {premiumEmailLoadingUserId === user._id ? 'Sending…' : 'Send premium email'}
                             </button>
                             {(user.role === 'athlete' || (user.athletes && user.athletes.length > 0)) && (
                               <button

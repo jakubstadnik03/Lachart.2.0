@@ -92,6 +92,33 @@ router.post('/send/:userId', verifyToken, async (req, res) => {
   }
 });
 
+// POST /api/admin/coach-outreach/send-to-user/:userId — same letter, reached
+// from the user list instead of the Coach Leads tabs. There you have a person
+// and no segment, so resolve it first and let the pitch follow the person.
+// Deliberately not folded into /send/:userId: that route's segment comes from
+// the tab you are looking at, and silently overriding it would make the preview
+// you just read stop matching what goes out.
+router.post('/send-to-user/:userId', verifyToken, async (req, res) => {
+  try {
+    if (!(await requireAdmin(req, res))) return;
+    const match = await outreach.findSegmentForUser(req.params.userId);
+    // No segment is not a refusal here. The four segments exist to aim a batch;
+    // one admin clicking Send on one named row has already done the aiming, so
+    // fall back to the catch-all letter — same plan and feature rundown, worded
+    // for whatever the account actually has.
+    const person = match ? match.person : await outreach.buildFallbackPerson(req.params.userId);
+    if (!person) return res.status(404).json({ sent: false, reason: 'user_not_found' });
+
+    const result = await outreach.sendToPerson(person, { force: req.body?.force === true });
+    const body = { ...result, segment: person.segment, matchedSegment: Boolean(match) };
+    if (!result.sent) return res.status(409).json(body);
+    res.json(body);
+  } catch (e) {
+    console.error('[CoachOutreach] send-to-user failed:', e);
+    res.status(500).json({ error: 'Send failed', message: e.message });
+  }
+});
+
 // POST /api/admin/coach-outreach/send-batch — { segment, userIds[] }
 // Sends to an explicitly chosen list, spaced out, server-side so it keeps
 // going after the admin closes the tab. One run at a time.
