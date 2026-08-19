@@ -18,7 +18,8 @@ import { sendContactEmail } from '../services/contactEmail';
 import { buildFeatureGuide, countFeatures, isCoachViewer } from '../content/featureGuide';
 import { pinShellDuringKeyboard, scrollIntoViewWithin, scrollToTopWithin } from '../utils/scrollWithin';
 import { GUIDE_SCROLL_TOP_EVENT } from '../utils/guideEvents';
-import { OPEN_TRAINING_ZONES_MODAL_EVENT } from '../utils/trainingZonesSetup';
+import { requestTrainingZonesModal } from '../utils/trainingZonesSetup';
+import { openGuideEntry } from '../utils/guideOpen';
 
 function FeatureCard({ entry, onOpen }) {
   const Icon = entry.icon;
@@ -235,22 +236,14 @@ export default function FeatureGuidePage() {
   );
   const shown = sections.reduce((n, s) => n + s.items.length, 0);
 
-  const open = (entry) => {
-    // Some features are a modal any screen can raise rather than a page —
-    // the training zones are the app's own example, and the layout already
-    // listens for it. Opening those in place beats navigating somewhere and
-    // leaving the athlete to find the button.
-    if (entry.action === 'zones') {
-      window.dispatchEvent(new CustomEvent(OPEN_TRAINING_ZONES_MODAL_EVENT));
-      return;
-    }
-    if (!entry.href) return;
-    if (/^https?:\/\//.test(entry.href)) {
-      window.open(entry.href, '_blank', 'noopener');
-      return;
-    }
-    navigate(entry.href);
-  };
+  // The decision lives in utils/guideOpen so its edge cases can be tested —
+  // a card that quietly does nothing is indistinguishable from one that is
+  // still loading, which is how the zones card stayed broken.
+  const open = (entry) => openGuideEntry(entry, {
+    isCoach,
+    navigate,
+    openZones: requestTrainingZonesModal,
+  });
 
   return (
     <div ref={rootRef} className="min-h-screen bg-gray-50">

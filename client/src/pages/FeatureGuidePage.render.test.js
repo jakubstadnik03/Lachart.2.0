@@ -13,6 +13,7 @@ jest.mock('@heroicons/react/24/outline', () => new Proxy({}, {
 // resolve, and routing is not what this test is about.
 jest.mock('react-router-dom', () => ({ useNavigate: () => () => {} }), { virtual: true });
 jest.mock('../services/contactEmail', () => ({ sendContactEmail: jest.fn() }));
+jest.mock('../utils/trainingZonesSetup', () => ({ requestTrainingZonesModal: jest.fn() }));
 
 // `mock`-prefixed so jest allows the factory to close over it.
 const mockAuth = { user: { role: 'athlete' } };
