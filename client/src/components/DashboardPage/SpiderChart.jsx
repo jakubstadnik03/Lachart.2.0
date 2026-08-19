@@ -4,6 +4,7 @@ import { Radar } from "react-chartjs-2";
 import { useNavigate } from "react-router-dom";
 import api from "../../services/api";
 import { useAuth } from "../../context/AuthProvider";
+import { hasRadar, resolveRadarSport } from "../../utils/radarSport";
 import {
   Chart as ChartJS,
   RadialLinearScale,
@@ -200,6 +201,13 @@ export default function SpiderChart({
   setSelectedSport,
   calendarData = [],
   athleteId = null,
+  /**
+   * Optional: follow the host page's sport filter instead of the chart's own
+   * toggle. The training list passes its filter here so the radar shows the
+   * sport whose sessions are on screen. Anything the radar cannot draw
+   * (swim, "all") leaves the chart on its own choice.
+   */
+  sport: sportProp = null,
 }) {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -224,9 +232,16 @@ export default function SpiderChart({
   });
 
   // ── Local state ─────────────────────────────────────────────────────────────
-  const [sport, setSport] = useState(() => {
+  const [storedSport, setStoredSport] = useState(() => {
     try { return localStorage.getItem('powerRadar_sport') || 'bike'; } catch { return 'bike'; }
   });
+  // The host page wins while it is filtering by bike or run; otherwise the
+  // chart's own toggle does.
+  const sport = resolveRadarSport(sportProp, storedSport);
+  const sportIsControlled = hasRadar(sportProp);
+  const setSport = (next) => {
+    setStoredSport(next);
+  };
   const [comparePeriod, setComparePeriod] = useState(() => {
     try { return localStorage.getItem('powerRadar_comparePeriod') || '90days'; } catch { return '90days'; }
   });
@@ -248,7 +263,12 @@ export default function SpiderChart({
   const [loadError, setLoadError] = useState(null);
 
   // Persist prefs
-  useEffect(() => { try { localStorage.setItem('powerRadar_sport', sport); } catch {} }, [sport]);
+  // Only the athlete's own toggle is remembered — a page filter is not a
+  // preference, and storing it would change what the dashboard opens with.
+  useEffect(() => {
+    if (sportIsControlled) return;
+    try { localStorage.setItem('powerRadar_sport', sport); } catch {}
+  }, [sport, sportIsControlled]);
   useEffect(() => { try { localStorage.setItem('powerRadar_comparePeriod', comparePeriod); } catch {} }, [comparePeriod]);
   useEffect(() => { try { localStorage.setItem('powerRadar_selectedMonths', JSON.stringify(selectedMonths)); } catch {} }, [selectedMonths]);
 
