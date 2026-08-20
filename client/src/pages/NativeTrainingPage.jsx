@@ -2301,14 +2301,23 @@ export default function NativeTrainingPage({
     // record it came from, so open that when the training points at one, and
     // fall back to a same-day twin for older records that never stored a link.
     const source = resolveActivitySource(act);
-    if (source.linked) {
-      // Identity only: the modal merges what it is given over what it fetched,
-      // so the shell's empty laps and missing averages would win otherwise.
+    if (source.kind !== 'regular') {
+      // Identity only. The modal merges what it is given over what it fetched,
+      // and a row from a list is always the poorer copy: trimmed laps, missing
+      // averages, no streams. Handing over the whole row is what left the Laps
+      // tab full of dashes while the Summary above it was complete.
       setActivityModal({ activity: seedForLinkedSource(act, source), plannedWorkout: null });
       return;
     }
 
-    const subject = source.kind === 'regular' ? (findRelatedRichActivity(act) || act) : act;
+    // A manual training with no source: the fetch returns the same document,
+    // so the enriched row is the better starting point.
+    const subject = findRelatedRichActivity(act) || act;
+    const richSource = resolveActivitySource(subject);
+    if (richSource.kind !== 'regular') {
+      setActivityModal({ activity: seedForLinkedSource(subject, richSource), plannedWorkout: null });
+      return;
+    }
     setActivityModal({ activity: enrichForModal(subject), plannedWorkout: null });
   };
   const closeActivityModal = () => setActivityModal(null);

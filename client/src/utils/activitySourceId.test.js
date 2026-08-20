@@ -103,3 +103,13 @@ describe('seedForLinkedSource', () => {
     expect(seedForLinkedSource({}, { kind: 'strava', id: '7' })).toEqual({ id: 'strava-7', type: 'strava' });
   });
 });
+
+describe('seeding a row that came out of a list', () => {
+  it('drops the trimmed laps a list payload carries', () => {
+    // The list gives two summary laps; the fetch has all twenty-three.
+    const row = { id: 'strava-19776176858', stravaId: 19776176858, title: 'Bike endurance', laps: [{}, {}] };
+    const seed = seedForLinkedSource(row, resolveActivitySource(row));
+    expect(seed).not.toHaveProperty('laps');
+    expect(seed.id).toBe('strava-19776176858');
+  });
+});
