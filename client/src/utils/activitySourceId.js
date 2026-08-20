@@ -50,7 +50,7 @@ export function prefixedSourceId(t) {
 }
 
 /**
- * What to hand the modal when the row only *points* at the real activity.
+ * What to hand the modal for any row whose session lives elsewhere.
  *
  * ActivityFullModal merges as `{ ...fetchedDetail, ...passedActivity }` — the
  * object it is given wins. That is right when the caller has the activity
@@ -58,8 +58,13 @@ export function prefixedSourceId(t) {
  * planned intervals and missing averages then overwrite the Garmin or Strava
  * detail that was just fetched, and the session opens half-loaded.
  *
- * So a linked row seeds the modal with identity only, and lets the fetch fill
- * in the session.
+ * The same is true of a Strava or Garmin row taken from a list: the list
+ * payload carries trimmed laps and no streams, and those overwrite the full
+ * copy the modal just fetched — the Laps tab ends up a column of dashes under
+ * a complete Summary.
+ *
+ * So any row backed by a source seeds the modal with identity only, and lets
+ * the fetch supply the session.
  *
  * @returns {object} a slim seed carrying the prefixed id
  */
