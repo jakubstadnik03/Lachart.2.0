@@ -31,4 +31,27 @@ export function resolveRadarSport(controlled, stored) {
   return 'bike';
 }
 
+
+/**
+ * Which radar to show when the page is not filtering by one sport.
+ *
+ * "All" still deserves a radar — it is the page's default, and hiding the
+ * chart there means most athletes never see it. Picking the sport they train
+ * most in the list on screen beats a stored preference nobody set.
+ *
+ * @param {Array<{sport?: string}>} trainings the sessions currently listed
+ * @param {string} [fallback] used when the list has neither bike nor run
+ * @returns {'bike'|'run'}
+ */
+export function dominantRadarSport(trainings, fallback) {
+  const counts = { bike: 0, run: 0 };
+  for (const t of Array.isArray(trainings) ? trainings : []) {
+    const s = String(t?.sport || '').toLowerCase();
+    if (s in counts) counts[s] += 1;
+  }
+  if (counts.bike === 0 && counts.run === 0) return resolveRadarSport(fallback, fallback);
+  // Ties go to the bike: it is the sport the power radar was built for.
+  return counts.run > counts.bike ? 'run' : 'bike';
+}
+
 export default resolveRadarSport;

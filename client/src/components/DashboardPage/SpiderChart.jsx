@@ -5,6 +5,8 @@ import { useNavigate } from "react-router-dom";
 import api from "../../services/api";
 import { useAuth } from "../../context/AuthProvider";
 import { hasRadar, resolveRadarSport } from "../../utils/radarSport";
+import { SPORT_ICON_COLORS } from "../shared/SportIcon";
+
 import {
   Chart as ChartJS,
   RadialLinearScale,
@@ -16,6 +18,21 @@ import {
 } from "chart.js";
 
 ChartJS.register(RadialLinearScale, PointElement, LineElement, Filler, Tooltip, Legend);
+
+/**
+ * The radar speaks the app's colour language: a sport is the colour it is
+ * everywhere else (bike blue, run orange), and the all-time ring behind it is
+ * neutral, because it is a reference envelope rather than a result. The run
+ * radar used to be green and the comparison red — two colours that mean
+ * nothing here and clash with every sport chip on the same screen.
+ */
+const RADAR_REF = { line: '#94a3b8', fill: 'rgba(148,163,184,0.12)' };
+const radarSportColor = (s) => SPORT_ICON_COLORS[s] || SPORT_ICON_COLORS.other;
+const withAlpha = (hex, a) => {
+  const h = String(hex).replace('#', '');
+  const n = parseInt(h.length === 3 ? h.split('').map((c) => c + c).join('') : h, 16);
+  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
+};
 
 // ── Bike axes ─────────────────────────────────────────────────────────────────
 const BIKE_KEYS = ['sprint5s', 'attack1min', 'vo2max5min', 'threshold20min', 'endurance60min'];
@@ -565,7 +582,7 @@ export default function SpiderChart({
         return {
           labels,
           datasets: [
-            { label: 'All Time', data: [100, 100, 100, 100, 100], borderColor: '#60a5fa', backgroundColor: 'rgba(96,165,250,0.15)', borderWidth: 2, pointBackgroundColor: '#60a5fa', pointRadius: 4, fill: true, __kind: 'alltime' },
+            { label: 'All Time', data: [100, 100, 100, 100, 100], borderColor: RADAR_REF.line, backgroundColor: RADAR_REF.fill, borderWidth: 1.5, pointBackgroundColor: RADAR_REF.line, pointRadius: 3, fill: true, __kind: 'alltime' },
             ...selectedMonths.map((mk, i) => {
               const md = bikeMetrics.monthlyMetrics?.[mk];
               const lbl = availableMonths.find(m => m.key === mk)?.label || mk;
@@ -586,12 +603,12 @@ export default function SpiderChart({
       return {
         labels,
         datasets: [
-          { label: 'All Time', data: [100, 100, 100, 100, 100], borderColor: '#60a5fa', backgroundColor: 'rgba(96,165,250,0.15)', borderWidth: 2, pointBackgroundColor: '#60a5fa', pointRadius: 4, fill: true, __kind: 'alltime' },
+          { label: 'All Time', data: [100, 100, 100, 100, 100], borderColor: RADAR_REF.line, backgroundColor: RADAR_REF.fill, borderWidth: 1.5, pointBackgroundColor: RADAR_REF.line, pointRadius: 3, fill: true, __kind: 'alltime' },
           ...(comparePeriod !== 'alltime' && comparePeriod !== 'monthly' ? [{
             label: comparePeriod === '90days' ? 'Past 90 days' : 'Past 30 days',
             data: BIKE_KEYS.map(k => normBike(bikeMetrics.compare?.[k], k)),
-            borderColor: 'rgba(239,68,68,0.85)', backgroundColor: 'rgba(239,68,68,0.15)',
-            borderWidth: 2, pointBackgroundColor: 'rgba(239,68,68,1)', pointRadius: 4, fill: true, __kind: 'compare',
+            borderColor: radarSportColor(sport), backgroundColor: withAlpha(radarSportColor(sport), 0.16),
+            borderWidth: 2.5, pointBackgroundColor: radarSportColor(sport), pointRadius: 4, fill: true, __kind: 'compare',
           }] : []),
         ],
       };
@@ -613,7 +630,7 @@ export default function SpiderChart({
       return {
         labels,
         datasets: [
-          { label: 'All Time', data: [100, 100, 100, 100, 100], borderColor: '#10b981', backgroundColor: 'rgba(16,185,129,0.15)', borderWidth: 2, pointBackgroundColor: '#10b981', pointRadius: 4, fill: true, __kind: 'alltime' },
+          { label: 'All Time', data: [100, 100, 100, 100, 100], borderColor: RADAR_REF.line, backgroundColor: RADAR_REF.fill, borderWidth: 1.5, pointBackgroundColor: RADAR_REF.line, pointRadius: 3, fill: true, __kind: 'alltime' },
           ...selectedMonths.map((mk, i) => {
             const md = runMetrics.monthlyBests?.[mk];
             const lbl = availableMonths.find(m => m.key === mk)?.label || mk;
@@ -638,12 +655,12 @@ export default function SpiderChart({
     return {
       labels,
       datasets: [
-        { label: 'All Time', data: [100, 100, 100, 100, 100], borderColor: '#10b981', backgroundColor: 'rgba(16,185,129,0.15)', borderWidth: 2, pointBackgroundColor: '#10b981', pointRadius: 4, fill: true, __kind: 'alltime' },
+        { label: 'All Time', data: [100, 100, 100, 100, 100], borderColor: RADAR_REF.line, backgroundColor: RADAR_REF.fill, borderWidth: 1.5, pointBackgroundColor: RADAR_REF.line, pointRadius: 3, fill: true, __kind: 'alltime' },
         ...(comparePeriod !== 'alltime' && comparePeriod !== 'monthly' ? [{
           label: comparePeriod === '90days' ? 'Past 90 days' : 'Past 30 days',
           data: RUN_AXES.map(a => normRun(comparePaces?.[a.id], a.id)),
-          borderColor: 'rgba(239,68,68,0.85)', backgroundColor: 'rgba(239,68,68,0.15)',
-          borderWidth: 2, pointBackgroundColor: 'rgba(239,68,68,1)', pointRadius: 4, fill: true, __kind: 'compare',
+          borderColor: radarSportColor(sport), backgroundColor: withAlpha(radarSportColor(sport), 0.16),
+          borderWidth: 2.5, pointBackgroundColor: radarSportColor(sport), pointRadius: 4, fill: true, __kind: 'compare',
         }] : []),
       ],
     };
@@ -841,8 +858,9 @@ export default function SpiderChart({
             </p>
           </div>
 
-          {/* Sport toggle */}
-          <div className="flex items-center gap-1 bg-gray-100 rounded-xl p-1 shrink-0">
+          {/* Sport toggle — hidden when a host page already filters by sport:
+              a switch whose choice the next render throws away reads as broken. */}
+          <div className={`items-center gap-1 bg-gray-100 rounded-xl p-1 shrink-0 ${sportIsControlled ? 'hidden' : 'flex'}`}>
             {[{ id: 'bike', label: 'Bike', icon: '/icon/bike.svg' }, { id: 'run', label: 'Run', icon: '/icon/run.svg' }].map(s => (
               <button
                 key={s.id}
