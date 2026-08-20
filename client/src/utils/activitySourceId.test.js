@@ -2,7 +2,7 @@
  * Opening "Bike endurance" showed seven laps of dashes: the training shell,
  * not the ride. These are about following the link to the real thing.
  */
-import { prefixedSourceId, resolveActivitySource } from './activitySourceId';
+import { prefixedSourceId, resolveActivitySource, seedForLinkedSource } from './activitySourceId';
 
 describe('resolveActivitySource', () => {
   it('opens the Strava ride a training was built from', () => {
@@ -55,5 +55,51 @@ describe('prefixedSourceId', () => {
 
   it('is empty when there is no id to build from', () => {
     expect(prefixedSourceId({})).toBe('');
+  });
+});
+
+describe('seedForLinkedSource', () => {
+  const training = {
+    _id: 'abc',
+    title: '2x30 LT2 + 5x5min LT2',
+    date: '2026-08-11T08:32:00',
+    sport: 'bike',
+    sourceGarminActivityId: 'g-1',
+    // everything below is the shell that must not reach the modal
+    results: [{ power: 0 }, { power: 0 }],
+    laps: [],
+    distance: 0,
+    avgPower: undefined,
+    duration: 0,
+  };
+
+  it('carries only what identifies the session', () => {
+    const seed = seedForLinkedSource(training, resolveActivitySource(training));
+    expect(seed).toEqual({
+      id: 'garmin-g-1',
+      type: 'garmin',
+      title: '2x30 LT2 + 5x5min LT2',
+      date: '2026-08-11T08:32:00',
+      sport: 'bike',
+      trainingId: 'abc',
+    });
+  });
+
+  it('drops the empty shell that would overwrite the fetch', () => {
+    // The modal merges { ...detail, ...passed }: an empty laps array here
+    // erases the laps it just downloaded.
+    const seed = seedForLinkedSource(training, resolveActivitySource(training));
+    for (const key of ['results', 'laps', 'distance', 'duration', 'avgPower']) {
+      expect(seed).not.toHaveProperty(key);
+    }
+  });
+
+  it('keeps the athlete\'s own title over the source\'s', () => {
+    expect(seedForLinkedSource(training, resolveActivitySource(training)).title)
+      .toBe('2x30 LT2 + 5x5min LT2');
+  });
+
+  it('omits what the row does not have', () => {
+    expect(seedForLinkedSource({}, { kind: 'strava', id: '7' })).toEqual({ id: 'strava-7', type: 'strava' });
   });
 });

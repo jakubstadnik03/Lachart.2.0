@@ -15,7 +15,7 @@ import { useNavigate } from 'react-router-dom';
 import useNativeTabScrollToTop from '../hooks/useNativeTabScrollToTop';
 import PremiumLock from '../components/PremiumLock';
 import { dominantRadarSport, hasRadar } from '../utils/radarSport';
-import { resolveActivitySource } from '../utils/activitySourceId';
+import { resolveActivitySource, seedForLinkedSource } from '../utils/activitySourceId';
 
 import {
   GlassCard, SectionTitle, SportTile,
@@ -2300,9 +2300,15 @@ export default function NativeTrainingPage({
     // The session with laps, streams and a map is the Strava, Garmin or FIT
     // record it came from, so open that when the training points at one, and
     // fall back to a same-day twin for older records that never stored a link.
-    const { kind } = resolveActivitySource(act);
-    const subject = kind === 'regular' ? (findRelatedRichActivity(act) || act) : act;
+    const source = resolveActivitySource(act);
+    if (source.linked) {
+      // Identity only: the modal merges what it is given over what it fetched,
+      // so the shell's empty laps and missing averages would win otherwise.
+      setActivityModal({ activity: seedForLinkedSource(act, source), plannedWorkout: null });
+      return;
+    }
 
+    const subject = source.kind === 'regular' ? (findRelatedRichActivity(act) || act) : act;
     setActivityModal({ activity: enrichForModal(subject), plannedWorkout: null });
   };
   const closeActivityModal = () => setActivityModal(null);
