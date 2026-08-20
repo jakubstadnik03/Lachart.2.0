@@ -2307,52 +2307,17 @@ export default function NativeTrainingPage({
   }
 
   const openActivity = (act) => {
-    const athleteQs = athleteId ? `&athleteId=${athleteId}` : '';
+    // Always the modal, never a route. Navigating opened the calendar's own
+    // full-page activity view underneath it, so closing the modal left the
+    // athlete on a second, near-identical screen with a "‹ Calendar" back
+    // link — a page they never asked for and could not get out of in one tap.
 
-    // Direct Strava activity — has streams, GPS, full laps.
-    const stravaIdRaw = String(act?.stravaId || act?.sourceStravaActivityId || '').replace(/^strava-/i, '');
-    if (stravaIdRaw) {
-      navigate(`/training-calendar/${encodeURIComponent(`strava-${stravaIdRaw}`)}${athleteId ? `?athleteId=${athleteId}` : ''}`);
-      return;
-    }
+    // A manually-logged training often has a Strava or FIT twin with the
+    // streams, laps and map; show that one, since it is the same session.
+    const isRich = act?.stravaId || act?.sourceStravaActivityId || act?.type === 'strava' || act?.type === 'fit';
+    const subject = isRich ? act : (findRelatedRichActivity(act) || act);
 
-    // Direct FIT file activity.
-    if (act?.type === 'fit') {
-      const fitId = String(act._id || act.id || '').replace(/^fit-/i, '');
-      if (fitId) {
-        navigate(`/training-calendar/${encodeURIComponent(`fit-${fitId}`)}${athleteId ? `?athleteId=${athleteId}` : ''}`);
-        return;
-      }
-    }
-
-    // Manual Training record with a _id — use the same ?trainingId= approach as
-    // the web "View in calendar" button so FitAnalysisPage can resolve the linked
-    // Strava/FIT activity via sourceStravaActivityId / sourceFitTrainingId.
-    const trainingModelId = String(act?._id || '').replace(/^(regular-|training-)/, '');
-    if (trainingModelId && act?.type !== 'strava' && act?.type !== 'fit') {
-      navigate(`/training-calendar?trainingId=${trainingModelId}${athleteQs}`);
-      return;
-    }
-
-    // Same-day Strava/FIT lookup (fallback for older records).
-    const rich = findRelatedRichActivity(act);
-    if (rich) {
-      const { kind, id } = detectActivityKind(rich);
-      if (id) {
-        navigate(`/training-calendar/${encodeURIComponent(`${kind}-${id}`)}${athleteId ? `?athleteId=${athleteId}` : ''}`);
-        return;
-      }
-    }
-
-    // Fall back to the training record itself.
-    const { kind, id } = detectActivityKind(act);
-    if (id) {
-      navigate(`/training-calendar/${encodeURIComponent(`${kind}-${id}`)}${athleteId ? `?athleteId=${athleteId}` : ''}`);
-      return;
-    }
-
-    // Last resort: compact modal.
-    setActivityModal({ activity: enrichForModal(act), plannedWorkout: null });
+    setActivityModal({ activity: enrichForModal(subject), plannedWorkout: null });
   };
   const closeActivityModal = () => setActivityModal(null);
 
@@ -3463,15 +3428,9 @@ export default function NativeTrainingPage({
               // race that occasionally swallowed the openTrainingForm state.
               openTrainingForm(act || activityModal.activity);
             }}
-            onOpenFull={() => {
-              const a = activityModal.activity;
-              closeActivityModal();
-              const id = a.stravaId || a._id || a.id;
-              const prefix = a.type === 'fit' ? 'fit'
-                           : (a.type === 'strava' || a.stravaId) ? 'strava'
-                           : a.type === 'regular' ? 'regular' : 'training';
-              navigate(`/training-calendar/${encodeURIComponent(`${prefix}-${id}`)}`);
-            }}
+            // No onOpenFull: the only thing it opened was that same
+            // full-page activity view, and the modal already carries Summary,
+            // Laps and Edit. Nothing on this page routes there any more.
           />
         </Suspense>
       )}
