@@ -14,7 +14,7 @@ import ReactDOM from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import useNativeTabScrollToTop from '../hooks/useNativeTabScrollToTop';
 import PremiumLock from '../components/PremiumLock';
-import { hasRadar } from '../utils/radarSport';
+import { dominantRadarSport, hasRadar } from '../utils/radarSport';
 
 import {
   GlassCard, SectionTitle, SportTile,
@@ -2617,23 +2617,6 @@ export default function NativeTrainingPage({
             </div>
           )}
 
-          {/* ─── Power / Pace radar — the chart the web dashboard shows,
-                 following the sport filter above. Swim has no axes, and on
-                 "all" a radar of one sport beside a mixed list would lie. ─── */}
-          {hasRadar(selectedSport) && (
-            <div style={{ ...cardEntry(2), ...snap }}>
-              <PremiumLock feature="Performance Profile" plan="pro" minHeight={280}>
-                <Suspense fallback={<div style={{ height: 280 }} />}>
-                  <SpiderChart
-                    trainings={filtered}
-                    sport={selectedSport}
-                    athleteId={athleteId || null}
-                  />
-                </Suspense>
-              </PremiumLock>
-            </div>
-          )}
-
           {/* ─── Training History — the visual comparison card ─── */}
           {intervalTrainingsBase.length > 0 && (() => {
             // Workout title navigation (prev/next chevrons)
@@ -3439,6 +3422,23 @@ export default function NativeTrainingPage({
               </div>
             );
           })()}
+
+          {/* ─── Power / Pace radar — last, because it is a summary of
+                 everything above it rather than something to scroll past.
+                 It follows the sport filter; on "all" it shows whichever of
+                 bike or run the listed sessions are mostly made of, so the
+                 chart never needs a sport switch of its own. ─── */}
+          <div style={{ ...cardEntry(3), ...snap }}>
+            <PremiumLock feature="Performance Profile" plan="pro" minHeight={280}>
+              <Suspense fallback={<div style={{ height: 280 }} />}>
+                <SpiderChart
+                  trainings={filtered}
+                  sport={hasRadar(selectedSport) ? selectedSport : dominantRadarSport(filtered)}
+                  athleteId={athleteId || null}
+                />
+              </Suspense>
+            </PremiumLock>
+          </div>
 
           <div style={{ height: 16 }} />
         </div>

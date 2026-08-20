@@ -2,7 +2,7 @@
  * The radar has bike and run axes and nothing else. Showing the bike radar
  * above a list of swims is worse than showing no radar at all.
  */
-import { RADAR_SPORTS, hasRadar, resolveRadarSport } from './radarSport';
+import { RADAR_SPORTS, dominantRadarSport, hasRadar, resolveRadarSport } from './radarSport';
 
 describe('hasRadar', () => {
   it('knows the two sports it can plot', () => {
@@ -44,5 +44,29 @@ describe('resolveRadarSport', () => {
     for (const [c, s] of [[null, null], ['swim', 'swim'], ['', ''], [undefined, undefined]]) {
       expect(RADAR_SPORTS).toContain(resolveRadarSport(c, s));
     }
+  });
+});
+
+describe('dominantRadarSport', () => {
+  const s = (sport, n) => Array.from({ length: n }, () => ({ sport }));
+
+  it('picks the sport most of the listed sessions are', () => {
+    expect(dominantRadarSport([...s('run', 5), ...s('bike', 2)])).toBe('run');
+    expect(dominantRadarSport([...s('run', 1), ...s('bike', 4)])).toBe('bike');
+  });
+
+  it('ignores sports the radar cannot draw', () => {
+    // Ten swims and one run still means the run radar, not no radar.
+    expect(dominantRadarSport([...s('swim', 10), ...s('run', 1)])).toBe('run');
+  });
+
+  it('falls back when the list has neither', () => {
+    expect(dominantRadarSport([...s('swim', 3)], 'run')).toBe('run');
+    expect(dominantRadarSport([])).toBe('bike');
+    expect(dominantRadarSport(null)).toBe('bike');
+  });
+
+  it('breaks a tie towards the bike', () => {
+    expect(dominantRadarSport([...s('run', 3), ...s('bike', 3)])).toBe('bike');
   });
 });
