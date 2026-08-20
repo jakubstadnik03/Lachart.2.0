@@ -15,6 +15,7 @@ import { useNavigate } from 'react-router-dom';
 import useNativeTabScrollToTop from '../hooks/useNativeTabScrollToTop';
 import PremiumLock from '../components/PremiumLock';
 import { dominantRadarSport, hasRadar } from '../utils/radarSport';
+import { resolveActivitySource } from '../utils/activitySourceId';
 
 import {
   GlassCard, SectionTitle, SportTile,
@@ -327,23 +328,6 @@ function avgOf(arr, key) {
   return vals.reduce((a, b) => a + b, 0) / vals.length;
 }
 
-// Detect activity flavour and build the prefixed id ActivityFullModal needs
-// to fetch the correct detail endpoint.
-function detectActivityKind(t) {
-  if (!t) return { kind: 'regular', id: '' };
-  if (t.type === 'fit')                                   return { kind: 'fit',     id: String(t._id || '') };
-  if (t.type === 'strava' || t.stravaId || t.source === 'strava')
-                                                          return { kind: 'strava',  id: String(t.stravaId || t.id || '').replace(/^strava-/, '') };
-  if (t.type === 'regular')                               return { kind: 'regular', id: String(t._id || '') };
-  // Regular trainings from /user/athlete/:id/trainings have no `type` —
-  // they're plain Training documents with `_id`, `results`, `title`, `sport`.
-  // Distinguish from FIT (which usually has originalFileName / records[]) by
-  // checking for FIT-specific fields.
-  const isFit = !!(t.originalFileName || (Array.isArray(t.records) && t.records.length > 0) || t.totalElapsedTime || t.titleAuto);
-  return isFit
-    ? { kind: 'fit',     id: String(t._id || '') }
-    : { kind: 'regular', id: String(t._id || '') };
-}
 
 // Enrich a training before passing to ActivityFullModal — fills in summary
 // stats from the `results` interval array when no execution data exists, so
@@ -362,7 +346,7 @@ function enrichForModal(t) {
     ? results.reduce((s, r) => s + (Number(r.distanceMeters || r.distance) || 0), 0)
     : 0;
 
-  const { kind, id } = detectActivityKind(t);
+  const { kind, id } = resolveActivitySource(t);
   const prefixedId = id ? `${kind}-${id}` : (t.id || t._id);
 
   return {
@@ -2312,10 +2296,12 @@ export default function NativeTrainingPage({
     // athlete on a second, near-identical screen with a "‹ Calendar" back
     // link — a page they never asked for and could not get out of in one tap.
 
-    // A manually-logged training often has a Strava or FIT twin with the
-    // streams, laps and map; show that one, since it is the same session.
-    const isRich = act?.stravaId || act?.sourceStravaActivityId || act?.type === 'strava' || act?.type === 'fit';
-    const subject = isRich ? act : (findRelatedRichActivity(act) || act);
+    // A logged training is often just the shell — a title and empty lap rows.
+    // The session with laps, streams and a map is the Strava, Garmin or FIT
+    // record it came from, so open that when the training points at one, and
+    // fall back to a same-day twin for older records that never stored a link.
+    const { kind } = resolveActivitySource(act);
+    const subject = kind === 'regular' ? (findRelatedRichActivity(act) || act) : act;
 
     setActivityModal({ activity: enrichForModal(subject), plannedWorkout: null });
   };
