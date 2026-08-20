@@ -961,6 +961,14 @@ export const sendCoachLeadEmail = async (userId, { force = false, segment = 'coa
   return data;
 };
 
+// The Coach Leads letter — the upgrade pitch for the Coach / Athlete plan —
+// sent to one user from the user list, where no segment has been picked. The
+// server works out which segment fits them and sends that version.
+export const sendPremiumEmail = async (userId, { force = false } = {}) => {
+  const { data } = await api.post(`/api/admin/coach-outreach/send-to-user/${userId}`, { force });
+  return data;
+};
+
 export const sendCoachOutreachEmail = async ({ name, email, subject, body, preview = false }) => {
   try {
     const response = await api.post('/user/admin/send-coach-outreach-email', { name, email, subject, body, preview });
