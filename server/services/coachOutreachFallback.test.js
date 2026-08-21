@@ -105,5 +105,14 @@ console.log('refusals that must survive the fallback path');
     assert.strictEqual(r3.reason, 'opted_out');
   });
 
+  // With no SMTP configured the send stops at the transporter. That is the
+  // point: reaching it proves force cleared the already-sent gate, which is
+  // what the admin's "send it again" confirmation relies on.
+  const r4 = await outreach.sendToPerson(fallbackPerson({ alreadySentAt: sentAt }), { force: true });
+  test('force gets a repeat past the already-sent gate', () => {
+    assert.notStrictEqual(r4.reason, 'already_sent');
+    assert.strictEqual(r4.reason, 'email_not_configured');
+  });
+
   console.log(`\n${passed} passed`);
 })();
