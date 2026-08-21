@@ -46,6 +46,64 @@ function calculateActivityTSS(activity, userProfile = null) {
 const FIT_LOAD_SELECT = 'timestamp trainingStressScore totalElapsedTime sport avgPower avgSpeed normalizedPower avgHeartRate maxHeartRate distance tssDisplayMode manualTss';
 const STRAVA_LOAD_SELECT = 'startDate movingTime elapsedTime distance averagePower averageSpeed sport average_heartrate max_heartrate weighted_average_watts manualTss tssDisplayMode';
 const GARMIN_LOAD_SELECT = 'startDate movingTime elapsedTime distance averageSpeed sport averageHeartRate averagePower manualTss tssDisplayMode';
+// LaChart's own Training records — manual entries, watch syncs, lactate
+// sessions. `duration` on this model is an "H:MM:SS" string and `movingTime`
+// the same length in seconds, so both come along; the rest are the rollups a
+// TSS can be derived from when no number was typed.
+const TRAINING_LOAD_SELECT = 'date sport duration movingTime distance avgPower avgHR maxHR tss tssDisplayMode';
+
+/** "H:MM:SS" / "MM:SS" -> seconds. Training stores duration as text. */
+function trainingDurationSeconds(t) {
+  const stored = Number(t?.movingTime);
+  if (Number.isFinite(stored) && stored > 0) return stored;
+  const raw = t?.duration;
+  if (typeof raw === 'number') return raw > 0 ? raw : 0;
+  if (typeof raw !== 'string') return 0;
+  if (!raw.includes(':')) {
+    const n = Number(raw);
+    return Number.isFinite(n) && n > 0 ? n : 0;
+  }
+  const parts = raw.split(':').map(Number);
+  if (parts.some((n) => !Number.isFinite(n))) return 0;
+  if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  if (parts.length === 2) return parts[0] * 60 + parts[1];
+  return 0;
+}
+
+/**
+ * A manual training carries load like anything else.
+ *
+ * Both callers used to map these to `tss: 0`, so every session an athlete
+ * entered by hand — or that came off the watch, or was recorded as a lactate
+ * test — counted as a rest day in CTL, ATL and the weekly load. The client
+ * computes their TSS and the server did not, so the same athlete read 152
+ * Fitness on the dashboard against 145 in the Training Calendar, which takes
+ * its numbers from here.
+ *
+ * Double counting is not the risk it looks like: a training linked to a synced
+ * ride collapses into it in dedupeActivitiesForLoad, which matches on day,
+ * sport and length and keeps the larger TSS — which is why movingTime has to
+ * travel with it.
+ */
+function mapTrainingToLoad(t, userProfile) {
+  const durationSec = trainingDurationSeconds(t);
+  return {
+    date: t.date,
+    tss: resolveActivityTss({
+      sport: t.sport,
+      movingTime: durationSec,
+      distance: t.distance,
+      avgPower: t.avgPower,
+      averageHeartRate: t.avgHR,
+      avgHeartRate: t.avgHR,
+      maxHeartRate: t.maxHR,
+      tss: t.tss,
+      tssDisplayMode: t.tssDisplayMode,
+    }, userProfile),
+    sport: t.sport || 'generic',
+    movingTime: durationSec,
+  };
+}
 
 async function findByUserIdBothFormats(Model, athleteIdStr, athleteIdObj, filter, select, sortField) {
   let rows = await Model.find({ userId: athleteIdStr, ...filter }).select(select).sort({ [sortField]: 1 }).lean();
@@ -201,7 +259,7 @@ async function calculateFormFitnessData(athleteId, days = 60, sportFilter = 'all
       findByUserIdBothFormats(GarminActivity, athleteIdStr, athleteIdObj, { startDate: dateFilter }, GARMIN_LOAD_SELECT, 'startDate'),
       findByUserIdBothFormats(AppleHealthActivity, athleteIdStr, athleteIdObj, { startDate: dateFilter }, 'startDate durationSeconds distanceMeters sport type avgHeartRate', 'startDate'),
       Training.find({ athleteId: athleteIdStr, date: dateFilter })
-        .select('date sport')
+        .select(TRAINING_LOAD_SELECT)
         .sort({ date: 1 })
         .lean(),
     ]);
@@ -231,11 +289,7 @@ async function calculateFormFitnessData(athleteId, days = 60, sportFilter = 'all
           if (sportFilter === 'swim') return trainingSport === 'swim';
           return true;
         })
-        .map((t) => ({
-          date: t.date,
-          tss: 0,
-          sport: t.sport || 'generic',
-        })),
+        .map((t) => mapTrainingToLoad(t, effectiveProfile)),
     ].filter((a) => a.date).sort((a, b) => new Date(a.date) - new Date(b.date));
 
     const dedupedActivities = dedupeActivitiesForLoad(allActivities);
@@ -650,7 +704,7 @@ async function calculateWeeklyTrainingLoad(athleteId, months = 3, sportFilter = 
       findByUserIdBothFormats(GarminActivity, athleteIdStr, athleteIdObj, { startDate: dateFilter }, GARMIN_LOAD_SELECT, 'startDate'),
       findByUserIdBothFormats(AppleHealthActivity, athleteIdStr, athleteIdObj, { startDate: dateFilter }, 'startDate durationSeconds distanceMeters sport type avgHeartRate', 'startDate'),
       Training.find({ athleteId: athleteIdStr, date: dateFilter })
-        .select('date sport')
+        .select(TRAINING_LOAD_SELECT)
         .sort({ date: 1 })
         .lean(),
     ]);
@@ -680,11 +734,7 @@ async function calculateWeeklyTrainingLoad(athleteId, months = 3, sportFilter = 
           if (sportFilter === 'swim') return trainingSport === 'swim';
           return true;
         })
-        .map((t) => ({
-          date: t.date,
-          tss: 0,
-          sport: t.sport || 'generic',
-        })),
+        .map((t) => mapTrainingToLoad(t, effectiveProfile)),
     ].filter((a) => a.date);
 
     const dedupedActivities = dedupeActivitiesForLoad(allActivities);
@@ -739,7 +789,10 @@ module.exports = {
   calculateFormFitnessData,
   calculateTodayMetrics,
   calculateTrainingStatus,
-  calculateWeeklyTrainingLoad
+  calculateWeeklyTrainingLoad,
+  // Exported so the load mapping can be tested without a database.
+  trainingDurationSeconds,
+  mapTrainingToLoad,
 };
 
 
