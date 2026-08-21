@@ -717,25 +717,52 @@ const AdminDashboard = () => {
   //
   // Opting out is the one refusal that stands, and it comes from the server.
   const handleSendPremiumEmail = async (targetUser) => {
-    try {
-      setPremiumEmailLoadingUserId(targetUser._id);
-      const res = await sendPremiumEmail(targetUser._id);
+    const describeFailure = (data) => {
+      const reason = data?.reason;
+      if (reason === 'opted_out') return `${targetUser.email} has opted out of product emails`;
+      if (reason === 'email_not_configured') return 'Email is not configured on the server';
+      if (reason === 'user_not_found') return 'User not found';
+      return data?.message || data?.error || 'Failed to send premium email';
+    };
+    const announce = (res) => {
       const which = res?.matchedSegment ? `${res.segment} version` : 'general version';
       addNotification(`Premium email sent to ${res?.to || targetUser.email} (${which})`, 'success');
+    };
+
+    try {
+      setPremiumEmailLoadingUserId(targetUser._id);
+      announce(await sendPremiumEmail(targetUser._id));
     } catch (err) {
       const data = err?.response?.data;
-      const reason = data?.reason;
-      const message =
-        reason === 'opted_out'
-          ? `${targetUser.email} has opted out of product emails`
-          : reason === 'already_sent'
-          ? `Already sent to ${targetUser.email}${data?.alreadySentAt ? ` on ${new Date(data.alreadySentAt).toLocaleDateString()}` : ''}`
-          : reason === 'email_not_configured'
-          ? 'Email is not configured on the server'
-          : reason === 'user_not_found'
-          ? 'User not found'
-          : data?.message || data?.error || 'Failed to send premium email';
-      addNotification(message, reason ? 'warning' : 'error');
+
+      // Already sent is a question, not a verdict. The server refuses a repeat
+      // by default so a double-click can't mail a customer twice, but an admin
+      // who means it should be able to say so — ask, then force.
+      if (data?.reason === 'already_sent') {
+        const when = data.alreadySentAt ? new Date(data.alreadySentAt).toLocaleString() : 'earlier';
+        const again = window.confirm(
+          `${targetUser.email} was already sent this email on ${when}.\n\n` +
+          'This is a real email to a real customer. Send it again?'
+        );
+        if (!again) {
+          addNotification('Not sent — already received this email', 'info');
+          setPremiumEmailLoadingUserId(null);
+          return;
+        }
+        try {
+          announce(await sendPremiumEmail(targetUser._id, { force: true }));
+        } catch (retryErr) {
+          const retryData = retryErr?.response?.data;
+          // Opting out survives force — the server refuses it either way.
+          addNotification(describeFailure(retryData), retryData?.reason ? 'warning' : 'error');
+          console.error('Premium email resend error:', retryData || retryErr);
+        } finally {
+          setPremiumEmailLoadingUserId(null);
+        }
+        return;
+      }
+
+      addNotification(describeFailure(data), data?.reason ? 'warning' : 'error');
       console.error('Premium email error:', data || err);
     } finally {
       setPremiumEmailLoadingUserId(null);
