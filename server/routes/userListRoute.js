@@ -2983,6 +2983,10 @@ router.get("/admin/users", verifyToken, async (req, res) => {
                     sentCount: 0,
                     lastSent: null
                 },
+                // When the Coach Leads letter last went out. One date per
+                // segment, because that is how sendToPerson records it — the
+                // admin list shows the most recent of them.
+                outreach: user.outreach || null,
                 featureAnnouncementEmail: user.featureAnnouncementEmail || { sent: false, sentCount: 0, lastSent: null },
                 stravaReminderEmail: user.stravaReminderEmail || {
                     sent: false,

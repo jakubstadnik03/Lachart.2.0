@@ -2,7 +2,8 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getEventStats } from '../utils/eventLogger';
 import { fetchCoachLeads, fetchCoachLeadPreview, sendCoachLeadTest, sendCoachLeadEmail, startCoachLeadBatch, fetchCoachLeadBatchStatus } from '../services/api';
-import { getAdminUsers, getAdminStats, getAdminHealth, getCoachAthletesPage, updateUserAdmin, deleteUserAdmin, deleteAthleteWithTests, sendReactivationEmail, sendThankYouEmail, sendPremiumEmail, sendThankYouEmailToAll, sendFeatureAnnouncementEmail, sendStravaReminderEmail, sendAppDownloadEmail, sendCoachOutreachEmail, getCoachOutreachLeads, updateCoachOutreachLead, importCoachOutreachLeads, startBulkOutreachCampaign, stopBulkCampaign, listBulkCampaigns, getDefaultOutreachTemplate, impersonateUser, sendRetentionEmailPreview, fetchWhatsNewMay2026Status, sendWhatsNewMay2026Preview, runWhatsNewMay2026Campaign, resetWhatsNewMay2026, fetchIosLaunchJun2026Status, sendIosLaunchJun2026Preview, runIosLaunchJun2026Campaign, resetIosLaunchJun2026, fetchPaidLaunchJul2026Status, sendPaidLaunchJul2026Preview, runPaidLaunchJul2026Campaign, resetPaidLaunchJul2026, fetchCampaignRecipients } from '../services/api';
+import { lastOutreachSentAt, formatOutreachSentAt } from '../utils/lastOutreachSentAt';
+import { getAdminUsers, getAdminStats, getAdminHealth, getCoachAthletesPage, updateUserAdmin, deleteUserAdmin, sendReactivationEmail, sendThankYouEmail, sendPremiumEmail, sendThankYouEmailToAll, sendFeatureAnnouncementEmail, sendStravaReminderEmail, sendAppDownloadEmail, sendCoachOutreachEmail, getCoachOutreachLeads, updateCoachOutreachLead, importCoachOutreachLeads, startBulkOutreachCampaign, stopBulkCampaign, listBulkCampaigns, getDefaultOutreachTemplate, impersonateUser, sendRetentionEmailPreview, fetchWhatsNewMay2026Status, sendWhatsNewMay2026Preview, runWhatsNewMay2026Campaign, resetWhatsNewMay2026, fetchIosLaunchJun2026Status, sendIosLaunchJun2026Preview, runIosLaunchJun2026Campaign, resetIosLaunchJun2026, fetchPaidLaunchJul2026Status, sendPaidLaunchJul2026Preview, runPaidLaunchJul2026Campaign, resetPaidLaunchJul2026, fetchCampaignRecipients } from '../services/api';
 import { useAuth } from '../context/AuthProvider';
 import { useNotification } from '../context/NotificationContext';
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
@@ -446,7 +447,6 @@ const AdminDashboard = () => {
   const [selectedUsersForBulk, setSelectedUsersForBulk] = useState([]);
   const [bulkSending, setBulkSending] = useState(false);
   const [deleteLoadingUserId, setDeleteLoadingUserId] = useState(null);
-  const [deleteAthleteLoadingId, setDeleteAthleteLoadingId] = useState(null);
   const [outreachName, setOutreachName] = useState('');
   const [outreachEmail, setOutreachEmail] = useState('');
   const [outreachSending, setOutreachSending] = useState(false);
@@ -660,31 +660,6 @@ const AdminDashboard = () => {
     }
   };
 
-  const handleDeleteAthleteWithTests = async (athlete) => {
-    const isSelf = currentUser?.id === athlete._id || currentUser?._id === athlete._id;
-    if (isSelf) {
-      addNotification('You cannot delete your own account here.', 'error');
-      return;
-    }
-    
-    const testCount = athlete.testCount || 0;
-    const confirmMsg = `Delete athlete "${athlete.name || ''} ${athlete.surname || ''}" (${athlete.email})?\n\nThis will permanently delete:\n- Athlete account\n- All ${testCount} tests\n- All trainings\n- All Strava activities\n- All other associated data\n\nThis is useful for problematic athletes causing freeze issues. This cannot be undone.`;
-    if (!window.confirm(confirmMsg)) return;
-    
-    try {
-      setDeleteAthleteLoadingId(athlete._id);
-      const result = await deleteAthleteWithTests(athlete._id);
-      addNotification(`Athlete ${athlete.email} and all data deleted successfully (${result.deletedData?.tests || 0} tests, ${result.deletedData?.trainings || 0} trainings)`, 'success');
-      fetchData();
-    } catch (err) {
-      const msg = err?.response?.data?.error || 'Failed to delete athlete';
-      addNotification(msg, 'error');
-      console.error('Delete athlete error:', err);
-    } finally {
-      setDeleteAthleteLoadingId(null);
-    }
-  };
-
   const handleSendReactivationEmail = async (targetUser) => {
     try {
       setEmailLoadingUserId(targetUser._id);
@@ -716,53 +691,36 @@ const AdminDashboard = () => {
   // letter and the catch-all read quite differently.
   //
   // Opting out is the one refusal that stands, and it comes from the server.
+  // Sends the Coach Leads letter — the Coach / Athlete plan pitch — to one user.
+  // The server picks the segment that fits them and falls back to the general
+  // version when none does, so everyone gets an email; the notification says
+  // which version it was, since the two read quite differently.
+  //
+  // force: true unconditionally. The server refuses a repeat by default, and
+  // this used to surface that as a confirm dialog — but one click on one named
+  // row is already the decision, so it just sends. A second click sends a
+  // second email; that is the trade for not being asked every time.
+  //
+  // Opting out is the one refusal that still stands, and it comes from the
+  // server, which ignores force for it.
   const handleSendPremiumEmail = async (targetUser) => {
-    const describeFailure = (data) => {
-      const reason = data?.reason;
-      if (reason === 'opted_out') return `${targetUser.email} has opted out of product emails`;
-      if (reason === 'email_not_configured') return 'Email is not configured on the server';
-      if (reason === 'user_not_found') return 'User not found';
-      return data?.message || data?.error || 'Failed to send premium email';
-    };
-    const announce = (res) => {
-      const which = res?.matchedSegment ? `${res.segment} version` : 'general version';
-      addNotification(`Premium email sent to ${res?.to || targetUser.email} (${which})`, 'success');
-    };
-
     try {
       setPremiumEmailLoadingUserId(targetUser._id);
-      announce(await sendPremiumEmail(targetUser._id));
+      const res = await sendPremiumEmail(targetUser._id, { force: true });
+      const which = res?.matchedSegment ? `${res.segment} version` : 'general version';
+      addNotification(`Premium email sent to ${res?.to || targetUser.email} (${which})`, 'success');
     } catch (err) {
       const data = err?.response?.data;
-
-      // Already sent is a question, not a verdict. The server refuses a repeat
-      // by default so a double-click can't mail a customer twice, but an admin
-      // who means it should be able to say so — ask, then force.
-      if (data?.reason === 'already_sent') {
-        const when = data.alreadySentAt ? new Date(data.alreadySentAt).toLocaleString() : 'earlier';
-        const again = window.confirm(
-          `${targetUser.email} was already sent this email on ${when}.\n\n` +
-          'This is a real email to a real customer. Send it again?'
-        );
-        if (!again) {
-          addNotification('Not sent — already received this email', 'info');
-          setPremiumEmailLoadingUserId(null);
-          return;
-        }
-        try {
-          announce(await sendPremiumEmail(targetUser._id, { force: true }));
-        } catch (retryErr) {
-          const retryData = retryErr?.response?.data;
-          // Opting out survives force — the server refuses it either way.
-          addNotification(describeFailure(retryData), retryData?.reason ? 'warning' : 'error');
-          console.error('Premium email resend error:', retryData || retryErr);
-        } finally {
-          setPremiumEmailLoadingUserId(null);
-        }
-        return;
-      }
-
-      addNotification(describeFailure(data), data?.reason ? 'warning' : 'error');
+      const reason = data?.reason;
+      const message =
+        reason === 'opted_out'
+          ? `${targetUser.email} has opted out of product emails`
+          : reason === 'email_not_configured'
+          ? 'Email is not configured on the server'
+          : reason === 'user_not_found'
+          ? 'User not found'
+          : data?.message || data?.error || 'Failed to send premium email';
+      addNotification(message, reason ? 'warning' : 'error');
       console.error('Premium email error:', data || err);
     } finally {
       setPremiumEmailLoadingUserId(null);
@@ -2807,21 +2765,15 @@ const AdminDashboard = () => {
                         >
                           {premiumEmailLoadingUserId === user._id ? 'Sending…' : 'Send premium email'}
                         </button>
-                        {(user.role === 'athlete' || (user.athletes && user.athletes.length > 0)) && (
-                          <button
-                            type="button"
-                            disabled={deleteAthleteLoadingId === user._id || currentUser?.id === user._id || currentUser?._id === user._id}
-                            onClick={() => handleDeleteAthleteWithTests(user)}
-                            className={`w-full border text-xs font-medium py-1.5 rounded-md flex items-center justify-center ${
-                              currentUser?.id === user._id || currentUser?._id === user._id
-                                ? 'border-gray-300 text-gray-400 cursor-not-allowed bg-gray-50'
-                                : 'border-orange-600 text-orange-600 hover:bg-orange-50'
-                            } ${deleteAthleteLoadingId === user._id ? 'opacity-60 cursor-wait' : ''}`}
-                            title="Delete athlete with all tests (for problematic athletes causing freeze)"
-                          >
-                            {deleteAthleteLoadingId === user._id ? 'Deleting…' : 'Delete athlete'}
-                          </button>
-                        )}
+                        {(() => {
+                          // Sending no longer asks for confirmation, so the
+                          // date is the only thing standing between an admin
+                          // and a second copy for the same customer.
+                          const when = formatOutreachSentAt(lastOutreachSentAt(user));
+                          return when
+                            ? <span className="block text-[10px] text-gray-400 text-center -mt-0.5">Last sent {when}</span>
+                            : null;
+                        })()}
                         <button
                           type="button"
                           disabled={deleteLoadingUserId === user._id || currentUser?.id === user._id || currentUser?._id === user._id}
@@ -3276,21 +3228,12 @@ const AdminDashboard = () => {
                             >
                               {premiumEmailLoadingUserId === user._id ? 'Sending…' : 'Send premium email'}
                             </button>
-                            {(user.role === 'athlete' || (user.athletes && user.athletes.length > 0)) && (
-                              <button
-                                type="button"
-                                disabled={deleteAthleteLoadingId === user._id || currentUser?.id === user._id || currentUser?._id === user._id}
-                                onClick={() => handleDeleteAthleteWithTests(user)}
-                                className={`block text-xs mt-1 ${
-                                  currentUser?.id === user._id || currentUser?._id === user._id
-                                    ? 'text-gray-400 cursor-not-allowed'
-                                    : 'text-orange-600 hover:text-orange-700'
-                                } ${deleteAthleteLoadingId === user._id ? 'opacity-60 cursor-wait' : ''}`}
-                                title={currentUser?.id === user._id || currentUser?._id === user._id ? 'Cannot delete your own account' : 'Delete athlete with all tests (for problematic athletes)'}
-                              >
-                                {deleteAthleteLoadingId === user._id ? 'Deleting…' : 'Delete athlete'}
-                              </button>
-                            )}
+                            {(() => {
+                              const when = formatOutreachSentAt(lastOutreachSentAt(user));
+                              return when
+                                ? <span className="block text-[10px] text-gray-400">Last sent {when}</span>
+                                : null;
+                            })()}
                             <button
                               type="button"
                               disabled={deleteLoadingUserId === user._id || currentUser?.id === user._id || currentUser?._id === user._id}
