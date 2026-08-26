@@ -826,6 +826,16 @@ export const getAdminStats = async () => {
   }
 };
 
+export const getAdminBilling = async () => {
+  try {
+    const response = await api.get('/user/admin/billing');
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching admin billing:', error);
+    throw error;
+  }
+};
+
 export const getAdminHealth = async () => {
   try {
     const response = await api.get('/user/admin/health');
