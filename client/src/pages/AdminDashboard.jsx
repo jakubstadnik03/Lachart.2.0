@@ -2090,6 +2090,16 @@ const AdminDashboard = () => {
             </div>
 
             {/* Premium & Revenue */}
+            {!billing && !loadingData && (
+              <div className="bg-white rounded-lg shadow p-4 sm:p-6">
+                <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-2">Premium &amp; Revenue</h3>
+                <p className="text-sm text-gray-500">
+                  Billing data unavailable — the API this client talks to does not expose
+                  <code className="mx-1 px-1 bg-gray-100 rounded">/user/admin/billing</code>
+                  yet (server not redeployed/restarted with the latest code?).
+                </p>
+              </div>
+            )}
             {billing && (() => {
               const fmtEur = (v) => `€${Number(v || 0).toFixed(2)}`;
               const fmtDate = (v) => (v ? new Date(v).toLocaleDateString() : '—');
