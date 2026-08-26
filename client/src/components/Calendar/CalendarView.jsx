@@ -7720,16 +7720,14 @@ export default function CalendarView({
     );
   };
 
-  // Initialize anchorDate from localStorage, initialAnchorDate prop, or today
+  // Initialize anchorDate: explicit prop (deep-link to a training) or today.
   const getInitialAnchorDate = () => {
     // safeDate guards against an Invalid Date prop (truthy but unusable) that
     // would otherwise crash every anchorDate.toISOString() downstream.
     if (initialAnchorDate) return safeDate(initialAnchorDate);
-    const saved = localStorage.getItem('calendarView_anchorDate');
-    if (saved) {
-      const parsed = new Date(saved);
-      if (!isNaN(parsed.getTime())) return parsed;
-    }
+    // Always open on today. Restoring the last browsed month from
+    // localStorage made every return to the calendar land on whatever old
+    // month the user had scrolled to days ago.
     return new Date();
   };
 

@@ -219,9 +219,10 @@ function buildGarminWorkout(pw, ctx = {}) {
     sport,
     poolLength: null,
     poolLengthUnit: null,
-    // Both capped at 20 chars by the spec — the Mongo _id (24 chars) does NOT fit.
+    // Both capped at 20 chars by the spec — the Mongo _id (24 chars) does NOT
+    // fit whole, so the sourceId is its first 20 hex chars (unique per plan).
     workoutProvider: 'LaChart',
-    workoutSourceId: 'LaChart',
+    workoutSourceId: String(pw._id).replace(/[^A-Za-z0-9]/g, '').slice(0, 20) || 'LaChart',
     isSessionTransitionEnabled: false,
     // Steps always live on a segment, even for single-sport workouts.
     segments: [{
@@ -322,7 +323,12 @@ async function pushToGarminCalendar(user, pw, ctx) {
   let workoutId = pw.garminWorkoutId || null;
   if (workoutId) {
     try {
-      await axios().put(workoutUrl(workoutId), payload, { headers, timeout: 20000 });
+      // Update REQUIRES workoutId in the body matching the path — without it
+      // Garmin rejects the PUT ("doesn't match with null") and the stored
+      // workout keeps its old steps/targets forever.
+      const numericId = Number(workoutId);
+      const updateBody = { ...payload, workoutId: Number.isFinite(numericId) ? numericId : workoutId };
+      await axios().put(workoutUrl(workoutId), updateBody, { headers, timeout: 20000 });
     } catch (e) {
       if (!is404(e)) throw e;
       workoutId = null; // deleted on Garmin's side — recreate below
@@ -343,7 +349,12 @@ async function pushToGarminCalendar(user, pw, ctx) {
   }
   if (!scheduleId) {
     const r = await axios().post(scheduleCreateUrl(), { workoutId, date: scheduledDate }, { headers, timeout: 20000 });
-    scheduleId = r.data?.workoutScheduleId || r.data?.scheduleId || r.data?.id || null;
+    // The schedule create response can be a bare integer id — missing it left
+    // scheduleId null and the next sweep pinned a duplicate onto the calendar.
+    const body = r.data;
+    scheduleId = (typeof body === 'number' || typeof body === 'string')
+      ? String(body)
+      : String(body?.workoutScheduleId || body?.scheduleId || body?.id || '') || null;
   }
 
   return { workoutId, scheduleId, scheduledDate };
