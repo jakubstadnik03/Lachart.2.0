@@ -72,7 +72,7 @@ test('pinned override wins over the calculated zone', () => {
   assert.strictEqual(steps[0].targetValueHigh, Math.round(333 * 1.05));
 });
 
-test('workout payload carries sport, duration (repeats expanded) and source id', () => {
+test('workout payload wraps steps in a single segment (Training API v2 shape)', () => {
   const pw = {
     _id: 'abc123',
     title: 'Threshold 5×8',
@@ -88,9 +88,14 @@ test('workout payload carries sport, duration (repeats expanded) and source id',
   const w = buildGarminWorkout(pw, ctx);
   assert.strictEqual(w.sport, 'CYCLING');
   assert.strictEqual(w.workoutProvider, 'LaChart');
-  assert.strictEqual(w.workoutSourceId, 'abc123');
-  // 600 + 5×(480+120) + 300
-  assert.strictEqual(w.estimatedDurationInSecs, 600 + 5 * 600 + 300);
+  // Spec caps provider/sourceId at 20 chars — a Mongo _id must NOT be used.
+  assert.ok(w.workoutSourceId.length <= 20);
+  assert.ok(!('steps' in w), 'steps must not be top-level');
+  assert.strictEqual(w.segments.length, 1);
+  assert.strictEqual(w.segments[0].segmentOrder, 1);
+  assert.strictEqual(w.segments[0].sport, 'CYCLING');
+  assert.strictEqual(w.segments[0].steps.length, 3);
+  assert.strictEqual(w.segments[0].steps[1].type, 'WorkoutRepeatStep');
 });
 
 test('eligibility: OAuth + steps + planned status required; permissions gate honoured', () => {
@@ -138,6 +143,7 @@ test('run 10×1 km → DISTANCE laps in metres with PACE target in m/s', () => {
   const km = rep.steps[0];
   assert.strictEqual(km.durationType, 'DISTANCE');
   assert.strictEqual(km.durationValue, 1000);
+  assert.strictEqual(km.durationValueType, 'METER');
   assert.strictEqual(km.targetType, 'PACE');
   // LT2 = 250 s/km = 4.0 m/s, ±5 %
   assert.ok(Math.abs(km.targetValueLow - 3.8) < 0.01, `low=${km.targetValueLow}`);
@@ -157,14 +163,26 @@ test('run without pace zones falls back to OPEN, never emits bike watts', () => 
   assert.strictEqual(steps[0].durationType, 'DISTANCE');
 });
 
-test('run workout payload maps sport RUNNING', () => {
+test('run workout payload maps sport RUNNING with PACE target in the segment', () => {
   const w = buildGarminWorkout({
     _id: 'r1', title: '10×1 km', sport: 'run', date: new Date('2026-09-02'),
     steps: [{ stepType: 'work', durationType: 'distance', distanceMeters: 1000,
       durationSeconds: 250, powerTarget: { type: 'lt2' } }],
   }, runCtx);
   assert.strictEqual(w.sport, 'RUNNING');
-  assert.strictEqual(w.steps[0].targetType, 'PACE');
+  assert.strictEqual(w.segments[0].steps[0].targetType, 'PACE');
+});
+
+test('swim steps keep targetType null and rests use FIXED_REST', () => {
+  const steps = buildGarminSteps([
+    { stepType: 'work', durationType: 'distance', distanceMeters: 100, durationSeconds: 120,
+      powerTarget: { type: 'lt2' } },
+    { stepType: 'rest', durationSeconds: 20 },
+  ], { sport: 'swim', lt2Swim: 90, swimmingZones: { lt2: 90 } });
+  assert.strictEqual(steps[0].targetType, null);
+  assert.strictEqual(steps[0].durationValueType, 'METER');
+  assert.strictEqual(steps[1].durationType, 'FIXED_REST');
+  assert.strictEqual(steps[1].durationValue, 20);
 });
 
 console.log(passed + ' passed');

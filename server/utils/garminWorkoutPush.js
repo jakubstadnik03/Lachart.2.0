@@ -2,18 +2,24 @@
  * garminWorkoutPush
  * ─────────────────
  * Mirror LaChart planned workouts (steps → watch laps) into the athlete's
- * Garmin Connect calendar via the Garmin Training API:
+ * Garmin Connect calendar via the Garmin Training API (spec v2):
  *
- *   POST   /training-api/workout            create structured workout
- *   PUT    /training-api/workout/{id}       update it
- *   DELETE /training-api/workout/{id}       remove it
- *   POST   /training-api/schedule           pin workout to a calendar date
- *   DELETE /training-api/schedule/{id}      unpin
+ *   POST   /workoutportal/workout/v2           create structured workout (yes,
+ *                                              create alone lives on this path)
+ *   PUT    /training-api/workout/v2/{id}       update it
+ *   DELETE /training-api/workout/v2/{id}       remove it
+ *   POST   /training-api/schedule/             pin workout to a date
+ *   DELETE /training-api/schedule/{id}         unpin
  *
- * NOTE the path has NO "/rest" segment — unlike the Wellness API. With
- * "/training-api/rest/..." Garmin's gateway answers
- * 500 {"errorMessage":"RouteFailed: Unable to route the message to a Target
- * Endpoint"}, which is a routing miss, not a payload problem.
+ * Hard-won path/payload facts (each cost a generic 500 from Garmin):
+ *  - No "/rest" segment (unlike the Wellness API) — wrong paths answer
+ *    500 RouteFailed, not 404.
+ *  - Steps are NOT top-level: the workout carries segments[], and steps live
+ *    on the segment ({ segmentOrder: 1, sport, steps }) even for one sport.
+ *  - workoutProvider / workoutSourceId are capped at 20 characters.
+ *  - DISTANCE steps carry durationValueType: "METER".
+ *  - Swim workouts must have targetType null, and swim rests use FIXED_REST.
+ *  - PACE targets are expressed as speed in m/s (targetValueLow/High).
  *
  * Requires the Garmin OAuth connection with the WORKOUT_IMPORT permission.
  * Everything here is fire-and-forget from the planner routes: failures are
@@ -37,9 +43,13 @@ function axios() {
   return require('axios');
 }
 
-function trainingApiBase() {
-  return `${(process.env.GARMIN_API_BASE_URL || 'https://apis.garmin.com').replace(/\/$/, '')}/training-api`;
+function garminApiRoot() {
+  return (process.env.GARMIN_API_BASE_URL || 'https://apis.garmin.com').replace(/\/$/, '');
 }
+const workoutCreateUrl = () => `${garminApiRoot()}/workoutportal/workout/v2`;
+const workoutUrl = (id) => `${garminApiRoot()}/training-api/workout/v2/${id}`;
+const scheduleCreateUrl = () => `${garminApiRoot()}/training-api/schedule/`;
+const scheduleUrl = (id) => `${garminApiRoot()}/training-api/schedule/${id}`;
 
 /** Lazy — integrationsRoutes also requires utils, avoid load-order surprises. */
 function getValidGarminToken(user) {
@@ -107,19 +117,30 @@ function resolveSpeedRange(step, ctx) {
 function toGarminStep(step, ctx, order) {
   const meters = Math.round(Number(step.distanceMeters) || 0);
   const isDistance = step.durationType === 'distance' && meters > 0;
+  const isSwim = ctx.sport === 'swim';
   const g = {
     type: 'WorkoutStep',
     stepOrder: order,
     intensity: STEP_TYPE_TO_INTENSITY[step.stepType] || 'INTERVAL',
     // Distance steps (10×1 km) go to the watch as metres, so the lap flips on
     // distance — durationSeconds is only the builder's e-pace estimate.
-    durationType: isDistance ? 'DISTANCE' : 'TIME',
+    // Swim rest steps must be FIXED_REST per the Training API spec.
+    durationType: isDistance ? 'DISTANCE' : (isSwim && step.stepType === 'rest' ? 'FIXED_REST' : 'TIME'),
     durationValue: isDistance ? meters : Math.max(1, Number(step.durationSeconds) || 0),
+    durationValueType: isDistance ? 'METER' : null,
+    targetType: null,
+    targetValue: null,
+    targetValueLow: null,
+    targetValueHigh: null,
+    targetValueType: null,
   };
   const desc = step.label || step.notes;
   if (desc) g.description = String(desc).slice(0, 512);
 
-  // Target priority per sport: pace for run/swim, power for bike, HR fallback.
+  // Swim workouts: primary targetType must stay null (spec).
+  if (isSwim) return g;
+
+  // Target priority per sport: pace for run, power for bike, HR fallback.
   const speed = resolveSpeedRange(step, ctx);
   const power = POWER_SPORTS.has(ctx.sport) || !PACE_SPORTS.has(ctx.sport)
     ? resolveTargetRange(step.powerTarget, ctx)
@@ -189,35 +210,27 @@ function buildGarminSteps(steps = [], ctx = {}) {
   return out;
 }
 
-function totalSeconds(steps = []) {
-  let total = 0;
-  let group = null;
-  for (const s of steps) {
-    const dur = Math.max(0, Number(s.durationSeconds) || 0);
-    if (s.isGroupHeader) {
-      if (group) total += group.sum * group.repeat;
-      group = { id: s.groupId, repeat: Math.max(1, Number(s.groupRepeat) || 1), sum: dur };
-    } else if (group && s.groupId === group.id) {
-      group.sum += dur;
-    } else {
-      if (group) { total += group.sum * group.repeat; group = null; }
-      total += dur;
-    }
-  }
-  if (group) total += group.sum * group.repeat;
-  return total;
-}
-
 function buildGarminWorkout(pw, ctx = {}) {
   const stepCtx = { ...ctx, sport: pw.sport };
+  const sport = SPORT_TO_GARMIN[pw.sport] || 'GENERIC';
   return {
     workoutName: String(pw.title || 'Workout').slice(0, 80),
-    description: [pw.description, pw.coachNotes].filter(Boolean).join('\n\n').slice(0, 1024) || undefined,
-    sport: SPORT_TO_GARMIN[pw.sport] || 'GENERIC',
-    estimatedDurationInSecs: totalSeconds(pw.steps) || undefined,
+    description: [pw.description, pw.coachNotes].filter(Boolean).join('\n\n').slice(0, 1024) || null,
+    sport,
+    poolLength: null,
+    poolLengthUnit: null,
+    // Both capped at 20 chars by the spec — the Mongo _id (24 chars) does NOT fit.
     workoutProvider: 'LaChart',
-    workoutSourceId: String(pw._id),
-    steps: buildGarminSteps(pw.steps, stepCtx),
+    workoutSourceId: 'LaChart',
+    isSessionTransitionEnabled: false,
+    // Steps always live on a segment, even for single-sport workouts.
+    segments: [{
+      segmentOrder: 1,
+      sport,
+      poolLength: null,
+      poolLengthUnit: null,
+      steps: buildGarminSteps(pw.steps, stepCtx),
+    }],
   };
 }
 
@@ -294,21 +307,20 @@ const is404 = (e) => e?.response?.status === 404;
  * Mutates nothing — returns { workoutId, scheduleId, scheduledDate }.
  */
 async function pushToGarminCalendar(user, pw, ctx) {
-  const base = trainingApiBase();
   const headers = await authHeaders(user);
   const payload = buildGarminWorkout(pw, ctx);
 
   let workoutId = pw.garminWorkoutId || null;
   if (workoutId) {
     try {
-      await axios().put(`${base}/workout/${workoutId}`, payload, { headers, timeout: 20000 });
+      await axios().put(workoutUrl(workoutId), payload, { headers, timeout: 20000 });
     } catch (e) {
       if (!is404(e)) throw e;
       workoutId = null; // deleted on Garmin's side — recreate below
     }
   }
   if (!workoutId) {
-    const r = await axios().post(`${base}/workout`, payload, { headers, timeout: 20000 });
+    const r = await axios().post(workoutCreateUrl(), payload, { headers, timeout: 20000 });
     workoutId = r.data?.workoutId || r.data?.id || null;
     if (!workoutId) throw new Error('Garmin did not return a workoutId');
   }
@@ -316,12 +328,12 @@ async function pushToGarminCalendar(user, pw, ctx) {
   const scheduledDate = dayKey(pw.date);
   let scheduleId = pw.garminScheduleId || null;
   if (scheduleId && pw.garminScheduledDate !== scheduledDate) {
-    await axios().delete(`${base}/schedule/${scheduleId}`, { headers, timeout: 20000 })
+    await axios().delete(scheduleUrl(scheduleId), { headers, timeout: 20000 })
       .catch((e) => { if (!is404(e)) throw e; });
     scheduleId = null;
   }
   if (!scheduleId) {
-    const r = await axios().post(`${base}/schedule`, { workoutId, date: scheduledDate }, { headers, timeout: 20000 });
+    const r = await axios().post(scheduleCreateUrl(), { workoutId, date: scheduledDate }, { headers, timeout: 20000 });
     scheduleId = r.data?.workoutScheduleId || r.data?.scheduleId || r.data?.id || null;
   }
 
@@ -413,14 +425,13 @@ async function removePlannedWorkoutFromGarmin(pwSnapshot) {
   const user = await User.findById(pwSnapshot.athleteId).select('garmin').lean();
   if (!user?.garmin?.refreshToken) return;
   try {
-    const base = trainingApiBase();
     const headers = await authHeaders(user);
     if (pwSnapshot.garminScheduleId) {
-      await axios().delete(`${base}/schedule/${pwSnapshot.garminScheduleId}`, { headers, timeout: 20000 })
+      await axios().delete(scheduleUrl(pwSnapshot.garminScheduleId), { headers, timeout: 20000 })
         .catch((e) => { if (!is404(e)) throw e; });
     }
     if (pwSnapshot.garminWorkoutId) {
-      await axios().delete(`${base}/workout/${pwSnapshot.garminWorkoutId}`, { headers, timeout: 20000 })
+      await axios().delete(workoutUrl(pwSnapshot.garminWorkoutId), { headers, timeout: 20000 })
         .catch((e) => { if (!is404(e)) throw e; });
     }
   } catch (e) {
