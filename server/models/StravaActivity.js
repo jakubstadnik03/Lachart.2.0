@@ -42,11 +42,18 @@ const stravaActivitySchema = new mongoose.Schema({
   name: String,
   titleManual: { type: String, default: null },
   description: { type: String, default: null },
-  category: {
-    type: String,
-    enum: ['endurance', 'lt1', 'tempo', 'lt2', 'zone2', 'vo2max', 'hills', null],
-    default: null
-  },
+  // Plain string, deliberately. Categories are user-defined — CategoryContext
+  // ships seven built-ins and addCategory() lets an athlete make their own — so
+  // the vocabulary lives on the client and the database cannot enumerate it.
+  //
+  // This used to be an enum, and three models each carried a different one:
+  // Strava listed lt1/lt2/zone2 while Garmin and FIT listed threshold/
+  // anaerobic/recovery instead, so tagging a Garmin ride "LT2" was as fatal as
+  // a custom category. Saving one threw ValidationError, which surfaced as a
+  // 500 on the whole update and looked to the athlete like "power doesn't save".
+  //
+  // PlannedWorkout, AppleHealthActivity and DayPlan already stored it this way.
+  category: { type: String, default: null },
   sport: String,
   startDate: Date,
   elapsedTime: Number, // seconds
