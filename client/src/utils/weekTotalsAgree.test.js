@@ -59,17 +59,28 @@ describe('what a week of activities adds up to', () => {
     expect(week()).toHaveLength(14);
   });
 
-  it('measures a session by the whole session, not the moving part', () => {
-    // The Prague ride: 8948s from door to door, 8147s of it moving. Filling
-    // totalTime from the moving clock is what cost the dashboard 19 minutes a
-    // week, silently, because every total downstream asks that field first.
+  it('measures a session by the time spent training, not the time elapsed', () => {
+    // The Prague ride: 8948s from door to door, 8147s of it actually moving.
+    // The activity's own card had always shown the moving time; the week
+    // totals showed the stops, so the same ride read two lengths.
     const praha = week().find((a) => a.stravaId === 19727285709);
-    expect(completedSecs(praha)).toBe(8948);
+    expect(completedSecs(praha)).toBe(8147);
   });
 
-  it('adds up to the hours the calendar prints', () => {
+  it('adds up to the training hours, with the stops left out', () => {
     const total = week().reduce((sum, a) => sum + completedSecs(a), 0);
-    expect(total).toBe(88010); // 24h 26m 50s — "24:27" on screen
+    expect(total).toBe(86874); // 24h 07m 54s — "24:08" on screen
+  });
+
+  it('the stops are the whole difference — 19 minutes across this week', () => {
+    // Pins the size of the change rather than just its direction: only the
+    // rides with a paused clock move, and they move by exactly their pauses.
+    const elapsed = week().reduce(
+      (sum, a) => sum + (a.totalTime || a.elapsedTime || a.movingTime || 0),
+      0,
+    );
+    const moving = week().reduce((sum, a) => sum + completedSecs(a), 0);
+    expect(elapsed - moving).toBe(1136); // 18m 56s
   });
 
   it('gives the dashboard the same week as the calendar', () => {

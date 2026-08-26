@@ -31,8 +31,22 @@ describe('durationSecs', () => {
 });
 
 describe('completedSecs', () => {
-  it('takes the whole session from totalTime first', () => {
-    expect(completedSecs({ totalTime: 8948, movingTime: 8147 })).toBe(8948);
+  it('counts the time spent training, not the time elapsed', () => {
+    // A ride paused at a café: 2h29 on the clock, 2h16 actually riding. The
+    // activity's own card had always shown the moving time; the week strip
+    // showed the café too.
+    expect(completedSecs({ totalTime: 8948, movingTime: 8147 })).toBe(8147);
+  });
+
+  it('reads a FIT file the same way — timer, not elapsed', () => {
+    expect(completedSecs({ totalElapsedTime: 8948, totalTimerTime: 8147 })).toBe(8147);
+  });
+
+  it('falls back to the elapsed clock when a source has no moving one', () => {
+    // Better a slightly long number than a zero in the week total.
+    expect(completedSecs({ totalTime: 8948 })).toBe(8948);
+    expect(completedSecs({ elapsedTime: 8948 })).toBe(8948);
+    expect(completedSecs({ totalElapsedTime: 8948 })).toBe(8948);
   });
 
   it('reads a hand-entered training instead of returning zero', () => {
@@ -44,6 +58,16 @@ describe('completedSecs', () => {
     expect(completedSecs({ movingTime: 3000 })).toBe(3000);
     expect(completedSecs({ elapsed_time: 1200 })).toBe(1200);
     expect(completedSecs({ durationSeconds: 900 })).toBe(900);
+  });
+
+  it('a paused week does not bill the athlete for its pauses', () => {
+    const week = [
+      { totalTime: 8948, movingTime: 8147 },   // Garmin ride, paused at a café
+      { totalElapsedTime: 4000, totalTimerTime: 3600 }, // FIT upload, paused
+      { duration: '1:07:00' },                 // hand-entered swim
+    ];
+    const total = week.reduce((sum, a) => sum + completedSecs(a), 0);
+    expect(total).toBe(8147 + 3600 + 4020);
   });
 
   it('a week of mixed sources adds up instead of collapsing to NaN', () => {

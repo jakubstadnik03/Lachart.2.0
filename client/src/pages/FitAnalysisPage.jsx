@@ -3533,6 +3533,11 @@ const FitAnalysisPage = () => {
         type: 'fit',
         distance: t.totalDistance || t.distance,
         // FIT files store time as numeric seconds; convert any string fallback just in case.
+        // totalTimerTime travels alongside because it is the FIT moving clock —
+        // completedSecs asks for it before falling back to the elapsed fields,
+        // and without it a paused upload would total its pauses here while the
+        // dashboard, which keeps the raw field, did not.
+        totalTimerTime: t.totalTimerTime || null,
         totalElapsedTime: t.totalElapsedTime || t.totalTimerTime || t.movingTime || t.totalTime
           || parseDurationToSeconds(t.duration) || 0,
         totalTime: t.totalElapsedTime || t.totalTimerTime || t.movingTime || t.totalTime
