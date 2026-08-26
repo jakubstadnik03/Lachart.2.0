@@ -3080,7 +3080,7 @@ const FitAnalysisPage = () => {
     if (!gate('FIT Training Analysis', 'pro')) return;
     try {
       setDetailLoading(true);
-      const data = await getFitTraining(id);
+      const data = await getFitTraining(id, healthAthleteId);
       
       // Debug: Check what data we have
       if (data.records && data.records.length > 0) {
@@ -3171,7 +3171,7 @@ const FitAnalysisPage = () => {
         // Try FIT fallback before giving up, then clear stale storage keys.
         if (apiError?.response?.status === 404) {
           try {
-            const fitTraining = await getFitTraining(trainingId);
+            const fitTraining = await getFitTraining(trainingId, healthAthleteId);
             if (fitTraining?.laps && Array.isArray(fitTraining.laps)) {
               fitTraining.laps = deduplicateFitTrainingLaps(fitTraining.laps);
             }
@@ -3217,7 +3217,7 @@ const FitAnalysisPage = () => {
       // Try to load original FitTraining or StravaActivity if reference exists
       if (data.sourceFitTrainingId) {
         try {
-          const fitTraining = await getFitTraining(data.sourceFitTrainingId);
+          const fitTraining = await getFitTraining(data.sourceFitTrainingId, healthAthleteId);
 
           // Check for duplicate laps and deduplicate if needed
           if (fitTraining.laps && Array.isArray(fitTraining.laps)) {
@@ -3360,7 +3360,7 @@ const FitAnalysisPage = () => {
     }
 
     try {
-      await deleteFitTraining(trainingId);
+      await deleteFitTraining(trainingId, healthAthleteId);
       await loadTrainings();
       if (selectedTraining?._id === trainingId) {
         setSelectedTraining(null);
@@ -5049,7 +5049,7 @@ const FitAnalysisPage = () => {
                         await createLap(selectedTraining._id, {
                           startTime: Math.min(start, end),
                           endTime: Math.max(start, end)
-                        });
+                        }, healthAthleteId);
                         await loadTrainingDetail(selectedTraining._id);
                         setShowCreateLapButton(false);
                         setSelectedTimeRange({ start: 0, end: 0 });

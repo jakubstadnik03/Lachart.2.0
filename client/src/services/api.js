@@ -1324,9 +1324,14 @@ export const savePowerZonesToProfile = async (zones) => {
   }
 };
 
-export const getFitTraining = async (id) => {
+// athleteId (optional, coach view): server checks the coach↔athlete link and
+// reads/writes the athlete's training — without it a coach edit 404s on the
+// ownership match.
+export const getFitTraining = async (id, athleteId = null) => {
   try {
-    const response = await api.get(`/api/fit/trainings/${id}`);
+    const response = await api.get(`/api/fit/trainings/${id}`, {
+      params: athleteId ? { athleteId } : {},
+    });
     return response.data;
   } catch (error) {
     console.error('Error fetching FIT training:', error);
@@ -1344,11 +1349,11 @@ export const getAllTitles = async () => {
   }
 };
 
-export const updateLactateValues = async (trainingId, lactateValues) => {
+export const updateLactateValues = async (trainingId, lactateValues, athleteId = null) => {
   try {
     const response = await api.put(`/api/fit/trainings/${trainingId}/lactate`, {
       lactateValues
-    });
+    }, { params: athleteId ? { athleteId } : {} });
     return response.data;
   } catch (error) {
     console.error('Error updating lactate values:', error);
@@ -1356,9 +1361,11 @@ export const updateLactateValues = async (trainingId, lactateValues) => {
   }
 };
 
-export const updateFitTraining = async (trainingId, payload = {}) => {
+export const updateFitTraining = async (trainingId, payload = {}, athleteId = null) => {
   try {
-    const response = await api.put(`/api/fit/trainings/${trainingId}`, payload);
+    const response = await api.put(`/api/fit/trainings/${trainingId}`, payload, {
+      params: athleteId ? { athleteId } : {},
+    });
     // Drop every cached payload that could echo the old value (FIT list,
     // integrations activities, monthly aggregates, etc.) — otherwise a quick
     // reload re-serves the pre-update snapshot.
@@ -1370,12 +1377,12 @@ export const updateFitTraining = async (trainingId, payload = {}) => {
   }
 };
 
-export const createLap = async (trainingId, { startTime, endTime }) => {
+export const createLap = async (trainingId, { startTime, endTime }, athleteId = null) => {
   try {
     const response = await api.post(`/api/fit/trainings/${trainingId}/laps`, {
       startTime,
       endTime
-    });
+    }, { params: athleteId ? { athleteId } : {} });
     return response.data;
   } catch (error) {
     console.error('Error creating lap:', error);
@@ -1383,9 +1390,11 @@ export const createLap = async (trainingId, { startTime, endTime }) => {
   }
 };
 
-export const deleteFitTraining = async (trainingId) => {
+export const deleteFitTraining = async (trainingId, athleteId = null) => {
   try {
-    const response = await api.delete(`/api/fit/trainings/${trainingId}`);
+    const response = await api.delete(`/api/fit/trainings/${trainingId}`, {
+      params: athleteId ? { athleteId } : {},
+    });
     invalidateTrainingCaches();
     return response.data;
   } catch (error) {

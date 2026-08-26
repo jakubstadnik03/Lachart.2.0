@@ -2743,13 +2743,13 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
           }
         } else if (id.startsWith('fit-')) {
           const { getFitTraining } = await import('../../services/api.js');
-          data = await getFitTraining(id.replace('fit-', ''));
+          data = await getFitTraining(id.replace('fit-', ''), athleteId || null);
         } else if (id.startsWith('regular-')) {
           const { getTrainingById } = await import('../../services/api.js');
           data = await getTrainingById(id.replace('regular-', ''));
         } else if (id) {
           const { getFitTraining } = await import('../../services/api.js');
-          data = await getFitTraining(id);
+          data = await getFitTraining(id, athleteId || null);
         }
         if (!cancelled) setDetail(data);
       } catch (e) {
@@ -3107,7 +3107,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
         await updateStravaActivity(stravaId, { savedAutoLaps: payloadLaps }, athleteId || null);
       } else if (isFit) {
         const { updateFitTraining } = await import('../../services/api.js');
-        await updateFitTraining(String(merged?._id || id.replace(/^fit-/, '')), { savedAutoLaps: payloadLaps });
+        await updateFitTraining(String(merged?._id || id.replace(/^fit-/, '')), { savedAutoLaps: payloadLaps }, athleteId || null);
       } else {
         const { updateTraining } = await import('../../services/api.js');
         await updateTraining(String(merged?._id || id.replace(/^regular-/, '')), { savedAutoLaps: payloadLaps });
@@ -3482,7 +3482,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
       await updateGarminActivity(externalId, payload, athleteId);
     } else if (kind === 'fit') {
       const { updateFitTraining } = await import('../../services/api.js');
-      await updateFitTraining(externalId, payload);
+      await updateFitTraining(externalId, payload, athleteId || null);
     }
     setDetail((prev) => ({ ...(prev || {}), tssDisplayMode: nextMode }));
   };
@@ -3606,7 +3606,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
         if (isStrava) {
           await updateStravaActivity(String(merged.stravaId || id.replace(/^strava-/, '')), { title: structured }, athleteId || null);
         } else if (isFit) {
-          await updateFitTraining(String(merged._id || id.replace(/^fit-/, '')), { titleManual: structured });
+          await updateFitTraining(String(merged._id || id.replace(/^fit-/, '')), { titleManual: structured }, athleteId || null);
         } else if (merged._id) {
           await updateTraining(String(merged._id), { title: structured });
         } else {
@@ -3729,7 +3729,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
           } else if (isFit) {
             const fitId = String(merged._id || id.replace(/^fit-/, ''));
             const { updateFitTraining } = await import('../../services/api.js');
-            await updateFitTraining(fitId, { titleManual: newTitle });
+            await updateFitTraining(fitId, { titleManual: newTitle }, athleteId || null);
           } else if (merged._id) {
             const { updateTraining } = await import('../../services/api.js');
             await updateTraining(String(merged._id), { title: newTitle });
@@ -3826,7 +3826,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
         await updateGarminActivity(externalId, { category: value }, athleteId);
       } else if (kind === 'fit') {
         const { updateFitTraining } = await import('../../services/api.js');
-        await updateFitTraining(externalId, { category: value });
+        await updateFitTraining(externalId, { category: value }, athleteId || null);
       } else if (kind === 'regular') {
         const { updateTraining } = await import('../../services/api.js');
         await updateTraining(externalId, { category: value });
@@ -3999,7 +3999,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
         savedResponse = await updateGarminActivity(externalId, { ...basePayload, ...extraFields }, athleteId);
       } else if (kind === 'fit') {
         const { updateFitTraining } = await import('../../services/api.js');
-        savedResponse = await updateFitTraining(externalId, { ...basePayload, ...extraFields });
+        savedResponse = await updateFitTraining(externalId, { ...basePayload, ...extraFields }, athleteId || null);
       } else if (kind === 'regular') {
         const { updateTraining } = await import('../../services/api.js');
         const trainingPayload = { ...basePayload, ...extraFields };
@@ -8775,7 +8775,7 @@ export default function CalendarView({
               const payload = {};
               if (newTitle != null) payload.titleManual = newTitle;
               if (newCategory != null) payload.category = newCategory;
-              await updateFitTraining(rawId, payload);
+              await updateFitTraining(rawId, payload, athleteId || null);
             }
             // Notify the in-memory list + emit the standard events so every
             // dashboard / list re-renders with the new fields without a refetch.

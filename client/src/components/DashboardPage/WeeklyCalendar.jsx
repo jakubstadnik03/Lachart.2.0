@@ -1578,7 +1578,7 @@ const WeeklyCalendar = ({
           setTrainingDetail(activity);
           return;
         }
-        const detail = await getFitTraining(trainingId);
+        const detail = await getFitTraining(trainingId, stravaDetailAthleteId);
         // Ensure we have stream records when present (for downstream charts)
         if (detail && (!detail.records || detail.records.length === 0)) {
           console.warn('FIT training has no records:', trainingId);
@@ -1963,9 +1963,9 @@ const WeeklyCalendar = ({
                             setSaving(true);
                             const title = editingTitle.trim();
                             if (trainingDetail.type === 'fit' && trainingDetail._id) {
-                              await updateFitTraining(trainingDetail._id, { title });
+                              await updateFitTraining(trainingDetail._id, { title }, stravaDetailAthleteId);
                               // Reload FIT training detail
-                              const detail = await getFitTraining(trainingDetail._id);
+                              const detail = await getFitTraining(trainingDetail._id, stravaDetailAthleteId);
                               setTrainingDetail({ ...detail, type: 'fit' });
                               // Update selectedTraining to reflect the new title
                               setSelectedTraining(prev => prev ? { ...prev, title: title, titleManual: title } : null);
@@ -2125,9 +2125,9 @@ const WeeklyCalendar = ({
                               setSaving(true);
                               const category = editingCategory || null;
                               if (trainingDetail.type === 'fit' && trainingDetail._id) {
-                                await updateFitTraining(trainingDetail._id, { category });
+                                await updateFitTraining(trainingDetail._id, { category }, stravaDetailAthleteId);
                                 // Reload FIT training detail
-                                const detail = await getFitTraining(trainingDetail._id);
+                                const detail = await getFitTraining(trainingDetail._id, stravaDetailAthleteId);
                                 setTrainingDetail({ ...detail, type: 'fit' });
                                 // Notify parent component about the update
                                 if (onActivityUpdate) {
@@ -2293,7 +2293,7 @@ const WeeklyCalendar = ({
                       // Reload detail if needed
                       try {
                         if (trainingDetail.type === 'fit' && trainingDetail._id) {
-                          const detail = await getFitTraining(trainingDetail._id);
+                          const detail = await getFitTraining(trainingDetail._id, stravaDetailAthleteId);
                           setTrainingDetail({ ...detail, type: 'fit' });
                         } else if (trainingDetail.type === 'strava' && trainingDetail.id) {
                           const detail = await getStravaActivityDetail(trainingDetail.id, stravaDetailAthleteId);
@@ -2372,7 +2372,7 @@ const WeeklyCalendar = ({
                               // Reload detail if needed
                               try {
                                 if (trainingDetail.type === 'fit' && trainingDetail._id) {
-                                  const detail = await getFitTraining(trainingDetail._id);
+                                  const detail = await getFitTraining(trainingDetail._id, stravaDetailAthleteId);
                                   setTrainingDetail({ ...detail, type: 'fit' });
                                 } else if (trainingDetail.type === 'strava' && trainingDetail.id) {
                                   const detail = await getStravaActivityDetail(trainingDetail.id, stravaDetailAthleteId);
