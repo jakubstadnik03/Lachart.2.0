@@ -4,11 +4,16 @@
  * Mirror LaChart planned workouts (steps → watch laps) into the athlete's
  * Garmin Connect calendar via the Garmin Training API:
  *
- *   POST   /training-api/rest/workout            create structured workout
- *   PUT    /training-api/rest/workout/{id}       update it
- *   DELETE /training-api/rest/workout/{id}       remove it
- *   POST   /training-api/rest/schedule           pin workout to a calendar date
- *   DELETE /training-api/rest/schedule/{id}      unpin
+ *   POST   /training-api/workout            create structured workout
+ *   PUT    /training-api/workout/{id}       update it
+ *   DELETE /training-api/workout/{id}       remove it
+ *   POST   /training-api/schedule           pin workout to a calendar date
+ *   DELETE /training-api/schedule/{id}      unpin
+ *
+ * NOTE the path has NO "/rest" segment — unlike the Wellness API. With
+ * "/training-api/rest/..." Garmin's gateway answers
+ * 500 {"errorMessage":"RouteFailed: Unable to route the message to a Target
+ * Endpoint"}, which is a routing miss, not a payload problem.
  *
  * Requires the Garmin OAuth connection with the WORKOUT_IMPORT permission.
  * Everything here is fire-and-forget from the planner routes: failures are
@@ -33,7 +38,7 @@ function axios() {
 }
 
 function trainingApiBase() {
-  return `${(process.env.GARMIN_API_BASE_URL || 'https://apis.garmin.com').replace(/\/$/, '')}/training-api/rest`;
+  return `${(process.env.GARMIN_API_BASE_URL || 'https://apis.garmin.com').replace(/\/$/, '')}/training-api`;
 }
 
 /** Lazy — integrationsRoutes also requires utils, avoid load-order surprises. */
