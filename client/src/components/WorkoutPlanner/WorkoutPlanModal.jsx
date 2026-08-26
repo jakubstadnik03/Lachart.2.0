@@ -296,6 +296,60 @@ const LAP_LABEL = {
 };
 
 /**
+ * Left-column summary: totals + intensity numbers for the structured steps.
+ * Power-based rows (avg W, IF, kJ→kcal) only make sense for bike; run/swim
+ * show distance instead.
+ */
+function WorkoutSummary({ steps, context, sport, estTss }) {
+  const expanded = expandSteps(Array.isArray(steps) ? steps : []);
+  if (!expanded.length) return null;
+
+  let totalSecs = 0;
+  let workSecs = 0;
+  let distM = 0;
+  let wattSum = 0;
+  let wattSecs = 0;
+  for (const s of expanded) {
+    const dur = Number(s.durationSeconds) || 0;
+    totalSecs += dur;
+    if (s.stepType === 'work') workSecs += dur;
+    if (s.durationType === 'distance' && Number(s.distanceMeters) > 0) distM += Number(s.distanceMeters);
+    const w = resolveTargetWatts(s.powerTarget, context);
+    if (w > 0) { wattSum += w * dur; wattSecs += dur; }
+  }
+  const isBike = sport === 'bike' || sport === 'mtbike';
+  const avgW = isBike && wattSecs > 0 ? Math.round(wattSum / wattSecs) : null;
+  const ftp = context?.lt2Power || context?.ftp || null;
+  const intensityFactor = avgW && ftp ? avgW / ftp : null;
+  // kJ ≈ kcal for cycling (~25 % mechanical efficiency cancels the 4.184).
+  const kcal = avgW ? Math.round((avgW * totalSecs) / 1000) : null;
+
+  const rows = [
+    ['Time', fmtStepDuration(totalSecs)],
+    workSecs > 0 && ['Work time', fmtStepDuration(workSecs)],
+    distM > 0 && ['Distance', fmtDistance(distM)],
+    avgW != null && ['Avg power', `~${avgW} W`],
+    estTss != null && ['Est. TSS', String(Math.round(estTss))],
+    intensityFactor != null && ['IF', intensityFactor.toFixed(2)],
+    kcal != null && ['Energy', `~${kcal} kcal`],
+  ].filter(Boolean);
+
+  return (
+    <div>
+      <label className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1 block">Summary</label>
+      <div className="rounded-xl border border-slate-200 bg-white divide-y divide-slate-100">
+        {rows.map(([label, val]) => (
+          <div key={label} className="flex items-center justify-between px-3 py-1.5 text-[11px]">
+            <span className="text-slate-500">{label}</span>
+            <span className="font-semibold text-slate-700 tabular-nums">{val}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/**
  * Left-column lap-by-lap readout: every expanded step on its own line with
  * the resolved target (watts for bike, pace for run/swim) — the same numbers
  * the watch will get.
@@ -326,7 +380,8 @@ function WorkoutLapList({ steps, context, sport }) {
       <label className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1 block">
         Laps <span className="normal-case font-normal text-slate-300">· {expanded.length} × · {fmtStepDuration(totalSecs)} total</span>
       </label>
-      <div className="rounded-xl border border-slate-200 divide-y divide-slate-100 max-h-72 overflow-y-auto bg-white">
+      {/* No own max-height — the sticky left column scrolls as one piece. */}
+      <div className="rounded-xl border border-slate-200 divide-y divide-slate-100 bg-white">
         {expanded.map((s, i) => {
           const isDist = s.durationType === 'distance' && Number(s.distanceMeters) > 0;
           const size = isDist ? fmtDistance(Number(s.distanceMeters)) : fmtStepDuration(Number(s.durationSeconds) || 0);
@@ -848,8 +903,10 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
               {/* ── Build Workout section — 2-col on lg+ ── */}
               <div className="px-5 py-4 flex-1 flex flex-col lg:flex-row gap-4 lg:gap-6">
 
-                {/* On lg+: comment/desc go in left column, builder in right */}
-                <div className="lg:w-72 xl:w-80 shrink-0 flex flex-col gap-3 order-2 lg:order-1">
+                {/* On lg+: comment/desc/summary/laps go in the left column,
+                    builder in the right. Sticky with its own scrollbar so the
+                    summary stays put while the (much taller) builder scrolls. */}
+                <div className="lg:w-72 xl:w-80 shrink-0 flex flex-col gap-3 order-2 lg:order-1 lg:sticky lg:top-2 lg:self-start lg:max-h-[calc(100vh-16rem)] lg:overflow-y-auto lg:pr-1">
                   <div>
                     <label className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1 block">
                       Comment <span className="normal-case font-normal text-slate-300">· shown on calendar card</span>
@@ -868,7 +925,8 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
                     />
                   </div>
 
-                  {/* Lap-by-lap readout of the structured steps (watch numbers) */}
+                  {/* Totals + lap-by-lap readout of the structured steps (watch numbers) */}
+                  <WorkoutSummary steps={steps} context={{ ...effContext, sport }} sport={sport} estTss={estTssFromSteps} />
                   <WorkoutLapList steps={steps} context={{ ...effContext, sport }} sport={sport} />
                 </div>
 
