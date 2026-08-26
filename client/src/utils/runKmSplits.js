@@ -71,6 +71,12 @@ function buildKmLapFromRecords(segRecs, kmNumber) {
     average_heartrate: avgHeartRate,
     average_cadence: avgCadence,
     avgCadence: avgCadence,
+    // Records arrive already converted to display cadence — the Strava detail
+    // fetch runs each stream sample through stravaHalfCadenceToSpm before it
+    // ever gets here. Averaging them keeps them in spm, so the Strava branch in
+    // lapsToSplitRows must not convert a second time: it did, and a 190 spm run
+    // was shown as 380.
+    _cadenceIsDisplayUnit: true,
     lapNumber: kmNumber,
     _elevDelta: elevationDeltaFromRecords(segRecs),
   };
@@ -216,8 +222,11 @@ function lapsToSplitRows(laps, records, lapTimeSource) {
     const cadRaw = Number(
       lap.average_cadence ?? lap.avgCadence ?? lap.avg_cadence ?? lap.averageCadence ?? 0
     );
+    // Device laps from Strava carry strides/min and need doubling; laps we
+    // synthesized from records are already spm and must be left alone.
+    const needsStravaConversion = lapTimeSource === 'strava' && !lap._cadenceIsDisplayUnit;
     const cadence = cadRaw > 0
-      ? (lapTimeSource === 'strava' ? (stravaHalfCadenceToSpm(cadRaw, 'run') ?? Math.round(cadRaw)) : Math.round(cadRaw))
+      ? (needsStravaConversion ? (stravaHalfCadenceToSpm(cadRaw, 'run') ?? Math.round(cadRaw)) : Math.round(cadRaw))
       : null;
     return {
       km: lap.lapNumber ?? lap.lap_number ?? (i + 1),
