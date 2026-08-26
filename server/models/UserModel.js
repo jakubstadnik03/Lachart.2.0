@@ -183,6 +183,10 @@ const userSchema = new mongoose.Schema({
     lastWellnessSyncAt: { type: Date, default: null },
     lastWorkoutSyncAt: { type: Date, default: null },
   },
+  // Secret token for the read-only ICS training-calendar feed (Apple/Google
+  // Calendar subscribe by URL and cannot send auth headers — the token IS the
+  // auth). Created on first request from Settings; rotating it kills old URLs.
+  calendarFeedToken: { type: String, default: null, index: true },
   // Power zones from lactate tests
   powerZones: {
     cycling: {

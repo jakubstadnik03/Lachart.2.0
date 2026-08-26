@@ -1864,6 +1864,17 @@ export const getGarminWellness = async (opts = {}) => {
   return data;
 };
 
+/** Training-calendar ICS feed (Apple/Google Calendar subscription). */
+export const getCalendarFeedUrl = async () => {
+  const { data } = await api.get('/api/calendar-feed/token');
+  return data; // { url, webcalUrl }
+};
+
+export const rotateCalendarFeedUrl = async () => {
+  const { data } = await api.post('/api/calendar-feed/token/rotate');
+  return data;
+};
+
 export const getAppleHealthStatus = async () => {
   const { data } = await api.get('/api/integrations/apple-health/status');
   return data;

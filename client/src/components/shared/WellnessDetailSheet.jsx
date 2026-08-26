@@ -215,6 +215,7 @@ export default function WellnessDetailSheet({ open, onClose, initialMetric = 'sl
             ? `<div style="display:flex;justify-content:space-between;gap:14px"><span style="color:#6b7280">${label}</span><b>${v}${suffix}</b></div>` : '');
           return `<div style="font-weight:700;margin-bottom:4px">${dateLabel}</div>`
             + line('Sleep', row.sleepMinutes > 0 ? fmtSleepHm(row.sleepMinutes) : null, '')
+            + line('Sleep score', row.sleepScore, ' / 100')
             + line('Resting HR', row.restingHeartRate, ' bpm')
             + line('Low HR', row.sleepingHeartRate, ' bpm')
             + line('HRV', row.hrvMs, ' ms');
@@ -453,6 +454,17 @@ export default function WellnessDetailSheet({ open, onClose, initialMetric = 'sl
           )}
           {windowRows.length > 0 && (
             <div className="text-[10px] text-gray-400 text-center -mt-1 mb-1">Tap a point to see that day</div>
+          )}
+
+          {metric.id === 'sleep' && selectedRow?.sleepScore > 0 && (
+            <div className="flex items-center justify-between mt-2 px-0.5">
+              <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wide">
+                Sleep score{selDateLabel ? ` · ${selDateLabel}` : ''}
+              </span>
+              <span className="text-sm font-extrabold tabular-nums text-gray-800">
+                {selectedRow.sleepScore}<span className="text-[11px] font-medium text-gray-400"> / 100</span>
+              </span>
+            </div>
           )}
 
           {metric.id === 'sleep' && hypnoOption && (

@@ -14,6 +14,7 @@ import { Skeleton, SkeletonCard } from '../components/common/Skeleton';
 
 import ReclassifyActivitiesCard from '../components/Settings/ReclassifyActivitiesCard';
 import AppleHealthCard from '../components/Settings/AppleHealthCard';
+import CalendarFeedCard from '../components/Settings/CalendarFeedCard';
 import CategoryManager from '../components/Settings/CategoryManager';
 import ExternalActivityList from '../components/Settings/ExternalActivityList';
 import { RowButton, SettingsRow, SettingsSection, ToggleRow } from '../components/Settings/HealthSettingsRows';
@@ -3832,6 +3833,8 @@ const SettingsPage = () => {
                 </div>
 
                 <AppleHealthCard isMobile={isMobile} />
+
+                <CalendarFeedCard isMobile={isMobile} />
 
                 <div className={`bg-white ${isMobile ? 'rounded-md' : 'rounded-lg'} border border-gray-200 ${isMobile ? 'p-2.5' : 'p-6'}`}>
                   <div className={`flex items-center justify-between ${isMobile ? 'mb-2' : 'mb-4'}`}>

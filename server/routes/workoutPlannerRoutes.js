@@ -14,6 +14,10 @@ const CalendarPeriod  = require('../models/CalendarPeriod');
 const User       = require('../models/UserModel');
 const { requireFeature } = require('../middleware/featureGate');
 const { maybeNotifyCoachPlanUpdate } = require('../utils/coachPlanNotifications');
+const {
+  syncPlannedWorkoutToGarmin,
+  removePlannedWorkoutFromGarmin,
+} = require('../utils/garminWorkoutPush');
 
 /**
  * Workout planning is a Pro-tier feature. Free users can READ what's been
@@ -271,6 +275,10 @@ router.post('/planned', verifyToken, requirePlanWorkouts, async (req, res) => {
       }).catch(() => {});
     }
 
+    // Mirror to the athlete's Garmin Connect calendar (steps → watch laps).
+    // Fire-and-forget: no-op unless Garmin OAuth + WORKOUT_IMPORT are in place.
+    syncPlannedWorkoutToGarmin(pw._id).catch(() => {});
+
     res.status(201).json(pw);
   } catch (e) {
     console.error('[WorkoutPlanner] POST /planned error:', e);
@@ -324,6 +332,20 @@ router.put('/planned/:id', verifyToken, requirePlanWorkouts, async (req, res) =>
     }
 
     await pw.save();
+
+    // Keep the Garmin calendar in step with the edit: date/steps/title changes
+    // re-push; a skip unschedules. Completed workouts stay — they are history.
+    if (pw.status === 'planned') {
+      syncPlannedWorkoutToGarmin(pw._id).catch(() => {});
+    } else if (pw.status === 'skipped' && (pw.garminWorkoutId || pw.garminScheduleId)) {
+      const snapshot = pw.toObject();
+      removePlannedWorkoutFromGarmin(snapshot)
+        .then(() => PlannedWorkout.updateOne(
+          { _id: pw._id },
+          { $set: { garminWorkoutId: null, garminScheduleId: null, garminScheduledDate: null } }
+        ))
+        .catch(() => {});
+    }
 
     if (coachEditing) {
       maybeNotifyCoachPlanUpdate({
@@ -697,7 +719,10 @@ router.delete('/planned/:id', verifyToken, requirePlanWorkouts, async (req, res)
     const pw = await PlannedWorkout.findById(req.params.id);
     if (!pw) return res.status(404).json({ error: 'Not found' });
     if (String(pw.athleteId) !== athleteId) return res.status(403).json({ error: 'Forbidden' });
+    const snapshot = pw.toObject();
     await pw.deleteOne();
+    // Unschedule + delete the mirrored workout on Garmin's side too.
+    removePlannedWorkoutFromGarmin(snapshot).catch(() => {});
     res.json({ success: true });
   } catch (e) {
     res.status(500).json({ error: 'Failed to delete planned workout' });
