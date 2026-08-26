@@ -723,7 +723,8 @@ export function buildPresetSteps(preset) {
       durationSeconds: per, powerTarget: { type: 'zone', value: z },
     }));
   };
-  const WU  = (dur=600)  => rampBlock('warmup',   'warmup',   [1,2,2,3], dur);
+  // Warm-up is the same in every preset: 4 warmup steps of 5 min (Z1→Z2→Z2→Z3).
+  const WU  = ()         => rampBlock('warmup',   'warmup',   [1,2,2,3], 1200);
   const CD  = (dur=600)  => rampBlock('cooldown', 'cooldown', [3,2,2,1], dur);
   // Settle-in spin between the warm-up ramp and the first interval.
   const EZ  = (dur=300)  => ({ clientId:p(), stepType:'recovery', label:'Easy Z1', durationSeconds:dur, powerTarget:{type:'zone',value:1} });
@@ -755,13 +756,13 @@ export function buildPresetSteps(preset) {
 
   // ── Bike ────────────────────────────────────────────────────────────────────
   if (preset === 'threshold_intervals')
-    return [...WU(900), EZ(), ...GROUP(5, 480, {type:'lt2'}, 180), ...CD(600)];
+    return [...WU(), EZ(), ...GROUP(5, 480, {type:'lt2'}, 180), ...CD(600)];
   if (preset === 'sweet_spot')
-    return [...WU(900), EZ(), ...GROUP(3, 900, {type:'percent_ftp',useRange:true,rangeMin:88,rangeMax:93}, 300), ...CD(600)];
+    return [...WU(), EZ(), ...GROUP(3, 900, {type:'percent_ftp',useRange:true,rangeMin:88,rangeMax:93}, 300), ...CD(600)];
   if (preset === 'vo2max')
-    return [...WU(900), EZ(), ...GROUP(6, 240, {type:'zone',value:5}, 240), ...CD(600)];
+    return [...WU(), EZ(), ...GROUP(6, 240, {type:'zone',value:5}, 240), ...CD(600)];
   if (preset === 'zone2')
-    return [...WU(600), WRK(3600,{type:'zone',value:2}), ...CD(600)];
+    return [...WU(), WRK(3600,{type:'zone',value:2}), ...CD(600)];
   if (preset === 'over_under') {
     // Each set: 3×(3min under + 2min over), 3 sets with 5min rest
     const gid = p();
@@ -769,33 +770,33 @@ export function buildPresetSteps(preset) {
       { clientId:p(), groupId:gid, isGroupHeader:true, groupRepeat:3, stepType:'work', durationSeconds:180, powerTarget:{type:'percent_lt2',value:95} },
       { clientId:p(), groupId:gid, stepType:'work', durationSeconds:120, powerTarget:{type:'percent_lt2',value:105} },
     ];
-    return [...WU(900), EZ(), ...set, REC(300), ...set, REC(300), ...set, ...CD(600)];
+    return [...WU(), EZ(), ...set, REC(300), ...set, REC(300), ...set, ...CD(600)];
   }
   if (preset === 'pyramid') {
     // Each effort is standalone (different durations) — use individual steps
-    const steps = [...WU(900), EZ()];
+    const steps = [...WU(), EZ()];
     [120,240,360,240,120].forEach((dur,i,arr) => { steps.push(WRK(dur,{type:'lt2'})); if(i<arr.length-1) steps.push(REC(120)); });
     steps.push(...CD(600)); return steps;
   }
   if (preset === 'tempo')
-    return [...WU(900), EZ(), ...GROUP(2, 1200, {type:'percent_lt2',value:90}, 300), ...CD(600)];
+    return [...WU(), EZ(), ...GROUP(2, 1200, {type:'percent_lt2',value:90}, 300), ...CD(600)];
   if (preset === 'lactate') {
     // Staircase — different zones, no grouping possible (each is different)
-    const steps = [...WU(600), EZ()];
+    const steps = [...WU(), EZ()];
     [2,2,3,3,4,5].forEach(z => { steps.push(WRK(360,{type:'zone',value:z})); steps.push(REC(60)); });
     steps.push(...CD(600)); return steps;
   }
   if (preset === 'bike_3030')
-    return [...WU(900), EZ(),
+    return [...WU(), EZ(),
       ...GROUP(10, 30, {type:'zone',value:5}, 30), REC(300),
       ...GROUP(10, 30, {type:'zone',value:5}, 30), ...CD(600)];
   if (preset === 'bike_long')
-    return [...WU(600), WRK(1800,{type:'zone',value:2}),
+    return [...WU(), WRK(1800,{type:'zone',value:2}),
       ...GROUP(3, 600, {type:'percent_lt2',value:90}, 300),
       WRK(1800,{type:'zone',value:2}), ...CD(600)];
   if (preset === 'bike_big_gear')
     // Low-cadence strength work — cadence range rides on the work step.
-    return [...WU(900), EZ(),
+    return [...WU(), EZ(),
       ...GROUP(5, 300, {type:'percent_lt2',value:85}, 180, {type:'zone',value:1}, { cadenceMin:50, cadenceMax:60 }),
       ...CD(600)];
   if (preset === 'bike_recovery')
@@ -803,24 +804,24 @@ export function buildPresetSteps(preset) {
 
   // ── Run ─────────────────────────────────────────────────────────────────────
   if (preset === 'run_easy')
-    return [...WU(300), WRK(2700,{type:'zone',value:2}), ...CD(300)];
+    return [...WU(), WRK(2700,{type:'zone',value:2}), ...CD(300)];
   if (preset === 'run_long')
-    return [...WU(600), WRK(4800,{type:'zone',value:2}), WRK(600,{type:'zone',value:1}), ...CD(600)];
+    return [...WU(), WRK(4800,{type:'zone',value:2}), WRK(600,{type:'zone',value:1}), ...CD(600)];
   if (preset === 'run_threshold')
-    return [...WU(600), EZ(), ...GROUP(2, 900, {type:'lt2'}, 300), ...CD(600)];
+    return [...WU(), EZ(), ...GROUP(2, 900, {type:'lt2'}, 300), ...CD(600)];
   if (preset === 'run_tempo')
-    return [...WU(600), EZ(), WRK(1200,{type:'percent_lt2',value:90}), ...CD(600)];
+    return [...WU(), EZ(), WRK(1200,{type:'percent_lt2',value:90}), ...CD(600)];
   if (preset === 'run_vo2max')
-    return [...WU(600), EZ(), ...GROUP(6, 180, {type:'zone',value:5}, 180), ...CD(600)];
+    return [...WU(), EZ(), ...GROUP(6, 180, {type:'zone',value:5}, 180), ...CD(600)];
   if (preset === 'run_fartlek')
-    return [...WU(600), EZ(), ...GROUP(10, 60, {type:'zone',value:4}, 60), ...CD(300)];
+    return [...WU(), EZ(), ...GROUP(10, 60, {type:'zone',value:4}, 60), ...CD(300)];
   if (preset === 'run_hills') {
-    const steps = [...WU(600), EZ()];
+    const steps = [...WU(), EZ()];
     for (let i = 0; i < 8; i++) { steps.push(WRK(60,{type:'zone',value:5})); if(i<7) steps.push(REC(120)); }
     steps.push(...CD(600)); return steps;
   }
   if (preset === 'run_progressive') {
-    const steps = [...WU(600)];
+    const steps = [...WU()];
     // 4 progressive blocks: Z2 → Z3 → Z4 → LT2
     [{type:'zone',value:2},{type:'zone',value:3},{type:'zone',value:4},{type:'lt2'}].forEach(pt => {
       steps.push(WRK(600, pt));
@@ -828,11 +829,11 @@ export function buildPresetSteps(preset) {
     steps.push(...CD(300)); return steps;
   }
   if (preset === 'run_1k_repeats')
-    return [...WU(600), EZ(), ...RGROUP(10, 1000, {type:'lt2'}, 90), ...CD(600)];
+    return [...WU(), EZ(), ...RGROUP(10, 1000, {type:'lt2'}, 90), ...CD(600)];
   if (preset === 'run_400s')
-    return [...WU(600), EZ(), ...RGROUP(12, 400, {type:'zone',value:5}, 90), ...CD(600)];
+    return [...WU(), EZ(), ...RGROUP(12, 400, {type:'zone',value:5}, 90), ...CD(600)];
   if (preset === 'run_strides')
-    return [...WU(300), WRK(2400,{type:'zone',value:2}), ...GROUP(6, 20, {type:'zone',value:5}, 60), ...CD(300)];
+    return [...WU(), WRK(2400,{type:'zone',value:2}), ...GROUP(6, 20, {type:'zone',value:5}, 60), ...CD(300)];
   if (preset === 'run_recovery')
     return [WRK(1800,{type:'zone',value:1})];
 

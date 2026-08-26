@@ -212,31 +212,10 @@ router.get('/:token/lachart.ics', async (req, res) => {
       date: { $gte: from, $lte: to },
     }).sort({ date: 1 }).lean();
 
-    // Watts in descriptions use the same FTP/LT context as the file exports.
-    let ctx = { ftp: 250, lt1Power: null, lt2Power: null };
-    try {
-      const Test = require('../models/test');
-      const tests = await Test.find({ userId: String(user._id) }).sort({ date: -1 }).limit(10).lean();
-      const latest = tests.find((t) => t.lt2Power || t.ltPower || t.ftp);
-      if (latest) {
-        ctx = {
-          ftp: Number(latest.lt2Power || latest.ltPower || latest.ftp) || 250,
-          lt1Power: latest.ltPower || latest.lt1Power || null,
-          lt2Power: latest.lt2Power || latest.ltPower || null,
-        };
-      }
-    } catch (_) { /* keep defaults */ }
-    // Pace context for run/swim lap lines — same zones the builder resolves against.
-    if (user.powerZones?.running) {
-      ctx.runningZones = user.powerZones.running;
-      ctx.lt1Pace = user.powerZones.running.lt1 || null;
-      ctx.lt2Pace = user.powerZones.running.lt2 || null;
-    }
-    if (user.powerZones?.swimming) {
-      ctx.swimmingZones = user.powerZones.swimming;
-      ctx.lt1Swim = user.powerZones.swimming.lt1 || null;
-      ctx.lt2Swim = user.powerZones.swimming.lt2 || null;
-    }
+    // Watts/paces in lap lines resolve through the same profile-first context
+    // as the builder and the Garmin push, so all three agree.
+    const { resolveWorkoutContext } = require('../utils/garminWorkoutPush');
+    const ctx = await resolveWorkoutContext(String(user._id), user);
 
     const now = new Date().toISOString().replace(/[-:]/g, '').slice(0, 15) + 'Z';
     const lines = [

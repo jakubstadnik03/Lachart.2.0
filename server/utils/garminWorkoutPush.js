@@ -235,27 +235,36 @@ function buildGarminWorkout(pw, ctx = {}) {
 }
 
 /**
- * Power side mirrors the /planned/:id/export route (latest test → FTP/LT);
- * pace side comes from the profile zones (sec/km run, sec/100m swim) the
- * builder itself resolves against, so the watch target matches the builder.
+ * Same context, same priority order, as the WorkoutBuilder page assembles
+ * client-side: profile zone ranges first (the athlete's Training Zones
+ * screen), latest test thresholds as fallback. Anything else and the watch
+ * gets different watts/paces than the builder showed while planning.
  */
 async function resolveWorkoutContext(athleteId, user = null) {
-  const ctx = { ftp: 250, lt1Power: null, lt2Power: null };
+  let latestTest = null;
   try {
     const Test = require('../models/test');
     const tests = await Test.find({ userId: athleteId }).sort({ date: -1 }).limit(10).lean();
-    const latest = tests.find((t) => t.lt2Power || t.ltPower || t.ftp);
-    if (latest) {
-      ctx.ftp = Number(latest.lt2Power || latest.ltPower || latest.ftp) || 250;
-      ctx.lt1Power = latest.ltPower || latest.lt1Power || null;
-      ctx.lt2Power = latest.lt2Power || latest.ltPower || null;
-    }
-  } catch { /* keep defaults */ }
+    latestTest = tests.find((t) => t.lt2Power || t.ltPower || t.ftp) || null;
+  } catch { /* profile zones may still carry everything */ }
+
+  const cycling = user?.powerZones?.cycling || null;
+  const lt2Power = cycling?.lt2 || cycling?.zone4?.min
+    || Number(latestTest?.lt2Power) || Number(latestTest?.ltPower) || null;
+  const lt1Power = cycling?.lt1 || cycling?.zone3?.min
+    || Number(latestTest?.ltPower) || Number(latestTest?.lt1Power) || null;
+
+  const ctx = {
+    ftp: lt2Power || Number(latestTest?.ftp) || 250,
+    lt1Power,
+    lt2Power,
+    cyclingZones: cycling,
+  };
   const running = user?.powerZones?.running;
   if (running) {
     ctx.runningZones = running;
-    ctx.lt1Pace = running.lt1 || null;
-    ctx.lt2Pace = running.lt2 || null;
+    ctx.lt1Pace = running.lt1 || running.zone3?.min || null;
+    ctx.lt2Pace = running.lt2 || running.zone4?.min || null;
   }
   const swimming = user?.powerZones?.swimming;
   if (swimming) {
@@ -464,6 +473,7 @@ module.exports = {
   buildGarminWorkout,
   buildGarminSteps,
   garminPushEligible,
+  resolveWorkoutContext,
   syncPlannedWorkoutToGarmin,
   removePlannedWorkoutFromGarmin,
   syncAllUpcomingPlannedWorkouts,

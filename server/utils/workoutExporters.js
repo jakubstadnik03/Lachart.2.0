@@ -53,14 +53,25 @@ const SPORT_TO_ZWO = {
   // falls back to "bike" so the file at least imports.
 };
 
+/** Mid-point of a zone object {min, max} — falls back to min when max is absent/Infinity. */
+function zoneMid(z) {
+  if (!z) return null;
+  const min = Number(z.min) || 0;
+  if (min <= 0) return null;
+  const max = (z.max != null && z.max !== Infinity && Number(z.max) > 0) ? Number(z.max) : min * 1.08;
+  return (min + max) / 2;
+}
+
 /**
- * Resolve a power-target spec to absolute watts. Mirrors
- * resolveTargetWatts in WorkoutExecutionPage so the exported file
- * matches what the athlete would see on the live screen.
+ * Resolve a power-target spec to absolute watts. Mirrors resolveTargetWatts in
+ * WorkoutBuilder: profile zone ranges (`ctx.cyclingZones` — the athlete's
+ * Training Zones screen) are the primary source for zone/LT targets, with
+ * LT-derived fallbacks. Anything else here and the watch gets different watts
+ * than the builder showed while planning.
  */
 function resolveTargetWatts(target, ctx = {}) {
   if (!target || target.type === 'open') return null;
-  const { ftp = 250, lt1Power = null, lt2Power = null } = ctx;
+  const { ftp = 250, lt1Power = null, lt2Power = null, cyclingZones = null } = ctx;
   // A pinned override beats the calculation. It is the number the athlete
   // typed, so it is the number the watch has to be given — the exports used to
   // recompute the zone and quietly send something else.
@@ -71,16 +82,19 @@ function resolveTargetWatts(target, ctx = {}) {
       ? Math.round((Number(target.rangeMin || 0) + Number(target.rangeMax || 0)) / 2)
       : Number(target.value || 0);
   }
+  const lt1 = lt1Power || cyclingZones?.lt1 || ftp * 0.75;
+  const lt2 = lt2Power || cyclingZones?.lt2 || ftp;
   const pct = Number(target.value) || 0;
   if (target.type === 'percent_ftp') return Math.round(ftp * pct / 100);
-  if (target.type === 'percent_lt1') return Math.round((lt1Power || ftp * 0.75) * pct / 100);
-  if (target.type === 'percent_lt2') return Math.round((lt2Power || ftp) * pct / 100);
-  if (target.type === 'lt1') return Math.round(lt1Power || ftp * 0.75);
-  if (target.type === 'lt2') return Math.round(lt2Power || ftp);
+  if (target.type === 'percent_lt1') return Math.round(lt1 * pct / 100);
+  if (target.type === 'percent_lt2') return Math.round(lt2 * pct / 100);
+  if (target.type === 'lt1') return Math.round(lt1);
+  if (target.type === 'lt2') return Math.round(lt2);
   if (target.type === 'zone') {
-    const zoneIdx = Math.max(0, Math.min(4, (Number(target.value) || 1) - 1));
-    const zonePcts = [0.55, 0.68, 0.83, 0.97, 1.10];
-    return Math.round(ftp * zonePcts[zoneIdx]);
+    const z = Math.max(1, Math.min(5, Number(target.value) || 1));
+    const profileMid = cyclingZones ? zoneMid(cyclingZones[`zone${z}`]) : null;
+    if (profileMid != null && profileMid > 0) return Math.round(profileMid);
+    return Math.round([lt1 * 0.8, lt1, lt2 * 0.95, lt2, lt2 * 1.1][z - 1]);
   }
   return null;
 }

@@ -118,6 +118,19 @@ test('eligibility: OAuth + steps + planned status required; permissions gate hon
   assert.strictEqual(garminPushEligible(oauthUser, { ...pw, status: 'completed' }), false);
 });
 
+test('zone targets resolve from profile zone ranges (builder parity)', () => {
+  const zctx = {
+    ftp: 384, lt1Power: 332, lt2Power: 384, sport: 'bike',
+    cyclingZones: { lt1: 332, lt2: 384, zone2: { min: 250, max: 306 } },
+  };
+  const steps = buildGarminSteps([
+    { stepType: 'work', durationSeconds: 600, powerTarget: { type: 'zone', value: 2 } },
+  ], zctx);
+  // Profile zone2 mid = (250+306)/2 = 278 W, ±5 % — NOT a fixed %FTP formula.
+  assert.strictEqual(steps[0].targetValueLow, Math.round(278 * 0.95));
+  assert.strictEqual(steps[0].targetValueHigh, Math.round(278 * 1.05));
+});
+
 // ── Run: distance steps + pace targets (the TrainingPeaks-style 10×1 km) ──
 
 const runCtx = {
