@@ -1,4 +1,4 @@
-import { resolveTargetWatts, repairGroupMembership } from './WorkoutBuilder';
+import { resolveTargetWatts, repairGroupMembership, unitIndicesAt } from './WorkoutBuilder';
 
 const ctx = { ftp: 400, lt1Power: 332, lt2Power: 384 };
 
@@ -15,15 +15,21 @@ const applyPower = (step, watts) => {
   return { ...step, powerTarget: { ...t, override: w } };
 };
 
-/** Mirrors handleStepMove: the bar is not what moves, its step is. */
+/** Mirrors handleStepMove: whole components move, not single bars. */
 const moveStep = (steps, fromId, toId) => {
   const from = steps.findIndex((s) => s.clientId === fromId);
   const to = steps.findIndex((s) => s.clientId === toId);
-  if (from < 0 || to < 0 || from === to) return steps;
-  const next = [...steps];
-  const [moved] = next.splice(from, 1);
-  next.splice(to, 0, moved);
-  return repairGroupMembership(next);
+  if (from < 0 || to < 0) return steps;
+  const src = unitIndicesAt(steps, from);
+  const dst = unitIndicesAt(steps, to);
+  if (!src.length || !dst.length || src[0] === dst[0]) return steps;
+  const moving = new Set(src);
+  const moved = src.map((i) => steps[i]);
+  const remaining = steps.filter((_, i) => !moving.has(i));
+  const anchor = src[0] < dst[0] ? dst[dst.length - 1] + 1 : dst[0];
+  const removedBefore = src.filter((i) => i < anchor).length;
+  remaining.splice(anchor - removedBefore, 0, ...moved);
+  return repairGroupMembership(remaining);
 };
 
 const step = (id, extra = {}) => ({
@@ -100,24 +106,56 @@ describe('dragging a bar to another position', () => {
     expect(moveStep(before, 'ghost', 'a').map((s) => s.clientId)).toEqual(['a', 'b']);
   });
 
-  test('reordering inside a repeat block keeps the block whole', () => {
+  test('dragging within one component does nothing — it is one thing', () => {
     const block = [
       step('w', { groupId: 'g1', isGroupHeader: true, groupRepeat: 4 }),
       step('r', { groupId: 'g1', stepType: 'recovery' }),
     ];
-    const out = moveStep(block, 'r', 'w');
-    expect(out.every((s) => s.groupId === 'g1')).toBe(true);
-    expect(out.filter((s) => s.isGroupHeader)).toHaveLength(1);
-    expect(out.find((s) => s.isGroupHeader).groupRepeat).toBe(4);
+    expect(moveStep(block, 'r', 'w').map((s) => s.clientId)).toEqual(['w', 'r']);
   });
 
-  test('a step dragged clear of a repeat block leaves it', () => {
+  test('a repeat block travels whole — you cannot pull one lap out of it', () => {
     const steps = [
       step('w', { groupId: 'g1', isGroupHeader: true, groupRepeat: 4 }),
       step('r', { groupId: 'g1', stepType: 'recovery' }),
       step('loose'),
       step('tail'),
     ];
-    expect(moveStep(steps, 'r', 'tail').find((s) => s.clientId === 'r').groupId).toBeUndefined();
+    // Dropped on the last step, so it lands after it — a forward drag goes
+    // where you aimed rather than in front of it.
+    const out = moveStep(steps, 'r', 'tail');
+    expect(out.map((s) => s.clientId)).toEqual(['loose', 'tail', 'w', 'r']);
+    expect(out.filter((s) => s.groupId === 'g1')).toHaveLength(2);
+    expect(out.find((s) => s.isGroupHeader).groupRepeat).toBe(4);
+  });
+
+  test('a palette block travels whole too — a warm-up is one component', () => {
+    const steps = [
+      step('w1', { blockId: 'b1', blockKind: 'warmup', stepType: 'warmup' }),
+      step('w2', { blockId: 'b1', blockKind: 'warmup', stepType: 'warmup' }),
+      step('w3', { blockId: 'b1', blockKind: 'warmup', stepType: 'warmup' }),
+      step('main'),
+    ];
+    expect(moveStep(steps, 'w2', 'main').map((s) => s.clientId))
+      .toEqual(['main', 'w1', 'w2', 'w3']);
+
+    // ...and backwards, the block lands in front of what it was dropped on.
+    const back = [step('main'), step('w1', { blockId: 'b1' }), step('w2', { blockId: 'b1' })];
+    expect(moveStep(back, 'w2', 'main').map((s) => s.clientId)).toEqual(['w1', 'w2', 'main']);
+  });
+
+  test('unitIndicesAt only takes the adjacent run, not strays elsewhere', () => {
+    const steps = [
+      step('a', { blockId: 'b1' }),
+      step('b', { blockId: 'b1' }),
+      step('gap'),
+      step('c', { blockId: 'b1' }),
+    ];
+    expect(unitIndicesAt(steps, 0)).toEqual([0, 1]);
+    expect(unitIndicesAt(steps, 3)).toEqual([3]);
+  });
+
+  test('a loose step is its own component', () => {
+    expect(unitIndicesAt([step('a'), step('b')], 1)).toEqual([1]);
   });
 });
