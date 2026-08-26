@@ -17,6 +17,7 @@ import { calculateZonesFromTest } from '../components/Testing-page/zoneCalculato
 // the actual test page.
 import { calculateThresholds as desktopCalculateThresholds } from '../components/Testing-page/DataTable';
 import NewTestSheet from '../components/NativeDashboard/NewTestSheet';
+import NativeBenchmarkCard from '../components/native/NativeBenchmarkCard';
 import LT2TrendSparkline from '../components/DashboardPage/LT2TrendSparkline';
 import { usePremium } from '../hooks/usePremium';
 import UpgradeModal from '../components/UpgradeModal';
@@ -1200,6 +1201,49 @@ export default function NativeTestingPage({ user, athleteId: externalAthleteId }
               )}
             </GlassCard>
           </div>
+
+          {/* ─── Community benchmark — percentiles vs the whole LaChart
+              population, from real lactate tests. Premium; free accounts see
+              a locked teaser that opens the shared UpgradeModal. ─── */}
+          {selectedSport !== 'all' && (
+            <div style={{ ...cardEntry(5), ...snap }}>
+              {isPremium ? (
+                <NativeBenchmarkCard
+                  athleteId={athleteId}
+                  sport={selectedSport}
+                  user={user}
+                />
+              ) : (
+                <GlassCard>
+                  <SectionTitle>Community Benchmark</SectionTitle>
+                  <div style={{ position: 'relative', marginTop: 8 }}>
+                    <div style={{ filter: 'blur(5px)', opacity: 0.45, pointerEvents: 'none' }} aria-hidden="true">
+                      <div style={{ height: 10, width: '40%', borderRadius: 999, background: '#E5E7EB', marginBottom: 8 }} />
+                      <div style={{ height: 44, borderRadius: 10, background: 'linear-gradient(90deg,#EEF0F7,#DDE1EF,#EEF0F7)', marginBottom: 8 }} />
+                      <div style={{ height: 44, borderRadius: 10, background: 'linear-gradient(90deg,#EEF0F7,#DDE1EF,#EEF0F7)' }} />
+                    </div>
+                    <div style={{
+                      position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column',
+                      alignItems: 'center', justifyContent: 'center', gap: 6,
+                    }}>
+                      <div style={{ fontSize: 11, fontWeight: 600, color: '#6B7280', textAlign: 'center' }}>
+                        See how your LT1/LT2 compares to the community
+                      </div>
+                      <button
+                        onClick={() => gate('Community Benchmark')}
+                        style={{
+                          padding: '7px 14px', borderRadius: 999, border: 'none',
+                          background: '#767EB5', color: '#fff', fontSize: 11.5, fontWeight: 700,
+                        }}
+                      >
+                        Unlock with Premium
+                      </button>
+                    </div>
+                  </div>
+                </GlassCard>
+              )}
+            </div>
+          )}
 
           <div style={{ height: 16 }} />
         </div>
