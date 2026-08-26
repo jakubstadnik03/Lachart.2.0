@@ -17,7 +17,21 @@ const { maybeNotifyCoachPlanUpdate } = require('../utils/coachPlanNotifications'
 const {
   syncPlannedWorkoutToGarmin,
   removePlannedWorkoutFromGarmin,
+  syncAllUpcomingPlannedWorkouts,
 } = require('../utils/garminWorkoutPush');
+
+// Self-heal for the Garmin calendar mirror: workouts planned before the
+// feature deployed (or while Garmin was disconnected) have no create/update
+// trigger left to fire, so a calendar read sweeps the upcoming ones instead.
+// Throttled per athlete; the sweep itself is a no-op without WORKOUT_IMPORT.
+const garminMirrorSweepAt = new Map(); // athleteId -> last sweep ms
+function maybeMirrorUpcomingToGarmin(athleteId) {
+  const key = String(athleteId);
+  const last = garminMirrorSweepAt.get(key) || 0;
+  if (Date.now() - last < 60 * 60 * 1000) return;
+  garminMirrorSweepAt.set(key, Date.now());
+  syncAllUpcomingPlannedWorkouts(key).catch(() => {});
+}
 
 /**
  * Workout planning is a Pro-tier feature. Free users can READ what's been
@@ -160,6 +174,7 @@ router.get('/planned', verifyToken, async (req, res) => {
     const planned = await PlannedWorkout.find(query)
       .sort({ date: 1 })
       .lean();
+    maybeMirrorUpcomingToGarmin(athleteId);
     res.json(planned);
   } catch (e) {
     console.error('[WorkoutPlanner] GET /planned error:', e);

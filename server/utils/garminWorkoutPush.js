@@ -258,15 +258,23 @@ function dayKey(date) {
  * OAuth connection only (the credentials path has no Training API), steps
  * required (an unstructured note has no laps to push), and — when we know the
  * granted permissions — WORKOUT_IMPORT must be among them.
+ * Returns { ok, reason } so the caller can log/store WHY a push was skipped.
  */
-function garminPushEligible(user, pw) {
-  if (!user?.garmin?.accessToken || !user?.garmin?.refreshToken) return false;
+function garminPushEligibility(user, pw) {
+  if (!Array.isArray(pw?.steps) || pw.steps.length === 0) return { ok: false, reason: 'no_steps' };
+  if (pw.status && pw.status !== 'planned') return { ok: false, reason: 'not_planned' };
+  if (!dayKey(pw.date)) return { ok: false, reason: 'no_date' };
+  if (!user?.garmin?.accessToken) return { ok: false, reason: 'garmin_not_connected' };
+  if (!user?.garmin?.refreshToken) return { ok: false, reason: 'credentials_connection' };
   const perms = user.garmin.permissions;
-  if (Array.isArray(perms) && perms.length > 0 && !perms.includes('WORKOUT_IMPORT')) return false;
-  if (!Array.isArray(pw?.steps) || pw.steps.length === 0) return false;
-  if (pw.status && pw.status !== 'planned') return false;
-  if (!dayKey(pw.date)) return false;
-  return true;
+  if (Array.isArray(perms) && perms.length > 0 && !perms.includes('WORKOUT_IMPORT')) {
+    return { ok: false, reason: 'missing_workout_import' };
+  }
+  return { ok: true };
+}
+
+function garminPushEligible(user, pw) {
+  return garminPushEligibility(user, pw).ok;
 }
 
 async function authHeaders(user) {
@@ -326,7 +334,48 @@ async function syncPlannedWorkoutToGarmin(plannedWorkoutId) {
   const pw = await PlannedWorkout.findById(plannedWorkoutId);
   if (!pw) return { synced: false, reason: 'not_found' };
   const user = await User.findById(pw.athleteId).select('garmin powerZones').lean();
-  if (!garminPushEligible(user, pw)) return { synced: false, reason: 'not_eligible' };
+
+  let elig = garminPushEligibility(user, pw);
+  const permsCheckedRecently = user?.garmin?.permissionsCheckedAt
+    && Date.now() - new Date(user.garmin.permissionsCheckedAt).getTime() < 10 * 60 * 1000;
+  if (!elig.ok && elig.reason === 'missing_workout_import' && !permsCheckedRecently) {
+    // The cached permission list may predate the Training API consent —
+    // re-check with Garmin before giving up.
+    try {
+      const integrations = require('../routes/integrationsRoutes');
+      const tokenData = await integrations.getValidGarminToken(user);
+      const fresh = await integrations.fetchGarminUserPermissions(tokenData);
+      if (Array.isArray(fresh)) {
+        await User.updateOne(
+          { _id: user._id },
+          { $set: { 'garmin.permissions': fresh, 'garmin.permissionsCheckedAt': new Date() } }
+        ).catch(() => {});
+        user.garmin = { ...user.garmin, permissions: fresh };
+        elig = garminPushEligibility(user, pw);
+      }
+    } catch (e) {
+      console.warn('[Garmin push] permission re-check failed:', e?.message);
+    }
+  }
+  if (!elig.ok) {
+    // Every skip is logged — a silent skip here cost hours of "why is my
+    // workout not on the watch" debugging with empty server logs.
+    console.log(`[Garmin push] skipped "${pw.title}": ${elig.reason}`);
+    const visibleReasons = {
+      missing_workout_import:
+        'Garmin account is missing the workout-import permission (Training API). '
+        + 'Disconnect and reconnect Garmin; the consent screen must list workout import.',
+      credentials_connection:
+        'Garmin is connected with username/password — pushing workouts needs the OAuth connection.',
+    };
+    if (visibleReasons[elig.reason]) {
+      await PlannedWorkout.updateOne(
+        { _id: pw._id },
+        { $set: { garminSyncError: visibleReasons[elig.reason] } }
+      ).catch(() => {});
+    }
+    return { synced: false, reason: elig.reason };
+  }
 
   try {
     const ctx = await resolveWorkoutContext(pw.athleteId, user);

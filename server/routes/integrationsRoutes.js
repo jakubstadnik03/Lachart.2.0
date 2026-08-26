@@ -8409,6 +8409,7 @@ router.delete('/apple-health', verifyToken, async (req, res) => {
 module.exports = router;
 module.exports.getValidStravaToken = getValidStravaToken;
 module.exports.getValidGarminToken = getValidGarminToken;
+module.exports.fetchGarminUserPermissions = fetchGarminUserPermissions;
 // Boot-time recovery for backfills interrupted by a restart.
 module.exports.resumeInterruptedStravaBackfills = resumeInterruptedStravaBackfills;
 module.exports.resumeStaleStravaBackfills = resumeStaleStravaBackfills;
