@@ -178,6 +178,22 @@ const TestingPage = () => {
   const isTestingRoleRef = useRef(isTestingRole);
   isTestingRoleRef.current = isTestingRole;
 
+  // Default the sport filter to the athlete's most recent test (once per
+  // athlete) so sport-scoped sections — recommended protocol, community
+  // benchmark — show up without an extra click. "All" stays only when the
+  // user picked it themselves or the athlete has no tests yet.
+  const sportDefaultedForRef = useRef(null);
+  useEffect(() => {
+    if (!tests.length) return;
+    const key = String(selectedAthleteId || user?._id || 'self');
+    if (sportDefaultedForRef.current === key) return;
+    sportDefaultedForRef.current = key;
+    if (selectedSport !== 'all') return; // already chosen (user / URL / start-test flow)
+    const latest = [...tests].sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0))[0];
+    if (['run', 'bike', 'swim'].includes(latest?.sport)) setSelectedSport(latest.sport);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tests, selectedAthleteId]);
+
   // Stable loadTests — uses refs for volatile values so the callback identity never changes.
   // This prevents the useEffect below from re-running on every render and causing a retry loop.
   const loadTests = React.useCallback(async (targetId) => {
