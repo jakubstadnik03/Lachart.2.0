@@ -85,6 +85,67 @@ function resolveTargetWatts(target, ctx = {}) {
   return null;
 }
 
+/**
+ * Resolve a target to running pace in sec/km. Server mirror of
+ * resolveTargetPace in WorkoutBuilder — same inputs (`runningZones` is
+ * user.powerZones.running: { lt1, lt2, zone1..5:{min,max} }, paces in sec/km),
+ * same fallbacks, so the watch gets the pace the athlete saw in the builder.
+ * Returns null when there is no pace reference at all.
+ */
+function resolveTargetPaceSecPerKm(target, ctx = {}) {
+  const { lt1Pace = null, lt2Pace = null, runningZones = null } = ctx;
+  const lt2p = lt2Pace || runningZones?.lt2 || null;
+  if (!lt2p) return null;
+  if (!target || target.type === 'open') return null; // open = no watch target
+  const mid = (t) => (t.useRange ? (Number(t.rangeMin) + Number(t.rangeMax)) / 2 : (Number(t.value) || 0));
+  const lt1p = lt1Pace || runningZones?.lt1 || lt2p * 1.12;
+  const pinned = Number(target.override);
+  if (Number.isFinite(pinned) && pinned > 0) return pinned;
+  if (target.type === 'lt1') return lt1p;
+  if (target.type === 'lt2') return lt2p;
+  // 100 % LT2 = lt2Pace; 105 % means 5 % faster (÷1.05).
+  if (target.type === 'percent_lt1') return mid(target) > 0 ? lt1p / (mid(target) / 100) : null;
+  if (target.type === 'percent_lt2') return mid(target) > 0 ? lt2p / (mid(target) / 100) : null;
+  if (target.type === 'percent_ftp') return mid(target) > 0 ? lt2p / (mid(target) / 100) : null;
+  if (target.type === 'zone') {
+    const z = Number(target.value) || 2;
+    const pz = runningZones?.[`zone${z}`];
+    if (pz && pz.min > 0) {
+      const max = (pz.max != null && pz.max !== Infinity && pz.max > 0) ? pz.max : pz.min * 1.08;
+      return (pz.min + max) / 2;
+    }
+    return [lt2p * 1.30, lt1p, lt2p * 1.04, lt2p, lt2p * 0.93][Math.min(z - 1, 4)];
+  }
+  return null;
+}
+
+/** Swim variant — sec/100m, using user.powerZones.swimming. */
+function resolveTargetSwimPaceSecPer100m(target, ctx = {}) {
+  const { lt1Swim = null, lt2Swim = null, swimmingZones = null } = ctx;
+  const lt2p = lt2Swim || swimmingZones?.lt2 || null;
+  if (!lt2p) return null;
+  if (!target || target.type === 'open') return null;
+  const mid = (t) => (t.useRange ? (Number(t.rangeMin) + Number(t.rangeMax)) / 2 : (Number(t.value) || 0));
+  const lt1p = lt1Swim || swimmingZones?.lt1 || lt2p * 1.10;
+  const pinned = Number(target.override);
+  if (Number.isFinite(pinned) && pinned > 0) return pinned;
+  if (target.type === 'lt1') return lt1p;
+  if (target.type === 'lt2') return lt2p;
+  if (target.type === 'percent_lt1') return mid(target) > 0 ? lt1p / (mid(target) / 100) : null;
+  if (target.type === 'percent_lt2') return mid(target) > 0 ? lt2p / (mid(target) / 100) : null;
+  if (target.type === 'percent_ftp') return mid(target) > 0 ? lt2p / (mid(target) / 100) : null;
+  if (target.type === 'zone') {
+    const z = Number(target.value) || 2;
+    const pz = swimmingZones?.[`zone${z}`];
+    if (pz && pz.min > 0) {
+      const max = (pz.max != null && pz.max !== Infinity && pz.max > 0) ? pz.max : pz.min * 1.08;
+      return (pz.min + max) / 2;
+    }
+    return [lt2p * 1.25, lt1p, lt2p * 1.04, lt2p, lt2p * 0.92][Math.min(z - 1, 4)];
+  }
+  return null;
+}
+
 function resolveTargetRange(target, ctx = {}) {
   if (!target || target.type === 'open') return null;
   if (target.type === 'watts' && target.useRange) {
@@ -245,6 +306,11 @@ function buildTcx(workout, ctx = {}) {
 
   const stepXml = steps.map((s, i) => {
     const dur = Math.max(1, Number(s.durationSeconds) || 0);
+    const meters = Math.round(Number(s.distanceMeters) || 0);
+    const isDistance = s.durationType === 'distance' && meters > 0;
+    const durationXml = isDistance
+      ? `<Duration xsi:type="Distance_t"><Meters>${meters}</Meters></Duration>`
+      : `<Duration xsi:type="Time_t"><Seconds>${dur}</Seconds></Duration>`;
     const intensity = STEP_TYPE_TO_INTENSITY[s.stepType] || 'Active';
     const label = xmlEscape((s.label || s.stepType || '').slice(0, 15));
     const range = resolveTargetRange(s.powerTarget, ctx);
@@ -259,7 +325,7 @@ function buildTcx(workout, ctx = {}) {
     return `      <Step xsi:type="Step_t">
         <StepId>${i + 1}</StepId>
         <Name>${label || `Step ${i + 1}`}</Name>
-        <Duration xsi:type="Time_t"><Seconds>${dur}</Seconds></Duration>
+        ${durationXml}
         <Intensity>${intensity}</Intensity>
 ${targetXml}
       </Step>`;
@@ -304,4 +370,6 @@ module.exports = {
   expandSteps,
   resolveTargetWatts,
   resolveTargetRange,
+  resolveTargetPaceSecPerKm,
+  resolveTargetSwimPaceSecPer100m,
 };

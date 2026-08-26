@@ -113,4 +113,58 @@ test('eligibility: OAuth + steps + planned status required; permissions gate hon
   assert.strictEqual(garminPushEligible(oauthUser, { ...pw, status: 'completed' }), false);
 });
 
+// ── Run: distance steps + pace targets (the TrainingPeaks-style 10×1 km) ──
+
+const runCtx = {
+  ...ctx,
+  sport: 'run',
+  lt1Pace: 285,  // 4:45/km
+  lt2Pace: 250,  // 4:10/km
+  runningZones: { lt1: 285, lt2: 250 },
+};
+
+test('run 10×1 km → DISTANCE laps in metres with PACE target in m/s', () => {
+  const steps = buildGarminSteps([
+    { stepType: 'warmup', durationSeconds: 600 },
+    { groupId: 'R', isGroupHeader: true, groupRepeat: 10, stepType: 'work',
+      durationType: 'distance', distanceMeters: 1000, durationSeconds: 250,
+      powerTarget: { type: 'lt2' } },
+    { groupId: 'R', stepType: 'recovery', durationSeconds: 90 },
+    { stepType: 'cooldown', durationSeconds: 600 },
+  ], runCtx);
+  const rep = steps[1];
+  assert.strictEqual(rep.type, 'WorkoutRepeatStep');
+  assert.strictEqual(rep.repeatValue, 10);
+  const km = rep.steps[0];
+  assert.strictEqual(km.durationType, 'DISTANCE');
+  assert.strictEqual(km.durationValue, 1000);
+  assert.strictEqual(km.targetType, 'PACE');
+  // LT2 = 250 s/km = 4.0 m/s, ±5 %
+  assert.ok(Math.abs(km.targetValueLow - 3.8) < 0.01, `low=${km.targetValueLow}`);
+  assert.ok(Math.abs(km.targetValueHigh - 4.2) < 0.01, `high=${km.targetValueHigh}`);
+  assert.ok(km.targetValueLow < km.targetValueHigh);
+  // Recovery jog has no target → OPEN, stays TIME
+  assert.strictEqual(rep.steps[1].targetType, 'OPEN');
+  assert.strictEqual(rep.steps[1].durationType, 'TIME');
+});
+
+test('run without pace zones falls back to OPEN, never emits bike watts', () => {
+  const steps = buildGarminSteps([
+    { stepType: 'work', durationType: 'distance', distanceMeters: 1000,
+      durationSeconds: 250, powerTarget: { type: 'lt2' } },
+  ], { ...ctx, sport: 'run' }); // ftp present, but no run pace context
+  assert.strictEqual(steps[0].targetType, 'OPEN');
+  assert.strictEqual(steps[0].durationType, 'DISTANCE');
+});
+
+test('run workout payload maps sport RUNNING', () => {
+  const w = buildGarminWorkout({
+    _id: 'r1', title: '10×1 km', sport: 'run', date: new Date('2026-09-02'),
+    steps: [{ stepType: 'work', durationType: 'distance', distanceMeters: 1000,
+      durationSeconds: 250, powerTarget: { type: 'lt2' } }],
+  }, runCtx);
+  assert.strictEqual(w.sport, 'RUNNING');
+  assert.strictEqual(w.steps[0].targetType, 'PACE');
+});
+
 console.log(passed + ' passed');

@@ -21,7 +21,11 @@
  * athlete sees in the builder.
  */
 
-const { resolveTargetRange } = require('./workoutExporters');
+const {
+  resolveTargetRange,
+  resolveTargetPaceSecPerKm,
+  resolveTargetSwimPaceSecPer100m,
+} = require('./workoutExporters');
 
 /** Lazy — keeps the pure builders below testable with plain `node` (no deps). */
 function axios() {
@@ -72,20 +76,55 @@ function resolveHrRange(target) {
   return { low: Math.round(v * 0.95), high: Math.round(v * 1.05) };
 }
 
+/** Sports where the primary target on the watch is pace, not power. */
+const PACE_SPORTS = new Set(['run', 'walk', 'swim']);
+const POWER_SPORTS = new Set(['bike', 'mtbike', 'brick', 'lactate']);
+
+/**
+ * Pace target as Garmin wants it: speed in m/s, low = slower, high = faster.
+ * ±5 % around the resolved pace — same band as the power exports.
+ */
+function resolveSpeedRange(step, ctx) {
+  const sport = ctx.sport;
+  if (!PACE_SPORTS.has(sport)) return null;
+  const pace = sport === 'swim'
+    ? resolveTargetSwimPaceSecPer100m(step.powerTarget, ctx)
+    : resolveTargetPaceSecPerKm(step.powerTarget, ctx);
+  if (!(pace > 0)) return null;
+  const unitMeters = sport === 'swim' ? 100 : 1000;
+  const centre = unitMeters / pace; // m/s
+  return {
+    low: Math.round(centre * 0.95 * 1000) / 1000,
+    high: Math.round(centre * 1.05 * 1000) / 1000,
+  };
+}
+
 function toGarminStep(step, ctx, order) {
+  const meters = Math.round(Number(step.distanceMeters) || 0);
+  const isDistance = step.durationType === 'distance' && meters > 0;
   const g = {
     type: 'WorkoutStep',
     stepOrder: order,
     intensity: STEP_TYPE_TO_INTENSITY[step.stepType] || 'INTERVAL',
-    durationType: 'TIME',
-    durationValue: Math.max(1, Number(step.durationSeconds) || 0),
+    // Distance steps (10×1 km) go to the watch as metres, so the lap flips on
+    // distance — durationSeconds is only the builder's e-pace estimate.
+    durationType: isDistance ? 'DISTANCE' : 'TIME',
+    durationValue: isDistance ? meters : Math.max(1, Number(step.durationSeconds) || 0),
   };
   const desc = step.label || step.notes;
   if (desc) g.description = String(desc).slice(0, 512);
 
-  const power = resolveTargetRange(step.powerTarget, ctx);
+  // Target priority per sport: pace for run/swim, power for bike, HR fallback.
+  const speed = resolveSpeedRange(step, ctx);
+  const power = POWER_SPORTS.has(ctx.sport) || !PACE_SPORTS.has(ctx.sport)
+    ? resolveTargetRange(step.powerTarget, ctx)
+    : null;
   const hr = resolveHrRange(step.hrTarget);
-  if (power && power.high > 0) {
+  if (speed) {
+    g.targetType = 'PACE';
+    g.targetValueLow = speed.low;
+    g.targetValueHigh = speed.high;
+  } else if (power && power.high > 0) {
     g.targetType = 'POWER';
     g.targetValueLow = power.low;
     g.targetValueHigh = power.high;
@@ -165,6 +204,7 @@ function totalSeconds(steps = []) {
 }
 
 function buildGarminWorkout(pw, ctx = {}) {
+  const stepCtx = { ...ctx, sport: pw.sport };
   return {
     workoutName: String(pw.title || 'Workout').slice(0, 80),
     description: [pw.description, pw.coachNotes].filter(Boolean).join('\n\n').slice(0, 1024) || undefined,
@@ -172,12 +212,16 @@ function buildGarminWorkout(pw, ctx = {}) {
     estimatedDurationInSecs: totalSeconds(pw.steps) || undefined,
     workoutProvider: 'LaChart',
     workoutSourceId: String(pw._id),
-    steps: buildGarminSteps(pw.steps, ctx),
+    steps: buildGarminSteps(pw.steps, stepCtx),
   };
 }
 
-/** Same FTP/LT resolution order as the /planned/:id/export route. */
-async function resolvePowerContext(athleteId) {
+/**
+ * Power side mirrors the /planned/:id/export route (latest test → FTP/LT);
+ * pace side comes from the profile zones (sec/km run, sec/100m swim) the
+ * builder itself resolves against, so the watch target matches the builder.
+ */
+async function resolveWorkoutContext(athleteId, user = null) {
   const ctx = { ftp: 250, lt1Power: null, lt2Power: null };
   try {
     const Test = require('../models/test');
@@ -189,6 +233,18 @@ async function resolvePowerContext(athleteId) {
       ctx.lt2Power = latest.lt2Power || latest.ltPower || null;
     }
   } catch { /* keep defaults */ }
+  const running = user?.powerZones?.running;
+  if (running) {
+    ctx.runningZones = running;
+    ctx.lt1Pace = running.lt1 || null;
+    ctx.lt2Pace = running.lt2 || null;
+  }
+  const swimming = user?.powerZones?.swimming;
+  if (swimming) {
+    ctx.swimmingZones = swimming;
+    ctx.lt1Swim = swimming.lt1 || null;
+    ctx.lt2Swim = swimming.lt2 || null;
+  }
   return ctx;
 }
 
@@ -269,11 +325,11 @@ async function syncPlannedWorkoutToGarmin(plannedWorkoutId) {
 
   const pw = await PlannedWorkout.findById(plannedWorkoutId);
   if (!pw) return { synced: false, reason: 'not_found' };
-  const user = await User.findById(pw.athleteId).select('garmin').lean();
+  const user = await User.findById(pw.athleteId).select('garmin powerZones').lean();
   if (!garminPushEligible(user, pw)) return { synced: false, reason: 'not_eligible' };
 
   try {
-    const ctx = await resolvePowerContext(pw.athleteId);
+    const ctx = await resolveWorkoutContext(pw.athleteId, user);
     const r = await pushToGarminCalendar(user, pw, ctx);
     pw.garminWorkoutId = r.workoutId;
     pw.garminScheduleId = r.scheduleId;

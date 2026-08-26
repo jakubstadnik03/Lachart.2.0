@@ -20,7 +20,12 @@ const router = express.Router();
 const verifyToken = require('../middleware/verifyToken');
 const User = require('../models/UserModel');
 const PlannedWorkout = require('../models/PlannedWorkout');
-const { expandSteps, resolveTargetWatts } = require('../utils/workoutExporters');
+const {
+  expandSteps,
+  resolveTargetWatts,
+  resolveTargetPaceSecPerKm,
+  resolveTargetSwimPaceSecPer100m,
+} = require('../utils/workoutExporters');
 
 const SPORT_LABEL = {
   run: 'Run', bike: 'Ride', mtbike: 'MTB', swim: 'Swim', strength: 'Strength',
@@ -115,15 +120,42 @@ function fmtDur(sec) {
   return rest ? `${h}h ${rest}min` : `${h}h`;
 }
 
-/** One line per lap: "3. 8min work @ 230–255 W". */
+function fmtPace(sec) {
+  const m = Math.floor(sec / 60);
+  const s = Math.round(sec % 60);
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+function fmtMeters(m) {
+  if (m >= 1000) {
+    const km = m / 1000;
+    return km === Math.floor(km) ? `${km} km` : `${km.toFixed(1)} km`;
+  }
+  return `${m} m`;
+}
+
+/** One line per lap: "3. 1 km work @ 4:15/km" / "3. 8min work @ ~240 W". */
 function stepLines(pw, ctx) {
   const steps = expandSteps(pw.steps || []);
+  const paceSport = pw.sport === 'run' || pw.sport === 'walk' ? 'run'
+    : pw.sport === 'swim' ? 'swim' : null;
   return steps.map((s, i) => {
-    const dur = fmtDur(Math.max(1, Number(s.durationSeconds) || 0));
+    const meters = Math.round(Number(s.distanceMeters) || 0);
+    const size = s.durationType === 'distance' && meters > 0
+      ? fmtMeters(meters)
+      : fmtDur(Math.max(1, Number(s.durationSeconds) || 0));
     const label = s.label || s.stepType || 'step';
-    const w = resolveTargetWatts(s.powerTarget, ctx);
-    const target = w != null ? ` @ ~${w} W` : '';
-    return `${i + 1}. ${dur} ${label}${target}`;
+    let target = '';
+    if (paceSport) {
+      const pace = paceSport === 'swim'
+        ? resolveTargetSwimPaceSecPer100m(s.powerTarget, ctx)
+        : resolveTargetPaceSecPerKm(s.powerTarget, ctx);
+      if (pace > 0) target = ` @ ${fmtPace(pace)}${paceSport === 'swim' ? '/100m' : '/km'}`;
+    } else {
+      const w = resolveTargetWatts(s.powerTarget, ctx);
+      if (w != null) target = ` @ ~${w} W`;
+    }
+    return `${i + 1}. ${size} ${label}${target}`;
   });
 }
 
@@ -167,7 +199,7 @@ router.get('/:token/lachart.ics', async (req, res) => {
   try {
     const token = String(req.params.token || '');
     if (!/^[a-f0-9]{48}$/.test(token)) return res.status(404).send('Not found');
-    const user = await User.findOne({ calendarFeedToken: token }).select('_id').lean();
+    const user = await User.findOne({ calendarFeedToken: token }).select('_id powerZones').lean();
     if (!user) return res.status(404).send('Not found');
 
     const from = new Date();
@@ -194,6 +226,17 @@ router.get('/:token/lachart.ics', async (req, res) => {
         };
       }
     } catch (_) { /* keep defaults */ }
+    // Pace context for run/swim lap lines — same zones the builder resolves against.
+    if (user.powerZones?.running) {
+      ctx.runningZones = user.powerZones.running;
+      ctx.lt1Pace = user.powerZones.running.lt1 || null;
+      ctx.lt2Pace = user.powerZones.running.lt2 || null;
+    }
+    if (user.powerZones?.swimming) {
+      ctx.swimmingZones = user.powerZones.swimming;
+      ctx.lt1Swim = user.powerZones.swimming.lt1 || null;
+      ctx.lt2Swim = user.powerZones.swimming.lt2 || null;
+    }
 
     const now = new Date().toISOString().replace(/[-:]/g, '').slice(0, 15) + 'Z';
     const lines = [
