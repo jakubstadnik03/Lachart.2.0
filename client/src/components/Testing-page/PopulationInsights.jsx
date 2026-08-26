@@ -96,9 +96,12 @@ function histPoints(metric, scale = 1) {
 
 // ─── Histogram card ───────────────────────────────────────────────────────────
 
-function HistoCard({ title, subtitle, data, xLabel, xFmt, refX, refLabel, stat, scale = 1 }) {
+function HistoCard({ title, subtitle, data, xLabel, xFmt, refX, refLabel, stat, scale = 1, lowerIsBetter = false }) {
   const pct = stat && refX != null ? empiricalPercentile(refX / scale, stat) : null;
-  const badge = pctLabel(pct);
+  // Pace metrics: a LOWER value beats the field, so the rank is the inverse
+  // of the position in the distribution.
+  const rank = pct == null ? null : (lowerIsBetter ? 100 - pct : pct);
+  const badge = pctLabel(rank);
   const hasRef = refX != null && Number.isFinite(refX);
 
   const tickFmt = (v) => {
@@ -503,6 +506,7 @@ const PopulationInsights = ({ athleteProfile, selectedSport = 'bike' }) => {
                     refX={cv?.lt1 ?? null}
                     refLabel={cv?.lt1 ? fmtPace(cv.lt1, paceSuffix) : null}
                     stat={sportStats.lt1}
+                    lowerIsBetter
                   />
                 )}
                 {sportStats.lt2?.count > 0 && (
@@ -515,6 +519,7 @@ const PopulationInsights = ({ athleteProfile, selectedSport = 'bike' }) => {
                     refX={cv?.lt2 ?? null}
                     refLabel={cv?.lt2 ? fmtPace(cv.lt2, paceSuffix) : null}
                     stat={sportStats.lt2}
+                    lowerIsBetter
                   />
                 )}
               </div>
