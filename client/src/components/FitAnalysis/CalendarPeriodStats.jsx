@@ -463,17 +463,23 @@ function makeGroupedBar(labels, curData, lyData, colorA = '#3b82f6') {
       axisTick: { show: false },
     },
     series: [
+      // The colour belongs on the series, not on every data point: ECharts
+      // draws the legend swatch from the series style and falls back to its
+      // default palette when there is none. Per-point colours left the legend
+      // showing blue and green over bars that were two shades of one colour.
       {
         name: 'This year',
         type: 'bar',
         barMaxWidth: 22,
-        data: curData.map((h) => ({ value: h, itemStyle: { color: colorA, borderRadius: [3, 3, 0, 0] } })),
+        itemStyle: { color: colorA, borderRadius: [3, 3, 0, 0] },
+        data: curData,
       },
       {
         name: 'Last year',
         type: 'bar',
         barMaxWidth: 22,
-        data: lyData.map((h) => ({ value: h, itemStyle: { color: colorA + '66', borderRadius: [3, 3, 0, 0] } })),
+        itemStyle: { color: colorA + '66', borderRadius: [3, 3, 0, 0] },
+        data: lyData,
       },
     ],
   };
@@ -2562,42 +2568,74 @@ export default function CalendarPeriodStats({
                   </div>
                 )}
 
-                {/* Activities list for selected period */}
-                {filteredCmpThis.length > 0 && (
-                  <div>
-                    <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Activities this period</div>
-                    <div className="space-y-1.5">
-                      {[...filteredCmpThis]
-                        .sort((a, b) => new Date(b.date || b.timestamp || b.startDate) - new Date(a.date || a.timestamp || a.startDate))
-                        .map((act, idx) => {
-                          const sec = actDurationSec(act);
-                          const tss = computeTssForAct(act, tssProfile, user);
-                          const dist = Number(act.distance || 0);
-                          const b = sportBucket(act.sport);
-                          return (
-                            <button
-                              key={`${act.id}-${idx}`}
-                              type="button"
-                              disabled={!onSelectActivity}
-                              onClick={() => onSelectActivity && onSelectActivity(act)}
-                              className={`w-full text-left flex items-center gap-3 bg-white border border-gray-100 rounded-xl px-3 py-2 ${onSelectActivity ? 'hover:border-gray-200 hover:shadow-sm cursor-pointer' : 'cursor-default'} transition-all`}
-                            >
-                              <img src={`/icon/${b}.svg`} alt={b} className="w-4 h-4 object-contain shrink-0" onError={(e) => { e.target.style.display = 'none'; }} />
-                              <div className="min-w-0 flex-1">
-                                <div className="text-xs font-semibold text-gray-900 truncate">{act.title || 'Activity'}</div>
-                                <div className="text-xs text-gray-400">{fmtActDate(act)}</div>
-                              </div>
-                              <div className="flex items-center gap-2 shrink-0 text-xs text-gray-500">
-                                {sec > 0 && <span className="tabular-nums">{formatDuration(sec)}</span>}
-                                {dist > 0 && <span className="tabular-nums">{formatDistance(dist, user)}</span>}
-                                {tss > 0 && <span className="text-primary font-semibold tabular-nums">{Math.round(tss)} TSS</span>}
-                              </div>
-                            </button>
-                          );
-                        })}
+                {/* Activities, this year against last.
+                    The panel is a year-on-year comparison everywhere else, and
+                    this list was the one part still showing only the current
+                    period — so the totals above invited a comparison the rows
+                    below could not answer. Two columns, same period a year
+                    apart, each sorted newest first.
+
+                    Only this year's rows are clickable: last year's activity
+                    opens a detail for a date the calendar is not showing, which
+                    lands the reader somewhere they did not ask to go. */}
+                {(filteredCmpThis.length > 0 || filteredCmpPrev.length > 0) && (() => {
+                  const byNewest = (a, b) =>
+                    new Date(b.date || b.timestamp || b.startDate) - new Date(a.date || a.timestamp || a.startDate);
+
+                  const ActivityRow = ({ act, onClick }) => {
+                    const sec = actDurationSec(act);
+                    const tss = computeTssForAct(act, tssProfile, user);
+                    const dist = Number(act.distance || 0);
+                    const b = sportBucket(act.sport);
+                    return (
+                      <button
+                        type="button"
+                        disabled={!onClick}
+                        onClick={() => onClick && onClick(act)}
+                        className={`w-full text-left flex items-center gap-3 bg-white border border-gray-100 rounded-xl px-3 py-2 ${onClick ? 'hover:border-gray-200 hover:shadow-sm cursor-pointer' : 'cursor-default'} transition-all`}
+                      >
+                        <img src={`/icon/${b}.svg`} alt={b} className="w-4 h-4 object-contain shrink-0" onError={(e) => { e.target.style.display = 'none'; }} />
+                        <div className="min-w-0 flex-1">
+                          <div className="text-xs font-semibold text-gray-900 truncate">{act.title || 'Activity'}</div>
+                          <div className="text-xs text-gray-400">{fmtActDate(act)}</div>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0 text-xs text-gray-500">
+                          {sec > 0 && <span className="tabular-nums">{formatDuration(sec)}</span>}
+                          {dist > 0 && <span className="tabular-nums">{formatDistance(dist, user)}</span>}
+                          {tss > 0 && <span className="text-primary font-semibold tabular-nums">{Math.round(tss)} TSS</span>}
+                        </div>
+                      </button>
+                    );
+                  };
+
+                  const Column = ({ label, acts, muted, onClick }) => (
+                    <div className="min-w-0">
+                      <div className={`text-xs font-semibold uppercase tracking-wide mb-2 ${muted ? 'text-gray-400' : 'text-primary'}`}>
+                        {label} <span className="font-normal normal-case">· {acts.length}</span>
+                      </div>
+                      <div className="space-y-1.5">
+                        {acts.length === 0 && (
+                          <div className="text-xs text-gray-300 border border-dashed border-gray-100 rounded-xl px-3 py-4 text-center">
+                            Nothing this period
+                          </div>
+                        )}
+                        {[...acts].sort(byNewest).map((act, idx) => (
+                          <ActivityRow key={`${act.id}-${idx}`} act={act} onClick={onClick} />
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                )}
+                  );
+
+                  return (
+                    <div>
+                      <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Activities this period</div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <Column label="This year" acts={filteredCmpThis} muted={false} onClick={onSelectActivity} />
+                        <Column label="Last year" acts={filteredCmpPrev} muted onClick={null} />
+                      </div>
+                    </div>
+                  );
+                })()}
               </>
             )}
           </div>
