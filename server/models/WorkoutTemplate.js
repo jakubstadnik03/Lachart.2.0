@@ -44,6 +44,12 @@ const workoutStepSchema = new mongoose.Schema({
   },
   label:            String,   // optional custom label
   durationSeconds:  { type: Number, required: true, min: 1 },
+  // Distance-based steps (run/swim intervals like 10×1 km): durationType
+  // 'distance' + distanceMeters, with durationSeconds keeping the e-pace
+  // estimate for the charts. Without these here Mongoose silently dropped
+  // them on save and every 1 km repeat degraded into its time estimate.
+  durationType:     { type: String, enum: ['time', 'distance'], default: 'time' },
+  distanceMeters:   Number,
   powerTarget:      stepTargetSchema,
   hrTarget:         stepTargetSchema,
   cadenceMin:       Number,

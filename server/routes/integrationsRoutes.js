@@ -826,8 +826,12 @@ function mapGarminSleep(entry) {
   const rem = Number(entry.remSleepInSeconds ?? entry.remSleepDurationInSeconds) || 0;
   const awake = Number(entry.awakeDurationInSeconds) || 0;
   const unmeasurable = Number(entry.unmeasurableSleepInSeconds) || 0;
-  const asleepSec = deep + light + rem + unmeasurable;
+  // Devices without stage tracking send only durationInSeconds — without this
+  // fallback their whole night was dropped (empty patch, no row saved).
+  const asleepSec = (deep + light + rem + unmeasurable) || (Number(entry.durationInSeconds) || 0);
   if (asleepSec > 0) patch.sleepMinutes = Math.round(asleepSec / 60);
+  const score = Number(entry.overallSleepScore?.value ?? entry.overallSleepScore);
+  if (Number.isFinite(score) && score > 0 && score <= 100) patch.sleepScore = Math.round(score);
   const stages = {
     deepMin: Math.round(deep / 60),
     coreMin: Math.round(light / 60),
@@ -910,10 +914,23 @@ async function upsertGarminWellness(user, summaryType, entry) {
  * No-op unless the account actually has HEALTH_EXPORT.
  */
 async function triggerGarminWellnessBackfill(user, days = 30) {
-  const permissions = Array.isArray(user?.garmin?.permissions) ? user.garmin.permissions : [];
-  if (!permissions.includes('HEALTH_EXPORT')) return { queued: false, reason: 'no_health_permission' };
+  let permissions = Array.isArray(user?.garmin?.permissions) ? user.garmin.permissions : [];
   try {
     const tokenData = await getValidGarminToken(user);
+    if (!permissions.includes('HEALTH_EXPORT')) {
+      // Permissions may have never been stored (connected before wellness
+      // support, or the callback-time lookup failed) — re-check before
+      // deciding the account has no health access.
+      const fresh = await fetchGarminUserPermissions(tokenData);
+      if (Array.isArray(fresh)) {
+        permissions = fresh;
+        await User.updateOne(
+          { _id: user._id },
+          { $set: { 'garmin.permissions': fresh, 'garmin.permissionsCheckedAt': new Date() } }
+        ).catch(() => {});
+      }
+    }
+    if (!permissions.includes('HEALTH_EXPORT')) return { queued: false, reason: 'no_health_permission' };
     const endSec = Math.floor(Date.now() / 1000);
     const startSec = endSec - days * 24 * 3600;
     const base = getGarminWellnessApiBaseUrl();
@@ -979,8 +996,11 @@ async function processGarminWebhookPayload(payload) {
         try {
           if (entry.callbackURL) {
             const tokenData = await getValidGarminToken(user);
+            // Ping callbacks are pulls too — without GARMIN_PULL_TOKEN they get
+            // the same HTTP 400 InvalidPullTokenException as direct pulls.
             const resp = await axios.get(entry.callbackURL, {
               headers: { Authorization: `${tokenData.tokenType} ${tokenData.accessToken}` },
+              params: withGarminPullToken(),
               timeout: 30000,
             });
             const body = resp.data;
@@ -1023,6 +1043,7 @@ async function processGarminWebhookPayload(payload) {
           const tokenData = await getValidGarminToken(user);
           const resp = await axios.get(entry.callbackURL, {
             headers: { Authorization: `${tokenData.tokenType} ${tokenData.accessToken}` },
+            params: withGarminPullToken(),
             timeout: 30000,
           });
           // Details callback returns activityDetails records with samples;
@@ -3244,6 +3265,12 @@ router.get('/garmin/callback', async (req, res) => {
     // recovery cards fill in immediately (no-op without HEALTH_EXPORT).
     triggerGarminWellnessBackfill(user, 30).catch(() => {});
 
+    // Plans made before the connection: mirror upcoming structured workouts
+    // into the freshly connected Garmin calendar (no-op without WORKOUT_IMPORT).
+    require('../utils/garminWorkoutPush')
+      .syncAllUpcomingPlannedWorkouts(user._id)
+      .catch((e) => console.warn('[Garmin callback] workout mirror failed:', e?.message));
+
     // Pull recent activities immediately so the calendar has data while history import runs.
     setTimeout(() => {
       User.findById(user._id)
@@ -3903,6 +3930,16 @@ router.post('/garmin/sync', verifyToken, async (req, res) => {
     const user = await User.findById(req.user.userId);
     if (!user || !user.garmin?.accessToken) {
       return res.status(400).json({ error: 'Garmin not connected' });
+    }
+
+    // Wellness backfill piggybacks on manual sync so accounts connected before
+    // wellness support (or whose callback-time permission check failed) still
+    // get sleep/RHR/HRV history. Throttled to once a day; Garmin answers 409
+    // for duplicate windows, which the helper tolerates.
+    const lastWellness = user.garmin?.lastWellnessSyncAt;
+    if (user.garmin?.refreshToken
+        && (!lastWellness || Date.now() - new Date(lastWellness).getTime() > 24 * 3600 * 1000)) {
+      triggerGarminWellnessBackfill(user, 30).catch(() => {});
     }
 
     const { since } = req.body || {};
@@ -8241,6 +8278,7 @@ router.get('/apple-health/wellness', verifyToken, async (req, res) => {
         sleepStages: r.sleepStages || null,
         sleepSegments: r.sleepSegments || null,
         hrvMs: r.hrvMs,
+        respiratoryRate: r.respiratoryRate ?? null,
       })),
     });
   } catch (err) {
@@ -8290,6 +8328,8 @@ router.get('/garmin/wellness', verifyToken, async (req, res) => {
         sleepStages: r.sleepStages || null,
         sleepSegments: r.sleepSegments || null,
         hrvMs: r.hrvMs,
+        sleepScore: r.sleepScore ?? null,
+        respiratoryRate: r.respiratoryRate ?? null,
       })),
     });
   } catch (err) {
@@ -8368,6 +8408,8 @@ router.delete('/apple-health', verifyToken, async (req, res) => {
 
 module.exports = router;
 module.exports.getValidStravaToken = getValidStravaToken;
+module.exports.getValidGarminToken = getValidGarminToken;
+module.exports.fetchGarminUserPermissions = fetchGarminUserPermissions;
 // Boot-time recovery for backfills interrupted by a restart.
 module.exports.resumeInterruptedStravaBackfills = resumeInterruptedStravaBackfills;
 module.exports.resumeStaleStravaBackfills = resumeStaleStravaBackfills;

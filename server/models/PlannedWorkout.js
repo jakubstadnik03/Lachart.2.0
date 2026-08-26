@@ -29,6 +29,12 @@ const workoutStepSchema = new mongoose.Schema({
   },
   label:           String,
   durationSeconds: { type: Number, required: true, min: 1 },
+  // Distance-based steps (run/swim intervals like 10×1 km): durationType
+  // 'distance' + distanceMeters, with durationSeconds keeping the e-pace
+  // estimate for the charts. Without these here Mongoose silently dropped
+  // them on save and every 1 km repeat degraded into its time estimate.
+  durationType:    { type: String, enum: ['time', 'distance'], default: 'time' },
+  distanceMeters:  Number,
   powerTarget:     stepTargetSchema,
   hrTarget:        stepTargetSchema,
   cadenceMin:      Number,
@@ -87,6 +93,15 @@ const plannedWorkoutSchema = new mongoose.Schema({
   executionData:   { type: mongoose.Schema.Types.Mixed, default: null },
   fitTrainingId:   String,
   stravaActivityId: String,
+
+  // ── Garmin Connect calendar mirror (Training API) ───────────────
+  // Set by utils/garminWorkoutPush when the workout is pushed to the athlete's
+  // Garmin calendar; used to update/unschedule instead of duplicating.
+  garminWorkoutId:     String,
+  garminScheduleId:    String,
+  garminScheduledDate: String,  // YYYY-MM-DD the schedule row points at
+  garminSyncedAt:      Date,
+  garminSyncError:     String,
 }, { timestamps: true });
 
 plannedWorkoutSchema.index({ athleteId: 1, date: -1 });

@@ -1599,6 +1599,25 @@ const FitAnalysisPage = () => {
     setRadarWatts(watts ? Number(watts) : null);
   }, [location.search]);
 
+  // `?plan=new` — open the planned-workout form straight away, optionally for
+  // a given day (`&date=YYYY-MM-DD`). The feature guide links here: "plan a
+  // workout" has to land on the form, not on a calendar the athlete then has
+  // to work out how to use. The param is dropped once it has been acted on so
+  // a refresh does not reopen it.
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    if (params.get('plan') !== 'new') return;
+    const dateParam = params.get('date');
+    const date = dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam)
+      ? new Date(`${dateParam}T12:00:00`)
+      : new Date();
+    setPlanModal({ date, workout: null });
+    params.delete('plan');
+    params.delete('date');
+    const rest = params.toString();
+    navigate(`${location.pathname}${rest ? `?${rest}` : ''}`, { replace: true });
+  }, [location.search, location.pathname, navigate]);
+
   // Reset selected lap when training changes
   useEffect(() => {
     setSelectedLapNumber(null);
@@ -3087,7 +3106,7 @@ const FitAnalysisPage = () => {
     if (!gate('FIT Training Analysis', 'pro')) return;
     try {
       setDetailLoading(true);
-      const data = await getFitTraining(id);
+      const data = await getFitTraining(id, healthAthleteId);
       
       // Debug: Check what data we have
       if (data.records && data.records.length > 0) {
@@ -3162,7 +3181,7 @@ const FitAnalysisPage = () => {
       localStorage.removeItem('fitAnalysis_selectedTrainingId');
       setDetailLoading(false);
     }
-  }, [gate]);
+  }, [gate, healthAthleteId]);
 
   // Load training from Training model (from TrainingTable)
   const loadTrainingFromTrainingModel = useCallback(async (trainingId) => {
@@ -3178,7 +3197,7 @@ const FitAnalysisPage = () => {
         // Try FIT fallback before giving up, then clear stale storage keys.
         if (apiError?.response?.status === 404) {
           try {
-            const fitTraining = await getFitTraining(trainingId);
+            const fitTraining = await getFitTraining(trainingId, healthAthleteId);
             if (fitTraining?.laps && Array.isArray(fitTraining.laps)) {
               fitTraining.laps = deduplicateFitTrainingLaps(fitTraining.laps);
             }
@@ -3224,7 +3243,7 @@ const FitAnalysisPage = () => {
       // Try to load original FitTraining or StravaActivity if reference exists
       if (data.sourceFitTrainingId) {
         try {
-          const fitTraining = await getFitTraining(data.sourceFitTrainingId);
+          const fitTraining = await getFitTraining(data.sourceFitTrainingId, healthAthleteId);
 
           // Check for duplicate laps and deduplicate if needed
           if (fitTraining.laps && Array.isArray(fitTraining.laps)) {
@@ -3339,7 +3358,7 @@ const FitAnalysisPage = () => {
       localStorage.removeItem('fitAnalysis_selectedTrainingModelId');
       alert('Error loading training: ' + (error.response?.data?.error || error.message));
     }
-  }, [loadRegularTrainings, loadStravaDetail]);
+  }, [loadRegularTrainings, loadStravaDetail, healthAthleteId]);
   
   // Helper function to parse duration string (MM:SS or HH:MM:SS) to seconds
   const parseDurationToSeconds = (durationStr) => {
@@ -3367,7 +3386,7 @@ const FitAnalysisPage = () => {
     }
 
     try {
-      await deleteFitTraining(trainingId);
+      await deleteFitTraining(trainingId, healthAthleteId);
       await loadTrainings();
       if (selectedTraining?._id === trainingId) {
         setSelectedTraining(null);
@@ -5067,7 +5086,7 @@ const FitAnalysisPage = () => {
                         await createLap(selectedTraining._id, {
                           startTime: Math.min(start, end),
                           endTime: Math.max(start, end)
-                        });
+                        }, healthAthleteId);
                         await loadTrainingDetail(selectedTraining._id);
                         setShowCreateLapButton(false);
                         setSelectedTimeRange({ start: 0, end: 0 });

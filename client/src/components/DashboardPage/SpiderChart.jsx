@@ -4,6 +4,10 @@ import { Radar } from "react-chartjs-2";
 import { useNavigate } from "react-router-dom";
 import api from "../../services/api";
 import { useAuth } from "../../context/AuthProvider";
+import { hasRadar, resolveRadarSport } from "../../utils/radarSport";
+import { defaultMonthRange, monthKeysBetween, rangeEnds } from "../../utils/monthRange";
+import { SPORT_ICON_COLORS } from "../shared/SportIcon";
+
 import {
   Chart as ChartJS,
   RadialLinearScale,
@@ -15,6 +19,21 @@ import {
 } from "chart.js";
 
 ChartJS.register(RadialLinearScale, PointElement, LineElement, Filler, Tooltip, Legend);
+
+/**
+ * The radar speaks the app's colour language: a sport is the colour it is
+ * everywhere else (bike blue, run orange), and the all-time ring behind it is
+ * neutral, because it is a reference envelope rather than a result. The run
+ * radar used to be green and the comparison red — two colours that mean
+ * nothing here and clash with every sport chip on the same screen.
+ */
+const RADAR_REF = { line: '#94a3b8', fill: 'rgba(148,163,184,0.12)' };
+const radarSportColor = (s) => SPORT_ICON_COLORS[s] || SPORT_ICON_COLORS.other;
+const withAlpha = (hex, a) => {
+  const h = String(hex).replace('#', '');
+  const n = parseInt(h.length === 3 ? h.split('').map((c) => c + c).join('') : h, 16);
+  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
+};
 
 // ── Bike axes ─────────────────────────────────────────────────────────────────
 const BIKE_KEYS = ['sprint5s', 'attack1min', 'vo2max5min', 'threshold20min', 'endurance60min'];
@@ -200,6 +219,13 @@ export default function SpiderChart({
   setSelectedSport,
   calendarData = [],
   athleteId = null,
+  /**
+   * Optional: follow the host page's sport filter instead of the chart's own
+   * toggle. The training list passes its filter here so the radar shows the
+   * sport whose sessions are on screen. Anything the radar cannot draw
+   * (swim, "all") leaves the chart on its own choice.
+   */
+  sport: sportProp = null,
 }) {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -224,9 +250,17 @@ export default function SpiderChart({
   });
 
   // ── Local state ─────────────────────────────────────────────────────────────
+  // The host page's filter sets the sport; the toggle in the header can still
+  // override it afterwards, which is why this is state and not a derived
+  // value — an athlete looking at "all" wants to flip between the two radars
+  // without touching the filter above.
   const [sport, setSport] = useState(() => {
-    try { return localStorage.getItem('powerRadar_sport') || 'bike'; } catch { return 'bike'; }
+    try { return resolveRadarSport(sportProp, localStorage.getItem('powerRadar_sport')); }
+    catch { return resolveRadarSport(sportProp, null); }
   });
+  useEffect(() => {
+    if (hasRadar(sportProp)) setSport(sportProp);
+  }, [sportProp]);
   const [comparePeriod, setComparePeriod] = useState(() => {
     try { return localStorage.getItem('powerRadar_comparePeriod') || '90days'; } catch { return '90days'; }
   });
@@ -521,10 +555,11 @@ export default function SpiderChart({
     return keys.map(toEntry).filter(m => !isNaN(m.date)).sort((a, b) => b.date - a.date);
   }, [sport, bikeMetrics, serverRunMetrics, manualRunMetrics]);
 
-  // Auto-select all months when switching to monthly
+  // Opening the monthly view used to tick every month on record — nine years
+  // of rings nobody asked for. Start on the most recent six.
   useEffect(() => {
     if (comparePeriod === 'monthly' && availableMonths.length > 0 && selectedMonths.length === 0) {
-      setSelectedMonths(availableMonths.map(m => m.key));
+      setSelectedMonths(defaultMonthRange(availableMonths));
     }
   }, [comparePeriod, availableMonths, selectedMonths.length]);
 
@@ -545,7 +580,7 @@ export default function SpiderChart({
         return {
           labels,
           datasets: [
-            { label: 'All Time', data: [100, 100, 100, 100, 100], borderColor: '#60a5fa', backgroundColor: 'rgba(96,165,250,0.15)', borderWidth: 2, pointBackgroundColor: '#60a5fa', pointRadius: 4, fill: true, __kind: 'alltime' },
+            { label: 'All Time', data: [100, 100, 100, 100, 100], borderColor: RADAR_REF.line, backgroundColor: RADAR_REF.fill, borderWidth: 1.5, pointBackgroundColor: RADAR_REF.line, pointRadius: 3, fill: true, __kind: 'alltime' },
             ...selectedMonths.map((mk, i) => {
               const md = bikeMetrics.monthlyMetrics?.[mk];
               const lbl = availableMonths.find(m => m.key === mk)?.label || mk;
@@ -566,12 +601,12 @@ export default function SpiderChart({
       return {
         labels,
         datasets: [
-          { label: 'All Time', data: [100, 100, 100, 100, 100], borderColor: '#60a5fa', backgroundColor: 'rgba(96,165,250,0.15)', borderWidth: 2, pointBackgroundColor: '#60a5fa', pointRadius: 4, fill: true, __kind: 'alltime' },
+          { label: 'All Time', data: [100, 100, 100, 100, 100], borderColor: RADAR_REF.line, backgroundColor: RADAR_REF.fill, borderWidth: 1.5, pointBackgroundColor: RADAR_REF.line, pointRadius: 3, fill: true, __kind: 'alltime' },
           ...(comparePeriod !== 'alltime' && comparePeriod !== 'monthly' ? [{
             label: comparePeriod === '90days' ? 'Past 90 days' : 'Past 30 days',
             data: BIKE_KEYS.map(k => normBike(bikeMetrics.compare?.[k], k)),
-            borderColor: 'rgba(239,68,68,0.85)', backgroundColor: 'rgba(239,68,68,0.15)',
-            borderWidth: 2, pointBackgroundColor: 'rgba(239,68,68,1)', pointRadius: 4, fill: true, __kind: 'compare',
+            borderColor: radarSportColor(sport), backgroundColor: withAlpha(radarSportColor(sport), 0.16),
+            borderWidth: 2.5, pointBackgroundColor: radarSportColor(sport), pointRadius: 4, fill: true, __kind: 'compare',
           }] : []),
         ],
       };
@@ -593,7 +628,7 @@ export default function SpiderChart({
       return {
         labels,
         datasets: [
-          { label: 'All Time', data: [100, 100, 100, 100, 100], borderColor: '#10b981', backgroundColor: 'rgba(16,185,129,0.15)', borderWidth: 2, pointBackgroundColor: '#10b981', pointRadius: 4, fill: true, __kind: 'alltime' },
+          { label: 'All Time', data: [100, 100, 100, 100, 100], borderColor: RADAR_REF.line, backgroundColor: RADAR_REF.fill, borderWidth: 1.5, pointBackgroundColor: RADAR_REF.line, pointRadius: 3, fill: true, __kind: 'alltime' },
           ...selectedMonths.map((mk, i) => {
             const md = runMetrics.monthlyBests?.[mk];
             const lbl = availableMonths.find(m => m.key === mk)?.label || mk;
@@ -618,12 +653,12 @@ export default function SpiderChart({
     return {
       labels,
       datasets: [
-        { label: 'All Time', data: [100, 100, 100, 100, 100], borderColor: '#10b981', backgroundColor: 'rgba(16,185,129,0.15)', borderWidth: 2, pointBackgroundColor: '#10b981', pointRadius: 4, fill: true, __kind: 'alltime' },
+        { label: 'All Time', data: [100, 100, 100, 100, 100], borderColor: RADAR_REF.line, backgroundColor: RADAR_REF.fill, borderWidth: 1.5, pointBackgroundColor: RADAR_REF.line, pointRadius: 3, fill: true, __kind: 'alltime' },
         ...(comparePeriod !== 'alltime' && comparePeriod !== 'monthly' ? [{
           label: comparePeriod === '90days' ? 'Past 90 days' : 'Past 30 days',
           data: RUN_AXES.map(a => normRun(comparePaces?.[a.id], a.id)),
-          borderColor: 'rgba(239,68,68,0.85)', backgroundColor: 'rgba(239,68,68,0.15)',
-          borderWidth: 2, pointBackgroundColor: 'rgba(239,68,68,1)', pointRadius: 4, fill: true, __kind: 'compare',
+          borderColor: radarSportColor(sport), backgroundColor: withAlpha(radarSportColor(sport), 0.16),
+          borderWidth: 2.5, pointBackgroundColor: radarSportColor(sport), pointRadius: 4, fill: true, __kind: 'compare',
         }] : []),
       ],
     };
@@ -900,40 +935,69 @@ export default function SpiderChart({
       {/* ── Body ───────────────────────────────────────────────────────────── */}
       <div className="flex-1 overflow-y-auto min-h-0 px-4 pb-4">
 
-        {/* Month picker */}
-        {comparePeriod === 'monthly' && (
-          <div className="mt-3 mb-1 bg-gray-50 rounded-xl border border-gray-100 p-3">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-semibold text-gray-600">Select Months</span>
-              <button
-                onClick={() => setSelectedMonths(
-                  selectedMonths.length === availableMonths.length ? [] : availableMonths.map(m => m.key)
-                )}
-                className="text-[11px] text-primary font-semibold hover:underline"
-              >
-                {selectedMonths.length === availableMonths.length ? 'Deselect all' : 'Select all'}
-              </button>
-            </div>
-            <div className="flex flex-wrap gap-1.5">
-              {availableMonths.map(m => (
-                <label key={m.key} className="flex items-center gap-1 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={selectedMonths.includes(m.key)}
-                    onChange={e => setSelectedMonths(
-                      e.target.checked ? [...selectedMonths, m.key] : selectedMonths.filter(k => k !== m.key)
-                    )}
-                    className="w-3 h-3 text-primary rounded border-gray-300 focus:ring-primary"
-                  />
-                  <span className="text-xs text-gray-700">{m.label}</span>
-                </label>
-              ))}
-              {availableMonths.length === 0 && (
+        {/* Month range — from one month to another, rather than a hundred
+            checkboxes that all start ticked. */}
+        {comparePeriod === 'monthly' && (() => {
+          const ends = rangeEnds(selectedMonths);
+          const from = ends.from || availableMonths[Math.min(5, availableMonths.length - 1)]?.key || null;
+          const to = ends.to || availableMonths[0]?.key || null;
+          const setRange = (a, b) => setSelectedMonths(monthKeysBetween(availableMonths, a, b));
+          const monthOptions = availableMonths.map(m => (
+            <option key={m.key} value={m.key}>{m.label}</option>
+          ));
+          const selectClass = 'flex-1 min-w-0 text-xs text-gray-800 bg-white border border-gray-200 rounded-lg px-2 py-2 focus:outline-none focus:border-primary/50';
+
+          return (
+            <div className="mt-3 mb-1 bg-gray-50 rounded-xl border border-gray-100 p-3">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-semibold text-gray-600">Months compared</span>
+                <span className="text-[11px] text-gray-400">
+                  {selectedMonths.length === 1 ? '1 month' : `${selectedMonths.length} months`}
+                </span>
+              </div>
+
+              {availableMonths.length === 0 ? (
                 <span className="text-xs text-gray-400">No monthly data available</span>
+              ) : (
+                <>
+                  <div className="flex items-center gap-2">
+                    <select
+                      aria-label="From month"
+                      value={from || ''}
+                      onChange={e => setRange(e.target.value, to)}
+                      className={selectClass}
+                    >
+                      {monthOptions}
+                    </select>
+                    <span className="text-xs text-gray-400 shrink-0">to</span>
+                    <select
+                      aria-label="To month"
+                      value={to || ''}
+                      onChange={e => setRange(from, e.target.value)}
+                      className={selectClass}
+                    >
+                      {monthOptions}
+                    </select>
+                  </div>
+
+                  <div className="flex flex-wrap gap-1.5 mt-2">
+                    {[{ n: 3, label: 'Last 3' }, { n: 6, label: 'Last 6' }, { n: 12, label: 'Last 12' }].map(p => (
+                      <button
+                        key={p.n}
+                        type="button"
+                        onClick={() => setSelectedMonths(defaultMonthRange(availableMonths, p.n))}
+                        className="text-[11px] font-semibold text-gray-600 bg-white border border-gray-200 rounded-lg px-2.5 py-1 active:bg-gray-100"
+                        style={{ touchAction: 'manipulation' }}
+                      >
+                        {p.label}
+                      </button>
+                    ))}
+                  </div>
+                </>
               )}
             </div>
-          </div>
-        )}
+          );
+        })()}
 
         {/* Error banner */}
         {loadError && (

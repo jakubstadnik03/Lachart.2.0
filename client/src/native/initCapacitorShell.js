@@ -58,6 +58,21 @@ export async function initCapacitorShell() {
     console.warn('[Init] Apple Health auto-sync setup failed:', err?.message || err);
   }
 
+  // ── Apple Watch: schedule upcoming planned workouts (WorkoutKit) ─────
+  // Same launch + foreground cadence as the health sync. Without this sweep
+  // the WorkoutKit bridge is never invoked and planned workouts never reach
+  // the Workout app on the watch.
+  try {
+    const { autoSyncAppleWorkoutPlans } = await import('../utils/appleWorkoutAutoSync');
+    autoSyncAppleWorkoutPlans().catch(() => {});
+    const { App: AppForPlans } = await import('@capacitor/app');
+    AppForPlans.addListener('appStateChange', ({ isActive }) => {
+      if (isActive) autoSyncAppleWorkoutPlans().catch(() => {});
+    });
+  } catch (err) {
+    console.warn('[Init] Apple Watch workout sync setup failed:', err?.message || err);
+  }
+
   try {
     const { App } = await import('@capacitor/app');
     if (!backListenerHandle) {

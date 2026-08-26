@@ -678,6 +678,10 @@ export const PRESET_CATALOG = [
   { key: 'pyramid',             name: 'Pyramid',             sport: 'bike', desc: '2-4-6-4-2min @LT2',     color: '#f59e0b' },
   { key: 'tempo',               name: 'Tempo',               sport: 'bike', desc: '2×20min @90%LT2',       color: '#dc2626' },
   { key: 'lactate',             name: 'Lactate Staircase',   sport: 'bike', desc: 'Z2→Z5 steps',           color: '#6366f1' },
+  { key: 'bike_3030',           name: '30/30s',              sport: 'bike', desc: '2×10×(30s Z5 + 30s Z1)', color: '#e11d48' },
+  { key: 'bike_long',           name: 'Long Ride',           sport: 'bike', desc: '2h Z2 + 3×10min tempo',  color: '#16a34a' },
+  { key: 'bike_big_gear',       name: 'Big Gear Strength',   sport: 'bike', desc: '5×5min low-cadence @85%LT2', color: '#0ea5e9' },
+  { key: 'bike_recovery',       name: 'Recovery Spin',       sport: 'bike', desc: '45min @Z1',              color: '#86efac' },
 
   // ── Run ─────────────────────────────────────────────────────────────────────
   { key: 'run_easy',            name: 'Easy Run',            sport: 'run',  desc: '45min @Z2',              color: '#86efac' },
@@ -688,6 +692,10 @@ export const PRESET_CATALOG = [
   { key: 'run_fartlek',         name: 'Fartlek',             sport: 'run',  desc: '10×1min fast + 1min jog', color: '#a855f7' },
   { key: 'run_hills',           name: 'Hill Repeats',        sport: 'run',  desc: '8×60sec @Z5 + 2min',     color: '#6366f1' },
   { key: 'run_progressive',     name: 'Progressive Run',     sport: 'run',  desc: 'Z2→LT2 build',           color: '#f59e0b' },
+  { key: 'run_1k_repeats',      name: '1 km Repeats',        sport: 'run',  desc: '10×1km @LT2 + 90s jog',  color: '#fb923c' },
+  { key: 'run_400s',            name: '400m Repeats',        sport: 'run',  desc: '12×400m @Z5 + 90s jog',  color: '#e11d48' },
+  { key: 'run_strides',         name: 'Easy + Strides',      sport: 'run',  desc: '40min Z2 + 6×20s strides', color: '#14b8a6' },
+  { key: 'run_recovery',        name: 'Recovery Jog',        sport: 'run',  desc: '30min @Z1',              color: '#86efac' },
 
   // ── Swim ────────────────────────────────────────────────────────────────────
   { key: 'swim_endurance',      name: 'Endurance Set',       sport: 'swim', desc: '30min steady @Z2',       color: '#38bdf8' },
@@ -696,34 +704,65 @@ export const PRESET_CATALOG = [
   { key: 'swim_pyramid',        name: 'Pyramid',             sport: 'swim', desc: '400-300-200-100m @LT2',  color: '#6366f1' },
   { key: 'swim_pull',           name: 'Pull Set',            sport: 'swim', desc: '3×400m @90%LT2',         color: '#a855f7' },
   { key: 'swim_warmup_drills',  name: 'Drill Focus',         sport: 'swim', desc: 'WU + 8×50m drills + CD', color: '#22c55e' },
+  { key: 'swim_200s',           name: '200s Set',            sport: 'swim', desc: '5×200m @LT2 + 30s rest', color: '#2563eb' },
+  { key: 'swim_kick',           name: 'Kick Set',            sport: 'swim', desc: '8×50m kick + 20s rest',  color: '#f59e0b' },
 ];
 
 export function buildPresetSteps(preset) {
   const p = () => `ps-${Date.now()}-${Math.random().toString(36).slice(2,7)}`;
-  const WU  = (dur=600)  => ({ clientId:p(), stepType:'warmup',   isRamp:true, durationSeconds:dur, powerTarget:{type:'zone',value:2} });
-  const CD  = (dur=600)  => ({ clientId:p(), stepType:'cooldown', isRamp:true, durationSeconds:dur, powerTarget:{type:'zone',value:1} });
+  const blk = () => `blk-${Date.now()}-${Math.random().toString(36).slice(2,7)}`;
+
+  // 4-step progressive warm-up / cool-down — the same shape the palette blocks
+  // produce (blockId + blockKind), so the chart shows one named block with
+  // editable steps and the watch gets real laps instead of one long ramp.
+  const rampBlock = (kind, stepType, zones, totalSecs) => {
+    const id = blk();
+    const per = Math.max(30, Math.round(totalSecs / zones.length));
+    return zones.map((z) => ({
+      clientId: p(), blockId: id, blockKind: kind, stepType,
+      durationSeconds: per, powerTarget: { type: 'zone', value: z },
+    }));
+  };
+  // Warm-up is the same in every preset: 4 warmup steps of 5 min (Z1→Z2→Z2→Z3).
+  const WU  = ()         => rampBlock('warmup',   'warmup',   [1,2,2,3], 1200);
+  const CD  = (dur=600)  => rampBlock('cooldown', 'cooldown', [3,2,2,1], dur);
+  // Settle-in spin between the warm-up ramp and the first interval.
+  const EZ  = (dur=300)  => ({ clientId:p(), stepType:'recovery', label:'Easy Z1', durationSeconds:dur, powerTarget:{type:'zone',value:1} });
   const WRK = (dur, pt)  => ({ clientId:p(), stepType:'work',                  durationSeconds:dur, powerTarget:pt });
   const REC = (dur=120)  => ({ clientId:p(), stepType:'recovery',              durationSeconds:dur, powerTarget:{type:'zone',value:1} });
 
   // Helper: build a repeat group (header + work + optional recovery)
-  const GROUP = (reps, workDur, workPt, recDur=null, recPt={type:'zone',value:1}) => {
+  const GROUP = (reps, workDur, workPt, recDur=null, recPt={type:'zone',value:1}, workExtra={}) => {
     const gid = p();
     const out = [
-      { clientId:p(), groupId:gid, isGroupHeader:true, groupRepeat:reps, stepType:'work', durationSeconds:workDur, powerTarget:workPt },
+      { clientId:p(), groupId:gid, isGroupHeader:true, groupRepeat:reps, stepType:'work', durationSeconds:workDur, powerTarget:workPt, ...workExtra },
     ];
     if (recDur) out.push({ clientId:p(), groupId:gid, stepType:'recovery', durationSeconds:recDur, powerTarget:recPt });
     return out;
   };
 
+  // Run distance repeats (10×1 km): distance-based work + time-based jog.
+  // ~4:30/km estimate for chart sizing; the step editor re-estimates from the
+  // athlete's own pace once a target is touched.
+  const runDist = (m) => Math.round(m * 0.27);
+  const RGROUP = (reps, meters, workPt, recSecs=90) => {
+    const gid = p();
+    return [
+      { clientId:p(), groupId:gid, isGroupHeader:true, groupRepeat:reps, stepType:'work',
+        durationType:'distance', distanceMeters:meters, durationSeconds:runDist(meters), powerTarget:workPt },
+      { clientId:p(), groupId:gid, stepType:'recovery', durationSeconds:recSecs, powerTarget:{type:'zone',value:1} },
+    ];
+  };
+
   // ── Bike ────────────────────────────────────────────────────────────────────
   if (preset === 'threshold_intervals')
-    return [WU(900), ...GROUP(5, 480, {type:'lt2'}, 180), CD(600)];
+    return [...WU(), EZ(), ...GROUP(5, 480, {type:'lt2'}, 180), ...CD(600)];
   if (preset === 'sweet_spot')
-    return [WU(900), ...GROUP(3, 900, {type:'percent_ftp',useRange:true,rangeMin:88,rangeMax:93}, 300), CD(600)];
+    return [...WU(), EZ(), ...GROUP(3, 900, {type:'percent_ftp',useRange:true,rangeMin:88,rangeMax:93}, 300), ...CD(600)];
   if (preset === 'vo2max')
-    return [WU(900), ...GROUP(6, 240, {type:'zone',value:5}, 240), CD(600)];
+    return [...WU(), EZ(), ...GROUP(6, 240, {type:'zone',value:5}, 240), ...CD(600)];
   if (preset === 'zone2')
-    return [WU(600), WRK(3600,{type:'zone',value:2}), CD(600)];
+    return [...WU(), WRK(3600,{type:'zone',value:2}), ...CD(600)];
   if (preset === 'over_under') {
     // Each set: 3×(3min under + 2min over), 3 sets with 5min rest
     const gid = p();
@@ -731,61 +770,88 @@ export function buildPresetSteps(preset) {
       { clientId:p(), groupId:gid, isGroupHeader:true, groupRepeat:3, stepType:'work', durationSeconds:180, powerTarget:{type:'percent_lt2',value:95} },
       { clientId:p(), groupId:gid, stepType:'work', durationSeconds:120, powerTarget:{type:'percent_lt2',value:105} },
     ];
-    return [WU(900), ...set, REC(300), ...set, REC(300), ...set, CD(600)];
+    return [...WU(), EZ(), ...set, REC(300), ...set, REC(300), ...set, ...CD(600)];
   }
   if (preset === 'pyramid') {
     // Each effort is standalone (different durations) — use individual steps
-    const steps = [WU(900)];
+    const steps = [...WU(), EZ()];
     [120,240,360,240,120].forEach((dur,i,arr) => { steps.push(WRK(dur,{type:'lt2'})); if(i<arr.length-1) steps.push(REC(120)); });
-    steps.push(CD(600)); return steps;
+    steps.push(...CD(600)); return steps;
   }
   if (preset === 'tempo')
-    return [WU(900), ...GROUP(2, 1200, {type:'percent_lt2',value:90}, 300), CD(600)];
+    return [...WU(), EZ(), ...GROUP(2, 1200, {type:'percent_lt2',value:90}, 300), ...CD(600)];
   if (preset === 'lactate') {
     // Staircase — different zones, no grouping possible (each is different)
-    const steps = [WU(600)];
+    const steps = [...WU(), EZ()];
     [2,2,3,3,4,5].forEach(z => { steps.push(WRK(360,{type:'zone',value:z})); steps.push(REC(60)); });
-    steps.push(CD(600)); return steps;
+    steps.push(...CD(600)); return steps;
   }
+  if (preset === 'bike_3030')
+    return [...WU(), EZ(),
+      ...GROUP(10, 30, {type:'zone',value:5}, 30), REC(300),
+      ...GROUP(10, 30, {type:'zone',value:5}, 30), ...CD(600)];
+  if (preset === 'bike_long')
+    return [...WU(), WRK(1800,{type:'zone',value:2}),
+      ...GROUP(3, 600, {type:'percent_lt2',value:90}, 300),
+      WRK(1800,{type:'zone',value:2}), ...CD(600)];
+  if (preset === 'bike_big_gear')
+    // Low-cadence strength work — cadence range rides on the work step.
+    return [...WU(), EZ(),
+      ...GROUP(5, 300, {type:'percent_lt2',value:85}, 180, {type:'zone',value:1}, { cadenceMin:50, cadenceMax:60 }),
+      ...CD(600)];
+  if (preset === 'bike_recovery')
+    return [WRK(2700,{type:'zone',value:1})];
 
   // ── Run ─────────────────────────────────────────────────────────────────────
   if (preset === 'run_easy')
-    return [WU(300), WRK(2700,{type:'zone',value:2}), CD(300)];
+    return [...WU(), WRK(2700,{type:'zone',value:2}), ...CD(300)];
   if (preset === 'run_long')
-    return [WU(600), WRK(4800,{type:'zone',value:2}), WRK(600,{type:'zone',value:1}), CD(600)];
+    return [...WU(), WRK(4800,{type:'zone',value:2}), WRK(600,{type:'zone',value:1}), ...CD(600)];
   if (preset === 'run_threshold')
-    return [WU(600), ...GROUP(2, 900, {type:'lt2'}, 300), CD(600)];
+    return [...WU(), EZ(), ...GROUP(2, 900, {type:'lt2'}, 300), ...CD(600)];
   if (preset === 'run_tempo')
-    return [WU(600), WRK(1200,{type:'percent_lt2',value:90}), CD(600)];
+    return [...WU(), EZ(), WRK(1200,{type:'percent_lt2',value:90}), ...CD(600)];
   if (preset === 'run_vo2max')
-    return [WU(600), ...GROUP(6, 180, {type:'zone',value:5}, 180), CD(600)];
+    return [...WU(), EZ(), ...GROUP(6, 180, {type:'zone',value:5}, 180), ...CD(600)];
   if (preset === 'run_fartlek')
-    return [WU(600), ...GROUP(10, 60, {type:'zone',value:4}, 60), CD(300)];
+    return [...WU(), EZ(), ...GROUP(10, 60, {type:'zone',value:4}, 60), ...CD(300)];
   if (preset === 'run_hills') {
-    const steps = [WU(600)];
+    const steps = [...WU(), EZ()];
     for (let i = 0; i < 8; i++) { steps.push(WRK(60,{type:'zone',value:5})); if(i<7) steps.push(REC(120)); }
-    steps.push(CD(600)); return steps;
+    steps.push(...CD(600)); return steps;
   }
   if (preset === 'run_progressive') {
-    const steps = [WU(600)];
+    const steps = [...WU()];
     // 4 progressive blocks: Z2 → Z3 → Z4 → LT2
     [{type:'zone',value:2},{type:'zone',value:3},{type:'zone',value:4},{type:'lt2'}].forEach(pt => {
       steps.push(WRK(600, pt));
     });
-    steps.push(CD(300)); return steps;
+    steps.push(...CD(300)); return steps;
   }
+  if (preset === 'run_1k_repeats')
+    return [...WU(), EZ(), ...RGROUP(10, 1000, {type:'lt2'}, 90), ...CD(600)];
+  if (preset === 'run_400s')
+    return [...WU(), EZ(), ...RGROUP(12, 400, {type:'zone',value:5}, 90), ...CD(600)];
+  if (preset === 'run_strides')
+    return [...WU(), WRK(2400,{type:'zone',value:2}), ...GROUP(6, 20, {type:'zone',value:5}, 60), ...CD(300)];
+  if (preset === 'run_recovery')
+    return [WRK(1800,{type:'zone',value:1})];
 
   // ── Swim (distance-based: durationType='distance', distanceMeters) ──────────
   // Estimate ~2:00/100m = 120 sec/100m for chart sizing
   const swDist = (m) => Math.round(m * 1.2); // approx durationSeconds from meters
-  const SWU = (dist=400, pt={type:'zone',value:1}) => ({
-    clientId:p(), stepType:'warmup', isRamp:true,
-    durationType:'distance', distanceMeters:dist, durationSeconds:swDist(dist), powerTarget:pt,
-  });
-  const SCD = (dist=200, pt={type:'zone',value:1}) => ({
-    clientId:p(), stepType:'cooldown', isRamp:true,
-    durationType:'distance', distanceMeters:dist, durationSeconds:swDist(dist), powerTarget:pt,
-  });
+  // 4-step distance ramps, mirroring the bike/run WU/CD blocks (400m → 4×100m).
+  const swimRamp = (kind, stepType, zones, totalDist) => {
+    const id = blk();
+    const per = Math.max(25, Math.round(totalDist / zones.length / 25) * 25);
+    return zones.map((z) => ({
+      clientId: p(), blockId: id, blockKind: kind, stepType,
+      durationType: 'distance', distanceMeters: per, durationSeconds: swDist(per),
+      powerTarget: { type: 'zone', value: z },
+    }));
+  };
+  const SWU = (dist=400) => swimRamp('warmup',   'warmup',   [1,2,2,3], dist);
+  const SCD = (dist=200) => swimRamp('cooldown', 'cooldown', [3,2,2,1], dist);
   const SWRK = (dist, pt) => ({
     clientId:p(), stepType:'work',
     durationType:'distance', distanceMeters:dist, durationSeconds:swDist(dist), powerTarget:pt,
@@ -804,28 +870,34 @@ export function buildPresetSteps(preset) {
   };
 
   if (preset === 'swim_endurance')
-    return [SWU(400), SWRK(1600,{type:'zone',value:2}), SCD(200)];
+    return [...SWU(400), SWRK(1600,{type:'zone',value:2}), ...SCD(200)];
 
   if (preset === 'swim_threshold')
-    return [SWU(400), ...SGROUP(10, 100, {type:'lt2'}, 20), SCD(200)];
+    return [...SWU(400), ...SGROUP(10, 100, {type:'lt2'}, 20), ...SCD(200)];
 
   if (preset === 'swim_sprint')
-    return [SWU(400), ...SGROUP(12, 25, {type:'zone',value:5}, 30), SCD(200)];
+    return [...SWU(400), ...SGROUP(12, 25, {type:'zone',value:5}, 30), ...SCD(200)];
 
   if (preset === 'swim_pyramid') {
-    const steps = [SWU(400)];
+    const steps = [...SWU(400)];
     [400,300,200,100].forEach((dist,i,arr) => {
       steps.push(SWRK(dist,{type:'lt2'}));
       if (i < arr.length-1) steps.push(SRST(20));
     });
-    steps.push(SCD(200)); return steps;
+    steps.push(...SCD(200)); return steps;
   }
 
   if (preset === 'swim_pull')
-    return [SWU(400), ...SGROUP(3, 400, {type:'percent_lt2',value:90}, 30), SCD(200)];
+    return [...SWU(400), ...SGROUP(3, 400, {type:'percent_lt2',value:90}, 30), ...SCD(200)];
 
   if (preset === 'swim_warmup_drills')
-    return [SWU(400), ...SGROUP(8, 50, {type:'zone',value:2}, 20), SCD(200)];
+    return [...SWU(400), ...SGROUP(8, 50, {type:'zone',value:2}, 20), ...SCD(200)];
+
+  if (preset === 'swim_200s')
+    return [...SWU(400), ...SGROUP(5, 200, {type:'lt2'}, 30), ...SCD(200)];
+
+  if (preset === 'swim_kick')
+    return [...SWU(400), ...SGROUP(8, 50, {type:'zone',value:3}, 20), ...SCD(200)];
   return [];
 }
 

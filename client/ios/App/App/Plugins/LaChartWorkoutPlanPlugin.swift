@@ -85,17 +85,26 @@ public class LaChartWorkoutPlanPlugin: CAPPlugin, CAPBridgedPlugin {
         let activity = Self.activityType(from: activityStr)
         let location: HKWorkoutSessionLocationType = (locationStr == "indoor") ? .indoor : .outdoor
 
-        // Parse incoming step dicts.
-        struct ParsedStep { let kind: String; let label: String; let seconds: Double; let alert: (any WorkoutAlert)? }
+        // Parse incoming step dicts. Distance steps (metres) lap by distance;
+        // everything else laps by time.
+        struct ParsedStep {
+            let kind: String; let label: String; let seconds: Double
+            let meters: Double; let alert: (any WorkoutAlert)?
+            var goal: WorkoutGoal {
+                if meters > 0 { return .distance(meters, .meters) }
+                return .time(seconds, .seconds)
+            }
+        }
         var parsed: [ParsedStep] = []
         for item in rawSteps {
             guard let dict = item as? [String: Any] else { continue }
             let kind = (dict["kind"] as? String) ?? "work"
             let label = (dict["label"] as? String) ?? ""
             let seconds = Self.double(dict["durationSeconds"]) ?? 0
-            guard seconds > 0 else { continue }
+            let meters = Self.double(dict["distanceMeters"]) ?? 0
+            guard seconds > 0 || meters > 0 else { continue }
             let alert = Self.makeAlert(dict["alert"] as? [String: Any])
-            parsed.append(ParsedStep(kind: kind, label: label, seconds: seconds, alert: alert))
+            parsed.append(ParsedStep(kind: kind, label: label, seconds: seconds, meters: meters, alert: alert))
         }
 
         guard !parsed.isEmpty else {
@@ -111,11 +120,11 @@ public class LaChartWorkoutPlanPlugin: CAPPlugin, CAPBridgedPlugin {
         if middle.count > 1, middle.first?.kind == "warmup" {
             let s = middle.removeFirst()
             // displayName on WorkoutStep requires iOS 18+; iOS 17 uses goal + alert only.
-            warmupStep = WorkoutStep(goal: .time(s.seconds, .seconds), alert: s.alert)
+            warmupStep = WorkoutStep(goal: s.goal, alert: s.alert)
         }
         if middle.count > 1, middle.last?.kind == "cooldown" {
             let s = middle.removeLast()
-            cooldownStep = WorkoutStep(goal: .time(s.seconds, .seconds), alert: s.alert)
+            cooldownStep = WorkoutStep(goal: s.goal, alert: s.alert)
         }
 
         // If everything was consumed by warm-up/cool-down, keep them as the body.
@@ -127,7 +136,7 @@ public class LaChartWorkoutPlanPlugin: CAPPlugin, CAPBridgedPlugin {
 
         let intervalSteps: [IntervalStep] = middle.map { s in
             let purpose: IntervalStep.Purpose = (s.kind == "recovery" || s.kind == "rest") ? .recovery : .work
-            return IntervalStep(purpose, goal: .time(s.seconds, .seconds), alert: s.alert)
+            return IntervalStep(purpose, goal: s.goal, alert: s.alert)
         }
         let block = IntervalBlock(steps: intervalSteps, iterations: 1)
 

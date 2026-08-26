@@ -13,6 +13,9 @@ import React, { useState, useEffect, useMemo, useRef, useCallback, lazy, Suspens
 import ReactDOM from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import useNativeTabScrollToTop from '../hooks/useNativeTabScrollToTop';
+import PremiumLock from '../components/PremiumLock';
+import { dominantRadarSport, hasRadar } from '../utils/radarSport';
+import { resolveActivitySource, seedForLinkedSource } from '../utils/activitySourceId';
 
 import {
   GlassCard, SectionTitle, SportTile,
@@ -37,6 +40,10 @@ import { SearchableSelect } from '../components/SearchableSelect';
 import NativeComparisonVerdict from '../components/native/NativeComparisonVerdict';
 import InteractiveChart from '../components/charts/InteractiveChart';
 import { mirrorLactateToSource } from '../utils/mirrorLactateToSource';
+
+// Heavy: chart.js radial scale plus its own metric fetches. Only mounted when
+// the athlete is looking at a sport the radar can actually draw.
+const SpiderChart = lazy(() => import('../components/DashboardPage/SpiderChart'));
 // Lazy-load — keeps the heavy editor/modal chunks out of this page's bundle
 const ActivityFullModal = lazy(() =>
   import('../components/Calendar/CalendarView').then(m => ({ default: m.ActivityFullModal }))
@@ -321,23 +328,6 @@ function avgOf(arr, key) {
   return vals.reduce((a, b) => a + b, 0) / vals.length;
 }
 
-// Detect activity flavour and build the prefixed id ActivityFullModal needs
-// to fetch the correct detail endpoint.
-function detectActivityKind(t) {
-  if (!t) return { kind: 'regular', id: '' };
-  if (t.type === 'fit')                                   return { kind: 'fit',     id: String(t._id || '') };
-  if (t.type === 'strava' || t.stravaId || t.source === 'strava')
-                                                          return { kind: 'strava',  id: String(t.stravaId || t.id || '').replace(/^strava-/, '') };
-  if (t.type === 'regular')                               return { kind: 'regular', id: String(t._id || '') };
-  // Regular trainings from /user/athlete/:id/trainings have no `type` —
-  // they're plain Training documents with `_id`, `results`, `title`, `sport`.
-  // Distinguish from FIT (which usually has originalFileName / records[]) by
-  // checking for FIT-specific fields.
-  const isFit = !!(t.originalFileName || (Array.isArray(t.records) && t.records.length > 0) || t.totalElapsedTime || t.titleAuto);
-  return isFit
-    ? { kind: 'fit',     id: String(t._id || '') }
-    : { kind: 'regular', id: String(t._id || '') };
-}
 
 // Enrich a training before passing to ActivityFullModal — fills in summary
 // stats from the `results` interval array when no execution data exists, so
@@ -356,7 +346,7 @@ function enrichForModal(t) {
     ? results.reduce((s, r) => s + (Number(r.distanceMeters || r.distance) || 0), 0)
     : 0;
 
-  const { kind, id } = detectActivityKind(t);
+  const { kind, id } = resolveActivitySource(t);
   const prefixedId = id ? `${kind}-${id}` : (t.id || t._id);
 
   return {
@@ -2301,52 +2291,34 @@ export default function NativeTrainingPage({
   }
 
   const openActivity = (act) => {
-    const athleteQs = athleteId ? `&athleteId=${athleteId}` : '';
+    // Always the modal, never a route. Navigating opened the calendar's own
+    // full-page activity view underneath it, so closing the modal left the
+    // athlete on a second, near-identical screen with a "‹ Calendar" back
+    // link — a page they never asked for and could not get out of in one tap.
 
-    // Direct Strava activity — has streams, GPS, full laps.
-    const stravaIdRaw = String(act?.stravaId || act?.sourceStravaActivityId || '').replace(/^strava-/i, '');
-    if (stravaIdRaw) {
-      navigate(`/training-calendar/${encodeURIComponent(`strava-${stravaIdRaw}`)}${athleteId ? `?athleteId=${athleteId}` : ''}`);
+    // A logged training is often just the shell — a title and empty lap rows.
+    // The session with laps, streams and a map is the Strava, Garmin or FIT
+    // record it came from, so open that when the training points at one, and
+    // fall back to a same-day twin for older records that never stored a link.
+    const source = resolveActivitySource(act);
+    if (source.kind !== 'regular') {
+      // Identity only. The modal merges what it is given over what it fetched,
+      // and a row from a list is always the poorer copy: trimmed laps, missing
+      // averages, no streams. Handing over the whole row is what left the Laps
+      // tab full of dashes while the Summary above it was complete.
+      setActivityModal({ activity: seedForLinkedSource(act, source), plannedWorkout: null });
       return;
     }
 
-    // Direct FIT file activity.
-    if (act?.type === 'fit') {
-      const fitId = String(act._id || act.id || '').replace(/^fit-/i, '');
-      if (fitId) {
-        navigate(`/training-calendar/${encodeURIComponent(`fit-${fitId}`)}${athleteId ? `?athleteId=${athleteId}` : ''}`);
-        return;
-      }
-    }
-
-    // Manual Training record with a _id — use the same ?trainingId= approach as
-    // the web "View in calendar" button so FitAnalysisPage can resolve the linked
-    // Strava/FIT activity via sourceStravaActivityId / sourceFitTrainingId.
-    const trainingModelId = String(act?._id || '').replace(/^(regular-|training-)/, '');
-    if (trainingModelId && act?.type !== 'strava' && act?.type !== 'fit') {
-      navigate(`/training-calendar?trainingId=${trainingModelId}${athleteQs}`);
+    // A manual training with no source: the fetch returns the same document,
+    // so the enriched row is the better starting point.
+    const subject = findRelatedRichActivity(act) || act;
+    const richSource = resolveActivitySource(subject);
+    if (richSource.kind !== 'regular') {
+      setActivityModal({ activity: seedForLinkedSource(subject, richSource), plannedWorkout: null });
       return;
     }
-
-    // Same-day Strava/FIT lookup (fallback for older records).
-    const rich = findRelatedRichActivity(act);
-    if (rich) {
-      const { kind, id } = detectActivityKind(rich);
-      if (id) {
-        navigate(`/training-calendar/${encodeURIComponent(`${kind}-${id}`)}${athleteId ? `?athleteId=${athleteId}` : ''}`);
-        return;
-      }
-    }
-
-    // Fall back to the training record itself.
-    const { kind, id } = detectActivityKind(act);
-    if (id) {
-      navigate(`/training-calendar/${encodeURIComponent(`${kind}-${id}`)}${athleteId ? `?athleteId=${athleteId}` : ''}`);
-      return;
-    }
-
-    // Last resort: compact modal.
-    setActivityModal({ activity: enrichForModal(act), plannedWorkout: null });
+    setActivityModal({ activity: enrichForModal(subject), plannedWorkout: null });
   };
   const closeActivityModal = () => setActivityModal(null);
 
@@ -3417,6 +3389,23 @@ export default function NativeTrainingPage({
             );
           })()}
 
+          {/* ─── Power / Pace radar — last, because it is a summary of
+                 everything above it rather than something to scroll past.
+                 It follows the sport filter; on "all" it shows whichever of
+                 bike or run the listed sessions are mostly made of, so the
+                 chart never needs a sport switch of its own. ─── */}
+          <div style={{ ...cardEntry(3), ...snap }}>
+            <PremiumLock feature="Performance Profile" plan="pro" minHeight={280}>
+              <Suspense fallback={<div style={{ height: 280 }} />}>
+                <SpiderChart
+                  trainings={filtered}
+                  sport={hasRadar(selectedSport) ? selectedSport : dominantRadarSport(filtered)}
+                  athleteId={athleteId || null}
+                />
+              </Suspense>
+            </PremiumLock>
+          </div>
+
           <div style={{ height: 16 }} />
         </div>
       </div>
@@ -3440,15 +3429,9 @@ export default function NativeTrainingPage({
               // race that occasionally swallowed the openTrainingForm state.
               openTrainingForm(act || activityModal.activity);
             }}
-            onOpenFull={() => {
-              const a = activityModal.activity;
-              closeActivityModal();
-              const id = a.stravaId || a._id || a.id;
-              const prefix = a.type === 'fit' ? 'fit'
-                           : (a.type === 'strava' || a.stravaId) ? 'strava'
-                           : a.type === 'regular' ? 'regular' : 'training';
-              navigate(`/training-calendar/${encodeURIComponent(`${prefix}-${id}`)}`);
-            }}
+            // No onOpenFull: the only thing it opened was that same
+            // full-page activity view, and the modal already carries Summary,
+            // Laps and Edit. Nothing on this page routes there any more.
           />
         </Suspense>
       )}

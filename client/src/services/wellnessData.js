@@ -18,6 +18,7 @@ const cache = new Map(); // key -> { ts, promise }
 const WELLNESS_FIELDS = [
   'restingHeartRate', 'sleepingHeartRate', 'sleepMinutes',
   'sleepStages', 'sleepSegments', 'hrvMs', 'respiratoryRate',
+  'sleepScore',
 ];
 
 /** Merge two per-day wellness lists into one sorted list, filling missing fields. */

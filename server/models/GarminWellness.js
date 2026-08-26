@@ -22,6 +22,8 @@ const garminWellnessSchema = new mongoose.Schema(
     /** Time-ordered hypnogram: [{ stage, start, end }] with epoch-ms boundaries. */
     sleepSegments: { type: [mongoose.Schema.Types.Mixed], default: null },
     hrvMs: { type: Number, default: null },
+    /** Garmin's own 0–100 sleep score (`overallSleepScore` on the sleeps summary). */
+    sleepScore: { type: Number, default: null },
     respiratoryRate: { type: Number, default: null },
     source: { type: String, default: 'garmin' },
   },

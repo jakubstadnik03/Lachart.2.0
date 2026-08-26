@@ -549,16 +549,54 @@ async function getFitTrainings(req, res) {
 }
 
 /**
+ * Which athlete's trainings may this request touch?
+ *
+ * Own data unless ?athleteId= names someone else; then the requester must be
+ * coach-like and linked to that athlete (coachId/coachIds — the same link the
+ * GET /trainings list checks) or an admin. Without this every coach edit of an
+ * athlete's FIT training 404-ed on the `athleteId: userId` ownership match,
+ * while the Strava/Garmin update routes accepted the same edit.
+ *
+ * @returns {Promise<{ ok: true, athleteId: string } | { ok: false, status: number, error: string }>}
+ */
+async function resolveTargetAthleteId(req) {
+  const userId = req.user?.userId;
+  const param = req.query.athleteId;
+  const clean = param != null ? String(param).trim() : '';
+  if (!clean || clean === 'null' || clean === 'undefined' || clean === String(userId)) {
+    return { ok: true, athleteId: String(userId) };
+  }
+  const requester = await User.findById(userId).select('role admin').lean();
+  if (!requester) return { ok: false, status: 404, error: 'User not found' };
+  const role = String(requester.role || '').toLowerCase();
+  const isAdmin = role === 'admin' || requester.admin === true;
+  const isCoachLike = isAdmin || ['coach', 'tester', 'testing'].includes(role);
+  if (!isCoachLike) return { ok: false, status: 403, error: 'Not authorised to manage this athlete' };
+  const athlete = await User.findById(clean).select('coachId coachIds').lean();
+  if (!athlete) return { ok: false, status: 404, error: 'Athlete not found' };
+  const coachIds = [
+    ...(Array.isArray(athlete.coachIds) ? athlete.coachIds.map(String) : []),
+    ...(athlete.coachId ? [String(athlete.coachId)] : []),
+  ];
+  if (!coachIds.includes(String(userId)) && !isAdmin) {
+    return { ok: false, status: 403, error: 'This athlete does not belong to your team' };
+  }
+  return { ok: true, athleteId: clean };
+}
+
+/**
  * Get single FIT training with records
  */
 async function getFitTraining(req, res) {
   try {
-    const userId = req.user?.userId;
     const trainingId = req.params.id;
+
+    const target = await resolveTargetAthleteId(req);
+    if (!target.ok) return res.status(target.status).json({ error: target.error });
 
     const training = await FitTraining.findOne({
       _id: trainingId,
-      athleteId: userId
+      athleteId: target.athleteId
     });
 
     if (!training) {
@@ -581,9 +619,12 @@ async function updateLactate(req, res) {
     const trainingId = req.params.id;
     const { lactateValues } = req.body; // { lapIndex: number, lactate: number } or { recordIndex: number, lactate: number }
 
+    const target = await resolveTargetAthleteId(req);
+    if (!target.ok) return res.status(target.status).json({ error: target.error });
+
     const training = await FitTraining.findOne({
       _id: trainingId,
-      athleteId: userId
+      athleteId: target.athleteId
     });
 
     if (!training) {
@@ -603,8 +644,10 @@ async function updateLactate(req, res) {
     await training.save();
 
     // Sync to Training model - sync all intervals (not just those with lactate)
+    // Owner of the training, not the requester — a coach edit must not
+    // re-assign the synced Training to the coach.
     try {
-      await TrainingAbl.syncTrainingFromSource('fit', training, userId);
+      await TrainingAbl.syncTrainingFromSource('fit', training, String(training.athleteId));
     } catch (syncError) {
       console.error('Error syncing to Training model:', syncError);
     }
@@ -657,13 +700,16 @@ async function updateLactate(req, res) {
  */
 async function updateFitTraining(req, res) {
   try {
-    const userId = req.user?.userId;
     const trainingId = req.params.id;
     const { title, description, category, selectedLapIndices, movingTime, duration, elapsedTime, distance, calories, lactate, rpe, tss, tssDisplayMode, savedAutoLaps, startDate } = req.body;
 
+    const target = await resolveTargetAthleteId(req);
+    if (!target.ok) return res.status(target.status).json({ error: target.error });
+    const ownerId = target.athleteId;
+
     const training = await FitTraining.findOne({
       _id: trainingId,
-      athleteId: userId
+      athleteId: ownerId
     });
 
     if (!training) {
@@ -733,16 +779,16 @@ async function updateFitTraining(req, res) {
     }
 
     await training.save();
-    invalidateFitCacheForUser(userId);
+    invalidateFitCacheForUser(ownerId);
 
     // Update Training records with the same title
     if (title !== undefined && title) {
       const Training = require('../models/training');
       const newTitle = title.trim();
-      
+
       // Find Training records with the same title (old or new)
       const trainingRecords = await Training.find({
-        athleteId: userId.toString(),
+        athleteId: String(ownerId),
         title: { $in: [oldTitle, newTitle] }
       });
       
@@ -778,7 +824,7 @@ async function updateFitTraining(req, res) {
       }
     }
 
-    await TrainingAbl.syncTrainingFromSource('fit', training, userId, {
+    await TrainingAbl.syncTrainingFromSource('fit', training, ownerId, {
       selectedLapIndices: lapIndices
     });
     } catch (syncError) {
@@ -800,12 +846,14 @@ async function updateFitTraining(req, res) {
  */
 async function deleteFitTraining(req, res) {
   try {
-    const userId = req.user?.userId;
     const trainingId = req.params.id;
+
+    const target = await resolveTargetAthleteId(req);
+    if (!target.ok) return res.status(target.status).json({ error: target.error });
 
     const training = await FitTraining.findOne({
       _id: trainingId,
-      athleteId: userId
+      athleteId: target.athleteId
     });
 
     if (!training) {
@@ -848,13 +896,15 @@ async function getAllTitles(req, res) {
  */
 async function createLap(req, res) {
   try {
-    const userId = req.user?.userId;
     const trainingId = req.params.id;
     const { startTime, endTime } = req.body; // startTime and endTime in seconds from training start
 
+    const target = await resolveTargetAthleteId(req);
+    if (!target.ok) return res.status(target.status).json({ error: target.error });
+
     const training = await FitTraining.findOne({
       _id: trainingId,
-      athleteId: userId
+      athleteId: target.athleteId
     });
 
     if (!training) {
