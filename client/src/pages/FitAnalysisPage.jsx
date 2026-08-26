@@ -3181,7 +3181,7 @@ const FitAnalysisPage = () => {
       localStorage.removeItem('fitAnalysis_selectedTrainingId');
       setDetailLoading(false);
     }
-  }, [gate]);
+  }, [gate, healthAthleteId]);
 
   // Load training from Training model (from TrainingTable)
   const loadTrainingFromTrainingModel = useCallback(async (trainingId) => {
@@ -3358,7 +3358,7 @@ const FitAnalysisPage = () => {
       localStorage.removeItem('fitAnalysis_selectedTrainingModelId');
       alert('Error loading training: ' + (error.response?.data?.error || error.message));
     }
-  }, [loadRegularTrainings, loadStravaDetail]);
+  }, [loadRegularTrainings, loadStravaDetail, healthAthleteId]);
   
   // Helper function to parse duration string (MM:SS or HH:MM:SS) to seconds
   const parseDurationToSeconds = (durationStr) => {
