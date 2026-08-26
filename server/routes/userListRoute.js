@@ -762,6 +762,10 @@ router.put("/edit-profile", verifyToken, async (req, res) => {
         if (specialization) updateData.specialization = specialization;
         if (gender) updateData.gender = gender;
         if (bio) updateData.bio = bio;
+        // boolean — must accept false, so no truthy check like the fields above
+        if (req.body.excludeFromBenchmarks !== undefined) {
+            updateData.excludeFromBenchmarks = req.body.excludeFromBenchmarks === true;
+        }
 
         // Coach branding (logo URL, title, trademark) — gated to Coach plan
         // and above. Pro/Free users silently drop the field rather than

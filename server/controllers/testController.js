@@ -3,6 +3,7 @@ const { sendLactateTestReportEmail, sendLactateTestPdfEmail } = require('../serv
 const { sendDemoTestEmail } = require('../services/demoTestEmailService');
 const { generateTestReportPdf } = require('../services/lactateTestPdfService');
 const { athleteHasCoachUser } = require('../utils/athleteCoachAccess');
+const { invalidateBenchmarkCache } = require('../services/lactateBenchmarkService');
 const fs = require('fs');
 const path = require('path');
 
@@ -124,6 +125,7 @@ const testController = {
     createTest: async (req, res) => {
         try {
             const test = await testAbl.createTest(req.body);
+            invalidateBenchmarkCache();
             res.status(201).json(test);
         } catch (error) {
             res.status(error.status || 400).json({ 
@@ -139,6 +141,7 @@ const testController = {
             if (!updatedTest) {
                 return res.status(404).json({ error: 'Test not found' });
             }
+            invalidateBenchmarkCache();
             res.json(updatedTest);
         } catch (error) {
             res.status(500).json({ error: 'Error updating test' });
@@ -152,6 +155,7 @@ const testController = {
             if (!result) {
                 return res.status(404).json({ error: 'Test not found' });
             }
+            invalidateBenchmarkCache();
             res.status(204).send();
         } catch (error) {
             res.status(500).json({ error: 'Error deleting test' });
