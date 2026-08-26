@@ -10,28 +10,33 @@
 import { resolveActivityTss } from './computeTss';
 
 /**
- * How long a session took.
+ * How long a session took — the time spent training, not the time elapsed.
  *
- * This is WeekStrip's chain, character for character, because WeekStrip is the
- * reading confirmed as correct — swim 7:00 where the calendar's week summary
- * said 5:40, over an hour a week on the same activities.
+ * The moving clock comes first, deliberately. This chain used to ask totalTime
+ * first, which every mapper fills with the elapsed clock, so a ride with the
+ * Garmin paused at a café counted the café. The activity's own card had always
+ * shown the moving time, so the week strip and the session disagreed about the
+ * same ride. Training time is what an athlete means by "how long was it", so
+ * that is what every total now adds up.
  *
- * Reasoning out a "better" order got it wrong twice: which field means what
- * varies by source, and arguing about it does not settle the question.
+ * Field names carry the distinction rather than the values: movingTime and
+ * moving_time from the integrations, totalTimerTime from a FIT file (its
+ * totalElapsedTime is the one that includes pauses). Only when a source offers
+ * no moving clock at all does the chain fall through to totalTime and the
+ * elapsed fields — better a slightly long number than a zero.
  *
- * totalTime comes first, and it means the whole session. Anything that builds
- * an activity row has to put the elapsed clock there — a mapper that fills it
- * from the moving time changes every total in the app without touching one of
- * them, which is exactly how the dashboard's week came to read 19 minutes
- * short of the calendar's.
+ * `duration` sits in that fallback because it is what a hand-entered training
+ * stores, and an athlete typing a session length is typing its training time.
  *
- * The three at the end only fire when every field above is absent, so they
- * extend the chain without changing any answer it already gives.
+ * One chain, asked by every surface that sums activities — so reversing the
+ * order moves the week strip, the calendar summary, the planner and the
+ * dashboard together, and none of them can drift from the others.
  */
 export function completedSecs(t) {
-  const v = t?.totalTime || t?.duration || t?.movingTime || t?.moving_time
+  const v = t?.movingTime || t?.moving_time || t?.totalTimerTime
+    || t?.totalTime || t?.duration
     || t?.elapsedTime || t?.elapsed_time
-    || t?.totalTimerTime || t?.totalElapsedTime || t?.durationSeconds;
+    || t?.totalElapsedTime || t?.durationSeconds;
   return durationSecs(v);
 }
 

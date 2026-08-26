@@ -423,7 +423,7 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
         initial={{ y: '100%', opacity: 0 }} animate={{ y: 0, opacity: 1 }}
         exit={{ y: '110%', opacity: 0 }}
         transition={{ type: 'spring', damping: 30, stiffness: 300 }}
-        className="w-full sm:max-w-3xl lg:max-w-4xl xl:max-w-5xl bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl overflow-hidden flex flex-col"
+        className="w-full sm:max-w-3xl lg:max-w-5xl xl:max-w-6xl 2xl:max-w-7xl bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl overflow-hidden flex flex-col"
         style={{ maxHeight: '92vh' }}
         drag="y"
         dragControls={dragControls}

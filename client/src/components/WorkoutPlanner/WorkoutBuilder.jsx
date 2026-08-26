@@ -19,6 +19,53 @@ import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react'
 import { PlusIcon, TrashIcon, ChevronDownIcon, ChevronUpIcon,
          ArrowPathIcon, XMarkIcon, Bars3Icon } from '@heroicons/react/24/outline';
 
+/**
+ * Keep repeat blocks coherent after a step has been dragged.
+ *
+ * Steps inside a repeat block can now be reordered by dragging, which means a
+ * step can also be dragged out of one. Membership is a `groupId` on the step
+ * rather than nesting, so nothing stops a step from keeping the id while
+ * sitting somewhere else entirely — it would still be drawn inside the block
+ * it had visibly left, and expandSteps would repeat it there.
+ *
+ * So membership follows position: a step whose neighbours are not in its block
+ * has left it. And every surviving block keeps exactly one header, because the
+ * header carries groupRepeat — drag the header out and the repeat count would
+ * leave with it, silently turning 4x into 1x.
+ */
+export function repairGroupMembership(list) {
+  const out = list.map((s) => ({ ...s }));
+
+  out.forEach((s, i) => {
+    if (!s.groupId) return;
+    const prev = out[i - 1];
+    const next = out[i + 1];
+    const touching = (prev && prev.groupId === s.groupId) || (next && next.groupId === s.groupId);
+    if (!touching) {
+      delete s.groupId;
+      delete s.isGroupHeader;
+      delete s.groupRepeat;
+    }
+  });
+
+  const blocks = new Map();
+  out.forEach((s) => {
+    if (!s.groupId) return;
+    if (!blocks.has(s.groupId)) blocks.set(s.groupId, []);
+    blocks.get(s.groupId).push(s);
+  });
+  blocks.forEach((members) => {
+    const reps = members.find((m) => m.groupRepeat > 1)?.groupRepeat
+      || members.find((m) => m.isGroupHeader)?.groupRepeat || 1;
+    members.forEach((m, i) => {
+      m.isGroupHeader = i === 0;
+      if (i === 0) m.groupRepeat = reps; else delete m.groupRepeat;
+    });
+  });
+
+  return out;
+}
+
 /** Normalize drag/drop ids — dataset attrs are always strings. */
 function normalizeReorderId(id) {
   if (id == null || id === '') return null;
@@ -96,6 +143,208 @@ const STEP_COLORS = {
 
 const ZONE_COLORS = ['#93c5fd','#86efac','#fde68a','#fb923c','#f87171'];
 
+/** Chart viewBox. Module-level so the window-drag handlers can use it without
+ *  reaching forward to a const declared later in the component body. */
+const SVG_W = 600, SVG_H = 120;
+
+/**
+ * The block palette — the row of shapes at the top of the builder.
+ *
+ * A workout is built by picking a shape, not by filling in a form: the picture
+ * says what the block does, so a four-step warm-up is one click rather than
+ * four rows typed in. Each shape can also be dragged into the workout, which
+ * is the gesture already used to reorder.
+ *
+ * `steps` is what a block starts with, and min/max is how far it can be nudged
+ * before adding. Everything produced is plain steps in the existing model — a
+ * repeat block is still a groupId with a header carrying groupRepeat, so
+ * WorkoutExecutionPage and the .zwo / .tcx exports need to know nothing.
+ */
+const PALETTE_BLOCKS = [
+  { key: 'warmup',    label: 'Warm up',   hint: 'Ramp into the session',       steps: 4, minSteps: 2, maxSteps: 8 },
+  { key: 'steady',    label: 'Steady',    hint: 'One block at one target',     steps: 1 },
+  { key: 'intervals', label: 'Repeats',   hint: 'Repeated efforts + recovery', steps: 2, minSteps: 2, maxSteps: 6, unitLabel: 'per rep' },
+  { key: 'rampup',    label: 'Ramp up',   hint: 'Stepped build',               steps: 4, minSteps: 2, maxSteps: 8 },
+  { key: 'rampdown',  label: 'Ramp down', hint: 'Stepped ease-down',           steps: 4, minSteps: 2, maxSteps: 8 },
+  { key: 'cooldown',  label: 'Cool down', hint: 'Ramp out of the session',     steps: 4, minSteps: 2, maxSteps: 8 },
+];
+
+const PALETTE_COLORS = {
+  warmup: STEP_COLORS.warmup.bg,
+  steady: STEP_COLORS.work.bg,
+  intervals: STEP_COLORS.work.bg,
+  rampup: STEP_COLORS.work.bg,
+  rampdown: STEP_COLORS.cooldown.bg,
+  cooldown: STEP_COLORS.cooldown.bg,
+};
+
+/** Silhouette drawn from the step count, so the icon shows what you will get. */
+function paletteShape(key, steps) {
+  const n = Math.max(1, steps || 1);
+  const span = Math.max(1, n - 1);
+  switch (key) {
+    case 'warmup':   return Array.from({ length: n }, (_, i) => 0.25 + (0.45 * i) / span);
+    case 'rampup':   return Array.from({ length: n }, (_, i) => 0.30 + (0.60 * i) / span);
+    case 'rampdown': return Array.from({ length: n }, (_, i) => 0.90 - (0.60 * i) / span);
+    case 'cooldown': return Array.from({ length: n }, (_, i) => 0.70 - (0.45 * i) / span);
+    case 'intervals': {
+      const unit = Array.from({ length: n }, (_, i) => (i % 2 === 0 ? 0.85 : 0.30));
+      return [...unit, ...unit];
+    }
+    default: return [0.6, 0.6, 0.6, 0.6];
+  }
+}
+
+/**
+ * Turn a palette pick into steps.
+ *
+ * blockId / blockKind ride along so the chart can name a block and list its
+ * steps; nothing computes from them, and both are in the Mongoose schema so a
+ * saved workout comes back as blocks rather than loose steps.
+ */
+export function buildPaletteSteps(key, sport = 'bike', stepCount = null) {
+  const def = PALETTE_BLOCKS.find((b) => b.key === key);
+  if (!def) return [];
+
+  const newId = () => `pb-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  const blockId = `blk-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  const n = Math.max(1, stepCount ?? def.steps ?? 1);
+  const stamp = (step) => ({ ...step, clientId: newId(), blockId, blockKind: key });
+  const span = Math.max(1, n - 1);
+
+  const ramp = (type, from, to, secs) => Array.from({ length: n }, (_, i) => stamp({
+    stepType: type,
+    durationSeconds: secs,
+    powerTarget: { type: 'zone', value: Math.round(from + ((to - from) * i) / span) },
+  }));
+
+  switch (key) {
+    case 'warmup':   return ramp('warmup', 1, 3, 300);
+    case 'rampup':   return ramp('work', 2, 5, 180);
+    case 'rampdown': return ramp('work', 5, 2, 180);
+    case 'cooldown': return ramp('cooldown', 3, 1, 200);
+    case 'steady':
+      return [stamp({ stepType: 'work', durationSeconds: 1200, powerTarget: { type: 'zone', value: 2 } })];
+    case 'intervals': {
+      const gid = `grp-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      return Array.from({ length: n }, (_, i) => stamp({
+        groupId: gid,
+        ...(i === 0 ? { isGroupHeader: true, groupRepeat: 4 } : {}),
+        stepType: i % 2 === 0 ? 'work' : 'recovery',
+        durationSeconds: i % 2 === 0 ? 300 : 180,
+        powerTarget: { type: 'zone', value: i % 2 === 0 ? 4 : 1 },
+      }));
+    }
+    default: return [];
+  }
+}
+
+/** Human name for a block, used by the chart tooltip and the step card. */
+const BLOCK_LABELS = {
+  warmup: 'Warm up', steady: 'Steady', intervals: 'Repeats',
+  rampup: 'Ramp up', rampdown: 'Ramp down', cooldown: 'Cool down',
+};
+
+/**
+ * Consecutive steps that came from one palette pick, grouped back together.
+ *
+ * The builder stores a flat list — that is what the exports and the execution
+ * page read — but a ramp is one thing an athlete added and one thing they want
+ * to read, hover and edit. blockId is what remembers that; this turns it back
+ * into a shape the UI can show.
+ *
+ * Only runs of adjacent steps count, so a step dragged into the middle of a
+ * ramp splits it rather than being silently swallowed by it. Steps without a
+ * blockId come back as blocks of one, so callers need no special case.
+ */
+export function groupIntoBlocks(steps = []) {
+  const blocks = [];
+  let elapsed = 0;
+  steps.forEach((step, index) => {
+    const prev = blocks[blocks.length - 1];
+    const sameRun = prev && step.blockId && prev.blockId === step.blockId;
+    if (sameRun) {
+      prev.steps.push(step);
+      prev.indices.push(index);
+      prev.endSec += step.durationSeconds || 0;
+    } else {
+      blocks.push({
+        blockId: step.blockId || null,
+        blockKind: step.blockKind || null,
+        label: BLOCK_LABELS[step.blockKind] || null,
+        steps: [step],
+        indices: [index],
+        startSec: elapsed,
+        endSec: elapsed + (step.durationSeconds || 0),
+      });
+    }
+    elapsed += step.durationSeconds || 0;
+  });
+  return blocks;
+}
+
+/** The block a given step belongs to, or null when it stands alone. */
+export function blockForStep(steps, step) {
+  if (!step?.blockId) return null;
+  const found = groupIntoBlocks(steps).find(
+    (b) => b.blockId === step.blockId && b.steps.some((x) => x.clientId === step.clientId),
+  );
+  return found && found.steps.length > 1 ? found : null;
+}
+
+function PaletteBlock({ block, onAdd, onDragStart, onDragEnd }) {
+  const [count, setCount] = useState(block.steps ?? 1);
+  const adjustable = block.minSteps != null && block.maxSteps != null;
+  const bars = paletteShape(block.key, count);
+  const color = PALETTE_COLORS[block.key] || STEP_COLORS.work.bg;
+  const nudge = (d) => setCount((c) => Math.min(block.maxSteps, Math.max(block.minSteps, c + d)));
+
+  return (
+    <div className="shrink-0 w-[104px]">
+      <button
+        type="button"
+        draggable
+        onDragStart={(e) => {
+          // Some browsers refuse to start a drag without a payload.
+          try { e.dataTransfer.setData('text/plain', `palette:${block.key}`); } catch { /* ignore */ }
+          e.dataTransfer.effectAllowed = 'copy';
+          onDragStart?.({ key: block.key, steps: count });
+        }}
+        onDragEnd={() => onDragEnd?.()}
+        onClick={() => onAdd(block.key, count)}
+        title={`${block.label} — ${block.hint}. Click to add, or drag into the workout.`}
+        className="w-full rounded-xl border border-slate-200 bg-white px-2 pt-2 pb-1.5 text-left hover:border-primary hover:shadow-sm active:cursor-grabbing cursor-grab transition-all"
+      >
+        <div className="flex items-end gap-[2px] h-9 mb-1.5" aria-hidden>
+          {bars.map((h, i) => (
+            <div key={i} className="flex-1 rounded-[2px]"
+              style={{ height: `${Math.round(h * 100)}%`, backgroundColor: color, opacity: 0.85 }}/>
+          ))}
+        </div>
+        <div className="text-[11px] font-semibold text-slate-700 leading-tight">{block.label}</div>
+      </button>
+
+      {adjustable && (
+        <div className="mt-1 flex items-center justify-center gap-1">
+          <button type="button" aria-label={`One step fewer in ${block.label}`}
+            disabled={count <= block.minSteps} onClick={() => nudge(-1)}
+            className="w-6 h-6 rounded-md border border-slate-200 text-slate-500 text-sm font-bold leading-none hover:bg-slate-50 disabled:text-slate-300">
+            −
+          </button>
+          <span className="text-[10px] text-slate-500 tabular-nums min-w-[52px] text-center">
+            {count} {block.unitLabel || (count === 1 ? 'step' : 'steps')}
+          </span>
+          <button type="button" aria-label={`One step more in ${block.label}`}
+            disabled={count >= block.maxSteps} onClick={() => nudge(1)}
+            className="w-6 h-6 rounded-md border border-slate-200 text-slate-500 text-sm font-bold leading-none hover:bg-slate-50 disabled:text-slate-300">
+            +
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Helpers ────────────────────────────────────────────────────────────────
 let _uid = 0;
 const uid = () => `step-${Date.now()}-${++_uid}`;
@@ -140,14 +389,19 @@ export function resolveTargetWatts(target, context) {
   if (!target || target.type === 'open') return context.ftp ? context.ftp * 0.5 : 150;
   const { ftp = 250, lt1Power = null, lt2Power = null, cyclingZones = null } = context;
   const mid = (t) => t.useRange ? (t.rangeMin + t.rangeMax) / 2 : (t.value || 0);
+  // A pinned value beats the calculation, whatever the target is aimed by.
+  // This used to be checked only for zone / LT1 / LT2, yet the intensity box
+  // offers the override for percentages too — so a pinned percentage read back
+  // as the calculated number here while the exports sent the pinned one.
+  const pinned = Number(target.override);
+  if (Number.isFinite(pinned) && pinned > 0 && target.type !== 'watts') return pinned;
   if (target.type === 'watts')        return mid(target);
   if (target.type === 'percent_ftp')  return ftp * (mid(target) / 100);
   if (target.type === 'percent_lt1')  return (lt1Power || ftp * 0.75) * (mid(target) / 100);
   if (target.type === 'percent_lt2')  return (lt2Power || ftp) * (mid(target) / 100);
-  if (target.type === 'lt1')          return target.override ?? (lt1Power || cyclingZones?.lt1 || ftp * 0.75);
-  if (target.type === 'lt2')          return target.override ?? (lt2Power || cyclingZones?.lt2 || ftp);
+  if (target.type === 'lt1')          return lt1Power || cyclingZones?.lt1 || ftp * 0.75;
+  if (target.type === 'lt2')          return lt2Power || cyclingZones?.lt2 || ftp;
   if (target.type === 'zone') {
-    if (target.override != null) return target.override;
     const z = target.value || 2;
     // Use actual profile zone midpoint when available
     const profileMid = cyclingZones ? zoneMid(cyclingZones[`zone${z}`]) : null;
@@ -540,11 +794,20 @@ const TARGET_TYPES = [
 ];
 
 // ─── Workout Preview Chart – hover tooltips, power labels, drag-to-resize ────
-export function WorkoutChart({ steps, context, onStepResize, onStepClick }) {
+export function WorkoutChart({ steps, context, onStepResize, onStepClick, onStepPower, onStepMove }) {
   const svgRef = useRef(null);
   const [hoveredInfo, setHoveredInfo]   = useState(null);
   const [dragState,   setDragState]     = useState(null);  // { clientId, startX, startDur, initTotal, svgPxW }
   const [dragPreview, setDragPreview]   = useState(null);  // { clientId, newDur }
+  // Vertical drag on a bar = change that step's power. A repeat block draws one
+  // step several times, so pulling any of its bars moves the whole lap — which
+  // is what "grab the lap and raise it" means.
+  const [powerDrag,   setPowerDrag]   = useState(null);  // { clientId, startY, startWatts, wattsPerPx }
+  const [powerPreview, setPowerPreview] = useState(null); // { clientId, watts }
+  // Grabbing a bar anywhere but its top edge moves it. The top edge is the one
+  // place power changes, so the two gestures never fight over the same pixels.
+  const [moveDrag, setMoveDrag] = useState(null);         // { clientId, overClientId }
+  const barGeomRef = useRef([]);                          // [{ clientId, x, w }] in SVG units
 
   const expanded = useMemo(() => expandSteps(steps), [steps]);
 
@@ -578,11 +841,57 @@ export function WorkoutChart({ steps, context, onStepResize, onStepClick }) {
     return () => { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); };
   }, [dragState, onStepResize]);
 
+  useEffect(() => {
+    if (!moveDrag) return;
+    // Which bar the pointer is over, from the x position — the bars are laid
+    // out left to right in `barGeom`, so this needs no hit-testing per element.
+    const barAt = (clientX) => {
+      const rect = svgRef.current?.getBoundingClientRect();
+      if (!rect || !rect.width) return null;
+      const xSvg = ((clientX - rect.left) / rect.width) * SVG_W;
+      const hit = barGeomRef.current.find((b) => xSvg >= b.x && xSvg <= b.x + b.w);
+      return hit ? hit.clientId : null;
+    };
+    const move = (e) => {
+      const over = barAt(e.clientX);
+      if (over) setMoveDrag((d) => (d && d.overClientId !== over ? { ...d, overClientId: over } : d));
+    };
+    const up = (e) => {
+      const over = barAt(e.clientX);
+      if (over && over !== moveDrag.clientId) onStepMove?.(moveDrag.clientId, over);
+      setMoveDrag(null);
+    };
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+    return () => { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); };
+  }, [moveDrag, onStepMove]);
+
+  useEffect(() => {
+    if (!powerDrag) return;
+    // Up is more, which is why dy is subtracted rather than added.
+    const wattsAt = (clientY) => {
+      const dy = clientY - powerDrag.startY;
+      return Math.max(1, Math.round(powerDrag.startWatts - dy * powerDrag.wattsPerPx));
+    };
+    const move = (e) => {
+      setPowerPreview({ clientId: powerDrag.clientId, watts: wattsAt(e.clientY) });
+      setHoveredInfo(null);
+    };
+    const up = (e) => {
+      onStepPower?.(powerDrag.clientId, wattsAt(e.clientY));
+      setPowerDrag(null);
+      setPowerPreview(null);
+    };
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+    return () => { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); };
+  }, [powerDrag, onStepPower]);
+
   if (!total || expanded.length === 0) return (
     <div className="flex items-center justify-center h-24 text-xs text-slate-300">Add steps to see the workout preview</div>
   );
 
-  const W = 600, H = 120;
+  const W = SVG_W, H = SVG_H;
   const allWatts = expanded.map(s => resolveTargetWatts(s.powerTarget, context));
   const maxW = Math.max(...allWatts, 1);
   const FLOOR = 0.06;
@@ -600,6 +909,10 @@ export function WorkoutChart({ steps, context, onStepResize, onStepClick }) {
     return { s, i, x, w, bw, barH, watts: Math.round(watts), fill, dur, powerLabel: formatTargetLabel(s.powerTarget) };
   });
 
+  // The window-level move handler runs outside React's render, so it reads the
+  // geometry from a ref rather than closing over a stale `bars`.
+  barGeomRef.current = bars.map(({ s, x, w }) => ({ clientId: s.clientId, x, w }));
+
   return (
     <div className="relative select-none">
       <svg
@@ -609,9 +922,17 @@ export function WorkoutChart({ steps, context, onStepResize, onStepClick }) {
         style={{ height: 120, cursor: dragState ? 'ew-resize' : 'default' }}
         onMouseLeave={() => { if (!dragState) setHoveredInfo(null); }}
       >
-        {bars.map(({ s, i, x, w, bw, barH, watts, fill, dur, powerLabel }) => {
+        {bars.map(({ s, i, x, w, bw, barH: barHRaw, watts: wattsRaw, fill, dur, powerLabel: powerLabelRaw }) => {
           const xc = x + w / 2;
           const isDragging = dragState?.clientId === s.clientId;
+          const isPowerDragging = powerPreview?.clientId === s.clientId;
+          const isBeingMoved = moveDrag?.clientId === s.clientId;
+          const isMoveTarget = moveDrag && moveDrag.overClientId === s.clientId && moveDrag.clientId !== s.clientId;
+          // While a lap is being pulled, every bar drawn from that step follows
+          // — the whole repeat rises together, which is the point.
+          const watts = isPowerDragging ? powerPreview.watts : wattsRaw;
+          const barH = isPowerDragging ? Math.max(FLOOR, watts / maxW) * H : barHRaw;
+          const powerLabel = isPowerDragging ? `${Math.round(watts)}W` : powerLabelRaw;
 
           let shape;
           if (s.isRamp && s.stepType === 'warmup') {
@@ -619,13 +940,21 @@ export function WorkoutChart({ steps, context, onStepResize, onStepClick }) {
           } else if (s.isRamp && s.stepType === 'cooldown') {
             shape = <polygon key={`sh${i}`} points={`${x},${H-barH} ${x},${H} ${x+bw},${H}`} fill={fill} opacity={isDragging ? 1 : 0.85} />;
           } else {
-            shape = <rect key={`sh${i}`} x={x} y={H-barH} width={bw} height={barH} fill={fill} rx={2} opacity={isDragging ? 1 : 0.85} />;
+            shape = <rect key={`sh${i}`} x={x} y={H-barH} width={bw} height={barH} fill={fill} rx={2}
+              opacity={isBeingMoved ? 0.35 : (isDragging ? 1 : 0.85)}
+              stroke={isMoveTarget ? '#767EB5' : 'none'} strokeWidth={isMoveTarget ? 2 : 0} />;
           }
 
           return (
             <g
               key={i}
-              style={{ cursor: onStepClick ? 'pointer' : 'default' }}
+              style={{ cursor: onStepMove ? (isBeingMoved ? 'grabbing' : 'grab') : (onStepClick ? 'pointer' : 'default') }}
+              onMouseDown={(e) => {
+                if (!onStepMove || e.button !== 0) return;
+                e.preventDefault();
+                setMoveDrag({ clientId: s.clientId, overClientId: s.clientId });
+                setHoveredInfo(null);
+              }}
               onMouseEnter={() => {
                 if (dragState) return;
                 const distM = resolveStepDistanceMeters(s, context, dur);
@@ -690,6 +1019,30 @@ export function WorkoutChart({ steps, context, onStepResize, onStepClick }) {
                 </text>
               )}
 
+              {/* Power grip — the top edge only. Dragging the body moves the
+                  bar instead, so the gesture you get is the one you aimed at. */}
+              {onStepPower && barH > 6 && (
+                <rect
+                  x={x} y={Math.max(0, H - barH - 4)} width={bw} height={9}
+                  fill="transparent"
+                  style={{ cursor: 'ns-resize' }}
+                  onMouseEnter={() => setHoveredInfo(null)}
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const rect = svgRef.current?.getBoundingClientRect();
+                    const pxH = rect?.height || 120;
+                    setPowerDrag({
+                      clientId: s.clientId,
+                      startY: e.clientY,
+                      startWatts: watts,
+                      // SVG units per screen pixel, then watts per SVG unit.
+                      wattsPerPx: (maxW / H) * (H / pxH),
+                    });
+                  }}
+                />
+              )}
+
               {/* Resize handle – right edge of bar */}
               {onStepResize && (
                 <rect
@@ -739,21 +1092,80 @@ export function WorkoutChart({ steps, context, onStepResize, onStepClick }) {
       {/* Hover tooltip (hidden during drag) */}
       {hoveredInfo && !dragState && (() => {
         const stepCol = STEP_COLORS[hoveredInfo.s.stepType] || STEP_COLORS.work;
+        const hoveredBlock = blockForStep(steps, hoveredInfo.s);
+
+        // Where the tooltip sits, decided once. The arrow used to be nailed to
+        // the bottom pointing down, which was right only while the tooltip
+        // floated above the bar — once it hung below, it pointed away from the
+        // thing it was describing.
+        const CHART_H = 120;
+        const TOOLTIP_H = 88;
+        const GAP = 6;
+        const barH = hoveredInfo.barH ?? 40;
+        const above = !hoveredBlock && barH + GAP + TOOLTIP_H <= CHART_H;
+        const tooltipStyle = {
+          left: `${Math.min(Math.max(hoveredInfo.xPct, 8), 92)}%`,
+          transform: 'translateX(-50%)',
+          whiteSpace: 'nowrap',
+          ...(above
+            ? { bottom: `${barH + GAP}px` }
+            // A block list is taller than the chart, so there is no "inside" to
+            // fit it in — it hangs below, the direction the modal scrolls.
+            : { top: hoveredBlock ? `${CHART_H + GAP}px` : `${Math.max(GAP, CHART_H - barH + GAP)}px` }),
+        };
         return (
           <div
             className="absolute pointer-events-none z-20"
-            style={{
-              left: `${Math.min(Math.max(hoveredInfo.xPct, 8), 92)}%`,
-              transform: 'translateX(-50%)',
-              whiteSpace: 'nowrap',
-              // Anchor to the bar's top edge: barH px from bottom of SVG (120px tall) + 6px gap
-              bottom: `${(hoveredInfo.barH ?? 40) + 6}px`,
-            }}
+            style={tooltipStyle}
           >
+            {!above && (
+              <div className="flex justify-center">
+                <div className="w-3 h-2 overflow-hidden">
+                  <div className="w-3 h-3 bg-white border-l border-t border-slate-200 rotate-45 translate-y-1.5 mx-auto"/>
+                </div>
+              </div>
+            )}
             <div className="bg-white border border-slate-200 rounded-xl overflow-hidden min-w-[120px]"
               style={{ boxShadow: '0 4px 20px rgba(0,0,0,0.10), 0 1px 4px rgba(0,0,0,0.06)' }}>
               {/* Colored accent top */}
               <div className="h-1.5 w-full" style={{ backgroundColor: stepCol.bg }}/>
+
+              {/* A hovered bar belongs to a block more often than it stands
+                  alone — a ramp is one thing the athlete added. Reading one bar
+                  of eight says nothing about the shape, so the whole block is
+                  listed and the hovered step is marked within it. */}
+              {hoveredBlock && (
+                <div className="px-3 pt-2.5 pb-1 border-b border-slate-100">
+                  <div className="text-xs font-bold text-slate-800 mb-1.5">
+                    {hoveredBlock.label || 'Block'} in {hoveredBlock.steps.length} steps
+                  </div>
+                  <div className="max-h-[168px] overflow-y-auto -mx-1 px-1">
+                    {hoveredBlock.steps.map((bs, i) => {
+                      const bw = resolveTargetWatts(bs.powerTarget, context);
+                      const isHovered = bs.clientId === hoveredInfo.s.clientId;
+                      return (
+                        <div
+                          key={bs.clientId || i}
+                          className={`flex items-baseline gap-2 py-0.5 rounded px-1 ${isHovered ? 'bg-slate-100' : ''}`}
+                        >
+                          <span className="text-[10px] text-slate-400 tabular-nums w-3 shrink-0">{i + 1}</span>
+                          <span className="text-[11px] text-slate-700 tabular-nums">
+                            {fmtDuration(bs.durationSeconds || 0)}
+                          </span>
+                          {bw > 0 && (
+                            <span className="text-[11px] font-semibold text-slate-900 tabular-nums ml-auto">
+                              {Math.round(bw)} W
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="text-[10px] text-slate-400 mt-1.5 mb-0.5">
+                    Starting at {fmtShort(hoveredBlock.startSec)} · ending at {fmtShort(hoveredBlock.endSec)}
+                  </div>
+                </div>
+              )}
               <div className="px-3 py-2.5">
                 <div className="flex items-center gap-1.5 mb-1.5">
                   <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: stepCol.bg }}/>
@@ -808,12 +1220,14 @@ export function WorkoutChart({ steps, context, onStepResize, onStepClick }) {
                 </div>
               </div>
             </div>
-            {/* Arrow */}
-            <div className="flex justify-center">
-              <div className="w-3 h-2 overflow-hidden">
-                <div className="w-3 h-3 bg-white border-r border-b border-slate-100 rotate-45 -translate-y-1.5 mx-auto"/>
+            {/* Arrow — points at the bar, whichever side the card ended up on. */}
+            {above && (
+              <div className="flex justify-center">
+                <div className="w-3 h-2 overflow-hidden">
+                  <div className="w-3 h-3 bg-white border-r border-b border-slate-100 rotate-45 -translate-y-1.5 mx-auto"/>
+                </div>
               </div>
-            </div>
+            )}
           </div>
         );
       })()}
@@ -1664,6 +2078,19 @@ export default function WorkoutBuilder({ initialSteps = [], context = {}, sport 
 
   const notify = useCallback((newSteps) => { setSteps(newSteps); onChange?.(newSteps); }, [onChange]);
 
+  /** Palette block being dragged, so the list can show where it would land. */
+  const [paletteDrag, setPaletteDrag] = useState(null);
+
+  const addPaletteBlock = useCallback((key, stepCount = null) => {
+    const fresh = buildPaletteSteps(key, sport, stepCount);
+    if (!fresh.length) return;
+    setSteps((prev) => {
+      const next = [...prev, ...fresh];
+      onChange?.(next);
+      return next;
+    });
+  }, [sport, onChange]);
+
   // Drag-and-drop reorder state.
   //
   // `dragIdx` is either:
@@ -1706,7 +2133,7 @@ export default function WorkoutBuilder({ initialSteps = [], context = {}, sport 
     const removedBeforeDst = srcIdxs.filter(i => i < dstFirst).length;
     const insertAt = dstFirst - removedBeforeDst;
     remaining.splice(insertAt, 0, ...moved);
-    notify(remaining);
+    notify(repairGroupMembership(remaining));
     setDragIdx(null);
     setDragOverIdx(null);
   }, [dragIdx, steps, notify]);
@@ -1768,6 +2195,20 @@ export default function WorkoutBuilder({ initialSteps = [], context = {}, sport 
   };
 
   const updateStep   = (idx, u)  => { const n=[...steps]; n[idx]=u; notify(n); };
+
+  /** Add one more step to a block, copying the last one so the ramp continues. */
+  const addStepToBlock = (blockId) => {
+    const idxs = steps.map((x, i) => (x.blockId === blockId ? i : -1)).filter((i) => i >= 0);
+    if (!idxs.length) return;
+    const lastIdx = idxs[idxs.length - 1];
+    const last = steps[lastIdx];
+    const copy = { ...last, clientId: uid() };
+    delete copy.isGroupHeader;
+    delete copy.groupRepeat;
+    const next = [...steps];
+    next.splice(lastIdx + 1, 0, copy);
+    notify(next);
+  };
   const deleteStep   = (idx)     => notify(steps.filter((_,i)=>i!==idx));
   const moveStep     = (idx,dir) => {
     const n=[...steps], t=idx+dir;
@@ -1778,6 +2219,49 @@ export default function WorkoutBuilder({ initialSteps = [], context = {}, sport 
   // Drag-resize callback from WorkoutChart
   const handleStepResize = useCallback((clientId, newDur) => {
     notify(steps.map(s => s.clientId===clientId ? {...s, durationSeconds:newDur} : s));
+  }, [steps, notify]);
+
+  /**
+   * A lap pulled up or down in the chart.
+   *
+   * Where the watts land depends on how the step was aimed. A step already in
+   * watts takes the new number directly. A calculated one — a zone, LT1/LT2, a
+   * percentage — keeps its meaning and pins the number as an override, so the
+   * step still reads "Z3" while going out at the watts that were dragged to.
+   * That is the same field the intensity box writes, so both routes agree, and
+   * it is now in the schema and honoured by the exports.
+   */
+  /**
+   * A bar dragged onto another one.
+   *
+   * The chart draws expanded steps — a 4x block is eight bars from two steps —
+   * so the bar is not the thing that moves. Its underlying step is, to where
+   * the step under the drop sits. Dropping onto another bar of the same step is
+   * a no-op, which is what makes dragging within a repeat harmless.
+   *
+   * repairGroupMembership runs afterwards for the same reason the list drag
+   * needs it: a step dragged clear of its repeat block has left it, and the
+   * block must keep exactly one header or its repeat count goes with it.
+   */
+  const handleStepMove = useCallback((fromClientId, toClientId) => {
+    const from = steps.findIndex((s) => s.clientId === fromClientId);
+    const to   = steps.findIndex((s) => s.clientId === toClientId);
+    if (from < 0 || to < 0 || from === to) return;
+    const next = [...steps];
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved);
+    notify(repairGroupMembership(next));
+  }, [steps, notify]);
+
+  const handleStepPower = useCallback((clientId, watts) => {
+    const w = Math.max(1, Math.round(watts));
+    notify(steps.map((s) => {
+      if (s.clientId !== clientId) return s;
+      const t = s.powerTarget || { type: 'open' };
+      if (t.type === 'watts') return { ...s, powerTarget: { ...t, value: w, useRange: false } };
+      if (t.type === 'open')  return { ...s, powerTarget: { type: 'watts', value: w } };
+      return { ...s, powerTarget: { ...t, override: w } };
+    }));
   }, [steps, notify]);
 
   // Click-to-scroll: highlight the step row when clicking a chart bar
@@ -1826,7 +2310,9 @@ export default function WorkoutBuilder({ initialSteps = [], context = {}, sport 
             <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">Workout Preview</span>
             <span className="text-[10px] text-slate-400">{previewTotalLabel}</span>
           </div>
-          <WorkoutChart steps={steps} context={ctx} onStepResize={handleStepResize} onStepClick={handleChartStepClick}/>
+          <WorkoutChart steps={steps} context={ctx} onStepResize={handleStepResize}
+            onStepClick={handleChartStepClick} onStepPower={handleStepPower}
+            onStepMove={handleStepMove}/>
           <div className="flex flex-wrap gap-x-3 gap-y-1 mt-2">
             {Object.entries(STEP_COLORS).map(([k,v])=>(
               <span key={k} className="flex items-center gap-1 text-[10px] text-slate-500">
@@ -1871,17 +2357,109 @@ export default function WorkoutBuilder({ initialSteps = [], context = {}, sport 
         </div>
       </details>
 
+      {/* Block palette */}
+      <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-3">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-xs font-semibold text-slate-500">Click or drag blocks to build the workout</span>
+          {steps.length > 0 && (
+            <button type="button" onClick={() => notify([])}
+              className="text-xs font-semibold text-slate-400 hover:text-red-500 px-2 py-1 rounded-lg hover:bg-red-50">
+              Clear blocks
+            </button>
+          )}
+        </div>
+        <div className="flex gap-2 overflow-x-auto pb-1" style={{ WebkitOverflowScrolling: 'touch' }}>
+          {PALETTE_BLOCKS.map((b) => (
+            <PaletteBlock key={b.key} block={b} onAdd={addPaletteBlock}
+              onDragStart={setPaletteDrag} onDragEnd={() => setPaletteDrag(null)}/>
+          ))}
+        </div>
+      </div>
+
       {/* Step list */}
-      <div className="flex flex-col gap-2">
+      <div
+        className="flex flex-col gap-2"
+        onDragOver={(e) => { if (paletteDrag) e.preventDefault(); }}
+        onDrop={(e) => {
+          if (!paletteDrag) return;
+          e.preventDefault();
+          addPaletteBlock(paletteDrag.key, paletteDrag.steps);
+          setPaletteDrag(null);
+        }}
+      >
         {steps.length === 0 && (
-          <div className="text-center py-8 text-sm text-slate-300 border-2 border-dashed border-slate-100 rounded-xl">
-            Add steps or load a template
+          <div className={`text-center py-8 text-sm border-2 border-dashed rounded-xl transition-colors ${
+            paletteDrag ? 'border-primary/50 bg-primary/5 text-primary' : 'border-slate-100 text-slate-300'
+          }`}>
+            {paletteDrag ? 'Drop the block here' : 'Click a block above, or load a template'}
           </div>
         )}
         {(() => {
           const rendered = [];
           const renderedGroups = new Set();
+          const renderedBlocks = new Set();
           steps.forEach((s, idx) => {
+            // A run of steps from one palette pick is one card, not four rows:
+            // a warm-up is one thing the athlete added, and splitting it across
+            // the list made the shape impossible to read. Repeat groups keep
+            // their own card below — that one carries the repeat count.
+            if (s.blockId && !s.groupId) {
+              if (renderedBlocks.has(s.blockId)) return;
+              renderedBlocks.add(s.blockId);
+              const bIdxs = steps.map((x, i) => (x.blockId === s.blockId ? i : -1)).filter((i) => i >= 0);
+              if (bIdxs.length > 1) {
+                const blockSecs = bIdxs.reduce((sum, bi) => sum + (steps[bi].durationSeconds || 0), 0);
+                const col = STEP_COLORS[s.stepType] || STEP_COLORS.work;
+                rendered.push(
+                  <div
+                    key={`blk-${s.blockId}`}
+                    className="rounded-xl border-2 bg-white/60"
+                    style={{ borderColor: `${col.bg}66` }}
+                  >
+                    <div className="flex items-center gap-2 px-3 py-2 border-b" style={{ borderColor: `${col.bg}33` }}>
+                      <span className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: col.bg }}/>
+                      <span className="text-sm font-bold" style={{ color: col.text }}>
+                        {BLOCK_LABELS[s.blockKind] || 'Block'}
+                      </span>
+                      <span className="text-xs text-slate-500">
+                        {bIdxs.length} steps · {fmtShort(blockSecs)}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => addStepToBlock(s.blockId)}
+                        className="ml-auto flex items-center gap-1 text-xs font-semibold text-primary hover:bg-primary/5 px-2 py-1 rounded-lg"
+                      >
+                        <PlusIcon className="w-3.5 h-3.5"/> Add step
+                      </button>
+                    </div>
+                    <div className="px-2 py-2 flex flex-col gap-1.5">
+                      {bIdxs.map((bi) => (
+                        <div
+                          key={steps[bi].clientId || bi}
+                          data-reorder-id={bi}
+                          className={`transition-opacity ${dragIdx === bi ? 'opacity-40' : ''} ${dragOverIdx === bi && dragIdx !== bi ? 'ring-2 ring-primary/40 rounded-xl' : ''}`}
+                          onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); handleDragOver(bi); }}
+                          onDrop={(e) => { e.stopPropagation(); handleDrop(bi); }}
+                        >
+                          <StepRow step={steps[bi]} index={bi} total={steps.length}
+                            onUpdate={u=>updateStep(bi,u)} onDelete={()=>deleteStep(bi)}
+                            onMoveUp={()=>moveStep(bi,-1)} onMoveDown={()=>moveStep(bi,1)} context={ctx}
+                            highlighted={highlightedStepId === steps[bi].clientId}
+                            dragHandleProps={{
+                              draggable: true,
+                              onDragStart: (e) => { e.stopPropagation(); handleDragStart(bi); },
+                              onDragEnd: handleDragEnd,
+                              onTouchStart: (e) => { e.stopPropagation(); handleDragStart(bi); },
+                            }}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+                return;
+              }
+            }
             if (s.groupId) {
               if (!renderedGroups.has(s.groupId)) {
                 renderedGroups.add(s.groupId);
@@ -1914,15 +2492,25 @@ export default function WorkoutBuilder({ initialSteps = [], context = {}, sport 
                         <Bars3Icon className="w-5 h-5 text-slate-300 shrink-0" aria-hidden />
                         <ArrowPathIcon className="w-4 h-4 text-violet-500 shrink-0" />
                         <span className="text-sm font-bold text-violet-600">Repeat</span>
-                        <input
-                          type="number"
-                          min={1}
-                          max={99}
-                          value={reps}
-                          onChange={(e) => updateGroupRepeat(s.groupId, Math.max(1, Number(e.target.value)))}
-                          className="w-14 text-sm text-center border border-violet-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-violet-300"
-                        />
-                        <span className="text-sm text-violet-500">×</span>
+                        {/* A stepper, not a bare number field: a repeat count is
+                            nudged far more often than typed, and the buttons
+                            work on a phone without a number keypad. */}
+                        <div className="flex items-center gap-1 bg-white border border-violet-200 rounded-lg px-1 py-0.5" draggable={false}>
+                          <button type="button" aria-label="One repeat fewer" disabled={reps <= 1}
+                            onClick={() => updateGroupRepeat(s.groupId, Math.max(1, reps - 1))}
+                            className="w-7 h-7 rounded-md text-violet-600 font-bold hover:bg-violet-50 disabled:text-slate-300 disabled:hover:bg-transparent">
+                            −
+                          </button>
+                          <input type="number" min={1} max={99} value={reps} aria-label="Number of repeats"
+                            onChange={(e) => updateGroupRepeat(s.groupId, Math.min(99, Math.max(1, Number(e.target.value) || 1)))}
+                            className="w-9 text-sm font-bold text-center text-violet-700 bg-transparent focus:outline-none"/>
+                          <button type="button" aria-label="One repeat more" disabled={reps >= 99}
+                            onClick={() => updateGroupRepeat(s.groupId, Math.min(99, reps + 1))}
+                            className="w-7 h-7 rounded-md text-violet-600 font-bold hover:bg-violet-50 disabled:text-slate-300 disabled:hover:bg-transparent">
+                            +
+                          </button>
+                        </div>
+                        <span className="text-sm font-bold text-violet-500">×</span>
                         <button
                           type="button"
                           onClick={() => ungroupGroup(s.groupId)}
@@ -1938,11 +2526,30 @@ export default function WorkoutBuilder({ initialSteps = [], context = {}, sport 
                       )}
                     </div>
                     <div className="px-2 pb-2 flex flex-col gap-1.5">
+                      {/* Steps inside a repeat block reorder by dragging too.
+                          They used to render without dragHandleProps, so the
+                          grip appeared and did nothing — the one place in the
+                          builder where it was decoration. */}
                       {gIdxs.map(gi=>(
-                        <StepRow key={steps[gi].clientId||gi} step={steps[gi]} index={gi} total={steps.length}
-                          onUpdate={u=>updateStep(gi,u)} onDelete={()=>deleteStep(gi)}
-                          onMoveUp={()=>moveStep(gi,-1)} onMoveDown={()=>moveStep(gi,1)} context={ctx}
-                          highlighted={highlightedStepId === steps[gi].clientId}/>
+                        <div
+                          key={steps[gi].clientId||gi}
+                          data-reorder-id={gi}
+                          className={`transition-opacity ${dragIdx === gi ? 'opacity-40' : ''} ${dragOverIdx === gi && dragIdx !== gi ? 'ring-2 ring-primary/40 rounded-xl' : ''}`}
+                          onDragOver={e => { e.preventDefault(); e.stopPropagation(); handleDragOver(gi); }}
+                          onDrop={e => { e.stopPropagation(); handleDrop(gi); }}
+                        >
+                          <StepRow step={steps[gi]} index={gi} total={steps.length}
+                            onUpdate={u=>updateStep(gi,u)} onDelete={()=>deleteStep(gi)}
+                            onMoveUp={()=>moveStep(gi,-1)} onMoveDown={()=>moveStep(gi,1)} context={ctx}
+                            highlighted={highlightedStepId === steps[gi].clientId}
+                            dragHandleProps={{
+                              draggable: true,
+                              onDragStart: (e) => { e.stopPropagation(); handleDragStart(gi); },
+                              onDragEnd: handleDragEnd,
+                              onTouchStart: (e) => { e.stopPropagation(); handleDragStart(gi); },
+                            }}
+                          />
+                        </div>
                       ))}
                     </div>
                   </div>
