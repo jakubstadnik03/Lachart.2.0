@@ -283,13 +283,61 @@ export function groupIntoBlocks(steps = []) {
   return blocks;
 }
 
+/**
+ * Every index belonging to the same component as `index`.
+ *
+ * A warm-up is four steps and a repeat block is a header plus its members, but
+ * both are one thing the athlete added and one thing they drag. Membership is
+ * blockId for a palette block and groupId for a repeat; a step with neither is
+ * its own unit, so callers need no special case.
+ *
+ * Only the adjacent run counts, so a step someone has since moved elsewhere
+ * does not drag its old neighbours along with it.
+ */
+export function unitIndicesAt(steps, index) {
+  const step = steps[index];
+  if (!step) return [];
+  const key = step.blockId ? 'blockId' : (step.groupId ? 'groupId' : null);
+  if (!key) return [index];
+
+  const id = step[key];
+  let first = index;
+  while (first > 0 && steps[first - 1]?.[key] === id) first -= 1;
+  let last = index;
+  while (last < steps.length - 1 && steps[last + 1]?.[key] === id) last += 1;
+
+  const out = [];
+  for (let i = first; i <= last; i += 1) out.push(i);
+  return out;
+}
+
 /** The block a given step belongs to, or null when it stands alone. */
 export function blockForStep(steps, step) {
-  if (!step?.blockId) return null;
-  const found = groupIntoBlocks(steps).find(
-    (b) => b.blockId === step.blockId && b.steps.some((x) => x.clientId === step.clientId),
-  );
-  return found && found.steps.length > 1 ? found : null;
+  if (!step?.clientId) return null;
+  const index = steps.findIndex((x) => x.clientId === step.clientId);
+  if (index < 0) return null;
+
+  // The same unit the drag moves, so hovering describes exactly what dragging
+  // would pick up. That includes a repeat block grouped by hand, which has a
+  // groupId but no blockId and used to describe only the single bar.
+  const idxs = unitIndicesAt(steps, index);
+  if (idxs.length <= 1) return null;
+
+  const members = idxs.map((i) => steps[i]);
+  const startSec = steps.slice(0, idxs[0]).reduce((sum, x) => sum + (x.durationSeconds || 0), 0);
+  const lapSec = members.reduce((sum, x) => sum + (x.durationSeconds || 0), 0);
+  const reps = members.find((m) => m.isGroupHeader)?.groupRepeat || 1;
+
+  return {
+    blockId: members[0].blockId || null,
+    blockKind: members[0].blockKind || null,
+    label: BLOCK_LABELS[members[0].blockKind] || (reps > 1 ? 'Repeats' : 'Block'),
+    reps,
+    steps: members,
+    indices: idxs,
+    startSec,
+    endSec: startSec + lapSec * reps,
+  };
 }
 
 function PaletteBlock({ block, onAdd, onDragStart, onDragEnd }) {
@@ -1208,7 +1256,8 @@ export function WorkoutChart({ steps, context, onStepResize, onStepClick, onStep
               {hoveredBlock && (
                 <div className="px-3 pt-2.5 pb-1 border-b border-slate-100">
                   <div className="text-xs font-bold text-slate-800 mb-1.5">
-                    {hoveredBlock.label || 'Block'} in {hoveredBlock.steps.length} steps
+                    {hoveredBlock.label || 'Block'} in {hoveredBlock.steps.length} step{hoveredBlock.steps.length === 1 ? '' : 's'}
+                    {hoveredBlock.reps > 1 ? ` · ${hoveredBlock.reps}×` : ''}
                   </div>
                   <div className="max-h-[168px] overflow-y-auto -mx-1 px-1">
                     {hoveredBlock.steps.map((bs, i) => {
@@ -2317,11 +2366,28 @@ export default function WorkoutBuilder({ initialSteps = [], context = {}, sport 
   const handleStepMove = useCallback((fromClientId, toClientId) => {
     const from = steps.findIndex((s) => s.clientId === fromClientId);
     const to   = steps.findIndex((s) => s.clientId === toClientId);
-    if (from < 0 || to < 0 || from === to) return;
-    const next = [...steps];
-    const [moved] = next.splice(from, 1);
-    next.splice(to, 0, moved);
-    notify(repairGroupMembership(next));
+    if (from < 0 || to < 0) return;
+
+    // Whole components move, not single bars. A warm-up is four steps and a
+    // repeat is a header plus its members; dragging one bar out of either would
+    // take the block apart, which is never what the gesture meant.
+    const src = unitIndicesAt(steps, from);
+    const dst = unitIndicesAt(steps, to);
+    if (!src.length || !dst.length) return;
+    if (src[0] === dst[0]) return;   // same component — nothing to do
+
+    const moving = new Set(src);
+    const moved = src.map((i) => steps[i]);
+    const remaining = steps.filter((_, i) => !moving.has(i));
+
+    // Drop before the target when dragging backwards, after it when dragging
+    // forwards — otherwise a forward drag inserts ahead of the bar you aimed
+    // at, which for the block directly behind it means landing exactly where
+    // it started and looking like nothing happened.
+    const anchor = src[0] < dst[0] ? dst[dst.length - 1] + 1 : dst[0];
+    const removedBefore = src.filter((i) => i < anchor).length;
+    remaining.splice(anchor - removedBefore, 0, ...moved);
+    notify(repairGroupMembership(remaining));
   }, [steps, notify]);
 
   const handleStepPower = useCallback((clientId, watts) => {
