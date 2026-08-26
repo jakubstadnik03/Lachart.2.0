@@ -61,6 +61,11 @@ const SPORT_TO_ZWO = {
 function resolveTargetWatts(target, ctx = {}) {
   if (!target || target.type === 'open') return null;
   const { ftp = 250, lt1Power = null, lt2Power = null } = ctx;
+  // A pinned override beats the calculation. It is the number the athlete
+  // typed, so it is the number the watch has to be given — the exports used to
+  // recompute the zone and quietly send something else.
+  const pinned = Number(target.override);
+  if (Number.isFinite(pinned) && pinned > 0) return Math.round(pinned);
   if (target.type === 'watts') {
     return target.useRange
       ? Math.round((Number(target.rangeMin || 0) + Number(target.rangeMax || 0)) / 2)
