@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { getEventStats } from '../utils/eventLogger';
 import { fetchCoachLeads, fetchCoachLeadPreview, sendCoachLeadTest, sendCoachLeadEmail, startCoachLeadBatch, fetchCoachLeadBatchStatus } from '../services/api';
 import { lastOutreachSentAt, formatOutreachSentAt } from '../utils/lastOutreachSentAt';
-import { getAdminUsers, getAdminStats, getAdminHealth, getCoachAthletesPage, updateUserAdmin, deleteUserAdmin, sendReactivationEmail, sendThankYouEmail, sendPremiumEmail, sendThankYouEmailToAll, sendFeatureAnnouncementEmail, sendStravaReminderEmail, sendAppDownloadEmail, sendCoachOutreachEmail, getCoachOutreachLeads, updateCoachOutreachLead, importCoachOutreachLeads, startBulkOutreachCampaign, stopBulkCampaign, listBulkCampaigns, getDefaultOutreachTemplate, impersonateUser, sendRetentionEmailPreview, fetchWhatsNewMay2026Status, sendWhatsNewMay2026Preview, runWhatsNewMay2026Campaign, resetWhatsNewMay2026, fetchIosLaunchJun2026Status, sendIosLaunchJun2026Preview, runIosLaunchJun2026Campaign, resetIosLaunchJun2026, fetchPaidLaunchJul2026Status, sendPaidLaunchJul2026Preview, runPaidLaunchJul2026Campaign, resetPaidLaunchJul2026, fetchCampaignRecipients } from '../services/api';
+import { getAdminUsers, getAdminStats, getAdminHealth, getAdminBilling, getCoachAthletesPage, updateUserAdmin, deleteUserAdmin, sendReactivationEmail, sendThankYouEmail, sendPremiumEmail, sendThankYouEmailToAll, sendFeatureAnnouncementEmail, sendStravaReminderEmail, sendAppDownloadEmail, sendCoachOutreachEmail, getCoachOutreachLeads, updateCoachOutreachLead, importCoachOutreachLeads, startBulkOutreachCampaign, stopBulkCampaign, listBulkCampaigns, getDefaultOutreachTemplate, impersonateUser, sendRetentionEmailPreview, fetchWhatsNewMay2026Status, sendWhatsNewMay2026Preview, runWhatsNewMay2026Campaign, resetWhatsNewMay2026, fetchIosLaunchJun2026Status, sendIosLaunchJun2026Preview, runIosLaunchJun2026Campaign, resetIosLaunchJun2026, fetchPaidLaunchJul2026Status, sendPaidLaunchJul2026Preview, runPaidLaunchJul2026Campaign, resetPaidLaunchJul2026, fetchCampaignRecipients } from '../services/api';
 import { useAuth } from '../context/AuthProvider';
 import { useNotification } from '../context/NotificationContext';
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
@@ -408,6 +408,34 @@ function renderMobileAppBadge(user, { compact = false } = {}) {
   );
 }
 
+/** Collapsible card: compact header with a count badge, body hidden until expanded. */
+function CollapsibleSection({ title, badge, defaultOpen = false, children }) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="bg-white rounded-lg shadow">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="w-full flex items-center justify-between px-4 py-3 text-left"
+      >
+        <span className="flex items-center gap-2">
+          <span className="text-sm sm:text-base font-semibold text-gray-900">{title}</span>
+          {badge != null && (
+            <span className="text-xs font-medium text-gray-500 bg-gray-100 rounded-full px-2 py-0.5">{badge}</span>
+          )}
+        </span>
+        <svg
+          className={`w-4 h-4 text-gray-400 transition-transform ${open ? 'rotate-180' : ''}`}
+          fill="none" viewBox="0 0 24 24" stroke="currentColor"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+      {open && <div className="px-4 pb-4">{children}</div>}
+    </div>
+  );
+}
+
 const AdminDashboard = () => {
   const { user: currentUser, loading, login: authLogin } = useAuth();
   const { addNotification } = useNotification();
@@ -415,6 +443,7 @@ const AdminDashboard = () => {
   const [users, setUsers] = useState([]);
   const [stats, setStats] = useState(null);
   const [adminHealth, setAdminHealth] = useState(null);
+  const [billing, setBilling] = useState(null);
   const [eventStats, setEventStats] = useState(null);
   const [loadingData, setLoadingData] = useState(true);
   const [error, setError] = useState(null);
@@ -549,18 +578,21 @@ const AdminDashboard = () => {
       setLoadingData(true);
       const endDate = new Date();
       const startDate = new Date(Date.now() - chartTimeRange * 24 * 60 * 60 * 1000);
-      const [usersData, statsData, healthData, eventStatsData] = await Promise.all([
+      const [usersData, statsData, healthData, eventStatsData, billingData] = await Promise.all([
         getAdminUsers(),
         getAdminStats(),
         getAdminHealth(),
-        getEventStats(null, startDate.toISOString(), endDate.toISOString())
+        getEventStats(null, startDate.toISOString(), endDate.toISOString()),
+        // Billing failures (e.g. Stripe hiccup) must not blank the whole dashboard.
+        getAdminBilling().catch(() => null)
       ]);
-      
+
       // Data loaded successfully; debug logging removed to keep console clean
       setUsers(usersData);
       setStats(statsData);
       setAdminHealth(healthData);
       setEventStats(eventStatsData);
+      setBilling(billingData);
     } catch (err) {
       setError('Failed to fetch data');
       console.error('Data fetch error:', err);
@@ -2057,59 +2089,187 @@ const AdminDashboard = () => {
               </div>
             </div>
 
-            {/* Sports Distribution */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
-              <div className="bg-white rounded-lg shadow p-4 sm:p-6">
-                <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-3 sm:mb-4">Users by Sport</h3>
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
-                {Object.entries(stats?.usersBySport || {}).map(([sport, count]) => (
-                  <div key={sport} className="text-center">
-                      <p className="text-xl sm:text-2xl font-bold text-primary">{count}</p>
-                      <p className="text-xs sm:text-sm text-gray-600 capitalize">{sport}</p>
+            {/* Premium & Revenue */}
+            {billing && (() => {
+              const fmtEur = (v) => `€${Number(v || 0).toFixed(2)}`;
+              const fmtDate = (v) => (v ? new Date(v).toLocaleDateString() : '—');
+              const daysLeft = (v) => {
+                if (!v) return null;
+                return Math.ceil((new Date(v) - Date.now()) / (24 * 60 * 60 * 1000));
+              };
+              const s = billing.summary || {};
+              const statusBadge = (row) => {
+                if (row.source === 'manual') return { label: 'Manual', cls: 'bg-purple-100 text-purple-700' };
+                if (!row.live) return { label: 'Churned', cls: 'bg-gray-100 text-gray-600' };
+                if (row.trialing) return { label: 'Trial', cls: 'bg-amber-100 text-amber-700' };
+                return { label: 'Paying', cls: 'bg-green-100 text-green-700' };
+              };
+              return (
+                <div className="bg-white rounded-lg shadow p-4 sm:p-6">
+                  <div className="flex items-center justify-between mb-3 sm:mb-4">
+                    <h3 className="text-base sm:text-lg font-semibold text-gray-900">Premium &amp; Revenue</h3>
+                    <span className={`text-xs font-medium rounded-full px-2 py-0.5 ${billing.revenueSource === 'stripe' ? 'bg-indigo-100 text-indigo-700' : 'bg-amber-100 text-amber-700'}`}>
+                      {billing.revenueSource === 'stripe' ? 'Stripe data' : 'Estimate'}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-4">
+                    <div className="text-center p-3 bg-green-50 rounded-lg">
+                      <p className="text-xl sm:text-2xl font-bold text-green-600">{s.premiumTotal || 0}</p>
+                      <p className="text-xs sm:text-sm text-gray-600 mt-1">Premium users</p>
+                      <p className="text-xs text-gray-500 mt-0.5">{s.paying || 0} paying · {s.manual || 0} manual</p>
+                    </div>
+                    <div className="text-center p-3 bg-amber-50 rounded-lg">
+                      <p className="text-xl sm:text-2xl font-bold text-amber-600">{s.trialing || 0}</p>
+                      <p className="text-xs sm:text-sm text-gray-600 mt-1">On free trial</p>
+                      <p className="text-xs text-gray-500 mt-0.5">{s.trialEndingSoon || 0} ending within 7 days</p>
+                    </div>
+                    <div className="text-center p-3 bg-indigo-50 rounded-lg">
+                      <p className="text-xl sm:text-2xl font-bold text-indigo-600">{fmtEur(s.mrr)}</p>
+                      <p className="text-xs sm:text-sm text-gray-600 mt-1">MRR</p>
+                      <p className="text-xs text-gray-500 mt-0.5">+{fmtEur(s.trialMrr)} in trials</p>
+                    </div>
+                    <div className="text-center p-3 bg-emerald-50 rounded-lg">
+                      <p className="text-xl sm:text-2xl font-bold text-emerald-600">{fmtEur(billing.totalRevenue)}</p>
+                      <p className="text-xs sm:text-sm text-gray-600 mt-1">Total revenue</p>
+                      <p className="text-xs text-gray-500 mt-0.5">{s.cancelScheduled || 0} cancel scheduled · {s.churned || 0} churned</p>
+                    </div>
+                  </div>
+
+                  {(billing.monthlyRevenue || []).length > 0 && (
+                    <div className="mb-4">
+                      <p className="text-xs sm:text-sm font-medium text-gray-600 mb-2">Revenue by month ({billing.revenueSource === 'stripe' ? 'paid invoices' : 'estimated'})</p>
+                      <ResponsiveContainer width="100%" height={220}>
+                        <BarChart data={billing.monthlyRevenue} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                          <XAxis dataKey="month" tick={{ fontSize: 11 }} />
+                          <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `€${v}`} />
+                          <Tooltip formatter={(v) => [fmtEur(v), 'Revenue']} />
+                          <Bar dataKey="revenue" fill="#6366f1" radius={[4, 4, 0, 0]} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  )}
+
+                  {(billing.subscribers || []).length > 0 ? (
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full divide-y divide-gray-200 text-sm">
+                        <thead>
+                          <tr className="text-left text-xs font-medium text-gray-500 uppercase">
+                            <th className="px-3 py-2">User</th>
+                            <th className="px-3 py-2">Plan</th>
+                            <th className="px-3 py-2">Status</th>
+                            <th className="px-3 py-2">Trial ends</th>
+                            <th className="px-3 py-2">Next payment</th>
+                            <th className="px-3 py-2 text-right">Revenue</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                          {billing.subscribers.map((row) => {
+                            const badge = statusBadge(row);
+                            const trialDays = row.trialing ? daysLeft(row.trialEnd) : null;
+                            return (
+                              <tr key={String(row.userId)} className={row.live ? '' : 'opacity-60'}>
+                                <td className="px-3 py-2 whitespace-nowrap">
+                                  <p className="font-medium text-gray-900">{row.name || row.email || '—'}</p>
+                                  {row.name && row.email && <p className="text-xs text-gray-500">{row.email}</p>}
+                                </td>
+                                <td className="px-3 py-2 whitespace-nowrap capitalize">
+                                  {row.plan}
+                                  {row.planPrice > 0 && <span className="text-xs text-gray-500"> · {fmtEur(row.planPrice)}/mo</span>}
+                                </td>
+                                <td className="px-3 py-2 whitespace-nowrap">
+                                  <span className={`inline-block text-xs font-medium rounded-full px-2 py-0.5 ${badge.cls}`}>{badge.label}</span>
+                                  {row.cancelAtPeriodEnd && row.live && (
+                                    <span className="ml-1 inline-block text-xs font-medium rounded-full px-2 py-0.5 bg-red-100 text-red-700">Cancels</span>
+                                  )}
+                                </td>
+                                <td className="px-3 py-2 whitespace-nowrap">
+                                  {row.trialEnd ? (
+                                    <>
+                                      {fmtDate(row.trialEnd)}
+                                      {trialDays != null && trialDays >= 0 && (
+                                        <span className={`ml-1 text-xs ${trialDays <= 3 ? 'text-red-600 font-semibold' : 'text-gray-500'}`}>
+                                          ({trialDays === 0 ? 'today' : `${trialDays}d left`})
+                                        </span>
+                                      )}
+                                    </>
+                                  ) : '—'}
+                                </td>
+                                <td className="px-3 py-2 whitespace-nowrap">
+                                  {row.live && !row.cancelAtPeriodEnd ? fmtDate(row.currentPeriodEnd) : '—'}
+                                </td>
+                                <td className="px-3 py-2 whitespace-nowrap text-right font-medium text-gray-900">
+                                  {fmtEur(row.estimatedRevenue)}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-gray-500">No premium subscriptions yet.</p>
+                  )}
+                </div>
+              );
+            })()}
+
+            {/* Sports Distribution (collapsible) */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 items-start">
+              <CollapsibleSection
+                title="Users by Sport"
+                badge={Object.values(stats?.usersBySport || {}).reduce((a, b) => a + b, 0)}
+              >
+                <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 sm:gap-3">
+                  {Object.entries(stats?.usersBySport || {}).map(([sport, count]) => (
+                    <div key={sport} className="text-center">
+                      <p className="text-base sm:text-lg font-bold text-primary">{count}</p>
+                      <p className="text-xs text-gray-600 capitalize">{sport}</p>
                     </div>
                   ))}
                 </div>
-              </div>
+              </CollapsibleSection>
 
-              {/* Tests by Sport */}
-              <div className="bg-white rounded-lg shadow p-4 sm:p-6">
-                <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-3 sm:mb-4">Tests by Sport</h3>
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
+              <CollapsibleSection title="Tests by Sport" badge={stats?.testsBySport?.total || 0}>
+                <div className="grid grid-cols-4 gap-2 sm:gap-3">
                   <div className="text-center">
-                    <p className="text-xl sm:text-2xl font-bold text-blue-600">{stats?.testsBySport?.run || 0}</p>
-                    <p className="text-xs sm:text-sm text-gray-600">Run</p>
+                    <p className="text-base sm:text-lg font-bold text-blue-600">{stats?.testsBySport?.run || 0}</p>
+                    <p className="text-xs text-gray-600">Run</p>
                   </div>
                   <div className="text-center">
-                    <p className="text-xl sm:text-2xl font-bold text-green-600">{stats?.testsBySport?.bike || 0}</p>
-                    <p className="text-xs sm:text-sm text-gray-600">Bike</p>
+                    <p className="text-base sm:text-lg font-bold text-green-600">{stats?.testsBySport?.bike || 0}</p>
+                    <p className="text-xs text-gray-600">Bike</p>
                   </div>
                   <div className="text-center">
-                    <p className="text-xl sm:text-2xl font-bold text-purple-600">{stats?.testsBySport?.swim || 0}</p>
-                    <p className="text-xs sm:text-sm text-gray-600">Swim</p>
+                    <p className="text-base sm:text-lg font-bold text-purple-600">{stats?.testsBySport?.swim || 0}</p>
+                    <p className="text-xs text-gray-600">Swim</p>
                   </div>
-                  <div className="text-center col-span-2 sm:col-span-1">
-                    <p className="text-xl sm:text-2xl font-bold text-primary">{stats?.testsBySport?.total || 0}</p>
-                    <p className="text-xs sm:text-sm text-gray-600">Total</p>
+                  <div className="text-center">
+                    <p className="text-base sm:text-lg font-bold text-primary">{stats?.testsBySport?.total || 0}</p>
+                    <p className="text-xs text-gray-600">Total</p>
                   </div>
                 </div>
-              </div>
+              </CollapsibleSection>
             </div>
 
-            {/* Users by Country */}
+            {/* Users by Country (collapsible) */}
             {stats?.usersByCountry && Object.keys(stats.usersByCountry).filter(c => c !== 'Unknown').length > 0 && (
-              <div className="bg-white rounded-lg shadow p-4 sm:p-6">
-                <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-3 sm:mb-4">Users by Country</h3>
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 sm:gap-4">
+              <CollapsibleSection
+                title="Users by Country"
+                badge={Object.keys(stats.usersByCountry).length}
+              >
+                <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2 sm:gap-3">
                   {Object.entries(stats.usersByCountry)
                     .sort((a, b) => b[1] - a[1])
                     .map(([country, count]) => (
-                      <div key={country} className="text-center p-2 rounded-lg bg-gray-50">
-                        <p className="text-xl sm:text-2xl font-bold text-sky-600">{count}</p>
-                        <p className="text-xs sm:text-sm text-gray-600">{country}</p>
+                      <div key={country} className="text-center p-1.5 rounded-lg bg-gray-50">
+                        <p className="text-base sm:text-lg font-bold text-sky-600">{count}</p>
+                        <p className="text-xs text-gray-600 truncate" title={country}>{country}</p>
                       </div>
                     ))}
                 </div>
-              </div>
+              </CollapsibleSection>
             )}
           </motion.div>
         )}

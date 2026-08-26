@@ -3222,6 +3222,219 @@ router.get("/admin/stats", verifyToken, async (req, res) => {
     }
 });
 
+// Admin billing overview — premium users, trials, MRR and revenue history.
+router.get("/admin/billing", verifyToken, async (req, res) => {
+    try {
+        const currentUser = await userDao.findById(req.user.userId);
+        if (!currentUser || !currentUser.admin) {
+            return res.status(403).json({ error: "Access denied. Admin privileges required." });
+        }
+
+        const Subscription = require("../models/SubscriptionModel");
+        const { PLANS } = require("../controllers/subscriptionController");
+        const planPrice = (plan) => PLANS[plan]?.price || 0;
+        const now = new Date();
+
+        const subs = await Subscription.find({ plan: { $ne: 'free' } }).lean();
+        const subUserIds = subs.map((s) => s.userId).filter(Boolean);
+        const subUsers = await User.find(
+            { _id: { $in: subUserIds } },
+            { email: 1, name: 1, surname: 1, premium: 1 }
+        ).lean();
+        const userById = new Map(subUsers.map((u) => [String(u._id), u]));
+
+        // Manually comped accounts (user.premium) that have no Stripe subscription.
+        const manualUsers = await User.find(
+            { premium: true, _id: { $nin: subUserIds } },
+            { email: 1, name: 1, surname: 1, createdAt: 1 }
+        ).lean();
+
+        const isLive = (s) => {
+            if (s.status !== 'active' && s.status !== 'trialing') return false;
+            if (s.currentPeriodEnd && now > new Date(s.currentPeriodEnd)) return false;
+            return true;
+        };
+        const inTrial = (s) => s.status === 'trialing'
+            || (s.trialEnd && new Date(s.trialEnd) > now && isLive(s));
+
+        // Paying window used for the per-user and monthly revenue estimate:
+        // from trial end (or period/created start when there was no trial)
+        // until cancellation, period end, or today.
+        const payingWindow = (s) => {
+            const start = s.trialEnd ? new Date(s.trialEnd)
+                : (s.currentPeriodStart ? new Date(s.currentPeriodStart) : new Date(s.createdAt));
+            let end = now;
+            if (s.canceledAt) end = new Date(s.canceledAt);
+            else if (!isLive(s) && s.currentPeriodEnd) end = new Date(s.currentPeriodEnd);
+            if (end > now) end = now;
+            return { start, end };
+        };
+        const monthsBetween = (start, end) => {
+            if (!(start instanceof Date) || !(end instanceof Date) || end <= start) return 0;
+            return (end - start) / (30.44 * 24 * 60 * 60 * 1000);
+        };
+
+        const subscribers = subs.map((s) => {
+            const u = userById.get(String(s.userId));
+            const { start, end } = payingWindow(s);
+            // A started billing cycle counts as paid (billing happens up front).
+            const paidMonths = end > start ? Math.floor(monthsBetween(start, end)) + 1 : 0;
+            const estimatedRevenue = Math.round(paidMonths * planPrice(s.plan) * 100) / 100;
+            return {
+                userId: s.userId,
+                email: u?.email || null,
+                name: [u?.name, u?.surname].filter(Boolean).join(' ') || null,
+                plan: s.plan,
+                planPrice: planPrice(s.plan),
+                status: s.status,
+                source: 'subscription',
+                live: isLive(s),
+                trialing: inTrial(s),
+                trialStart: s.trialStart || null,
+                trialEnd: s.trialEnd || null,
+                currentPeriodEnd: s.currentPeriodEnd || null,
+                cancelAtPeriodEnd: Boolean(s.cancelAtPeriodEnd),
+                canceledAt: s.canceledAt || null,
+                since: s.createdAt || null,
+                estimatedRevenue,
+            };
+        });
+
+        manualUsers.forEach((u) => {
+            subscribers.push({
+                userId: u._id,
+                email: u.email || null,
+                name: [u.name, u.surname].filter(Boolean).join(' ') || null,
+                plan: 'manual',
+                planPrice: 0,
+                status: 'active',
+                source: 'manual',
+                live: true,
+                trialing: false,
+                trialStart: null,
+                trialEnd: null,
+                currentPeriodEnd: null,
+                cancelAtPeriodEnd: false,
+                canceledAt: null,
+                since: u.createdAt || null,
+                estimatedRevenue: 0,
+            });
+        });
+
+        const liveSubs = subscribers.filter((s) => s.source === 'subscription' && s.live);
+        const trialingSubs = liveSubs.filter((s) => s.trialing);
+        const payingSubs = liveSubs.filter((s) => !s.trialing);
+        const soon = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+        const trialEndingSoon = trialingSubs.filter(
+            (s) => s.trialEnd && new Date(s.trialEnd) <= soon
+        );
+
+        // Monthly revenue estimate from subscription windows (fallback when
+        // Stripe is unavailable). Bucketed by calendar month of each billing cycle.
+        const monthKey = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        const estimateMonthly = {};
+        subs.forEach((s) => {
+            const price = planPrice(s.plan);
+            if (!price) return;
+            const { start, end } = payingWindow(s);
+            if (end <= start) return;
+            const cursor = new Date(start);
+            while (cursor <= end) {
+                const key = monthKey(cursor);
+                estimateMonthly[key] = Math.round(((estimateMonthly[key] || 0) + price) * 100) / 100;
+                cursor.setMonth(cursor.getMonth() + 1);
+            }
+        });
+
+        // Prefer real Stripe invoice data when the key is configured.
+        let monthlyRevenue = null;
+        let totalRevenue = null;
+        let revenueSource = 'estimate';
+        const stripeKeyed = process.env.SUBSCRIPTION_ENABLED === 'true' && process.env.STRIPE_SECRET_KEY;
+        if (stripeKeyed) {
+            try {
+                const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+                const byMonth = {};
+                const byCustomer = {};
+                let total = 0;
+                let startingAfter;
+                for (let page = 0; page < 20; page++) {
+                    const batch = await stripe.invoices.list({
+                        status: 'paid',
+                        limit: 100,
+                        ...(startingAfter ? { starting_after: startingAfter } : {}),
+                    });
+                    batch.data.forEach((inv) => {
+                        const paid = (inv.amount_paid || 0) / 100;
+                        if (!paid) return;
+                        total += paid;
+                        const d = new Date((inv.status_transitions?.paid_at || inv.created) * 1000);
+                        const key = monthKey(d);
+                        byMonth[key] = Math.round(((byMonth[key] || 0) + paid) * 100) / 100;
+                        if (inv.customer) {
+                            byCustomer[inv.customer] = Math.round(((byCustomer[inv.customer] || 0) + paid) * 100) / 100;
+                        }
+                    });
+                    if (!batch.has_more) break;
+                    startingAfter = batch.data[batch.data.length - 1]?.id;
+                }
+                monthlyRevenue = byMonth;
+                totalRevenue = Math.round(total * 100) / 100;
+                revenueSource = 'stripe';
+                // Replace per-user estimates with real paid totals where we can.
+                const custRevenue = new Map(Object.entries(byCustomer));
+                const subByUser = new Map(subs.map((s) => [String(s.userId), s]));
+                subscribers.forEach((row) => {
+                    const sub = subByUser.get(String(row.userId));
+                    if (sub?.stripeCustomerId && custRevenue.has(sub.stripeCustomerId)) {
+                        row.estimatedRevenue = custRevenue.get(sub.stripeCustomerId);
+                        row.revenueSource = 'stripe';
+                    }
+                });
+            } catch (err) {
+                console.error('[Admin billing] Stripe invoice fetch failed, using estimate:', err?.message);
+            }
+        }
+        if (monthlyRevenue === null) {
+            monthlyRevenue = estimateMonthly;
+            totalRevenue = Math.round(
+                Object.values(estimateMonthly).reduce((a, b) => a + b, 0) * 100
+            ) / 100;
+        }
+
+        const monthlySeries = Object.entries(monthlyRevenue)
+            .sort((a, b) => a[0].localeCompare(b[0]))
+            .map(([month, revenue]) => ({ month, revenue }));
+
+        subscribers.sort((a, b) => {
+            if (a.live !== b.live) return a.live ? -1 : 1;
+            return new Date(b.since || 0) - new Date(a.since || 0);
+        });
+
+        res.status(200).json({
+            currency: 'eur',
+            revenueSource,
+            totalRevenue,
+            monthlyRevenue: monthlySeries,
+            summary: {
+                premiumTotal: liveSubs.length + manualUsers.length,
+                paying: payingSubs.length,
+                trialing: trialingSubs.length,
+                trialEndingSoon: trialEndingSoon.length,
+                manual: manualUsers.length,
+                cancelScheduled: liveSubs.filter((s) => s.cancelAtPeriodEnd).length,
+                churned: subscribers.filter((s) => s.source === 'subscription' && !s.live).length,
+                mrr: Math.round(payingSubs.reduce((sum, s) => sum + s.planPrice, 0) * 100) / 100,
+                trialMrr: Math.round(trialingSubs.reduce((sum, s) => sum + s.planPrice, 0) * 100) / 100,
+            },
+            subscribers,
+        });
+    } catch (error) {
+        console.error("Error fetching admin billing:", error);
+        res.status(500).json({ error: "Failed to fetch billing overview" });
+    }
+});
+
 // Admin health dashboard — system + Strava sync observability.
 router.get("/admin/health", verifyToken, async (req, res) => {
     try {
