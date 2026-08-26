@@ -9,7 +9,8 @@ import { notifyPlannedWorkoutUpdated, notifyPlannedWorkoutDeleted } from '../../
 import { SportTile, SPORT_TINT, normSport } from '../native/shared/Tiles';
 import { SportGlyph } from '../shared/SportIcon';
 import { useCategories } from '../../context/CategoryContext';
-import { WorkoutChart } from '../WorkoutPlanner/WorkoutBuilder';
+import { WorkoutChart, computeEstTSS } from '../WorkoutPlanner/WorkoutBuilder';
+import { WorkoutSummary, WorkoutLapList } from '../WorkoutPlanner/WorkoutPlanModal';
 import api from '../../services/api';
 import TrainingComments from '../TrainingComments';
 import { plannedDistanceMetres } from '../../utils/plannedWorkoutDistance';
@@ -726,6 +727,21 @@ export default function PlannedWorkoutEditor({
                 Workout structure
               </div>
               <WorkoutChart steps={plannedWorkout.steps} context={chartContext} />
+            </div>
+
+            {/* Same summary + lap-by-lap readout as the desktop edit modal. */}
+            <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <WorkoutSummary
+                steps={plannedWorkout.steps}
+                context={{ ...chartContext, sport: plannedWorkout.sport }}
+                sport={plannedWorkout.sport}
+                estTss={computeEstTSS(plannedWorkout.steps, { ...chartContext, sport: plannedWorkout.sport })}
+              />
+              <WorkoutLapList
+                steps={plannedWorkout.steps}
+                context={{ ...chartContext, sport: plannedWorkout.sport }}
+                sport={plannedWorkout.sport}
+              />
             </div>
           </div>
         )}

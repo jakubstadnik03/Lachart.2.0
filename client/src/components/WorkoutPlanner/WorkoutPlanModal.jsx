@@ -300,7 +300,7 @@ const LAP_LABEL = {
  * Power-based rows (avg W, IF, kJ→kcal) only make sense for bike; run/swim
  * show distance instead.
  */
-function WorkoutSummary({ steps, context, sport, estTss }) {
+export function WorkoutSummary({ steps, context, sport, estTss }) {
   const expanded = expandSteps(Array.isArray(steps) ? steps : []);
   if (!expanded.length) return null;
 
@@ -354,7 +354,7 @@ function WorkoutSummary({ steps, context, sport, estTss }) {
  * the resolved target (watts for bike, pace for run/swim) — the same numbers
  * the watch will get.
  */
-function WorkoutLapList({ steps, context, sport }) {
+export function WorkoutLapList({ steps, context, sport }) {
   const expanded = expandSteps(Array.isArray(steps) ? steps : []);
   if (!expanded.length) return null;
   const totalSecs = expanded.reduce((a, s) => a + (Number(s.durationSeconds) || 0), 0);
