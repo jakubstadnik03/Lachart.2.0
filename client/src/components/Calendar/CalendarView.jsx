@@ -8767,7 +8767,19 @@ export default function CalendarView({
               // activity up under the requester, so a coach propagating a
               // category onto an athlete's ride got "not found" for every one.
               await updateStravaActivity(rawId, payload, athleteId || null);
-            } else if (act.type === 'fit' || act._id) {
+            } else if (act.type === 'garmin' || act.source === 'garmin' || act.garminId
+                || String(act.id || '').startsWith('garmin-')) {
+              const { updateGarminActivity } = await import('../../services/api.js');
+              const rawId = String(act.garminId || act.id || '').replace(/^garmin-/, '');
+              const payload = {};
+              if (newTitle != null) payload.title = newTitle;
+              if (newCategory != null) payload.category = newCategory;
+              await updateGarminActivity(rawId, payload, athleteId || null);
+            } else if (act.type === 'fit' || act.source === 'fit'
+                || String(act.id || '').startsWith('fit-')) {
+              // Strictly fit-sourced only — the old `|| act._id` catch-all sent
+              // Garmin/Apple activity ids to the FIT endpoint, a guaranteed 404
+              // on every calendar load.
               const { updateFitTraining } = await import('../../services/api.js');
               const rawId = String(act._id || act.id || '').replace(/^fit-/, '');
               const payload = {};

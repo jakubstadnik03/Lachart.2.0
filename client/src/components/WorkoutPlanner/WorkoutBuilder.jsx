@@ -1411,7 +1411,8 @@ function WorkoutSummary({ steps, context }) {
 
   return (
     <div>
-      <div className={`grid gap-2 text-center mb-2 ${summaryTiles.length === 4 ? 'grid-cols-4' : 'grid-cols-4'}`}>
+      {/* 2×2 on phones — four columns squeeze the numbers unreadably small. */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-2 gap-y-1.5 text-center mb-2">
         {summaryTiles.map(([label, val]) => (
           <div key={label}>
             <div className="text-[9px] text-slate-400 uppercase tracking-wide">{label}</div>
@@ -2207,7 +2208,9 @@ export default function WorkoutBuilder({ initialSteps = [], context = {}, sport 
     if (!fresh.length) return;
     setSteps((prev) => {
       const next = [...prev, ...fresh];
-      onChange?.(next);
+      // Defer the parent update out of the updater — calling it inline made
+      // React warn "Cannot update WorkoutPlanModal while rendering WorkoutBuilder".
+      queueMicrotask(() => onChange?.(next));
       return next;
     });
   }, [sport, onChange]);
@@ -2498,7 +2501,10 @@ export default function WorkoutBuilder({ initialSteps = [], context = {}, sport 
       {/* Block palette */}
       <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-3">
         <div className="flex items-center justify-between mb-2">
-          <span className="text-xs font-semibold text-slate-500">Click or drag blocks to build the workout</span>
+          <span className="text-xs font-semibold text-slate-500">
+            <span className="sm:hidden">Tap a block to add it</span>
+            <span className="hidden sm:inline">Click or drag blocks to build the workout</span>
+          </span>
           {steps.length > 0 && (
             <button type="button" onClick={() => notify([])}
               className="text-xs font-semibold text-slate-400 hover:text-red-500 px-2 py-1 rounded-lg hover:bg-red-50">
