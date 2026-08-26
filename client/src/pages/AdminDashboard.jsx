@@ -423,6 +423,10 @@ const AdminDashboard = () => {
   const [stravaFilter, setStravaFilter] = useState('all'); // 'all', 'connected', 'notConnected'
   const [mobileAppFilter, setMobileAppFilter] = useState('all'); // 'all', 'hasApp', 'active7d', 'noApp'
   const [premiumFilter, setPremiumFilter] = useState('all'); // 'all' | 'free' | 'manual' | 'paid' | 'trial' | 'any'
+  // Email is optional on the user model (sparse index), so an account created
+  // by a coach can have none — and the marketing screens already treat
+  // "reachable" as having an address AND not having opted out.
+  const [emailFilter, setEmailFilter] = useState('all'); // 'all' | 'has' | 'reachable' | 'none'
   const [emailLoadingUserId, setEmailLoadingUserId] = useState(null);
   const [thankYouEmailLoadingUserId, setThankYouEmailLoadingUserId] = useState(null);
   const [premiumEmailLoadingUserId, setPremiumEmailLoadingUserId] = useState(null);
@@ -982,6 +986,16 @@ const AdminDashboard = () => {
       });
     }
 
+    if (emailFilter === 'has') {
+      filtered = filtered.filter((u) => !!u.email);
+    } else if (emailFilter === 'reachable') {
+      // The same test the send paths use, so the count here matches what a
+      // campaign would actually reach.
+      filtered = filtered.filter((u) => !!u.email && u.notifications?.emailNotifications !== false);
+    } else if (emailFilter === 'none') {
+      filtered = filtered.filter((u) => !u.email);
+    }
+
     if (stravaFilter === 'connected') {
       filtered = filtered.filter((u) => u.stravaConnected);
     } else if (stravaFilter === 'notConnected') {
@@ -1024,13 +1038,19 @@ const AdminDashboard = () => {
 
     // Apply limit
     return filtered.slice(0, usersLimit);
-  }, [users, searchQuery, premiumFilter, stravaFilter, mobileAppFilter, usersLimit, userSort]);
+  }, [users, searchQuery, premiumFilter, stravaFilter, mobileAppFilter, emailFilter, usersLimit, userSort]);
 
   /**
    * Counts of users in each premium bucket — drives the filter chip labels.
    * Computed off the unfiltered `users` array so the numbers stay stable
    * regardless of which filter is currently active.
    */
+  const emailCounts = useMemo(() => {
+    const has = users.filter((u) => !!u.email).length;
+    const reachable = users.filter((u) => !!u.email && u.notifications?.emailNotifications !== false).length;
+    return { all: users.length, has, reachable, none: users.length - has };
+  }, [users]);
+
   const premiumCounts = useMemo(() => {
     const c = { all: users.length, free: 0, any: 0, manual: 0, paid: 0, trial: 0 };
     users.forEach((u) => {
@@ -2307,6 +2327,20 @@ const AdminDashboard = () => {
                           <option value="hasApp">Has app ({mobileAppStats.withApp})</option>
                           <option value="active7d">Active 7d ({mobileAppStats.active7d})</option>
                           <option value="noApp">No app</option>
+                        </select>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <label className="text-xs sm:text-sm text-gray-600 whitespace-nowrap">Email:</label>
+                        <select
+                          value={emailFilter}
+                          onChange={(e) => setEmailFilter(e.target.value)}
+                          className="px-2 py-1 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                          title="Filter by whether the user has an email address, and whether they can be emailed"
+                        >
+                          <option value="all">All ({emailCounts.all})</option>
+                          <option value="has">Has email ({emailCounts.has})</option>
+                          <option value="reachable">Can be emailed ({emailCounts.reachable})</option>
+                          <option value="none">No email ({emailCounts.none})</option>
                         </select>
                       </div>
                       <div className="flex items-center gap-2">
