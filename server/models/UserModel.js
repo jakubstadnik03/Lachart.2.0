@@ -76,6 +76,9 @@ const userSchema = new mongoose.Schema({
     default: 'male'
   },
   bio: String,
+  /** Privacy: when true, this athlete's lactate tests are excluded from the
+   *  anonymous population benchmarks (they still see their own values). */
+  excludeFromBenchmarks: { type: Boolean, default: false },
   coachBranding: {
     logoUrl:      { type: String, default: null },  // URL of coach's uploaded logo
     title:        { type: String, default: null },  // e.g. "Elite Triathlon Club"

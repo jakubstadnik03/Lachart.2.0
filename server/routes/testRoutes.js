@@ -9,6 +9,8 @@ const User = require('../models/UserModel');
 const { notifyCoachesOfAthlete, notifyAthlete } = require('../utils/notificationHelper');
 const { requireQuotaSlot } = require('../middleware/featureGate');
 const { countCurrentTests } = require('../utils/testQuota');
+const { requirePremium } = require('../middleware/requirePremium');
+const { getPopulationStats, getAthleteValues, MIN_SAMPLE_SIZE } = require('../services/lactateBenchmarkService');
 
 // H4 — 3 demo emails per hour per IP
 const demoEmailLimiter = rateLimit({
@@ -44,139 +46,41 @@ router.get('/', verifyToken, testController.getTests);
 
 /**
  * GET /api/test/population-stats
- * Get population statistics for LT1, LT2, and LT1/LT2 ratio by gender and sport
+ * Population statistics for LT1, LT2, W/kg and LT1/LT2 ratio, built from the
+ * athletes' actual lactate tests (one sample per athlete per sport — see
+ * services/lactateBenchmarkService). Premium feature.
+ *
+ * Query params:
+ *   sport     - 'bike' | 'run' | 'swim' (omit for all three)
+ *   gender    - 'male' | 'female' (omit for everyone)
+ *   athleteId - include this athlete's own values from the same pipeline
+ *               (self, or any athlete for coach/admin)
+ *
  * IMPORTANT: This must be defined BEFORE /:id route to avoid matching "population-stats" as an ID
  */
-router.get("/population-stats", verifyToken, async (req, res) => {
+router.get("/population-stats", verifyToken, requirePremium, async (req, res) => {
     try {
-        const User = require('../models/UserModel');
-        const { gender, sport } = req.query; // gender: 'male' | 'female', sport: 'bike' | 'run'
-        
-        // Build filter
-        const filter = { 
-            role: 'athlete',
-            isActive: { $ne: false }
-        };
-        if (gender) {
-            filter.gender = gender;
+        const gender = ['male', 'female'].includes(req.query.gender) ? req.query.gender : 'all';
+        const sports = ['bike', 'run', 'swim'].includes(req.query.sport)
+            ? [req.query.sport]
+            : ['bike', 'run', 'swim'];
+
+        const result = { source: 'lactate-tests', minSampleSize: MIN_SAMPLE_SIZE };
+        for (const s of sports) {
+            result[s] = await getPopulationStats({ sport: s, gender });
         }
-        
-        // Get all athletes with powerZones and weight
-        const athletes = await User.find(filter).select('powerZones gender weight');
-        
-        // Helper function to calculate statistics
-        const calculateStats = (values) => {
-            if (!values || values.length === 0) return null;
-            
-            const sorted = [...values].sort((a, b) => a - b);
-            const count = sorted.length;
-            const sum = sorted.reduce((a, b) => a + b, 0);
-            const mean = sum / count;
-            
-            // Standard deviation
-            const variance = sorted.reduce((acc, val) => acc + Math.pow(val - mean, 2), 0) / count;
-            const sd = Math.sqrt(variance);
-            
-            // Percentiles
-            const percentile = (arr, p) => {
-                const index = (p / 100) * (arr.length - 1);
-                const lower = Math.floor(index);
-                const upper = Math.ceil(index);
-                const weight = index - lower;
-                if (lower === upper) return arr[lower];
-                return arr[lower] * (1 - weight) + arr[upper] * weight;
-            };
-            
-            const min = sorted[0];
-            const max = sorted[sorted.length - 1];
-            const median = percentile(sorted, 50);
-            const p25 = percentile(sorted, 25);
-            const p75 = percentile(sorted, 75);
-            
-            // Bell curve distribution (for visualization)
-            const bins = 20;
-            const binWidth = (max - min) / bins;
-            const distribution = Array(bins).fill(0);
-            sorted.forEach(val => {
-                const binIndex = Math.min(Math.floor((val - min) / binWidth), bins - 1);
-                distribution[binIndex]++;
-            });
-            
-            return {
-                count,
-                mean: Number(mean.toFixed(2)),
-                median: Number(median.toFixed(2)),
-                sd: Number(sd.toFixed(2)),
-                min: Number(min.toFixed(2)),
-                max: Number(max.toFixed(2)),
-                p25: Number(p25.toFixed(2)),
-                p75: Number(p75.toFixed(2)),
-                distribution: distribution.map(count => Number((count / sorted.length * 100).toFixed(1)))
-            };
-        };
-        
-        // Extract data for bike and run
-        const bikeData = {
-            lt1: [],
-            lt2: [],
-            lt1Lt2Ratio: [],
-            lt1Wkg: [],
-            lt2Wkg: []
-        };
-        
-        const runData = {
-            lt1: [],
-            lt2: [],
-            lt1Lt2Ratio: []
-        };
-        
-        athletes.forEach(athlete => {
-            // Bike data
-            if (athlete.powerZones?.cycling) {
-                const cycling = athlete.powerZones.cycling;
-                if (cycling.lt1 && cycling.lt2) {
-                    bikeData.lt1.push(cycling.lt1);
-                    bikeData.lt2.push(cycling.lt2);
-                    bikeData.lt1Lt2Ratio.push(cycling.lt1 / cycling.lt2);
-                    
-                    // W/kg calculations (only if weight is available)
-                    if (athlete.weight && athlete.weight > 0) {
-                        bikeData.lt1Wkg.push(cycling.lt1 / athlete.weight);
-                        bikeData.lt2Wkg.push(cycling.lt2 / athlete.weight);
-                    }
-                }
-            }
-            
-            // Run data
-            if (athlete.powerZones?.running) {
-                const running = athlete.powerZones.running;
-                if (running.lt1 && running.lt2) {
-                    runData.lt1.push(running.lt1);
-                    runData.lt2.push(running.lt2);
-                    runData.lt1Lt2Ratio.push(running.lt1 / running.lt2);
-                }
-            }
-        });
-        
-        // Filter by sport if specified
-        const result = {};
-        if (!sport || sport === 'bike') {
-            result.bike = {
-                lt1: calculateStats(bikeData.lt1),
-                lt2: calculateStats(bikeData.lt2),
-                lt1Lt2Ratio: calculateStats(bikeData.lt1Lt2Ratio),
-                lt1Wkg: calculateStats(bikeData.lt1Wkg),
-                lt2Wkg: calculateStats(bikeData.lt2Wkg)
-            };
+
+        const athleteId = req.query.athleteId;
+        if (athleteId) {
+            const { userId, role, admin } = req.user;
+            const allowed = String(userId) === String(athleteId)
+                || admin === true
+                || ['admin', 'coach', 'tester', 'testing'].includes(role);
+            result.athlete = allowed
+                ? await getAthleteValues(athleteId, sports[0])
+                : null;
         }
-        if (!sport || sport === 'run') {
-            result.run = {
-                lt1: calculateStats(runData.lt1),
-                lt2: calculateStats(runData.lt2),
-                lt1Lt2Ratio: calculateStats(runData.lt1Lt2Ratio)
-            };
-        }
-        
+
         res.json(result);
     } catch (error) {
         console.error('Error fetching population stats:', error);

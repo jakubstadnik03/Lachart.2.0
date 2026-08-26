@@ -25,6 +25,7 @@ import {
   XMarkIcon,
 } from '@heroicons/react/24/outline';
 import api from '../../services/api';
+import { useAuth } from '../../context/AuthProvider';
 
 // ─── App palette ──────────────────────────────────────────────────────────────
 const C = {
@@ -39,11 +40,11 @@ const C = {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function fmtPace(sec) {
+function fmtPace(sec, suffix = '/km') {
   if (!sec || sec <= 0) return '—';
   const m = Math.floor(sec / 60);
   const s = Math.round(sec % 60);
-  return `${m}:${String(s).padStart(2, '0')}/km`;
+  return `${m}:${String(s).padStart(2, '0')}${suffix}`;
 }
 
 function fmtBike(v, type) {
@@ -222,18 +223,28 @@ function HistoCard({ title, subtitle, data, xLabel, xFmt, refX, refLabel, stat, 
 // ─── Main component ────────────────────────────────────────────────────────────
 
 const PopulationInsights = ({ athleteProfile, selectedSport = 'bike' }) => {
+  const { user } = useAuth();
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [gender, setGender] = useState('male');
+  const [gender, setGender] = useState(
+    ['male', 'female'].includes(athleteProfile?.gender) ? athleteProfile.gender : 'all'
+  );
   const [showTip, setShowTip] = useState(false);
+  const [optedOut, setOptedOut] = useState(
+    athleteProfile?.excludeFromBenchmarks === true || user?.excludeFromBenchmarks === true
+  );
+  const [savingOptOut, setSavingOptOut] = useState(false);
 
   const sport = selectedSport === 'all' ? 'bike' : selectedSport;
+  const isSelf = user?._id && athleteProfile?._id && String(user._id) === String(athleteProfile._id);
 
   const load = useCallback(async () => {
     if (!athleteProfile || selectedSport === 'all') return;
     setLoading(true);
     try {
-      const res = await api.get('/test/population-stats', { params: { gender, sport } });
+      const res = await api.get('/test/population-stats', {
+        params: { gender, sport, athleteId: athleteProfile._id },
+      });
       setStats(res.data);
     } catch (e) {
       console.error('Population stats error:', e);
@@ -245,23 +256,53 @@ const PopulationInsights = ({ athleteProfile, selectedSport = 'bike' }) => {
 
   useEffect(() => { load(); }, [load]);
 
+  const toggleOptOut = async () => {
+    const next = !optedOut;
+    setOptedOut(next);
+    setSavingOptOut(true);
+    try {
+      await api.put('/user/edit-profile', { excludeFromBenchmarks: next });
+      load();
+    } catch (e) {
+      console.error('Benchmark opt-out save failed:', e);
+      setOptedOut(!next); // revert on failure
+    } finally {
+      setSavingOptOut(false);
+    }
+  };
+
   if (selectedSport === 'all') return null;
 
-  // Current athlete values
+  const sportStats = stats?.[sport];
+  const insufficient = sportStats?.insufficient === true;
+  const totalN = sportStats?.sampleSize
+    ?? (sportStats
+      ? Math.max(sportStats.lt1?.count || 0, sportStats.lt2?.count || 0, sportStats.lt1Lt2Ratio?.count || 0)
+      : 0);
+  const minN = stats?.minSampleSize || 10;
+
+  // "You" markers — the server computes them from the athlete's most recent
+  // valid lactate test (same pipeline as the population), so the marker and
+  // the distribution are guaranteed consistent. Profile zones are the
+  // fallback for athletes with zones set but no valid test yet.
+  const av = stats?.athlete;
   const zones = athleteProfile?.powerZones?.[sport === 'bike' ? 'cycling' : 'running'];
   const weight = Number(athleteProfile?.weight || 0);
-  const cv = zones?.lt1 && zones?.lt2 ? {
+  const zoneCv = zones?.lt1 && zones?.lt2 ? {
     lt1:     zones.lt1,
     lt2:     zones.lt2,
-    ratio:   zones.lt1 / zones.lt2,
-    lt1Wkg:  weight > 0 ? zones.lt1 / weight : null,
-    lt2Wkg:  weight > 0 ? zones.lt2 / weight : null,
+    ratio:   sport === 'bike' ? zones.lt1 / zones.lt2 : zones.lt2 / zones.lt1,
+    lt1Wkg:  sport === 'bike' && weight > 0 ? zones.lt1 / weight : null,
+    lt2Wkg:  sport === 'bike' && weight > 0 ? zones.lt2 / weight : null,
   } : null;
+  const cv = av ? {
+    lt1: av.lt1, lt2: av.lt2, ratio: av.ratio,
+    lt1Wkg: av.lt1Wkg, lt2Wkg: av.lt2Wkg,
+  } : zoneCv;
 
-  const sportStats = stats?.[sport];
-  const totalN = sportStats
-    ? Math.max(sportStats.lt1?.count || 0, sportStats.lt2?.count || 0, sportStats.lt1Lt2Ratio?.count || 0)
-    : 0;
+  const paceSuffix = sport === 'swim' ? '/100m' : '/km';
+  const sportLabel = sport === 'bike' ? 'Cycling' : sport === 'run' ? 'Running' : 'Swimming';
+  const genderLabel = gender === 'all' ? '' : gender === 'male' ? 'male ' : 'female ';
 
   return (
     <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
@@ -276,11 +317,11 @@ const PopulationInsights = ({ athleteProfile, selectedSport = 'bike' }) => {
           </div>
           <div>
             <h2 className="text-sm font-bold" style={{ color: C.text }}>
-              Population Comparison
+              Community Benchmark
             </h2>
             <p className="text-[10px] mt-0.5" style={{ color: C.lighter }}>
-              {sport === 'bike' ? 'Cycling' : sport === 'run' ? 'Running' : 'Swimming'} ·{' '}
-              {loading ? 'loading…' : totalN > 0 ? `${totalN} athletes in database` : 'data loading'}
+              {sportLabel} ·{' '}
+              {loading ? 'loading…' : totalN > 0 ? `${totalN} athletes · real lactate tests` : 'from real lactate tests'}
             </p>
           </div>
         </div>
@@ -288,17 +329,17 @@ const PopulationInsights = ({ athleteProfile, selectedSport = 'bike' }) => {
         <div className="flex items-center gap-2">
           {/* Gender toggle */}
           <div className="flex rounded-xl overflow-hidden border" style={{ borderColor: '#E5E7EB' }}>
-            {['male', 'female'].map(g => (
+            {[['all', 'All'], ['male', '♂ Men'], ['female', '♀ Women']].map(([g, label]) => (
               <button
                 key={g}
                 onClick={() => setGender(g)}
-                className="px-3 py-1.5 text-xs font-semibold capitalize transition-all"
+                className="px-3 py-1.5 text-xs font-semibold transition-all"
                 style={gender === g
                   ? { background: C.primary, color: '#fff' }
                   : { background: '#F9FAFB', color: C.lighter }
                 }
               >
-                {g === 'male' ? '♂ Men' : '♀ Women'}
+                {label}
               </button>
             ))}
           </div>
@@ -322,10 +363,10 @@ const PopulationInsights = ({ athleteProfile, selectedSport = 'bike' }) => {
       {showTip && (
         <div className="px-4 py-3 text-xs leading-relaxed" style={{ background: `${C.primary}08`, borderBottom: '1px solid #E5E7EB', color: C.lighter }}>
           <span className="font-semibold" style={{ color: C.text }}>How to read: </span>
-          Each bar is a range of values split into 20 buckets. Height = % of athletes in that bucket.
-          The <span className="font-semibold" style={{ color: C.red }}>red dashed line</span> is your value.
+          Every athlete counts once — their most recent valid lactate test.
+          Each bar is a range of values; height = % of athletes in that bucket.
+          The <span className="font-semibold" style={{ color: C.red }}>red dashed line</span> is your latest test.
           The <span className="font-semibold" style={{ color: C.primary }}>box strip</span> below each chart shows min – IQR – max.
-          Percentile badge shows where you rank vs this gender group.
         </div>
       )}
 
@@ -334,32 +375,44 @@ const PopulationInsights = ({ athleteProfile, selectedSport = 'bike' }) => {
         <div className="px-4 py-10 flex items-center justify-center gap-2 text-sm" style={{ color: C.lighter }}>
           <div className="w-4 h-4 rounded-full border-2 animate-spin"
                style={{ borderColor: `${C.primary}30`, borderTopColor: C.primary }} />
-          Loading population data…
+          Loading community data…
+        </div>
+      )}
+
+      {/* ── Not enough athletes in this bucket ────────────────────────────── */}
+      {!loading && insufficient && (
+        <div className="px-4 py-10 text-center">
+          <ChartBarIcon style={{ width: 32, height: 32, color: '#D1D5DB', margin: '0 auto 8px' }} />
+          <p className="text-sm font-medium" style={{ color: C.text }}>Not enough athletes yet</p>
+          <p className="text-xs mt-1 max-w-xs mx-auto" style={{ color: C.lighter }}>
+            {totalN} {genderLabel}{sportLabel.toLowerCase()} athlete{totalN === 1 ? '' : 's'} with a valid
+            lactate test so far — we show benchmarks from {minN}. Try the “All” filter, or check back as the community grows.
+          </p>
         </div>
       )}
 
       {/* ── No data ───────────────────────────────────────────────────────── */}
-      {!loading && (!sportStats || totalN === 0) && (
+      {!loading && !insufficient && (!sportStats || totalN === 0) && (
         <div className="px-4 py-10 text-center">
           <ChartBarIcon style={{ width: 32, height: 32, color: '#D1D5DB', margin: '0 auto 8px' }} />
           <p className="text-sm font-medium" style={{ color: C.text }}>Not enough data yet</p>
           <p className="text-xs mt-1 max-w-xs mx-auto" style={{ color: C.lighter }}>
-            Population stats come from athletes who have set their LT1/LT2 zones in their profile.
+            Benchmarks are built from real lactate tests in the LaChart community.
             More data appears as the community grows.
           </p>
         </div>
       )}
 
       {/* ── Charts ────────────────────────────────────────────────────────── */}
-      {!loading && sportStats && totalN > 0 && (
+      {!loading && !insufficient && sportStats && totalN > 0 && (
         <div className="p-4 space-y-4">
 
           {/* Missing weight warning */}
-          {sport === 'bike' && !weight && (
+          {sport === 'bike' && !av?.lt1Wkg && !weight && (
             <div className="flex items-start gap-2 rounded-xl px-3 py-2.5 text-xs"
                  style={{ background: '#FFFBEB', border: '1px solid #FDE68A', color: '#B45309' }}>
               <InformationCircleIcon style={{ width: 14, height: 14, flexShrink: 0, marginTop: 1 }} />
-              Add your weight in the profile to see W/kg comparisons and your position on the charts.
+              Add your weight in the profile (or on the test) to see W/kg comparisons and your position on the charts.
             </div>
           )}
 
@@ -433,11 +486,11 @@ const PopulationInsights = ({ athleteProfile, selectedSport = 'bike' }) => {
             </div>
           )}
 
-          {/* Run pace charts */}
-          {sport === 'run' && (sportStats.lt1?.count > 0 || sportStats.lt2?.count > 0) && (
+          {/* Pace charts — run & swim */}
+          {(sport === 'run' || sport === 'swim') && (sportStats.lt1?.count > 0 || sportStats.lt2?.count > 0) && (
             <div>
               <p className="text-[10px] font-bold uppercase tracking-widest mb-2" style={{ color: C.lighter }}>
-                Pace (min/km)
+                Pace (min{paceSuffix})
               </p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {sportStats.lt1?.count > 0 && (
@@ -445,10 +498,10 @@ const PopulationInsights = ({ athleteProfile, selectedSport = 'bike' }) => {
                     title="LT1 — Aerobic threshold"
                     subtitle="First lactate threshold pace"
                     data={histPoints(sportStats.lt1)}
-                    xLabel="sec/km"
-                    xFmt={v => fmtPace(v)}
+                    xLabel={`sec${paceSuffix}`}
+                    xFmt={v => fmtPace(v, paceSuffix)}
                     refX={cv?.lt1 ?? null}
-                    refLabel={cv?.lt1 ? fmtPace(cv.lt1) : null}
+                    refLabel={cv?.lt1 ? fmtPace(cv.lt1, paceSuffix) : null}
                     stat={sportStats.lt1}
                   />
                 )}
@@ -457,10 +510,10 @@ const PopulationInsights = ({ athleteProfile, selectedSport = 'bike' }) => {
                     title="LT2 — Anaerobic threshold"
                     subtitle="Second lactate threshold pace"
                     data={histPoints(sportStats.lt2)}
-                    xLabel="sec/km"
-                    xFmt={v => fmtPace(v)}
+                    xLabel={`sec${paceSuffix}`}
+                    xFmt={v => fmtPace(v, paceSuffix)}
                     refX={cv?.lt2 ?? null}
-                    refLabel={cv?.lt2 ? fmtPace(cv.lt2) : null}
+                    refLabel={cv?.lt2 ? fmtPace(cv.lt2, paceSuffix) : null}
                     stat={sportStats.lt2}
                   />
                 )}
@@ -468,15 +521,15 @@ const PopulationInsights = ({ athleteProfile, selectedSport = 'bike' }) => {
             </div>
           )}
 
-          {/* LT1/LT2 ratio — both sports */}
+          {/* LT1/LT2 ratio — all sports */}
           {sportStats.lt1Lt2Ratio?.count > 0 && (
             <div>
               <p className="text-[10px] font-bold uppercase tracking-widest mb-2" style={{ color: C.lighter }}>
-                LT1 / LT2 ratio
+                LT1 / LT2 intensity ratio
               </p>
               <HistoCard
                 title="Aerobic / Anaerobic gap"
-                subtitle="Lower % = wider gap between thresholds · more endurance capacity relative to threshold"
+                subtitle="LT1 intensity as % of LT2 · lower % = wider gap between thresholds"
                 data={histPoints(sportStats.lt1Lt2Ratio, 100)}
                 xLabel="Ratio (%)"
                 xFmt={v => `${v.toFixed(1)}%`}
@@ -490,8 +543,28 @@ const PopulationInsights = ({ athleteProfile, selectedSport = 'bike' }) => {
 
           {/* Footer */}
           <p className="text-[10px] text-center pt-1" style={{ color: '#9CA3AF' }}>
-            Based on {totalN} {gender} {sport === 'bike' ? 'cycling' : 'running'} athletes with zones set in their profile.
+            Based on the most recent lactate test of {totalN} {genderLabel}{sportLabel.toLowerCase()} athletes in LaChart.
           </p>
+        </div>
+      )}
+
+      {/* ── Privacy opt-out (own profile only) ───────────────────────────── */}
+      {isSelf && !loading && (
+        <div className="px-4 py-2.5 flex items-center justify-between gap-3"
+             style={{ borderTop: '1px solid #F1F5F9', background: '#FAFBFC' }}>
+          <p className="text-[10px]" style={{ color: C.lighter }}>
+            Include my results in anonymous community benchmarks
+          </p>
+          <label className="relative inline-flex items-center cursor-pointer flex-shrink-0">
+            <input
+              type="checkbox"
+              checked={!optedOut}
+              disabled={savingOptOut}
+              onChange={toggleOptOut}
+              className="sr-only peer"
+            />
+            <div className="w-9 h-5 bg-gray-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary" />
+          </label>
         </div>
       )}
     </div>

@@ -23,6 +23,7 @@ import StravaIntegrationModal from '../components/Testing-page/StravaIntegration
 import { usePremium } from '../hooks/usePremium';
 import UpgradeModal from '../components/UpgradeModal';
 import PopulationInsights from '../components/Testing-page/PopulationInsights';
+import PremiumLock from '../components/PremiumLock';
 import ThresholdHistory from '../components/Testing-page/ThresholdHistory';
 import TestRecommendationCard from '../components/Testing-page/TestRecommendationCard';
 
@@ -1563,10 +1564,16 @@ const TestingPage = () => {
                         )}
 
                         {athleteProfile && selectedSport !== 'all' && (
-                          <PopulationInsights
-                            athleteProfile={athleteProfile}
-                            selectedSport={selectedSport}
-                          />
+                          <PremiumLock
+                            feature="Community Benchmark"
+                            label="Premium · see how your LT1/LT2 compares to the community"
+                            minHeight={240}
+                          >
+                            <PopulationInsights
+                              athleteProfile={athleteProfile}
+                              selectedSport={selectedSport}
+                            />
+                          </PremiumLock>
                         )}
                       </div>
 
