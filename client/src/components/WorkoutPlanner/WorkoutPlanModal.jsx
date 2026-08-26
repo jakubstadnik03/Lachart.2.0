@@ -20,7 +20,12 @@ import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence, useDragControls } from 'framer-motion';
 import { XMarkIcon, TrashIcon, BookmarkIcon, WrenchScrewdriverIcon, RectangleStackIcon, ArrowRightIcon, ArrowLeftIcon, BellIcon, CheckCircleIcon, PlayIcon } from '@heroicons/react/24/outline';
 import { Bike, WavesLadder, Dumbbell, PersonStanding, Repeat2, Sparkles, Waves, TestTube2, MoreHorizontal, Mountain, Snowflake } from 'lucide-react';
-import WorkoutBuilder, { PRESET_CATALOG, buildPresetSteps, computeEstTSS } from './WorkoutBuilder';
+import WorkoutBuilder, {
+  PRESET_CATALOG, buildPresetSteps, computeEstTSS,
+  expandSteps, resolveTargetWatts, resolveTargetPace, resolveTargetSwimPace,
+  fmtDuration as fmtStepDuration, fmtPace, fmtDistance,
+} from './WorkoutBuilder';
+import api from '../../services/api';
 import { createWorkoutTemplate, exportPlannedWorkout } from '../../services/workoutPlannerApi';
 import { useCategories } from '../../context/CategoryContext';
 import { useAuth } from '../../context/AuthProvider';
@@ -281,9 +286,118 @@ function secsToHMS(s) {
 }
 
 // ─── Main modal ────────────────────────────────────────────────────────────────
+const LAP_DOT = {
+  warmup: '#fbbf24', work: '#767EB5', recovery: '#34d399',
+  cooldown: '#38bdf8', rest: '#cbd5e1',
+};
+const LAP_LABEL = {
+  warmup: 'Warm up', work: 'Work', recovery: 'Recovery',
+  cooldown: 'Cool down', rest: 'Rest',
+};
+
+/**
+ * Left-column lap-by-lap readout: every expanded step on its own line with
+ * the resolved target (watts for bike, pace for run/swim) — the same numbers
+ * the watch will get.
+ */
+function WorkoutLapList({ steps, context, sport }) {
+  const expanded = expandSteps(Array.isArray(steps) ? steps : []);
+  if (!expanded.length) return null;
+  const totalSecs = expanded.reduce((a, s) => a + (Number(s.durationSeconds) || 0), 0);
+  const isRun = sport === 'run' || sport === 'walk';
+  const isSwim = sport === 'swim';
+
+  const targetLabel = (s) => {
+    if (!s.powerTarget || s.powerTarget.type === 'open') return '';
+    if (isRun) {
+      const p = resolveTargetPace(s.powerTarget, context);
+      return p > 0 ? `${fmtPace(p)}/km` : '';
+    }
+    if (isSwim) {
+      const p = resolveTargetSwimPace(s.powerTarget, context);
+      return p > 0 ? `${fmtPace(p)}/100m` : '';
+    }
+    const w = resolveTargetWatts(s.powerTarget, context);
+    return w > 0 ? `~${Math.round(w)} W` : '';
+  };
+
+  return (
+    <div>
+      <label className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1 block">
+        Laps <span className="normal-case font-normal text-slate-300">· {expanded.length} × · {fmtStepDuration(totalSecs)} total</span>
+      </label>
+      <div className="rounded-xl border border-slate-200 divide-y divide-slate-100 max-h-72 overflow-y-auto bg-white">
+        {expanded.map((s, i) => {
+          const isDist = s.durationType === 'distance' && Number(s.distanceMeters) > 0;
+          const size = isDist ? fmtDistance(Number(s.distanceMeters)) : fmtStepDuration(Number(s.durationSeconds) || 0);
+          const target = targetLabel(s);
+          return (
+            <div key={i} className="flex items-center gap-2 px-2.5 py-1.5 text-[11px] leading-tight">
+              <span className="w-5 shrink-0 text-right tabular-nums text-slate-300 font-medium">{i + 1}</span>
+              <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: LAP_DOT[s.stepType] || LAP_DOT.work }} />
+              <span className="font-semibold text-slate-700 tabular-nums shrink-0">{size}</span>
+              <span className="text-slate-500 truncate">{s.label || LAP_LABEL[s.stepType] || 'Step'}</span>
+              {target && <span className="ml-auto shrink-0 font-semibold text-slate-700 tabular-nums">{target}</span>}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onClose, context = {}, templates = [], onAddDayTheme = null, onAddPeriod = null }) {
   const isEdit = Boolean(workout?._id);
   const { user: authUser } = useAuth() || {};
+
+  // ── Self-loaded target context ─────────────────────────────────────────
+  // Callers like the Dashboard pass only { athleteId } (or nothing), so the
+  // builder had no FTP/zones: intensity rows showed bare "LT2"/"Z2" with no
+  // watts. When the caller didn't supply thresholds, load the same
+  // profile-zones + latest-test context the Planner page builds.
+  const [loadedCtx, setLoadedCtx] = useState(null);
+  useEffect(() => {
+    if (context?.ftp || context?.cyclingZones) return; // caller supplied it
+    const athleteId = context?.athleteId || authUser?._id;
+    if (!athleteId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const isSelf = String(athleteId) === String(authUser?._id || '');
+        const [testRes, profileRes] = await Promise.all([
+          api.get(`/test/list/${athleteId}`).catch(() => ({ data: [] })),
+          api.get(isSelf ? '/user/profile' : `/user/athlete/${athleteId}/profile`).catch(() => ({ data: null })),
+        ]);
+        const tests = Array.isArray(testRes.data) ? testRes.data : [];
+        const latestTest = tests
+          .filter(t => t.lt2Power || t.ltPower || t.lt2?.power || t.ftp)
+          .sort((a, b) => new Date(b.date) - new Date(a.date))[0] || null;
+        const pz = profileRes.data?.powerZones || {};
+        const cyclingZones = pz.cycling || null;
+        const runningZones = pz.running || null;
+        const swimmingZones = pz.swimming || null;
+        const lt2Power = cyclingZones?.lt2 || cyclingZones?.zone4?.min
+          || latestTest?.lt2Power || latestTest?.lt2?.power || null;
+        const lt1Power = cyclingZones?.lt1 || cyclingZones?.zone3?.min
+          || latestTest?.ltPower || latestTest?.lt1Power || latestTest?.lt1?.power || null;
+        if (!cancelled) {
+          setLoadedCtx({
+            ftp: lt2Power || latestTest?.ftp || 250,
+            lt2Power,
+            lt1Power,
+            lt2Pace: runningZones?.lt2 || runningZones?.zone4?.min || null,
+            lt1Pace: runningZones?.lt1 || runningZones?.zone3?.min || null,
+            cyclingZones, runningZones, swimmingZones,
+          });
+        }
+      } catch { /* builder falls back to labels only */ }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [context?.athleteId, context?.ftp, context?.cyclingZones, authUser?._id]);
+
+  // Caller-supplied fields win; the loaded thresholds fill the gaps.
+  const effContext = loadedCtx ? { ...loadedCtx, ...context } : context;
   const unitSystem = resolveDistanceUnitSystem({ units: getUserUnits(authUser) });
   const workoutDistToStr = useCallback((w) => {
     if (!w?.plannedDistance) return '';
@@ -363,7 +477,7 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
     if (!title.trim()) return;
     setSaving(true);
     const stepsDur = steps.length > 0 ? stepTotalSecs(steps) : 0;
-    const estTss   = steps.length > 0 ? computeEstTSS(steps, { ...context, sport }) : null;
+    const estTss   = steps.length > 0 ? computeEstTSS(steps, { ...effContext, sport }) : null;
     await onSave({
       date: toLocalISO(date),
       sport,
@@ -399,7 +513,7 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
     if (tpl.targetTss) {
       setTss(String(tpl.targetTss));
     } else if (newSteps.length > 0) {
-      const est = computeEstTSS(newSteps, { ...context, sport: newSport });
+      const est = computeEstTSS(newSteps, { ...effContext, sport: newSport });
       if (est > 0) setTss(String(est));
     }
     setShowBuilder(true);
@@ -408,7 +522,7 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
 
   // Auto-compute TSS when steps change
   const stepsDuration = steps.length > 0 ? stepTotalSecs(steps) : 0;
-  const estTssFromSteps = steps.length > 0 ? computeEstTSS(steps, { ...context, sport }) : null;
+  const estTssFromSteps = steps.length > 0 ? computeEstTSS(steps, { ...effContext, sport }) : null;
 
   const selectedSportMeta = SPORT_OPTIONS.find(o => o.key === sport);
 
@@ -753,6 +867,9 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
                       className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-primary/30 resize-none"
                     />
                   </div>
+
+                  {/* Lap-by-lap readout of the structured steps (watch numbers) */}
+                  <WorkoutLapList steps={steps} context={{ ...effContext, sport }} sport={sport} />
                 </div>
 
                 <div className="flex-1 min-w-0 flex flex-col gap-4 order-1 lg:order-2">
@@ -798,7 +915,7 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
                     </div>
 
                     {tab === 'builder' && (
-                      <WorkoutBuilder initialSteps={steps} context={context} sport={sport} onChange={setSteps} />
+                      <WorkoutBuilder initialSteps={steps} context={effContext} sport={sport} onChange={setSteps} />
                     )}
 
                     {tab === 'templates' && (
