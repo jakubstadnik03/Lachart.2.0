@@ -46,6 +46,7 @@ import { fetchWellness } from '../../services/wellnessData';
 import { baseline, dayRecoveryStatus } from '../../utils/recovery';
 import { formatDistanceForUser, resolveDistanceUnitSystem } from '../../utils/unitsConverter';
 import { useCategories, hexToRgba } from '../../context/CategoryContext';
+import { activityAccentColor } from '../../utils/activityAccentColor';
 import { dayThemePresetColor, periodColor, buildPeriodsByDate } from '../../utils/calendarThemes';
 import { stravaHalfCadenceToSpm } from '../../utils/cadenceDisplay';
 import { findCompliance, outlineBorder } from '../../utils/planCompliance';
@@ -865,19 +866,13 @@ function PlannedMiniCard({ pw, onSelect, onStart, onCopy, onDelete, onRepeat, pa
   );
 }
 
-function actSportColor(sport) {
-  const s = String(sport || '').toLowerCase();
-  if (s.includes('run') || s.includes('walk') || s.includes('hike')) return '#f97316';
-  if (s.includes('ride') || s.includes('cycl') || s.includes('bike')) return '#3b82f6';
-  if (s.includes('swim')) return '#06b6d4';
-  return '#8b5cf6';
-}
-
 function WeekActCard({ act, isSelected, onClick, catBadgeStyle, compact = false }) {
+  const { getCategory } = useCategories();
   const title = act.title || act.name || act.originalFileName || 'Activity';
-  const color = catBadgeStyle && act.category
-    ? (catBadgeStyle(act.category).borderColor || actSportColor(act.sport))
-    : actSportColor(act.sport);
+  // Shared with the calendar page. This used to take the badge's border colour,
+  // which is the category at 35% alpha — the right hue but a paler one, so the
+  // two calendars still did not match even where they agreed on the category.
+  const color = activityAccentColor(act, getCategory);
 
   return (
     <button

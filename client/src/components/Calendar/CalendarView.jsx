@@ -67,6 +67,7 @@ import { baseline, dayRecoveryStatus } from '../../utils/recovery';
 import WellnessDetailSheet from '../shared/WellnessDetailSheet';
 import { useAuth } from '../../context/AuthProvider';
 import { useCategories, hexToRgba } from '../../context/CategoryContext';
+import { activityAccentColor } from '../../utils/activityAccentColor';
 import { DAY_THEME_PRESETS, dayThemePresetColor, PERIOD_TYPES, periodColor, buildPeriodsByDate } from '../../utils/calendarThemes';
 import { computePowerTss, computeHrTss, canToggleTss, resolveActivityTss, getAvailableTssModes, getActivityTssDisplayMode, cycleTssMode, tssModeLabel, tssToggleDisabledReason } from '../../utils/computeTss';
 import { compareActivitiesChronologically, buildChronologicalDayItems, matchesCalendarSportFilter, activitySportBucket, plannedSportBucket, sportFilterChip, sortPlannedWorkoutsForDay, reorderPlannedWorkoutIds, pairPlannedWithActivities, planSportMatchesActivity, dedupeCalendarActivities } from '../../utils/calendarDayOrdering';
@@ -822,9 +823,13 @@ function activityCommentCount(a, commentCounts) {
 }
 
 function WeekActivityCard({ a, isSelected, onSelect, onActivityClick, onAddLactate, catBadgeStyle, catLabel, userProfile = null, commentCount = 0 }) {
+  const { getCategory } = useCategories();
   const title = a.title || a.name || a.originalFileName || 'Activity';
   const statsLine = activityCompletedStats(a, userProfile);
-  const color = sportColor(a.sport);
+  // Category first, sport as the fallback — the same rule the dashboard's week
+  // strip uses. Colouring by sport alone here is why a red "heat" session read
+  // blue on this page and red on that one.
+  const color = activityAccentColor(a, getCategory);
 
   const handleClick = (e) => {
     if (onActivityClick) {
@@ -3599,7 +3604,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
         const isFit    = merged.source === 'fit' || merged.type === 'fit' || id.startsWith('fit-') || (!!merged.timestamp && !isStrava && !merged._id);
         const { updateStravaActivity, updateFitTraining, updateTraining } = await import('../../services/api.js');
         if (isStrava) {
-          await updateStravaActivity(String(merged.stravaId || id.replace(/^strava-/, '')), { title: structured });
+          await updateStravaActivity(String(merged.stravaId || id.replace(/^strava-/, '')), { title: structured }, athleteId || null);
         } else if (isFit) {
           await updateFitTraining(String(merged._id || id.replace(/^fit-/, '')), { titleManual: structured });
         } else if (merged._id) {
@@ -3720,7 +3725,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
           if (isStrava) {
             const stravaId = String(merged.stravaId || id.replace(/^strava-/, ''));
             const { updateStravaActivity } = await import('../../services/api.js');
-            await updateStravaActivity(stravaId, { title: newTitle });
+            await updateStravaActivity(stravaId, { title: newTitle }, athleteId || null);
           } else if (isFit) {
             const fitId = String(merged._id || id.replace(/^fit-/, ''));
             const { updateFitTraining } = await import('../../services/api.js');
@@ -6178,8 +6183,9 @@ function ActivityDetailPopup({ activity, anchorRect, onClose, onSelectActivity, 
   }
 
   // Data extraction
+  const { getCategory } = useCategories();
   const title = a.title || a.name || a.originalFileName || 'Activity';
-  const color = sportColor(a.sport);
+  const color = activityAccentColor(a, getCategory);
   const sport = String(a.sport || '').toLowerCase();
   const isRun = sport.includes('run') || sport.includes('walk') || sport.includes('hike');
   const isSwim = sport.includes('swim');
@@ -8759,7 +8765,10 @@ export default function CalendarView({
               const payload = {};
               if (newTitle != null) payload.title = newTitle;
               if (newCategory != null) payload.category = newCategory;
-              await updateStravaActivity(rawId, payload);
+              // athleteId matters here: without it the server looks the
+              // activity up under the requester, so a coach propagating a
+              // category onto an athlete's ride got "not found" for every one.
+              await updateStravaActivity(rawId, payload, athleteId || null);
             } else if (act.type === 'fit' || act._id) {
               const { updateFitTraining } = await import('../../services/api.js');
               const rawId = String(act._id || act.id || '').replace(/^fit-/, '');
@@ -8782,8 +8791,17 @@ export default function CalendarView({
               if (newTitle != null) window.dispatchEvent(new CustomEvent('activityTitleUpdated', { detail: { id: evtId, title: newTitle } }));
               if (newCategory != null) window.dispatchEvent(new CustomEvent('activityCategoryUpdated', { detail: { id: evtId, category: newCategory } }));
             } catch { /* ignore */ }
-          } catch {
-            // Non-critical — silently ignore errors but allow retry next render
+          } catch (err) {
+            // A 404 means this activity is not there to update — a stale row in
+            // the cached calendar, or one that has since been removed. Retrying
+            // cannot fix it, and this effect reruns on every render, so the
+            // request repeated for as long as the page stayed open. Leave the
+            // flag set: the attempt is over.
+            //
+            // Anything else — offline, a timeout, a 500 — may well work next
+            // time, so those still clear the flag and retry.
+            const status = err?.response?.status;
+            if (status === 404 || status === 403) return;
             if (needsTitle) autoRenamedRef.current.delete(actId);
             if (needsCategory) autoCategorizedRef.current.delete(actId);
           }
@@ -9572,7 +9590,7 @@ export default function CalendarView({
                                   const a = item.act;
                                   const activityId = a.id || a._id;
                                   const isActSelected = effectiveSelectedId && String(activityId) === String(effectiveSelectedId);
-                                  const color = sportColor(a.sport);
+                                  const color = activityAccentColor(a, getCategory);
                                   const title = a.title || a.name || a.originalFileName || 'Activity';
                                   const statsLine = activityCompletedStats(a, userProfile);
                                   return (
