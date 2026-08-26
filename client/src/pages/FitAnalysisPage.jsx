@@ -1535,6 +1535,17 @@ const FitAnalysisPage = () => {
       cachePatch(matches, patch);
     };
     const onMetricsUpdated = (e) => {
+      // Patch first so the change is on screen immediately, then reconcile with
+      // the server. The patch reaches whatever the matcher recognises; the
+      // reconcile covers what it does not — which is why editing a completed
+      // time or distance used to need a full page reload before the calendar
+      // agreed. Debounced, because a save fires several of these at once.
+      clearTimeout(afterSaveReloadRef.current?.timer);
+      if (afterSaveReloadRef.current) {
+        afterSaveReloadRef.current.timer = setTimeout(() => {
+          afterSaveReloadRef.current?.run?.();
+        }, 400);
+      }
       const detail = e?.detail || {};
       const { id } = detail;
       if (!id) return;
@@ -2253,6 +2264,10 @@ const FitAnalysisPage = () => {
       setDetailLoading(false);
     }
   }, [selectedAthleteId, user?.role, user?._id, addNotification, regularTrainings]);
+
+  // Held in a ref because the save listener is registered once, with no deps,
+  // long before these loaders exist in render order.
+  const afterSaveReloadRef = useRef({ timer: null, run: null });
 
   const loadExternalActivities = useCallback(async (athleteIdOverride = null) => {
     setExternalActivitiesLoading(true);
@@ -3011,6 +3026,17 @@ const FitAnalysisPage = () => {
       console.error('Error loading regular trainings:', error);
     }
   }, [selectedAthleteId, user?.role, user?._id, pendingAthleteIds]);
+
+  // Keep the save listener's reconcile pointing at the current loaders.
+  useEffect(() => {
+    afterSaveReloadRef.current.run = () => {
+      loadExternalActivities();
+      loadTrainings();
+      loadRegularTrainings();
+    };
+  }, [loadExternalActivities, loadTrainings, loadRegularTrainings]);
+
+  useEffect(() => () => clearTimeout(afterSaveReloadRef.current?.timer), []);
 
   // Load regular training detail from /training route
   const loadRegularTrainingDetail = useCallback(async (id) => {
@@ -4623,7 +4649,7 @@ const FitAnalysisPage = () => {
           onCopyPlannedWorkout={handleCopyPlannedWorkout}
           onReorderPlannedWorkouts={handleReorderPlannedWorkouts}
           onDeletePlannedWorkout={handlePlanDelete}
-          onOpenActivity={handleCalendarActivitySelect}
+          onOpenActivity={isMobile ? handleCalendarActivitySelect : null}
           onPlannedSaved={(saved) => setPlannedWorkoutsCalendar(prev => upsertPlannedWorkoutList(prev, saved))}
           onCompletedSaved={(detail) => {
             if (!detail?.id) return;
@@ -4662,7 +4688,10 @@ const FitAnalysisPage = () => {
           />
         )}
 
-        {!isMobile && !selectedTraining && !selectedStrava && !detailLoading && calendarPeriod && (
+        {/* Stays put while a training is open: the detail is a modal on top
+            of this page now, so hiding the summaries behind it left nothing
+            underneath the calendar at all. */}
+        {!isMobile && calendarPeriod && (
           <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, delay: 0.15 }}>
             <CalendarPeriodStats
               activities={calendarMergedActivities}
@@ -4677,12 +4706,20 @@ const FitAnalysisPage = () => {
         )}
 
         {/* Training Detail and Charts - Full Width */}
-        {(detailLoading && !selectedTraining && !selectedStrava) && (
+        {isMobile && detailLoading && !selectedTraining && !selectedStrava && (
           <div className="w-full mt-4">
             <SkeletonCard lines={5} />
           </div>
         )}
-        {selectedTraining && (
+        {/* Desktop opens a training in ActivityFullModal and nothing else.
+            This section used to render underneath the calendar at the same
+            time, so one click produced the modal and a second copy of the
+            same training further down the page.
+
+            On mobile it is not a duplicate — it IS the detail view: the
+            calendar hides itself above and this slides up from the bottom as
+            a sheet. So it stays there, and only there. */}
+        {isMobile && selectedTraining && (
           <motion.div
             ref={detailSectionRef}
             initial={isMobile ? { y: '100%', opacity: 0 } : false}
@@ -5671,7 +5708,7 @@ const FitAnalysisPage = () => {
         )}
 
         {/* Strava Activity Detail */}
-        {selectedStrava && (
+        {isMobile && selectedStrava && (
           <motion.div
             ref={detailSectionRef}
             initial={isMobile ? { y: '100%', opacity: 0 } : false}

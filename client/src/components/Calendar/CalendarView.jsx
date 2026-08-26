@@ -10011,8 +10011,21 @@ export default function CalendarView({
                                 isDragging={draggedPw?.pw?._id === pw._id}
                                 onDragStart={e => { e.dataTransfer.effectAllowed = 'copyMove'; setDraggedPw({ pw, isCopy: e.altKey }); }}
                                 onDragEnd={endPlanDrag}
-                                compliance={findCompliance(pw, allActs)}
-                                pairingState={pairingStateFor(pw, allActs, getLocalDateString(new Date()))}
+                                compliance={(() => {
+                                  // Grade against the paired ride, not against
+                                  // whatever else shares the day: a planned
+                                  // session nobody did was reading as done
+                                  // because some other ride matched its sport.
+                                  const linked = item.act || pwToAct.get(String(pw._id)) || null;
+                                  return linked ? findCompliance(pw, [linked]) : null;
+                                })()}
+                                pairingState={(() => {
+                                  // Same scope as the grade above: with two bike
+                                  // plans on one day and a single ride done, asking
+                                  // the whole day marked BOTH complete.
+                                  const linked = item.act || pwToAct.get(String(pw._id)) || null;
+                                  return pairingStateFor(pw, linked ? [linked] : [], getLocalDateString(new Date()));
+                                })()}
                                 linkedActivity={item.act || pwToAct.get(String(pw._id)) || null}
                                 onSelectLinked={(act) => handleActivityClick(act, null)}
                                 onDuplicate={onCopyPlannedWorkout ? (p) => onCopyPlannedWorkout(p, p.date) : null}
@@ -10207,8 +10220,17 @@ export default function CalendarView({
                               isDragging={draggedPw?.pw?._id === pw._id}
                               onDragStart={e => { e.dataTransfer.effectAllowed = 'copyMove'; setDraggedPw({ pw, isCopy: e.altKey }); }}
                               onDragEnd={endPlanDrag}
-                              compliance={findCompliance(pw, allActs)}
-                              pairingState={pairingStateFor(pw, allActs, getLocalDateString(new Date()))}
+                              compliance={(() => {
+                                const linked = item.act || pwToAct.get(String(pw._id)) || null;
+                                return linked ? findCompliance(pw, [linked]) : null;
+                              })()}
+                              pairingState={(() => {
+                                  // Same scope as the grade above: with two bike
+                                  // plans on one day and a single ride done, asking
+                                  // the whole day marked BOTH complete.
+                                  const linked = item.act || pwToAct.get(String(pw._id)) || null;
+                                  return pairingStateFor(pw, linked ? [linked] : [], getLocalDateString(new Date()));
+                                })()}
                               linkedActivity={item.act || pwToAct.get(String(pw._id)) || null}
                               onSelectLinked={(act) => handleActivityClick(act, null)}
                               onDuplicate={onCopyPlannedWorkout ? (p) => onCopyPlannedWorkout(p, p.date) : null}

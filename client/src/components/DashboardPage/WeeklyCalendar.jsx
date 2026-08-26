@@ -47,6 +47,7 @@ import { baseline, dayRecoveryStatus } from '../../utils/recovery';
 import { formatDistanceForUser, resolveDistanceUnitSystem } from '../../utils/unitsConverter';
 import { useCategories, hexToRgba } from '../../context/CategoryContext';
 import { activityAccentColor } from '../../utils/activityAccentColor';
+import { plannedCardAppearance } from '../../utils/plannedCardAppearance';
 import { dayThemePresetColor, periodColor, buildPeriodsByDate } from '../../utils/calendarThemes';
 import { stravaHalfCadenceToSpm } from '../../utils/cadenceDisplay';
 import { findCompliance, outlineBorder } from '../../utils/planCompliance';
@@ -666,22 +667,19 @@ function PlannedMiniCard({ pw, onSelect, onStart, onCopy, onDelete, onRepeat, pa
   const compliance = linkedActivity ? findCompliance(pw, [linkedActivity]) : null;
   const complianceStyle = compliance || (isCompletedPair ? { color: '#22c55e', bg: '#f0fdf4', label: 'Done' } : null);
 
-  // Card appearance — mirrors CalendarView mobile day list (Good / On target / …)
-  let cardBg, cardBorderColor, cardBorderStyle, useComplianceBorder = false;
-  if (isCompletedPair && complianceStyle) {
-    cardBg = complianceStyle.bg;
-    cardBorderColor = complianceStyle.color;
-    cardBorderStyle = 'solid';
-    useComplianceBorder = true;
-  } else if (isMissedPair) {
-    cardBg = '#fef2f2'; cardBorderColor = '#fecaca'; cardBorderStyle = 'solid';
-  } else if (isPurelyPlanned) {
-    cardBg = planColor + '10';
-    cardBorderColor = planColor + '55';
-    cardBorderStyle = 'dashed';
-  } else {
-    cardBg = '#ffffff'; cardBorderColor = '#e5e7eb'; cardBorderStyle = 'solid';
-  }
+  // Card appearance — now shared with the calendar page so the two cannot
+  // answer "did this get done" differently for the same session.
+  const appearance = plannedCardAppearance({
+    isCompleted: isCompletedPair && !!complianceStyle,
+    isMissed: isMissedPair,
+    isPlanned: isPurelyPlanned,
+    sport: displaySport,
+    compliance: complianceStyle,
+  });
+  const cardBg = appearance.bg;
+  const cardBorderColor = appearance.borderColor;
+  const cardBorderStyle = appearance.borderStyle;
+  const useComplianceBorder = isCompletedPair && !!complianceStyle;
 
   const dropdown = menuOpen ? ReactDOM.createPortal(
     <div
