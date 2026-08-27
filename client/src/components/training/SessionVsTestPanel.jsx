@@ -1112,8 +1112,28 @@ function Contributors({ contributors, athleteId, kind }) {
   );
 }
 
-function DriftHistory({ athleteId, anchor, kind, storageMode, governingTest }) {
+function DriftHistory({ athleteId, anchor, kind, storageMode, governingTest, tests }) {
   const [state, setState] = useState({ loading: true, data: null });
+
+  /**
+   * The measured points on the season chart, computed here for the same reason
+   * the anchor is: the server's threshold pipeline and the one that drew the
+   * test page disagree on real tests, and a dot that contradicts both the line
+   * it sits on and the test page is worse than no dot.
+   */
+  const testMarkers = useMemo(() => (tests || [])
+    .filter((t) => sportKind(t.sport) === kind)
+    .map((t) => {
+      const a = extractLactateThresholds(t);
+      if (!a) return null;
+      const toDemand = (v) => (v > 0 ? thresholdToDemand(v, { kind, storageMode: a.storageMode }) : null);
+      const lt1 = toDemand(a.lt1);
+      const lt2 = toDemand(a.lt2);
+      if (!lt1 && !lt2) return null;
+      return { id: String(t._id), date: t.date, title: t.title, lt1, lt2 };
+    })
+    .filter(Boolean)
+    .sort((x, y) => new Date(x.date) - new Date(y.date)), [tests, kind]);
 
   /**
    * The anchor travels to the server rather than being recomputed there.
@@ -1157,7 +1177,7 @@ function DriftHistory({ athleteId, anchor, kind, storageMode, governingTest }) {
         projection={data.projection} anchor={anchor} kind={kind} storageMode={storageMode}
       />
       <CurveShift anchor={anchor} projection={data.projection} kind={kind} storageMode={storageMode} />
-      <ThresholdTimeline timeline={data.timeline} testMarkers={data.testMarkers}
+      <ThresholdTimeline timeline={data.timeline} testMarkers={testMarkers}
         anchor={anchor} kind={kind} storageMode={storageMode} />
 
       {series.length > 0 && (
@@ -1188,7 +1208,7 @@ function DriftHistory({ athleteId, anchor, kind, storageMode, governingTest }) {
         <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] leading-relaxed text-amber-800">
           <strong>Worth retesting.</strong> Across {data.retest.sessions} recent sessions your threshold reads{' '}
           {Math.abs(data.retest.trendPct).toFixed(1)}% {data.retest.direction === 'up' ? 'above' : 'below'}{' '}
-          the {fmtDemand(thresholdToDemand(data.test?.lt2, { kind, storageMode }), kind, storageMode)} on file
+          the {fmtDemand(thresholdToDemand(anchor?.lt2, { kind, storageMode }), kind, storageMode)} on file
           {data.retest.testAgeDays ? `, and that test is ${Math.round(data.retest.testAgeDays / 7)} weeks old` : ''}.
           Your zones are probably {data.retest.direction === 'up' ? 'too easy' : 'too hard'}.
         </div>
@@ -1320,7 +1340,7 @@ export default function SessionVsTestPanel({
       <LactateVsCurve anchor={anchor} samples={lactateSamples} kind={kind} storageMode={storageMode} />
       <DriftFromHeartRate result={result} kind={kind} storageMode={storageMode} testDateLabel={testDateLabel} />
       <DriftHistory athleteId={athleteId} anchor={anchor} kind={kind}
-        storageMode={storageMode} governingTest={governingTest} />
+        storageMode={storageMode} governingTest={governingTest} tests={tests} />
     </div>
   );
 }
