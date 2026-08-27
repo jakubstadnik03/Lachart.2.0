@@ -5932,6 +5932,24 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
             </div>
           )}
 
+          {/* ── Against the lactate test (desktop) ──
+              The modal renders twice: a mobile layout of tabbed views and this
+              desktop one. Mounting a section in only one of them makes it
+              invisible to half the users and, worse, invisible in a way that
+              looks like it was never built. */}
+          {chartTraining?.records?.length > 60 && (
+            <div className="px-5 py-4 border-t border-gray-100">
+              <SessionVsTestPanel
+                records={chartTraining.records}
+                laps={laps}
+                sport={merged?.sport || sport}
+                athleteId={athleteId}
+                activityKey={activityWeatherKey}
+                activityDate={merged?.start_date || merged?.startDate || merged?.date}
+              />
+            </div>
+          )}
+
           {/* ── Compare with past sessions (desktop collapsible) ── */}
           {showCompare && (
             <div className="px-5 py-3 border-t border-gray-100">
