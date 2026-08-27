@@ -10,7 +10,8 @@
  *  - thresholds come from the shared server-side calculateThresholds(), which
  *    already applies coach thresholdOverrides over the auto-calculation
  *  - recovery rows are excluded, tests need ≥4 work stages
- *  - implausible results are dropped (see PLAUSIBLE below)
+ *  - implausible results are dropped (see PLAUSIBLE below), including any test
+ *    whose measured lactate at its own LT1/LT2 says they are not thresholds
  *  - athletes with user.excludeFromBenchmarks are left out of the population
  *    (they still see their own values via getAthleteValues)
  *
@@ -94,6 +95,45 @@ const PLAUSIBLE = {
  * ratio is always "LT1 intensity as a fraction of LT2 intensity" (< 1):
  * watts lt1/lt2 for bike, pace lt2/lt1 for run & swim (speed ∝ 1/pace).
  */
+/**
+ * Plausible measured lactate at each threshold.
+ *
+ * Deliberately wide — real curves vary and a baseline can sit high — so this
+ * rejects only what no protocol would call a threshold, not everything outside
+ * a textbook.
+ */
+const LT1_LACTATE_RANGE = [0.7, 3.2];
+const LT2_LACTATE_RANGE = [2.5, 6.5];
+
+/**
+ * Measured lactate at an intensity, interpolated between the stages either
+ * side. Raw values on purpose: the question is what the athlete's blood did at
+ * that intensity, not what a fitted curve says it should have done.
+ */
+function measuredLactateAt(rows, sport) {
+  const isPace = sport !== 'bike';
+  const pairs = (rows || [])
+    .map((r) => ({ p: Number(r.power), l: Number(r.lactate) }))
+    .filter((x) => Number.isFinite(x.p) && x.p > 0 && Number.isFinite(x.l) && x.l > 0)
+    // Ascending in effort: watts up, pace down.
+    .sort((a, b) => (isPace ? b.p - a.p : a.p - b.p));
+
+  return (target) => {
+    if (!Number.isFinite(target) || pairs.length < 2) return null;
+    for (let i = 0; i < pairs.length - 1; i += 1) {
+      const a = pairs[i];
+      const b = pairs[i + 1];
+      const lo = Math.min(a.p, b.p);
+      const hi = Math.max(a.p, b.p);
+      if (target >= lo && target <= hi) {
+        if (a.p === b.p) return (a.l + b.l) / 2;
+        return a.l + ((b.l - a.l) * (target - a.p)) / (b.p - a.p);
+      }
+    }
+    return null; // outside the tested range — not this filter's business
+  };
+}
+
 function extractEntry(testRaw, sport) {
   const workRows = (testRaw.results || []).filter(
     (r) => (r?.intervalType || 'work') !== 'recovery'
@@ -122,6 +162,26 @@ function extractEntry(testRaw, sport) {
 
   const isPace = sport !== 'bike';
   if (isPace ? lt1 <= lt2 : lt1 >= lt2) return null; // thresholds out of order
+
+  // The measured lactate at each threshold has to agree that it IS one.
+  //
+  // The order and ratio checks above catch a threshold pair that is obviously
+  // broken, but not one that is merely in the wrong place: on one real test the
+  // server put LT2 at a stage measuring 1.5 mmol — an easy aerobic effort — and
+  // it passed every check here, because 1.5 mmol says nothing about the gap
+  // between two numbers. It went into the population as somebody's anaerobic
+  // threshold.
+  //
+  // That matters more here than anywhere else in the app. A benchmark is the
+  // one place an athlete's own value is judged against other people's, so a
+  // wrong entry does not just misinform its owner — it moves the curve everyone
+  // is measured against. Excluding a test we cannot vouch for costs one sample;
+  // including it costs the distribution.
+  const laAt = measuredLactateAt(workRows, sport);
+  const lt1La = laAt(lt1);
+  const lt2La = laAt(lt2);
+  if (lt1La != null && (lt1La < LT1_LACTATE_RANGE[0] || lt1La > LT1_LACTATE_RANGE[1])) return null;
+  if (lt2La != null && (lt2La < LT2_LACTATE_RANGE[0] || lt2La > LT2_LACTATE_RANGE[1])) return null;
 
   const ratio = isPace ? lt2 / lt1 : lt1 / lt2;
   if (!Number.isFinite(ratio) || ratio < 0.5 || ratio > 0.99) return null;

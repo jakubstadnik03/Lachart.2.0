@@ -477,6 +477,8 @@ function calculateThresholds(testData) {
     }
   }
 
+  applyLt2UpperGuard(thresholds, sortedResults, isPaceSport);
+
   // Manual override: if coach/athlete pinned LT1 or LT2, apply over auto-calculation
   const ovr = testData?.thresholdOverrides;
   if (ovr) {
@@ -485,6 +487,104 @@ function calculateThresholds(testData) {
   }
 
   return thresholds;
+}
+
+/** Below this gap LT2 has collapsed onto LT1 and the replacement is not an improvement. */
+const MIN_LT2_LT1_GAP_W = 25;
+const MIN_LT2_LT1_GAP_PACE_SEC = 10;
+/** Raw lactate above this at LT2 means the curve was smoothed past the threshold. */
+const LT2_RAW_CAP = 5.0;
+const LT2_RAW_TARGET = 4.0;
+
+/** Measured lactate at an intensity, interpolated between the stages either side. */
+function rawLactateAt(sortedResults, P) {
+  if (!Number.isFinite(P)) return null;
+  const pairs = (sortedResults || [])
+    .map((r) => ({ p: Number(r.power), l: Number(r.lactate) }))
+    .filter((x) => Number.isFinite(x.p) && Number.isFinite(x.l))
+    .sort((a, b) => a.p - b.p);
+  if (!pairs.length) return null;
+  for (let i = 0; i < pairs.length - 1; i += 1) {
+    const a = pairs[i];
+    const b = pairs[i + 1];
+    if (P >= a.p && P <= b.p && b.p !== a.p) {
+      return a.l + ((b.l - a.l) * (P - a.p)) / (b.p - a.p);
+    }
+  }
+  if (P <= pairs[0].p) return pairs[0].l;
+  if (P >= pairs[pairs.length - 1].p) return pairs[pairs.length - 1].l;
+  return null;
+}
+
+/** The intensity at which the measured curve crosses a lactate value. */
+function intensityAtRawLactate(sortedResults, targetLa) {
+  const pairs = (sortedResults || [])
+    .map((r) => ({ p: Number(r.power), l: Number(r.lactate) }))
+    .filter((x) => Number.isFinite(x.p) && Number.isFinite(x.l))
+    .sort((a, b) => a.p - b.p);
+  for (let i = 0; i < pairs.length - 1; i += 1) {
+    const a = pairs[i];
+    const b = pairs[i + 1];
+    if ((targetLa >= a.l && targetLa <= b.l) || (targetLa >= b.l && targetLa <= a.l)) {
+      if (b.l === a.l) return (a.p + b.p) / 2;
+      return a.p + ((b.p - a.p) * (targetLa - a.l)) / (b.l - a.l);
+    }
+  }
+  return null;
+}
+
+/**
+ * Pull LT2 back when the fitted curve has smoothed past it.
+ *
+ * The caps above this check the POLYNOMIAL lactate at LT2. On a test with a
+ * flat aerobic baseline and a sharp finish, the polynomial smooths the curve
+ * enough that the fitted value passes the cap while the RAW measured lactate at
+ * that intensity is well over 5 mmol — VO2max territory, not a threshold. So
+ * the measured value is checked too, and LT2 rewinds to OBLA 4.0.
+ *
+ * Ported from the client's calculateThresholds, which has had this guard for
+ * some time. Without it the two implementations disagreed by 45 s/km on one
+ * real test, and 131 of 685 tests in the database came out with a threshold
+ * their own numbers contradict — which is what the population benchmark was
+ * built on.
+ */
+function applyLt2UpperGuard(thresholds, sortedResults, isPaceSport) {
+  const lt2 = Number(thresholds['LTP2']);
+  if (!Number.isFinite(lt2)) return;
+
+  const rawLa = rawLactateAt(sortedResults, lt2);
+  if (!Number.isFinite(rawLa) || rawLa <= LT2_RAW_CAP) return;
+
+  const replacement = intensityAtRawLactate(sortedResults, LT2_RAW_TARGET);
+  if (!Number.isFinite(replacement)) return;
+
+  // Never collapse LT2 onto LT1: a threshold pair a few watts apart describes
+  // nobody, and the original at least kept them separate.
+  const lt1 = Number(thresholds['LTP1']);
+  const minGap = isPaceSport ? MIN_LT2_LT1_GAP_PACE_SEC : MIN_LT2_LT1_GAP_W;
+  const gapOk = !Number.isFinite(lt1)
+    || (isPaceSport ? (lt1 - replacement) >= minGap : (replacement - lt1) >= minGap);
+  if (!gapOk) return;
+
+  thresholds['LTP2'] = replacement;
+  if (thresholds.lactates) thresholds.lactates['LTP2'] = LT2_RAW_TARGET;
+
+  // The heart rate has to follow the intensity it belongs to.
+  for (let i = 0; i < sortedResults.length - 1; i += 1) {
+    const a = sortedResults[i];
+    const b = sortedResults[i + 1];
+    const pa = Number(a.power);
+    const pb = Number(b.power);
+    if (pa === pb) continue;
+    if (replacement >= Math.min(pa, pb) && replacement <= Math.max(pa, pb)) {
+      const hrA = a.heartRate != null ? Number(a.heartRate) : null;
+      const hrB = b.heartRate != null ? Number(b.heartRate) : null;
+      if (hrA != null && hrB != null && thresholds.heartRates) {
+        thresholds.heartRates['LTP2'] = hrA + ((hrB - hrA) * (replacement - pa)) / (pb - pa);
+      }
+      break;
+    }
+  }
 }
 
 module.exports = {
