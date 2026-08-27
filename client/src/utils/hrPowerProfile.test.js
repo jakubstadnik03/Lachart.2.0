@@ -6,6 +6,7 @@ import {
   lactateCurveShift,
   localSlopeAt,
   projectThresholdShift,
+  projectThresholdTimeline,
   sessionCloud,
   steadyBlocks,
   testHrCurve,
@@ -553,6 +554,74 @@ describe('projectThresholdShift', () => {
   it('gives up without a usable test or any sessions', () => {
     expect(projectThresholdShift([], bikeAnchor)).toBeNull();
     expect(projectThresholdShift([{ date: new Date().toISOString(), blocks: [] }], null)).toBeNull();
+  });
+});
+
+describe('projectThresholdTimeline', () => {
+  const DAY = 86400000;
+  const NOW = Date.parse('2026-08-27T00:00:00Z');
+  const curve = () => testHrCurve(bikeAnchor);
+
+  /** Sessions every other day, whose implied shift follows `shiftAtDay`. */
+  const season = (days, shiftAtDay) => {
+    const out = [];
+    for (let d = days; d >= 0; d -= 2) {
+      const w = shiftAtDay(days - d);
+      out.push({
+        date: new Date(NOW - d * DAY).toISOString(),
+        blocks: [275, 285].map((dem) => ({
+          demand: dem, sec: 1800, deltaHr: -localSlopeAt(curve(), dem) * w,
+        })),
+      });
+    }
+    return out;
+  };
+
+  it('draws a rising threshold as a rising line', () => {
+    // +0.15 W a day over 120 days — about +18 W across the block.
+    const t = projectThresholdTimeline(season(120, (day) => day * 0.15), bikeAnchor, { now: NOW });
+    expect(t.length).toBeGreaterThan(8);
+    expect(t[t.length - 1].lt2).toBeGreaterThan(t[0].lt2 + 8);
+  });
+
+  it('holds flat when nothing is changing', () => {
+    const t = projectThresholdTimeline(season(120, () => 6), bikeAnchor, { now: NOW });
+    const values = t.map((p) => p.lt2).filter(Number.isFinite);
+    expect(Math.max(...values) - Math.min(...values)).toBeLessThan(4);
+  });
+
+  it('turns over when the athlete does', () => {
+    // Up for two months, then back down.
+    const t = projectThresholdTimeline(
+      season(120, (day) => (day < 60 ? day * 0.3 : (120 - day) * 0.3)), bikeAnchor, { now: NOW },
+    );
+    const peak = Math.max(...t.map((p) => p.lt2));
+    expect(peak).toBeGreaterThan(t[0].lt2);
+    expect(t[t.length - 1].lt2).toBeLessThan(peak - 5);
+  });
+
+  it('never lets a point see the future', () => {
+    // Nothing happens for two months, then a big jump. Early points must not
+    // know about it — a line fitted with hindsight is not a line anyone could
+    // have acted on.
+    const sessions = [
+      ...season(120, () => 0).filter((x) => new Date(x.date).getTime() < NOW - 60 * DAY),
+      ...season(50, () => 30).filter((x) => new Date(x.date).getTime() > NOW - 50 * DAY),
+    ];
+    const t = projectThresholdTimeline(sessions, bikeAnchor, { now: NOW });
+    const early = t.find((p) => new Date(p.date).getTime() < NOW - 70 * DAY);
+    expect(early.lt2).toBeCloseTo(280, 0);
+  });
+
+  it('steps at the interval it is asked for', () => {
+    const weekly = projectThresholdTimeline(season(120, () => 5), bikeAnchor, { now: NOW });
+    const fortnightly = projectThresholdTimeline(season(120, () => 5), bikeAnchor, { now: NOW, stepDays: 14 });
+    expect(fortnightly.length).toBeLessThan(weekly.length);
+  });
+
+  it('says nothing when there is nothing to say', () => {
+    expect(projectThresholdTimeline([], bikeAnchor)).toEqual([]);
+    expect(projectThresholdTimeline(season(4, () => 5), bikeAnchor, { now: NOW })).toEqual([]);
   });
 });
 

@@ -1136,10 +1136,11 @@ const SHIFT_REJECT_PCT_OF_THRESHOLD = 20;
  * @param {Array} sessions  [{date, blocks:[{demand, deltaHr, sec}]}]
  * @param {object} anchor   extractLactateThresholds() output
  * @param {object} [o]
- * @param {Date}   [o.now]
+ * @param {Date}   [o.now]        the moment being asked about
+ * @param {number} [o.windowDays] only look this far back from it
  * @returns {null | {lt1:object|null, lt2:object|null, sessions:number, minutes:number}}
  */
-function projectThresholdShift(sessions, anchor, { now = null } = {}) {
+function projectThresholdShift(sessions, anchor, { now = null, windowDays = null } = {}) {
   const curve = testHrCurve(anchor);
   if (!curve || !Array.isArray(sessions) || !sessions.length) return null;
   const kind = sportKind(anchor.sport);
@@ -1157,7 +1158,11 @@ function projectThresholdShift(sessions, anchor, { now = null } = {}) {
   for (const session of sessions) {
     const ms = new Date(session?.date).getTime();
     if (!Number.isFinite(ms)) continue;
+    // Nothing after the moment being asked about — a timeline point in April
+    // must not know what happened in July.
+    if (ms > nowMs) continue;
     const ageDays = Math.max(0, (nowMs - ms) / 86400000);
+    if (windowDays && ageDays > windowDays) continue;
     const recency = 0.5 ** (ageDays / RECENCY_HALF_LIFE_DAYS);
     let contributed = false;
 
@@ -1230,6 +1235,62 @@ function projectThresholdShift(sessions, anchor, { now = null } = {}) {
     : used >= 3 ? 'medium' : 'low';
 
   return { lt1, lt2, sessions: used, minutes, confidence: overall, kind, storageMode };
+}
+
+/**
+ * The same projection, asked once a week across the season.
+ *
+ * A single number says where the athlete is; a line says whether they are
+ * going anywhere, which is the question a training block is trying to answer.
+ * Each point re-estimates from a trailing window, using only sessions that had
+ * happened by then — so the line is what the app would have told you on that
+ * date, not a curve fitted with hindsight.
+ *
+ * The window is wider than the recency half-life on purpose. Six weeks of
+ * training either side of a point is enough for a threshold to be visible
+ * above the day-to-day noise, while the half-life inside it still leans the
+ * answer toward the recent end.
+ *
+ * @param {Array}  sessions  [{date, blocks:[…]}]
+ * @param {object} anchor
+ * @param {object} [o]
+ * @param {number} [o.stepDays=7]
+ * @param {number} [o.windowDays=42]
+ * @param {Date}   [o.now]
+ * @returns {Array<{date:string, lt1:number|null, lt2:number|null, lt1Confidence, lt2Confidence, sessions:number}>}
+ */
+function projectThresholdTimeline(sessions, anchor, {
+  stepDays = 7, windowDays = 42, now = null,
+} = {}) {
+  if (!Array.isArray(sessions) || !sessions.length) return [];
+  const stamps = sessions
+    .map((s) => new Date(s?.date).getTime())
+    .filter((ms) => Number.isFinite(ms))
+    .sort((a, b) => a - b);
+  if (!stamps.length) return [];
+
+  const endMs = now ? new Date(now).getTime() : Math.max(stamps[stamps.length - 1], Date.now());
+  // Start a window in, so the first point is as well-supported as the rest
+  // rather than a spike drawn from three days of training.
+  const firstMs = stamps[0] + windowDays * 0.5 * 86400000;
+  if (firstMs > endMs) return [];
+
+  const out = [];
+  const stepMs = stepDays * 86400000;
+  for (let ms = firstMs; ms <= endMs + 1; ms += stepMs) {
+    const at = Math.min(ms, endMs);
+    const p = projectThresholdShift(sessions, anchor, { now: at, windowDays });
+    if (!p) continue;
+    out.push({
+      date: new Date(at).toISOString(),
+      lt1: p.lt1 ? p.lt1.toDemand : null,
+      lt2: p.lt2 ? p.lt2.toDemand : null,
+      lt1Confidence: p.lt1?.confidence || null,
+      lt2Confidence: p.lt2?.confidence || null,
+      sessions: p.sessions,
+    });
+  }
+  return out;
 }
 
 // ── History: many sessions against one test ─────────────────────────────────
@@ -1328,6 +1389,7 @@ module.exports = {
   lactateCurveShift,
   localSlopeAt,
   projectThresholdShift,
+  projectThresholdTimeline,
   sessionCloud,
   sportKind,
   steadyBlocks,

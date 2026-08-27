@@ -205,7 +205,8 @@ async function readSessionsSinceTest({ userId, sport, limit = DEFAULT_LIMIT }) {
   // The governing test: the most recent one for this sport. Everything is read
   // against it, and a newer test invalidates every cached read after its date.
   const tests = await Test.find({ athleteId: String(userId) }).sort({ date: -1 }).lean();
-  const test = tests.find((t) => sportKind(t.sport) === kind) || null;
+  const sportTests = tests.filter((t) => sportKind(t.sport) === kind);
+  const test = sportTests[0] || null;
   if (!test) return { test: null, reads: [], skipped: { reason: 'no-test' } };
 
   const anchor = extractAnchor(test);
@@ -305,7 +306,10 @@ async function readSessionsSinceTest({ userId, sport, limit = DEFAULT_LIMIT }) {
 
   reads.sort((a, b) => new Date(a.date) - new Date(b.date));
   compared.sort((a, b) => new Date(a.date) - new Date(b.date));
-  return { test, anchor, reads, compared, unreadable, considered: sessions.length };
+  // Every test of this sport, oldest first — the measured points the estimated
+  // line is drawn between.
+  const history = [...sportTests].sort((a, b) => new Date(a.date) - new Date(b.date));
+  return { test, anchor, reads, compared, unreadable, sportTests: history, considered: sessions.length };
 }
 
 module.exports = {

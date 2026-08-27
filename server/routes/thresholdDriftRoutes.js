@@ -15,7 +15,11 @@ const verifyToken = require('../middleware/verifyToken');
 const User = require('../models/UserModel');
 const { isCoachLikeRole, athleteHasCoachUser } = require('../utils/athleteCoachAccess');
 const { readSessionsSinceTest } = require('../services/thresholdDriftService');
-const { buildDriftHistory, demandToThreshold, projectThresholdShift, sportKind } = require('../utils/hrPowerProfile');
+const {
+  buildDriftHistory, demandToThreshold, projectThresholdShift,
+  projectThresholdTimeline, sportKind, thresholdToDemand,
+} = require('../utils/hrPowerProfile');
+const { extractAnchor } = require('../utils/lactateAnchor');
 
 /**
  * GET /api/threshold-drift
@@ -45,7 +49,7 @@ router.get('/', verifyToken, async (req, res) => {
     const sport = sportKind(req.query.sport || 'bike');
     const limit = Math.min(200, Math.max(5, Number(req.query.limit) || 80));
 
-    const { test, anchor, reads, compared, unreadable, considered, skipped } = await readSessionsSinceTest({
+    const { test, anchor, reads, compared, sportTests, unreadable, considered, skipped } = await readSessionsSinceTest({
       userId: target._id,
       sport,
       limit,
@@ -70,6 +74,24 @@ router.get('/', verifyToken, async (req, res) => {
     // curve than sessions the threshold fit will touch, and it would be absurd
     // to return "no data" while holding forty of them.
     const projection = projectThresholdShift(compared || [], anchor);
+    const timeline = projectThresholdTimeline(compared || [], anchor);
+
+    // The measured points the estimated line runs between. Every test of this
+    // sport, not just the governing one: the estimate only covers the period
+    // since the last test, and the earlier ones are what give a season its
+    // shape.
+    const testMarkers = (sportTests || []).map((t) => {
+      const a = extractAnchor(t);
+      if (!a) return null;
+      const toDemand = (v) => thresholdToDemand(v, { kind: sport, storageMode: a.storageMode });
+      return {
+        id: String(t._id),
+        date: t.date,
+        title: t.title,
+        lt1: a.lt1 != null ? toDemand(a.lt1) : null,
+        lt2: a.lt2 != null ? toDemand(a.lt2) : null,
+      };
+    }).filter((m) => m && (m.lt1 || m.lt2));
 
     if (!reads.length) {
       return res.json({
@@ -79,6 +101,8 @@ router.get('/', verifyToken, async (req, res) => {
         latest: null,
         retest: null,
         projection,
+        timeline,
+        testMarkers,
         reason: skipped?.reason || 'no-readable-sessions',
         coverage: {
           considered: considered || 0,
@@ -122,6 +146,8 @@ router.get('/', verifyToken, async (req, res) => {
       latest: series[series.length - 1] || null,
       retest: history.retest,
       projection,
+      timeline,
+      testMarkers,
       coverage: {
         considered: considered || 0,
         read: reads.length,

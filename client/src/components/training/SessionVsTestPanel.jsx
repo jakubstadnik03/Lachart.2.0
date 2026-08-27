@@ -744,6 +744,114 @@ function ProjectedThresholds({ projection, kind, storageMode }) {
   );
 }
 
+const LT1_COLOR = '#0ea5e9';
+const LT2_COLOR = '#f97316';
+
+/**
+ * The season: measured tests as points, the estimate as the line between them.
+ *
+ * Each point on the line is re-estimated from a trailing six weeks using only
+ * sessions that had happened by then, so it is what the app would have said on
+ * that date rather than a curve fitted with hindsight. That matters because the
+ * question it answers — "is this block working?" — is one an athlete asks in
+ * the middle of the block, not after it.
+ *
+ * Tests are drawn as dots on the same axes. Where a dot sits off the line, the
+ * line was wrong; that comparison is the honest way to show how much an
+ * estimate from heart rate is worth.
+ */
+function ThresholdTimeline({ timeline, testMarkers, kind, storageMode }) {
+  const data = useMemo(() => {
+    const rows = (timeline || []).map((p) => ({
+      ms: new Date(p.date).getTime(), lt1: p.lt1, lt2: p.lt2,
+    }));
+    for (const m of testMarkers || []) {
+      rows.push({ ms: new Date(m.date).getTime(), testLt1: m.lt1, testLt2: m.lt2 });
+    }
+    return rows.filter((r) => Number.isFinite(r.ms)).sort((a, b) => a.ms - b.ms);
+  }, [timeline, testMarkers]);
+
+  /**
+   * One tick per month. The points are weekly, and letting the axis label them
+   * itself printed "Jan Jan Jan Feb Feb Feb" — four identical labels per month,
+   * which is noise pretending to be an axis.
+   */
+  const monthTicks = useMemo(() => {
+    if (!data.length) return [];
+    const first = new Date(data[0].ms);
+    const last = new Date(data[data.length - 1].ms);
+    const ticks = [];
+    const cursor = new Date(first.getFullYear(), first.getMonth(), 1);
+    while (cursor <= last) {
+      const ms = cursor.getTime();
+      if (ms >= data[0].ms) ticks.push(ms);
+      cursor.setMonth(cursor.getMonth() + 1);
+    }
+    return ticks;
+  }, [data]);
+
+  // Two points is a pair of readings, not a trend, and drawing it as a line
+  // implies a season's worth of evidence that is not there.
+  if ((timeline?.length || 0) < 3) return null;
+
+  const hasLt1 = data.some((r) => Number.isFinite(r.lt1) || Number.isFinite(r.testLt1));
+
+  return (
+    <div className="mt-3">
+      <h4 className="mb-1 text-[13px] font-bold text-gray-900">Across the season</h4>
+      <div className="h-44 w-full">
+        <ResponsiveContainer width="100%" height="100%">
+          <ComposedChart data={data} margin={{ top: 10, right: 12, bottom: 4, left: 0 }}>
+            <CartesianGrid stroke="#f1f5f9" vertical={false} />
+            <XAxis
+              dataKey="ms" type="number" scale="time" domain={['dataMin', 'dataMax']}
+              ticks={monthTicks}
+              tickFormatter={(v) => new Date(v).toLocaleDateString(undefined, { month: 'short' })}
+              tick={{ fontSize: 10, fill: '#94a3b8' }}
+              axisLine={{ stroke: '#e2e8f0' }} tickLine={false}
+            />
+            <YAxis
+              tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} width={46}
+              domain={['dataMin - 10', 'dataMax + 10']}
+              tickFormatter={(v) => fmtDemand(v, kind, storageMode)}
+            />
+            <Tooltip
+              contentStyle={{ fontSize: 11, borderRadius: 8, border: '1px solid #e2e8f0' }}
+              labelFormatter={(v) => new Date(v).toLocaleDateString()}
+              formatter={(v, name) => [
+                fmtDemand(v, kind, storageMode),
+                { lt1: 'LT1 (estimated)', lt2: 'LT2 (estimated)', testLt1: 'LT1 (tested)', testLt2: 'LT2 (tested)' }[name] || name,
+              ]}
+            />
+            {hasLt1 && (
+              <Line type="monotone" dataKey="lt1" stroke={LT1_COLOR} strokeWidth={2}
+                dot={false} connectNulls isAnimationActive={false} />
+            )}
+            <Line type="monotone" dataKey="lt2" stroke={LT2_COLOR} strokeWidth={2}
+              dot={false} connectNulls isAnimationActive={false} />
+            <Scatter dataKey="testLt1" shape={<Dot r={5} color={LT1_COLOR} opacity={1} />} isAnimationActive={false} />
+            <Scatter dataKey="testLt2" shape={<Dot r={5} color={LT2_COLOR} opacity={1} />} isAnimationActive={false} />
+          </ComposedChart>
+        </ResponsiveContainer>
+      </div>
+      <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px] text-gray-500">
+        {hasLt1 && (
+          <span className="flex items-center gap-1">
+            <span className="inline-block h-0.5 w-4" style={{ background: LT1_COLOR }} /> LT1
+          </span>
+        )}
+        <span className="flex items-center gap-1">
+          <span className="inline-block h-0.5 w-4" style={{ background: LT2_COLOR }} /> LT2
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="inline-block h-2 w-2 rounded-full bg-gray-400" /> a test you actually did
+        </span>
+        <span className="text-gray-400">estimated weekly from a trailing six weeks</span>
+      </div>
+    </div>
+  );
+}
+
 function DriftHistory({ athleteId, kind, storageMode }) {
   const [state, setState] = useState({ loading: true, data: null });
 
@@ -758,7 +866,7 @@ function DriftHistory({ athleteId, kind, storageMode }) {
 
   const { loading, data } = state;
   if (loading) return null;
-  if (!data?.series?.length && !data?.projection) return null;
+  if (!data?.series?.length && !data?.projection && !data?.timeline?.length) return null;
 
   const series = (data.series || []).map((p) => ({ ...p, ms: new Date(p.date).getTime() }));
 
@@ -772,6 +880,8 @@ function DriftHistory({ athleteId, kind, storageMode }) {
       </div>
 
       <ProjectedThresholds projection={data.projection} kind={kind} storageMode={storageMode} />
+      <ThresholdTimeline timeline={data.timeline} testMarkers={data.testMarkers}
+        kind={kind} storageMode={storageMode} />
 
       {series.length > 0 && (
       <div className="mt-3 h-36 w-full">
@@ -936,3 +1046,4 @@ export default function SessionVsTestPanel({
     </div>
   );
 }
+
