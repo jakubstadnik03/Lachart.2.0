@@ -2335,6 +2335,19 @@ export const getRouteHistory = async (athleteId, limit = 150) => {
 };
 
 /** Conditions during one activity — looked up once from its GPS, then frozen. */
+/**
+ * Threshold drift: every session since the governing lactate test, read
+ * against that test's own HR-power line. Computed server-side because the
+ * alternative is sending a season of streams to a phone.
+ */
+export const getThresholdDrift = (sport = 'bike', athleteId = null) =>
+  api.get('/api/threshold-drift', {
+    params: { sport, ...(athleteId ? { athleteId } : {}) },
+    // The walk is cached per activity server-side; this stops a tab-switch
+    // from re-asking while the athlete is reading the same session.
+    cacheTtlMs: 10 * 60 * 1000,
+  });
+
 export const getActivityWeather = async (activityKey) => {
   const response = await api.get('/api/timeline/weather', {
     params: { activityKey },

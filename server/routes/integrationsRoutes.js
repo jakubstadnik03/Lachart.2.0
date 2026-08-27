@@ -562,6 +562,25 @@ async function lapSignalsById(Model, match, limit) {
   return out;
 }
 
+/**
+ * Backfill asks Garmin to re-deliver a window of history to our webhook, and
+ * the summaries and the traces are two separate requests:
+ *
+ *   activities       — the summary (sport, duration, distance, average HR)
+ *   activityDetails  — the per-second samples, which become GarminStream
+ *
+ * Only the first was ever requested. Re-imported history therefore arrived with
+ * no traces at all: one athlete had 76 Garmin activities and 13 streams, and
+ * those 13 were only there because they happened to land as live pushes while
+ * the webhook was up. Everything that reads a trace — time in zones, peak
+ * efforts, threshold drift — was quietly working off a fifth of the training.
+ *
+ * Both are asked for per chunk. Garmin's rate limit is shared across the whole
+ * consumer key, so the extra request is paced like any other rather than fired
+ * alongside.
+ */
+const GARMIN_BACKFILL_ENDPOINTS = ['activities', 'activityDetails'];
+
 const garminBackfillJobs = new Map();
 
 /**
@@ -621,10 +640,14 @@ function triggerGarminBackfillQueued(user, startSec, endSec) {
   }
 
   const MAX_CHUNK = 90 * 24 * 3600;
-  const total = Math.max(1, Math.ceil((endSec - startSec) / MAX_CHUNK));
+  const chunks = Math.max(1, Math.ceil((endSec - startSec) / MAX_CHUNK));
+  // Each chunk is asked for once per endpoint, so progress counts requests.
+  const total = chunks * GARMIN_BACKFILL_ENDPOINTS.length;
   const job = {
     running: true,
     total,
+    chunks,
+    endpoints: [...GARMIN_BACKFILL_ENDPOINTS],
     requested: 0,
     failed: 0,
     lastError: null,
@@ -639,7 +662,6 @@ function triggerGarminBackfillQueued(user, startSec, endSec) {
   garminBackfillJobs.set(key, job);
 
   (async () => {
-    const url = `${getGarminWellnessApiBaseUrl()}/rest/backfill/activities`;
     const SPACING_MS = 2000;      // gentle pacing between chunk requests
     const RATE_LIMIT_WAIT_MS = 65_000; // Garmin limit window is 1 minute
     try {
@@ -649,71 +671,85 @@ function triggerGarminBackfillQueued(user, startSec, endSec) {
         const chunkEnd = Math.min(cursor + MAX_CHUNK, endSec);
         const rangeLabel = `${new Date(cursor * 1000).toISOString().slice(0, 10)} → ${new Date(chunkEnd * 1000).toISOString().slice(0, 10)}`;
         let nextCursor = chunkEnd;
-        let attempt = 0;
-        for (;;) {
-          try {
-            const resp = await axios.get(url, {
-              headers: { Authorization: `${tokenData.tokenType} ${tokenData.accessToken}` },
-              params: {
-                summaryStartTimeInSeconds: cursor,
-                summaryEndTimeInSeconds: chunkEnd,
-              },
-              timeout: 30000,
-              // 409 = Garmin already has this window queued — success for us.
-              validateStatus: (s) => s === 202 || s === 200 || s === 409,
-            });
-            console.log(`[Garmin backfill] requested ${rangeLabel} (HTTP ${resp.status}, chunk ${job.requested + 1}/${job.total})`);
-            job.requested += 1;
-            break;
-          } catch (e) {
-            const status = e?.response?.status;
-            const body = e?.response?.data;
-            const bodyStr = typeof body === 'object' ? JSON.stringify(body) : String(body || e.message || '');
-            // Garmin caps how far back this consumer key may backfill
-            // (evaluation keys ≈ 1 month): HTTP 400 "start … before min start
-            // time of <ISO>". Requesting anything older is pointless — parse
-            // the minimum and jump the queue straight to the allowed window.
-            //
-            // The minimum is MOVING (computed as now-31d at request time), so
-            // jumping exactly onto it loses the race forever: 2s later the
-            // minimum is 2s further and the request 400s again, in a loop.
-            // Jump PAST it with a healthy margin (losing 10 min of the oldest
-            // data in a month-wide window is irrelevant), and cap the number
-            // of skips as a belt-and-braces guard against any future loop.
-            const MIN_START_MARGIN_SEC = 600;
-            const MAX_MIN_START_SKIPS = 5;
-            const minStart = status === 400
-              ? bodyStr.match(/min start time of (\d{4}-\d{2}-\d{2}T[0-9:.]+Z)/)?.[1]
-              : null;
-            if (minStart) {
-              const minSec = Math.floor(new Date(minStart).getTime() / 1000);
-              const skips = (job.skippedBeforeMin || 0) + 1;
-              if (Number.isFinite(minSec) && minSec > cursor && skips <= MAX_MIN_START_SKIPS) {
-                job.skippedBeforeMin = skips;
-                job.minBackfillStart = minStart;
-                console.warn(`[Garmin backfill] ${rangeLabel} is older than this key's minimum (${minStart}) — skipping ahead to the allowed window (+${MIN_START_MARGIN_SEC}s margin)`);
-                nextCursor = minSec + MIN_START_MARGIN_SEC;
-                break;
+        // A window older than the key's minimum is refused for every endpoint,
+        // not just the one that discovered it — so the whole chunk moves on.
+        let chunkOutOfRange = false;
+
+        for (const endpoint of GARMIN_BACKFILL_ENDPOINTS) {
+          if (chunkOutOfRange) break;
+          const url = `${getGarminWellnessApiBaseUrl()}/rest/backfill/${endpoint}`;
+          let attempt = 0;
+          for (;;) {
+            try {
+              const resp = await axios.get(url, {
+                headers: { Authorization: `${tokenData.tokenType} ${tokenData.accessToken}` },
+                params: {
+                  summaryStartTimeInSeconds: cursor,
+                  summaryEndTimeInSeconds: chunkEnd,
+                },
+                timeout: 30000,
+                // 409 = Garmin already has this window queued — success for us.
+                validateStatus: (s) => s === 202 || s === 200 || s === 409,
+              });
+              console.log(`[Garmin backfill] requested ${endpoint} ${rangeLabel} (HTTP ${resp.status}, ${job.requested + 1}/${job.total})`);
+              job.requested += 1;
+              break;
+            } catch (e) {
+              const status = e?.response?.status;
+              const body = e?.response?.data;
+              const bodyStr = typeof body === 'object' ? JSON.stringify(body) : String(body || e.message || '');
+              // Garmin caps how far back this consumer key may backfill
+              // (evaluation keys ≈ 1 month): HTTP 400 "start … before min start
+              // time of <ISO>". Requesting anything older is pointless — parse
+              // the minimum and jump the queue straight to the allowed window.
+              //
+              // The minimum is MOVING (computed as now-31d at request time), so
+              // jumping exactly onto it loses the race forever: 2s later the
+              // minimum is 2s further and the request 400s again, in a loop.
+              // Jump PAST it with a healthy margin (losing 10 min of the oldest
+              // data in a month-wide window is irrelevant), and cap the number
+              // of skips as a belt-and-braces guard against any future loop.
+              const MIN_START_MARGIN_SEC = 600;
+              const MAX_MIN_START_SKIPS = 5;
+              const minStart = status === 400
+                ? bodyStr.match(/min start time of (\d{4}-\d{2}-\d{2}T[0-9:.]+Z)/)?.[1]
+                : null;
+              if (minStart) {
+                const minSec = Math.floor(new Date(minStart).getTime() / 1000);
+                const skips = (job.skippedBeforeMin || 0) + 1;
+                if (Number.isFinite(minSec) && minSec > cursor && skips <= MAX_MIN_START_SKIPS) {
+                  job.skippedBeforeMin = skips;
+                  job.minBackfillStart = minStart;
+                  console.warn(`[Garmin backfill] ${rangeLabel} is older than this key's minimum (${minStart}) — skipping ahead to the allowed window (+${MIN_START_MARGIN_SEC}s margin)`);
+                  nextCursor = minSec + MIN_START_MARGIN_SEC;
+                  chunkOutOfRange = true;
+                  break;
+                }
+                if (skips > MAX_MIN_START_SKIPS) {
+                  job.failed += 1;
+                  job.lastError = { status, body: `min-start skip limit reached (${bodyStr.slice(0, 200)})`, range: rangeLabel };
+                  console.error(`[Garmin backfill] ${rangeLabel}: hit the min-start skip limit — giving up on this chunk to avoid a request loop`);
+                  chunkOutOfRange = true;
+                  break;
+                }
               }
-              if (skips > MAX_MIN_START_SKIPS) {
-                job.failed += 1;
-                job.lastError = { status, body: `min-start skip limit reached (${bodyStr.slice(0, 200)})`, range: rangeLabel };
-                console.error(`[Garmin backfill] ${rangeLabel}: hit the min-start skip limit — giving up on this chunk to avoid a request loop`);
-                break;
+              if (status === 429 && attempt < 3) {
+                attempt += 1;
+                console.warn(`[Garmin backfill] HTTP 429 rate-limited on ${endpoint} ${rangeLabel} — waiting ${RATE_LIMIT_WAIT_MS / 1000}s, retry ${attempt}/3`);
+                await new Promise((r) => setTimeout(r, RATE_LIMIT_WAIT_MS));
+                continue;
               }
+              job.failed += 1;
+              job.lastError = { status: status || null, body: bodyStr.slice(0, 300), range: rangeLabel, endpoint };
+              console.error(`[Garmin backfill] ${endpoint} ${rangeLabel} failed permanently (HTTP ${status || '?'}):`, body || e.message);
+              break;
             }
-            if (status === 429 && attempt < 3) {
-              attempt += 1;
-              console.warn(`[Garmin backfill] HTTP 429 rate-limited on ${rangeLabel} — waiting ${RATE_LIMIT_WAIT_MS / 1000}s, retry ${attempt}/3`);
-              await new Promise((r) => setTimeout(r, RATE_LIMIT_WAIT_MS));
-              continue;
-            }
-            job.failed += 1;
-            job.lastError = { status: status || null, body: bodyStr.slice(0, 300), range: rangeLabel };
-            console.error(`[Garmin backfill] chunk ${rangeLabel} failed permanently (HTTP ${status || '?'}):`, body || e.message);
-            break;
           }
+          // Pace the sibling request the same as a chunk boundary — the rate
+          // limit is per consumer key, shared with every other LaChart user.
+          if (!chunkOutOfRange) await new Promise((r) => setTimeout(r, SPACING_MS));
         }
+
         cursor = nextCursor;
         if (cursor < endSec) await new Promise((r) => setTimeout(r, SPACING_MS));
       }
@@ -723,7 +759,8 @@ function triggerGarminBackfillQueued(user, startSec, endSec) {
     } finally {
       job.running = false;
       job.finishedAt = new Date();
-      console.log(`[Garmin backfill] finished for user ${key}: ${job.requested}/${job.total} chunks requested, ${job.failed} failed` +
+      console.log(`[Garmin backfill] finished for user ${key}: ${job.requested}/${job.total} requests sent `
+        + `(${job.chunks} window(s) × ${job.endpoints.join('+')}), ${job.failed} failed` +
         (job.skippedBeforeMin ? `, ${job.skippedBeforeMin} skipped (older than this key's min backfill start ${job.minBackfillStart})` : '') +
         (job.lastError ? ` (last error HTTP ${job.lastError.status}: ${job.lastError.body})` : ''));
     }
@@ -8419,3 +8456,8 @@ module.exports.resumeShallowStravaBackfills = resumeShallowStravaBackfills;
 module.exports._acCategorizeByTitle = _acCategorizeByTitle;
 // Exported for unit testing the Garmin Activity Details → laps/streams parser.
 module.exports.parseGarminActivityDetails = parseGarminActivityDetails;
+// Exported for unit testing the history backfill — in particular that a full
+// backfill asks for activityDetails as well as activities, which is what puts
+// per-second traces in GarminStream.
+module.exports.triggerGarminBackfillQueued = triggerGarminBackfillQueued;
+module.exports.GARMIN_BACKFILL_ENDPOINTS = GARMIN_BACKFILL_ENDPOINTS;

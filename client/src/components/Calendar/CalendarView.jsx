@@ -7,6 +7,7 @@ import TrainingFormComponent from '../TrainingForm';
 import SessionProgressChart from '../training/SessionProgressChart';
 import TimeInZonesBar from '../training/TimeInZonesBar';
 import ActivityPeaksTab from '../training/ActivityPeaksTab';
+import SessionVsTestPanel from '../training/SessionVsTestPanel';
 import RunSplitsTable from '../training/RunSplitsTable';
 import ActivityShareSheet from '../sharing/ActivityShareSheet';
 import {
@@ -5046,6 +5047,19 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
             {/* Time in zones */}
             {chartTraining?.records?.length > 30 && (
               <TimeInZonesBar records={chartTraining.records} sport={merged?.sport} authUser={authUser} />
+            )}
+
+            {/* The session read against the lactate test: zones, blood, threshold */}
+            {chartTraining?.records?.length > 60 && (
+              <SessionVsTestPanel
+                className="mt-4"
+                records={chartTraining.records}
+                laps={laps}
+                sport={merged?.sport || sport}
+                athleteId={athleteId}
+                activityKey={activityWeatherKey}
+                activityDate={merged?.start_date || merged?.startDate || merged?.date}
+              />
             )}
 
             {/* Entire Workout — extended stats + Min/Avg/Max */}
