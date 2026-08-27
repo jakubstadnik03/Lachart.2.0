@@ -1115,14 +1115,25 @@ function Contributors({ contributors, athleteId, kind }) {
 function DriftHistory({ athleteId, anchor, kind, storageMode, governingTest }) {
   const [state, setState] = useState({ loading: true, data: null });
 
+  /**
+   * The anchor travels to the server rather than being recomputed there.
+   * Serialised so the effect does not refire on every render for an object
+   * that has not changed.
+   */
+  const anchorPayload = useMemo(() => (anchor?.lt2 > 0 && anchor?.lt2Hr > 0 ? {
+    lt1: anchor.lt1, lt2: anchor.lt2, lt1Hr: anchor.lt1Hr, lt2Hr: anchor.lt2Hr,
+    storageMode: anchor.storageMode,
+    points: (anchor.points || []).map((p) => ({ x: p.x, y: p.y, hr: p.hr })),
+  } : null), [anchor]);
+
   useEffect(() => {
     let cancelled = false;
     setState({ loading: true, data: null });
-    getThresholdDrift(kind, athleteId)
+    getThresholdDrift(kind, athleteId, anchorPayload)
       .then((res) => { if (!cancelled) setState({ loading: false, data: res?.data ?? res }); })
       .catch(() => { if (!cancelled) setState({ loading: false, data: null }); });
     return () => { cancelled = true; };
-  }, [kind, athleteId]);
+  }, [kind, athleteId, anchorPayload]);
 
   const { loading, data } = state;
   if (loading) return null;

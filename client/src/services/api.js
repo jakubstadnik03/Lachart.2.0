@@ -2340,12 +2340,16 @@ export const getRouteHistory = async (athleteId, limit = 150) => {
  * against that test's own HR-power line. Computed server-side because the
  * alternative is sending a season of streams to a phone.
  */
-export const getThresholdDrift = (sport = 'bike', athleteId = null) =>
-  api.get('/api/threshold-drift', {
-    params: { sport, ...(athleteId ? { athleteId } : {}) },
-    // The walk is cached per activity server-side; this stops a tab-switch
-    // from re-asking while the athlete is reading the same session.
-    cacheTtlMs: 10 * 60 * 1000,
+/**
+ * @param {object|null} anchor  the thresholds the client drew the test page
+ *   with. Sent rather than recomputed, because the two threshold pipelines
+ *   disagree on real tests and the number the athlete can see has to win.
+ */
+export const getThresholdDrift = (sport = 'bike', athleteId = null, anchor = null) =>
+  api.post('/api/threshold-drift', {
+    sport,
+    ...(athleteId ? { athleteId } : {}),
+    ...(anchor ? { anchor } : {}),
   });
 
 export const getActivityWeather = async (activityKey) => {

@@ -28,7 +28,43 @@ const { extractAnchor } = require('../utils/lactateAnchor');
  * @query athleteId  optional — a coach may read a linked athlete's drift
  * @query limit      optional — sessions to walk back, default 80, max 200
  */
-router.get('/', verifyToken, async (req, res) => {
+/**
+ * The anchor as the client computed it.
+ *
+ * The client and the server each have a lactate-threshold implementation, and
+ * on real tests they disagree — one athlete's LT2 came out 3:50/km in the app
+ * and 4:35/km here, because the client applies guards (an implausible LT2 is
+ * replaced with OBLA 4.0) that this side has never had. A panel that quotes a
+ * threshold the test page does not show is worse than no panel.
+ *
+ * So the number the athlete can see wins. The client sends the anchor it drew
+ * the test page with, and everything here is measured against that. The server
+ * pipeline stays as the fallback for callers that cannot compute one.
+ */
+function anchorFromRequest(body, kind) {
+  const a = body?.anchor;
+  if (!a || typeof a !== 'object') return null;
+  const num = (v) => (Number.isFinite(Number(v)) && Number(v) > 0 ? Number(v) : null);
+  const lt2 = num(a.lt2);
+  const lt2Hr = num(a.lt2Hr);
+  if (!lt2 || !lt2Hr) return null;
+  const points = (Array.isArray(a.points) ? a.points : [])
+    .map((p) => ({ x: Number(p?.x), y: Number(p?.y), hr: Number(p?.hr) }))
+    .filter((p) => Number.isFinite(p.x) && p.x > 0 && Number.isFinite(p.y) && p.y > 0);
+  if (points.length < 3) return null;
+  return {
+    sport: kind,
+    isPace: kind !== 'bike',
+    storageMode: a.storageMode === 'speed' ? 'speed' : 'pace',
+    lt1: num(a.lt1),
+    lt2,
+    lt1Hr: num(a.lt1Hr),
+    lt2Hr,
+    points,
+  };
+}
+
+router.post('/', verifyToken, async (req, res) => {
   try {
     const viewer = await User.findById(req.user.userId);
     if (!viewer) return res.status(401).json({ error: 'User not found' });
@@ -46,14 +82,19 @@ router.get('/', verifyToken, async (req, res) => {
       target = athlete;
     }
 
-    const sport = sportKind(req.query.sport || 'bike');
-    const limit = Math.min(500, Math.max(5, Number(req.query.limit) || 250));
+    const sport = sportKind(req.body?.sport || req.query.sport || 'bike');
+    const limit = Math.min(500, Math.max(5, Number(req.body?.limit || req.query.limit) || 250));
+    const clientAnchor = anchorFromRequest(req.body, sport);
 
-    const { test, anchor, reads, compared, sportTests, unreadable, considered, skipped } = await readSessionsSinceTest({
+    const {
+      test, anchor: serverAnchor, reads, compared, sportTests, unreadable, considered, skipped,
+    } = await readSessionsSinceTest({
       userId: target._id,
       sport,
       limit,
+      anchorOverride: clientAnchor,
     });
+    const anchor = clientAnchor || serverAnchor;
 
     if (!test) return res.json({ sport, test: null, series: [], latest: null, retest: null, reason: skipped?.reason || 'no-test' });
 
@@ -66,6 +107,7 @@ router.get('/', verifyToken, async (req, res) => {
       lt1Hr: anchor?.lt1Hr ?? null,
       lt2Hr: anchor?.lt2Hr ?? null,
       storageMode: anchor?.storageMode ?? 'pace',
+      anchorSource: clientAnchor ? 'client' : 'server',
     };
 
     // Where the thresholds have drifted to, from heart rate measured at

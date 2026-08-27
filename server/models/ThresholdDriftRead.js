@@ -29,6 +29,15 @@ const thresholdDriftReadSchema = new mongoose.Schema({
   /** The test this was read against; a new test re-anchors every session after it. */
   testId: { type: String, default: null },
   testUpdatedAt: { type: Date, default: null },
+  /**
+   * Which thresholds the reading used, as "lt1/lt2@hr1/hr2".
+   *
+   * One test can yield two different anchors: the client and the server each
+   * compute LT1/LT2 and on real data they diverge — one athlete's LT2 came out
+   * 3:50/km in the app and 4:35/km on the server. A row read against one is
+   * meaningless against the other, so it is not served for it.
+   */
+  anchorKey: { type: String, default: null },
 
   ok: { type: Boolean, default: false },
   /** Why nothing could be read — kept so the walker does not retry a hopeless session. */

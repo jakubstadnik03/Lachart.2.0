@@ -204,7 +204,7 @@ async function recordsFor(session, userId) {
  * @param {number} [o.limit]
  * @returns {Promise<{test:object|null, reads:Array, skipped:object}>}
  */
-async function readSessionsSinceTest({ userId, sport, limit = DEFAULT_LIMIT }) {
+async function readSessionsSinceTest({ userId, sport, limit = DEFAULT_LIMIT, anchorOverride = null }) {
   const kind = sportKind(sport);
   if (kind !== 'bike' && kind !== 'run') {
     return { test: null, reads: [], skipped: { reason: 'sport-unsupported' } };
@@ -217,7 +217,8 @@ async function readSessionsSinceTest({ userId, sport, limit = DEFAULT_LIMIT }) {
   const test = sportTests[0] || null;
   if (!test) return { test: null, reads: [], skipped: { reason: 'no-test' } };
 
-  const anchor = extractAnchor(test);
+  // The caller's anchor wins — see anchorFromRequest in the route for why.
+  const anchor = anchorOverride || extractAnchor(test);
   if (!anchor || !(anchor.lt2 > 0)) return { test, reads: [], skipped: { reason: 'no-lt2' } };
   if (!(Number(anchor.lt2Hr) > 40)) return { test, reads: [], skipped: { reason: 'no-lt2-hr' } };
 
@@ -229,6 +230,11 @@ async function readSessionsSinceTest({ userId, sport, limit = DEFAULT_LIMIT }) {
     testId: String(test._id),
     testUpdatedAt: test.updatedAt || test.date,
     engineVersion: ENGINE_VERSION,
+    // Two anchors for one test read the same session differently — the client
+    // and the server pipelines can disagree by 45 s/km — so which anchor was
+    // used is part of what a cached row is valid for.
+    anchorKey: `${Math.round(Number(anchor.lt1) || 0)}/${Math.round(Number(anchor.lt2))}`
+      + `@${Math.round(Number(anchor.lt1Hr) || 0)}/${Math.round(Number(anchor.lt2Hr))}`,
   };
 
   const cached = await ThresholdDriftRead.find({
@@ -239,6 +245,7 @@ async function readSessionsSinceTest({ userId, sport, limit = DEFAULT_LIMIT }) {
 
   const isFresh = (row) => row
     && row.engineVersion === testStamp.engineVersion
+    && row.anchorKey === testStamp.anchorKey
     && String(row.testId) === testStamp.testId
     && new Date(row.testUpdatedAt).getTime() === new Date(testStamp.testUpdatedAt).getTime();
 
