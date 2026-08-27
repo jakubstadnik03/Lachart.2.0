@@ -1,6 +1,17 @@
 // Blog posts metadata — single source of truth for index cards, related posts, and SEO
 export const blogPosts = [
   {
+    slug:     'what-is-vlamax',
+    title:    'VLaMax Explained: What Your Maximal Glycolytic Rate Means for Endurance',
+    excerpt:  'VO2max gets the attention, but the number that often decides your threshold is VLaMax — your maximal rate of lactate production. What it is, why it moves your LT2, and how to train it in the right direction.',
+    date:     '2026-07-13',
+    readTime: '10 min',
+    category: 'Training Science',
+    tags:     ['VLaMax', 'glycolytic rate', 'VO2max', 'lactate threshold', 'LT2', 'anaerobic'],
+    image:    '/images/lactate-analysis.jpg',
+    featured: true,
+  },
+  {
     slug:     'lactate-testing-software-for-coaches',
     title:    'Lactate Testing Software for Coaches: What to Look For (and Why Spreadsheets Cost You)',
     excerpt:  'If you test lactate for clients, the analyzer is only half the job. Branded reports, per-athlete history and training planning are where the right software pays for itself — here\'s the buying checklist.',

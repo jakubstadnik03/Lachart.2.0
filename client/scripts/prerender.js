@@ -75,6 +75,7 @@ const PRERENDER_ROUTES = [
   '/blog/zone-2-training-lactate',
   '/blog/lactate-threshold-heart-rate',
   '/blog/lactate-testing-software-for-coaches',
+  '/blog/what-is-vlamax',
 ];
 
 async function startServer() {

@@ -15,6 +15,12 @@ const LactateThresholdHeartRate = () => (
     description="What is lactate threshold heart rate (LTHR) and how do you find it? Learn the lab, field and step-test methods, and how to set accurate HR training zones from your LTHR."
     keywords="lactate threshold heart rate, LTHR, how to find lactate threshold heart rate, threshold heart rate, LTHR test, heart rate training zones, LT2 heart rate, anaerobic threshold heart rate, Friel LTHR, lactate test heart rate"
     relatedSlugs={['lt1-vs-lt2-training-zones', 'zone-2-training-lactate']}
+    faqs={[
+      { q: 'What is lactate threshold heart rate (LTHR)?', a: 'LTHR is the heart rate at your lactate threshold — the intensity above which blood lactate starts to accumulate faster than your body can clear it. "LTHR" usually refers to LT2 (the anaerobic threshold), roughly the hardest effort you could hold for about an hour. It is the same physiological point that defines FTP in cycling, expressed as a heart rate.' },
+      { q: 'How do I find my LTHR?', a: 'The most accurate way is a blood lactate step test: record heart rate and a lactate sample at each stage, then read the HR at the LT2 deflection. Without a lactate meter, use the Friel field test — a 30-minute all-out solo time trial where your average heart rate over the final 20 minutes estimates your LTHR.' },
+      { q: 'Is LTHR the same as maximum heart rate?', a: 'No. Maximum heart rate is the highest your heart can beat; LTHR is the heart rate at your threshold, which sits below max — commonly around 85–92% of max HR, but the exact percentage varies by person and fitness. That is why LTHR, not max HR, is the better anchor for heart-rate zones.' },
+      { q: 'How do I set heart-rate zones from LTHR?', a: 'Build zones as percentages of LTHR: recovery below ~85%, aerobic/endurance ~85–89%, tempo ~90–94%, threshold ~95–99%, and above ~100% for supra-threshold work. Above threshold, heart rate lags the effort, so use power or pace there instead.' },
+    ]}
   >
     <p>
       Open any heart-rate training plan and it will tell you to spend so many

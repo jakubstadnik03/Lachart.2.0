@@ -39,6 +39,7 @@ const BlogPostLayout = ({
   description,
   keywords,
   relatedSlugs,
+  faqs,
   children,
 }) => {
   const [progress, setProgress] = useState(0);
@@ -87,6 +88,19 @@ const BlogPostLayout = ({
     url:              canonical,
   };
 
+  // FAQPage schema — AI assistants (ChatGPT, Perplexity) and Google preferentially
+  // cite clean, self-contained Q&A. Emitted only when the post supplies FAQs.
+  const hasFaqs = Array.isArray(faqs) && faqs.length > 0;
+  const faqSchema = hasFaqs ? {
+    '@context': 'https://schema.org',
+    '@type':    'FAQPage',
+    mainEntity: faqs.map((f) => ({
+      '@type': 'Question',
+      name: f.q,
+      acceptedAnswer: { '@type': 'Answer', text: f.a },
+    })),
+  } : null;
+
   return (
     <>
       <Helmet>
@@ -115,6 +129,9 @@ const BlogPostLayout = ({
         <meta name="twitter:image"                    content={fullImage} />
 
         <script type="application/ld+json">{JSON.stringify(schema)}</script>
+        {hasFaqs && (
+          <script type="application/ld+json">{JSON.stringify(faqSchema)}</script>
+        )}
       </Helmet>
 
       <div className="min-h-screen bg-white">
@@ -217,6 +234,24 @@ const BlogPostLayout = ({
             {children}
           </div>
         </main>
+
+        {/* ── FAQ — visible + FAQPage schema for AI/search citation ─ */}
+        {hasFaqs && (
+          <section className="max-w-3xl mx-auto px-4 sm:px-6 pb-4" aria-label="Frequently asked questions">
+            <h2 className="text-2xl font-extrabold text-gray-900 tracking-tight mb-5">Frequently asked questions</h2>
+            <div className="divide-y divide-gray-100 border-y border-gray-100">
+              {faqs.map((f, i) => (
+                <details key={i} className="group py-4">
+                  <summary className="flex items-center justify-between cursor-pointer list-none font-semibold text-gray-900 text-[15px]">
+                    {f.q}
+                    <span className="ml-4 text-primary transition-transform group-open:rotate-45 text-xl leading-none">+</span>
+                  </summary>
+                  <p className="mt-3 text-gray-700 leading-relaxed text-[15px]">{f.a}</p>
+                </details>
+              ))}
+            </div>
+          </section>
+        )}
 
         {/* ── Bottom CTA ────────────────────────────────────────── */}
         <div className="max-w-3xl mx-auto px-4 sm:px-6 pb-12">

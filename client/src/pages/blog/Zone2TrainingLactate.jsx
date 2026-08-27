@@ -15,6 +15,12 @@ const Zone2TrainingLactate = () => (
     description="What is Zone 2 training and how do you find your real Zone 2? Learn why heart-rate formulas get it wrong and how a lactate test sets your true Zone 2 ceiling at LT1."
     keywords="zone 2 training, zone 2 heart rate, what is zone 2, zone 2 lactate, aerobic base training, LT1, first lactate threshold, zone 2 cycling, zone 2 running, fat oxidation, mitochondrial training"
     relatedSlugs={['lt1-vs-lt2-training-zones', 'lactate-test-at-home']}
+    faqs={[
+      { q: 'What is Zone 2 training?', a: 'Zone 2 is the band of intensity just below your first lactate threshold (LT1) — the highest effort at which blood lactate stays roughly flat, around 1.5–2.0 mmol/L. It builds aerobic base, mitochondria and fat oxidation with a low recovery cost, which is why endurance athletes spend most of their training time there.' },
+      { q: 'What heart rate is Zone 2?', a: 'There is no single Zone 2 heart rate — it is defined by your LT1, which is individual. It typically falls around 65–80% of maximum heart rate, but that range is wide enough that %-of-max formulas often misplace it by several beats. The accurate way is a lactate test; a talk test (you can speak in full sentences) is a rough field proxy.' },
+      { q: 'How long should Zone 2 sessions be?', a: 'Aim for 45–90+ minutes so you spend real time in the fat-oxidation window. Very short Zone 2 sessions give less return, and most of an endurance athlete’s weekly hours should sit in this zone.' },
+      { q: 'What is the most common Zone 2 mistake?', a: 'Going slightly too hard — drifting a few percent above LT1 into the "grey zone." It feels productive but is too hard for true base work and too easy for a real threshold stimulus, so you accumulate fatigue without the adaptation. Setting the ceiling from your actual LT1 keeps you out of it.' },
+    ]}
   >
     <p>
       Zone 2 is the most talked-about training intensity of the decade — and the

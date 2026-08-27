@@ -15,6 +15,12 @@ const LactateTestAtHome = () => (
     description="Step-by-step guide to running a valid blood-lactate threshold test at home. Equipment list, protocol design, sampling technique, and the four most common mistakes that ruin results."
     keywords="lactate test at home, DIY lactate threshold, blood lactate test protocol, lactate analyzer home, LT1 LT2 home test, cycling lactate test, running lactate test, lactate plus, lactate scout"
     relatedSlugs={['lactate-testing-protocol-guide', 'lactate-test-interpretation']}
+    faqs={[
+      { q: 'Can you do a lactate test at home?', a: 'Yes. With a portable lactate analyzer and a structured step-test protocol you can run a valid lactate threshold test at home — on a bike trainer or treadmill — and get your LT1, LT2 and training zones without a lab.' },
+      { q: 'What do you need for a home lactate test?', a: 'A portable lactate analyzer (e.g. Lactate Pro 2, Lactate Scout or Lactate Plus) with test strips and lancets, a way to hold steady power or pace (smart trainer or treadmill), a heart-rate monitor, and something to wipe the first drop of blood. That is enough to run a step test and read your thresholds.' },
+      { q: 'How accurate is a home lactate test?', a: 'Modern portable analyzers are accurate enough for training decisions — typically within about 0.2–0.3 mmol/L of lab devices. Most error comes from technique, not the meter: wipe the first blood drop, keep stages long enough (3–5 minutes), and sample consistently.' },
+      { q: 'How often should you do a lactate test?', a: 'Every 8–12 weeks is a good cadence for most athletes — often enough to catch a real shift in LT1/LT2 as fitness changes, without over-testing. Re-test after a training block or before setting new zones.' },
+    ]}
   >
     <p>
       Five years ago, a full lactate threshold test meant booking a sport science lab,
