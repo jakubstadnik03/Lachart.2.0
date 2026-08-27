@@ -258,12 +258,15 @@ function AtTheSameIntensity({ comparison, kind, storageMode }) {
     <div className="mt-3">
       <h4 className="mb-1 text-[13px] font-bold text-gray-900">At the same intensity</h4>
       <ul className="space-y-1.5">
-        {blocks.map((b) => {
+        {blocks.map((b, i) => {
           const delta = Math.round(b.deltaHr);
           const tone = Math.abs(delta) < 3 ? 'text-gray-500'
             : delta < 0 ? 'text-emerald-600' : 'text-rose-600';
           return (
-            <li key={`${b.sec}-${Math.round(b.demand)}`} className="text-[13px] leading-relaxed text-gray-700">
+            // Position, not content: two blocks of the same length at the same
+            // intensity are a normal thing for a session to contain, and keying
+            // on their values collides the moment it happens.
+            <li key={i} className="text-[13px] leading-relaxed text-gray-700">
               <strong>{fmtBlock(b.sec)}</strong> at{' '}
               <strong>{fmtDemand(b.demand, kind, storageMode)}</strong> with your heart at{' '}
               <strong>{Math.round(b.hr)} bpm</strong> — on test day that intensity cost you{' '}
@@ -360,7 +363,7 @@ function ZoneScatter({ result, anchor, governingTest, slopeFit, kind, storageMod
     <>
       <div className="mt-3 h-56 w-full">
         <ResponsiveContainer width="100%" height="100%">
-          <ComposedChart data={chart.data} margin={{ top: 8, right: 8, bottom: 18, left: 0 }}>
+          <ComposedChart data={chart.data} margin={{ top: 22, right: 12, bottom: 18, left: 0 }}>
             <CartesianGrid stroke="#f1f5f9" vertical={false} />
             {/* Intensity zones run vertically, heart-rate zones horizontally, so
                 a point's position states both at once and a mismatch is visible
@@ -405,10 +408,10 @@ function ZoneScatter({ result, anchor, governingTest, slopeFit, kind, storageMod
               labelFormatter={(v) => `${axisTick(v, kind, storageMode)}${kind === 'bike' ? ' W' : ''}`}
             />
             <ReferenceLine x={chart.lt2Demand} stroke={TEST_COLOR} strokeDasharray="3 3"
-              label={{ value: 'LT2', position: 'top', fontSize: 9, fill: '#64748b' }} />
+              label={{ value: 'LT2', position: 'top', offset: 6, fontSize: 10, fontWeight: 600, fill: '#64748b' }} />
             {chart.lt1Demand > 0 && (
               <ReferenceLine x={chart.lt1Demand} stroke={TEST_COLOR} strokeDasharray="3 3"
-                label={{ value: 'LT1', position: 'top', fontSize: 9, fill: '#64748b' }} />
+                label={{ value: 'LT1', position: 'top', offset: 6, fontSize: 10, fontWeight: 600, fill: '#64748b' }} />
             )}
             {anchor.lt2Hr > 0 && <ReferenceLine y={anchor.lt2Hr} stroke={TEST_COLOR} strokeDasharray="3 3" />}
             <Scatter dataKey="hr" shape={<Dot r={3} color={NOW_COLOR} opacity={0.45} />} isAnimationActive={false} />
