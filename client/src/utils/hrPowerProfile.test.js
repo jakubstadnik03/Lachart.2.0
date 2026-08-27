@@ -4,6 +4,8 @@ import {
   gradeFactor,
   compareToTestCurve,
   lactateCurveShift,
+  localSlopeAt,
+  projectThresholdShift,
   sessionCloud,
   steadyBlocks,
   testHrCurve,
@@ -413,6 +415,144 @@ describe('compareToTestCurve', () => {
   it('gives up without a usable test or cloud', () => {
     expect(compareToTestCurve(easyRide, null)).toBeNull();
     expect(compareToTestCurve([], bikeAnchor)).toBeNull();
+  });
+});
+
+describe('localSlopeAt', () => {
+  const curve = () => testHrCurve(bikeAnchor);
+
+  it('reads the curve\u2019s steepness where it is asked, not on average', () => {
+    // The fixture is a straight line, so every local slope is the same one.
+    expect(localSlopeAt(curve(), 225)).toBeCloseTo(B, 6);
+  });
+
+  it('follows a curve that steepens, rather than averaging it away', () => {
+    const bent = {
+      ...bikeAnchor,
+      points: [
+        { x: 150, y: 1, hr: 100 }, { x: 200, y: 1.4, hr: 110 },
+        { x: 250, y: 2.0, hr: 122 }, { x: 300, y: 3.4, hr: 145 },
+      ],
+    };
+    const shallow = localSlopeAt(testHrCurve(bent), 175);
+    const steep = localSlopeAt(testHrCurve(bent), 275);
+    expect(steep).toBeGreaterThan(shallow * 1.8);
+  });
+
+  it('will not answer outside the tested range', () => {
+    expect(localSlopeAt(curve(), 500)).toBeNull();
+    expect(localSlopeAt(null, 250)).toBeNull();
+  });
+});
+
+describe('projectThresholdShift', () => {
+  const DAY = 86400000;
+  const NOW = Date.parse('2026-08-27T00:00:00Z');
+
+  /**
+   * n sessions whose heart rate is lower than the test by exactly the amount a
+   * right-shift of `shiftW` watts would produce at each intensity.
+   */
+  const sessionsShiftedBy = (shiftW, { intensities, n = 8, sec = 1200 }) => {
+    const curve = testHrCurve(bikeAnchor);
+    return Array.from({ length: n }, (_, i) => ({
+      date: new Date(NOW - (i + 1) * 3 * DAY).toISOString(),
+      blocks: intensities.map((d) => ({
+        demand: d,
+        sec,
+        deltaHr: -localSlopeAt(curve, d) * shiftW,
+      })),
+    }));
+  };
+
+  it('recovers a threshold that has moved, in watts', () => {
+    // LT1 210 W, LT2 280 W. Ride near both, 15 W fitter.
+    const r = projectThresholdShift(
+      sessionsShiftedBy(15, { intensities: [205, 215, 275, 285] }), bikeAnchor, { now: NOW },
+    );
+    expect(r.lt1.to).toBeCloseTo(225, 0);
+    expect(r.lt2.to).toBeCloseTo(295, 0);
+    expect(r.lt1.shift).toBeCloseTo(15, 0);
+  });
+
+  it('separates a lifted LT1 from a static LT2 — the base-training signature', () => {
+    const curve = testHrCurve(bikeAnchor);
+    const sessions = Array.from({ length: 8 }, (_, i) => ({
+      date: new Date(NOW - (i + 1) * 3 * DAY).toISOString(),
+      blocks: [
+        // +20 W around LT1 …
+        ...[205, 215].map((d) => ({ demand: d, sec: 1800, deltaHr: -localSlopeAt(curve, d) * 20 })),
+        // … and nothing at all around LT2.
+        ...[275, 285].map((d) => ({ demand: d, sec: 900, deltaHr: 0 })),
+      ],
+    }));
+    const r = projectThresholdShift(sessions, bikeAnchor, { now: NOW });
+    expect(r.lt1.shift).toBeCloseTo(20, 0);
+    expect(Math.abs(r.lt2.shift)).toBeLessThan(2);
+  });
+
+  it('reads a detrained athlete as a threshold that has moved down', () => {
+    const r = projectThresholdShift(
+      sessionsShiftedBy(-18, { intensities: [275, 285] }), bikeAnchor, { now: NOW },
+    );
+    expect(r.lt2.shift).toBeCloseTo(-18, 0);
+    expect(r.lt2.to).toBeLessThan(r.lt2.from);
+  });
+
+  it('leaves a threshold null when nothing was ridden near it', () => {
+    const r = projectThresholdShift(
+      sessionsShiftedBy(15, { intensities: [275, 285] }), bikeAnchor, { now: NOW },
+    );
+    expect(r.lt2).not.toBeNull();
+    expect(r.lt1).toBeNull();
+  });
+
+  it('is not decided by one wild session', () => {
+    const good = sessionsShiftedBy(10, { intensities: [275, 285], n: 8 });
+    const rogue = {
+      date: new Date(NOW - DAY).toISOString(),
+      blocks: [{ demand: 280, sec: 3600, deltaHr: -40 }],
+    };
+    const r = projectThresholdShift([...good, rogue], bikeAnchor, { now: NOW });
+    expect(r.lt2.shift).toBeGreaterThan(8);
+    expect(r.lt2.shift).toBeLessThan(14);
+  });
+
+  it('leans on recent sessions over old ones', () => {
+    const curve = testHrCurve(bikeAnchor);
+    const at = (days, shiftW) => Array.from({ length: 6 }, (_, i) => ({
+      date: new Date(NOW - (days + i) * DAY).toISOString(),
+      blocks: [275, 285].map((d) => ({ demand: d, sec: 1800, deltaHr: -localSlopeAt(curve, d) * shiftW })),
+    }));
+    // Two months ago the athlete was +2 W; this month they are +20 W.
+    const r = projectThresholdShift([...at(60, 2), ...at(2, 20)], bikeAnchor, { now: NOW });
+    expect(r.lt2.shift).toBeGreaterThan(12);
+  });
+
+  it('will not project from a handful of blocks', () => {
+    const thin = [{ date: new Date(NOW - DAY).toISOString(), blocks: [{ demand: 280, sec: 600, deltaHr: -4 }] }];
+    expect(projectThresholdShift(thin, bikeAnchor, { now: NOW })).toBeNull();
+  });
+
+  it('refuses a shift too large to be fitness', () => {
+    // A footpod a few percent out, divided by a shallow slope, produces these.
+    const r = projectThresholdShift(
+      sessionsShiftedBy(90, { intensities: [275, 285] }), bikeAnchor, { now: NOW },
+    );
+    expect(r).toBeNull();
+  });
+
+  it('marks a large but survivable shift as a hint, not a number', () => {
+    const r = projectThresholdShift(
+      sessionsShiftedBy(45, { intensities: [275, 285] }), bikeAnchor, { now: NOW },
+    );
+    expect(r.lt2.confidence).toBe('low');
+    expect(r.lt2.shift).toBeCloseTo(45, 0);
+  });
+
+  it('gives up without a usable test or any sessions', () => {
+    expect(projectThresholdShift([], bikeAnchor)).toBeNull();
+    expect(projectThresholdShift([{ date: new Date().toISOString(), blocks: [] }], null)).toBeNull();
   });
 });
 

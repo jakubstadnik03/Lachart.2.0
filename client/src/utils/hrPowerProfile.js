@@ -1048,6 +1048,176 @@ export function analyseSession({ records, sport, anchor, tempC = null, slopeFit 
   };
 }
 
+// ── Where the thresholds have moved to ─────────────────────────────────────
+
+/**
+ * The test curve's steepness at one intensity, in bpm per unit of demand.
+ *
+ * Not a single slope for the whole curve: heart rate climbs more slowly per
+ * watt down in Z1 than it does near threshold, so converting a heart-rate
+ * difference into watts with one average slope over-reads easy rides and
+ * under-reads hard ones. Read locally, from the two stages either side.
+ */
+export function localSlopeAt(curve, demand) {
+  const pts = curve?.points;
+  if (!pts || pts.length < 2) return null;
+  const d = Number(demand);
+  if (!Number.isFinite(d) || d < curve.min || d > curve.max) return null;
+  for (let i = 0; i < pts.length - 1; i += 1) {
+    const a = pts[i];
+    const b = pts[i + 1];
+    if (d >= a.demand && d <= b.demand) {
+      const run = b.demand - a.demand;
+      if (run < 1e-9) return null;
+      const slope = (b.hr - a.hr) / run;
+      return slope > 0 ? slope : null;
+    }
+  }
+  return null;
+}
+
+/** Sessions closer to today say more about today. Half-life in days. */
+const RECENCY_HALF_LIFE_DAYS = 21;
+/** How near a threshold a block must sit to speak for it, as a fraction of LT2. */
+const NEAR_THRESHOLD = 0.18;
+/** Below this much evidence the projection is a hint, not a number. */
+const MIN_MINUTES_FOR_HIGH = 180;
+const MIN_SESSIONS_FOR_HIGH = 6;
+
+/**
+ * How far a threshold may be said to have moved before the reading is more
+ * likely to be measurement than fitness.
+ *
+ * Running is why this exists. Demand there is pace from a footpod or GPS,
+ * carrying a few percent of error before the grade adjustment adds its own,
+ * and the test's heart-rate slope per metre-per-second is shallow — so
+ * dividing by it multiplies that error into an implausible number of seconds
+ * per kilometre. A real athlete can move a threshold 20% over a season; a
+ * single reading claiming it is nearly always a bad one.
+ */
+const SHIFT_SUSPECT_PCT_OF_THRESHOLD = 10;
+const SHIFT_REJECT_PCT_OF_THRESHOLD = 20;
+
+/**
+ * Project where LT1 and LT2 sit now, from heart rate measured at intensities
+ * the test actually covered.
+ *
+ * The arithmetic is one step. If the whole curve has shifted right by ΔP, then
+ * at any intensity d the heart rate today is what the test recorded at d − ΔP,
+ * so a measured difference converts as ΔP ≈ −Δhr / slope(d). Every steady block
+ * of every session since the test is one such estimate, at whatever intensity
+ * it happened to be ridden.
+ *
+ * LT1 and LT2 are estimated separately, from the blocks ridden near each. They
+ * genuinely move apart — a winter of easy volume lifts LT1 while LT2 sits still,
+ * and reporting one number for both would hide the thing base training is for.
+ * When too little was ridden near one of them, that one is left null rather
+ * than borrowed from the other.
+ *
+ * What this is NOT: a test. Heart rate carries heat, fatigue, illness, caffeine
+ * and altitude along with fitness, and no weighting removes them — it only
+ * stops any single session deciding the answer. The output says "retest" when
+ * it moves; it never claims to have replaced one.
+ *
+ * @param {Array} sessions  [{date, blocks:[{demand, deltaHr, sec}]}]
+ * @param {object} anchor   extractLactateThresholds() output
+ * @param {object} [o]
+ * @param {Date}   [o.now]
+ * @returns {null | {lt1:object|null, lt2:object|null, sessions:number, minutes:number}}
+ */
+export function projectThresholdShift(sessions, anchor, { now = null } = {}) {
+  const curve = testHrCurve(anchor);
+  if (!curve || !Array.isArray(sessions) || !sessions.length) return null;
+  const kind = sportKind(anchor.sport);
+  const storageMode = anchor.storageMode;
+  const lt1Demand = thresholdToDemand(anchor.lt1, { kind, storageMode });
+  const lt2Demand = thresholdToDemand(anchor.lt2, { kind, storageMode });
+  if (!(lt2Demand > 0)) return null;
+
+  const nowMs = now ? new Date(now).getTime() : Date.now();
+  const band = lt2Demand * NEAR_THRESHOLD;
+  const near = { lt1: [], lt2: [] };
+  let totalSec = 0;
+  let used = 0;
+
+  for (const session of sessions) {
+    const ms = new Date(session?.date).getTime();
+    if (!Number.isFinite(ms)) continue;
+    const ageDays = Math.max(0, (nowMs - ms) / 86400000);
+    const recency = 0.5 ** (ageDays / RECENCY_HALF_LIFE_DAYS);
+    let contributed = false;
+
+    for (const b of session.blocks || []) {
+      const slope = localSlopeAt(curve, b.demand);
+      if (!slope) continue;
+      const shift = -Number(b.deltaHr) / slope;
+      if (!Number.isFinite(shift)) continue;
+      const sec = Number(b.sec) || 0;
+      if (sec <= 0) continue;
+      // Minutes and recency together: a long block on a recent ride is worth
+      // more than a five-minute one from six weeks ago, and both are worth
+      // something.
+      const weight = (sec / 60) * recency;
+      totalSec += sec;
+      contributed = true;
+      if (lt1Demand > 0 && Math.abs(b.demand - lt1Demand) <= band) near.lt1.push({ shift, weight });
+      if (Math.abs(b.demand - lt2Demand) <= band) near.lt2.push({ shift, weight });
+    }
+    if (contributed) used += 1;
+  }
+
+  /** Weighted median — one bad session should move it, not decide it. */
+  const weightedMedian = (rows) => {
+    if (!rows.length) return null;
+    const sorted = [...rows].sort((a, b) => a.shift - b.shift);
+    const half = sorted.reduce((s, r) => s + r.weight, 0) / 2;
+    let run = 0;
+    for (const r of sorted) {
+      run += r.weight;
+      if (run >= half) return r.shift;
+    }
+    return sorted[sorted.length - 1].shift;
+  };
+
+  const estimate = (rows, baseDemand) => {
+    if (rows.length < 3 || !(baseDemand > 0)) return null;
+    const shift = weightedMedian(rows);
+    if (shift == null) return null;
+    const projected = baseDemand + shift;
+    if (!(projected > 0)) return null;
+    const shiftPct = (shift / baseDemand) * 100;
+    // Beyond this the reading says more about the sensor than the athlete, and
+    // a projected threshold nobody can train to is worse than none.
+    if (Math.abs(shiftPct) > SHIFT_REJECT_PCT_OF_THRESHOLD) return null;
+    const minutes = rows.reduce((s, r) => s + r.weight, 0);
+    const spread = Math.max(...rows.map((r) => r.shift)) - Math.min(...rows.map((r) => r.shift));
+    let confidence = rows.length >= 8 && spread < baseDemand * 0.25 ? 'high'
+      : rows.length >= 5 ? 'medium' : 'low';
+    if (Math.abs(shiftPct) > SHIFT_SUSPECT_PCT_OF_THRESHOLD) confidence = 'low';
+    return {
+      shift,
+      shiftPct,
+      from: demandToThreshold(baseDemand, { kind, storageMode }),
+      to: demandToThreshold(projected, { kind, storageMode }),
+      fromDemand: baseDemand,
+      toDemand: projected,
+      blocks: rows.length,
+      minutes: Math.round(minutes),
+      confidence,
+    };
+  };
+
+  const lt1 = estimate(near.lt1, lt1Demand);
+  const lt2 = estimate(near.lt2, lt2Demand);
+  if (!lt1 && !lt2) return null;
+
+  const minutes = Math.round(totalSec / 60);
+  const overall = used >= MIN_SESSIONS_FOR_HIGH && minutes >= MIN_MINUTES_FOR_HIGH ? 'high'
+    : used >= 3 ? 'medium' : 'low';
+
+  return { lt1, lt2, sessions: used, minutes, confidence: overall, kind, storageMode };
+}
+
 // ── History: many sessions against one test ─────────────────────────────────
 
 const CONFIDENCE_WEIGHT = { high: 1, medium: 0.55, low: 0.2 };

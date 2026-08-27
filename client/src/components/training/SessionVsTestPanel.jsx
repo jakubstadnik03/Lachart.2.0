@@ -675,6 +675,75 @@ function DriftFromHeartRate({ result, kind, storageMode, testDateLabel }) {
 
 // ── Trend across everything since the test ─────────────────────────────────
 
+/**
+ * Where LT1 and LT2 have drifted to since the test.
+ *
+ * Built from heart rate measured at intensities the test covered, converted to
+ * the athlete's own unit through the local steepness of their curve. It reads
+ * far more of a training week than the threshold fit does — that one needs a
+ * long steady effort near threshold, this one takes any block the test can
+ * place, easy ones included.
+ *
+ * The two thresholds are shown separately because they move separately: a
+ * block of easy volume lifts LT1 while LT2 sits still, and one averaged number
+ * would hide exactly the thing that block was for.
+ */
+function ProjectedThresholds({ projection, kind, storageMode }) {
+  if (!projection) return null;
+  const rows = [
+    { key: 'LT1', label: 'Aerobic threshold', est: projection.lt1 },
+    { key: 'LT2', label: 'Anaerobic threshold', est: projection.lt2 },
+  ].filter((r) => r.est);
+  if (!rows.length) return null;
+
+  return (
+    <div className="mt-3">
+      <div className="mb-2 flex items-baseline justify-between gap-3">
+        <h4 className="text-[13px] font-bold text-gray-900">Where your thresholds sit now</h4>
+        <span className="text-[11px] text-gray-400">
+          {projection.sessions} sessions · {Math.round(projection.minutes / 60)}h read
+        </span>
+      </div>
+
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+        {rows.map(({ key, label, est }) => {
+          const better = kind === 'bike' ? est.shift > 0 : est.shift > 0;
+          const moved = Math.abs(est.shiftPct) >= 1.5;
+          return (
+            <div key={key} className="rounded-lg border border-gray-200 bg-white px-3 py-2">
+              <div className="flex items-baseline justify-between gap-2">
+                <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">
+                  {key} · {label}
+                </span>
+                <ConfidenceChip level={est.confidence} />
+              </div>
+              <div className="mt-0.5 flex items-baseline gap-2 tabular-nums">
+                <span className="text-[13px] text-gray-400 line-through">
+                  {fmtDemand(est.fromDemand, kind, storageMode)}
+                </span>
+                <span className="text-gray-300">→</span>
+                <span className={`text-[17px] font-bold ${moved ? (better ? 'text-emerald-600' : 'text-rose-600') : 'text-gray-900'}`}>
+                  {fmtDemand(est.toDemand, kind, storageMode)}
+                </span>
+              </div>
+              <div className="text-[11px] tabular-nums text-gray-500">
+                {moved
+                  ? `${fmtDemandDelta(est.shift, est.toDemand, kind, storageMode)} (${est.shiftPct > 0 ? '+' : ''}${est.shiftPct.toFixed(1)}%) · ${est.minutes} min near ${key}`
+                  : `unchanged · ${est.minutes} min near ${key}`}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <p className="mt-1.5 text-[11px] leading-relaxed text-gray-400">
+        Estimated from heart rate, not measured — heat, fatigue and illness move it too. Treat a
+        change here as a reason to retest, never as a replacement for one.
+      </p>
+    </div>
+  );
+}
+
 function DriftHistory({ athleteId, kind, storageMode }) {
   const [state, setState] = useState({ loading: true, data: null });
 
@@ -688,20 +757,24 @@ function DriftHistory({ athleteId, kind, storageMode }) {
   }, [kind, athleteId]);
 
   const { loading, data } = state;
-  if (loading || !data?.series?.length) return null;
+  if (loading) return null;
+  if (!data?.series?.length && !data?.projection) return null;
 
-  const series = data.series.map((p) => ({ ...p, ms: new Date(p.date).getTime() }));
+  const series = (data.series || []).map((p) => ({ ...p, ms: new Date(p.date).getTime() }));
 
   return (
     <div className="mt-4 border-t border-gray-100 pt-3">
       <div className="mb-1 flex items-baseline justify-between gap-3">
         <h4 className="text-[13px] font-bold text-gray-900">Since your test</h4>
         <span className="text-[11px] text-gray-400">
-          {data.coverage.read} of {data.coverage.considered} sessions readable
+          {data.coverage?.compared ?? data.coverage?.read} of {data.coverage?.considered} sessions read
         </span>
       </div>
 
-      <div className="h-36 w-full">
+      <ProjectedThresholds projection={data.projection} kind={kind} storageMode={storageMode} />
+
+      {series.length > 0 && (
+      <div className="mt-3 h-36 w-full">
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart data={series} margin={{ top: 6, right: 8, bottom: 4, left: 0 }}>
             <CartesianGrid stroke="#f1f5f9" vertical={false} />
@@ -722,6 +795,7 @@ function DriftHistory({ athleteId, kind, storageMode }) {
           </ComposedChart>
         </ResponsiveContainer>
       </div>
+      )}
 
       {data.retest && (
         <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] leading-relaxed text-amber-800">

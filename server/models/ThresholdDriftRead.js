@@ -43,6 +43,20 @@ const thresholdDriftReadSchema = new mongoose.Schema({
   driftBpmPerHour: Number,
   decoupling: Number,
   confidence: String,
+  /**
+   * Steady stretches this session held, each with the heart-rate difference
+   * against the test at that same intensity. These are what the long-term
+   * threshold projection is built from, and unlike the threshold fit they
+   * survive an easy ride — so they are stored even when `ok` is false.
+   */
+  blocks: [{
+    _id: false,
+    demand: Number,
+    hr: Number,
+    testHr: Number,
+    deltaHr: Number,
+    sec: Number,
+  }],
   tempC: Number,
   tempAdjustBpm: Number,
   pointCount: Number,

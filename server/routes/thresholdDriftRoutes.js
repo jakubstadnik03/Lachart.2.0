@@ -15,7 +15,7 @@ const verifyToken = require('../middleware/verifyToken');
 const User = require('../models/UserModel');
 const { isCoachLikeRole, athleteHasCoachUser } = require('../utils/athleteCoachAccess');
 const { readSessionsSinceTest } = require('../services/thresholdDriftService');
-const { buildDriftHistory, demandToThreshold, sportKind } = require('../utils/hrPowerProfile');
+const { buildDriftHistory, demandToThreshold, projectThresholdShift, sportKind } = require('../utils/hrPowerProfile');
 
 /**
  * GET /api/threshold-drift
@@ -45,7 +45,7 @@ router.get('/', verifyToken, async (req, res) => {
     const sport = sportKind(req.query.sport || 'bike');
     const limit = Math.min(200, Math.max(5, Number(req.query.limit) || 80));
 
-    const { test, anchor, reads, unreadable, considered, skipped } = await readSessionsSinceTest({
+    const { test, anchor, reads, compared, unreadable, considered, skipped } = await readSessionsSinceTest({
       userId: target._id,
       sport,
       limit,
@@ -64,6 +64,13 @@ router.get('/', verifyToken, async (req, res) => {
       storageMode: anchor?.storageMode ?? 'pace',
     };
 
+    // Where the thresholds have drifted to, from heart rate measured at
+    // intensities the test covered. Computed before the early return below:
+    // most athletes have far more sessions that can be placed against the
+    // curve than sessions the threshold fit will touch, and it would be absurd
+    // to return "no data" while holding forty of them.
+    const projection = projectThresholdShift(compared || [], anchor);
+
     if (!reads.length) {
       return res.json({
         sport,
@@ -71,8 +78,14 @@ router.get('/', verifyToken, async (req, res) => {
         series: [],
         latest: null,
         retest: null,
+        projection,
         reason: skipped?.reason || 'no-readable-sessions',
-        coverage: { considered: considered || 0, read: 0, unreadable: unreadable || {} },
+        coverage: {
+          considered: considered || 0,
+          read: 0,
+          compared: (compared || []).length,
+          unreadable: unreadable || {},
+        },
       });
     }
 
@@ -108,9 +121,11 @@ router.get('/', verifyToken, async (req, res) => {
       series,
       latest: series[series.length - 1] || null,
       retest: history.retest,
+      projection,
       coverage: {
         considered: considered || 0,
         read: reads.length,
+        compared: (compared || []).length,
         unreadable: unreadable || {},
       },
     });

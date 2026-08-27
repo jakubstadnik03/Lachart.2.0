@@ -27,14 +27,14 @@ const Test = require('../models/test');
 const ActivityWeather = require('../models/ActivityWeather');
 const ThresholdDriftRead = require('../models/ThresholdDriftRead');
 const { channel } = require('../utils/streamChannel');
-const { analyseSession, sportKind, testHrSlope } = require('../utils/hrPowerProfile');
+const { analyseSession, compareToTestCurve, sportKind, testHrSlope } = require('../utils/hrPowerProfile');
 const { extractAnchor } = require('../utils/lactateAnchor');
 
 /**
  * Bump when a change to the engine could move a cached number. Rows stamped
  * with an older version are recomputed instead of served.
  */
-const ENGINE_VERSION = 1;
+const ENGINE_VERSION = 2;
 
 /** How many sessions back to walk. Beyond a season the test itself is ancient. */
 const DEFAULT_LIMIT = 80;
@@ -234,6 +234,8 @@ async function readSessionsSinceTest({ userId, sport, limit = DEFAULT_LIMIT }) {
     && new Date(row.testUpdatedAt).getTime() === new Date(testStamp.testUpdatedAt).getTime();
 
   const reads = [];
+  /** Every session that could be placed against the test, however easy. */
+  const compared = [];
   const unreadable = {};
 
   for (const session of sessions) {
@@ -241,6 +243,7 @@ async function readSessionsSinceTest({ userId, sport, limit = DEFAULT_LIMIT }) {
     if (isFresh(hit)) {
       if (hit.ok) reads.push({ ...hit, date: hit.activityDate });
       else unreadable[hit.reason] = (unreadable[hit.reason] || 0) + 1;
+      if (hit.blocks?.length) compared.push({ date: hit.activityDate, blocks: hit.blocks });
       continue;
     }
 
@@ -254,6 +257,14 @@ async function readSessionsSinceTest({ userId, sport, limit = DEFAULT_LIMIT }) {
       tempC = Number.isFinite(weather?.tempC) ? weather.tempC : null;
       result = analyseSession({ records, sport: session.sport, anchor, tempC, slopeFit });
     }
+
+    // Deliberately outside the `ok` check. The threshold fit refuses most of a
+    // training week — intervals, recovery spins, anything held below LT1 — but
+    // those sessions still measured a heart rate at an intensity the test
+    // covered, and that is all the projection needs.
+    const comparison = compareToTestCurve(result.cloud, anchor, {
+      tempAdjustBpm: result.tempAdjustBpm || 0,
+    });
 
     const row = {
       userId,
@@ -273,6 +284,9 @@ async function readSessionsSinceTest({ userId, sport, limit = DEFAULT_LIMIT }) {
       driftBpmPerHour: result.fit?.drift,
       decoupling: Number.isFinite(result.decoupling) ? result.decoupling : null,
       confidence: result.confidence,
+      blocks: (comparison?.blocks || []).map((b) => ({
+        demand: b.demand, hr: b.hr, testHr: b.testHr, deltaHr: b.deltaHr, sec: b.sec,
+      })),
       tempC,
       tempAdjustBpm: result.tempAdjustBpm,
       pointCount: result.points?.length || result.pointsFound || 0,
@@ -286,10 +300,12 @@ async function readSessionsSinceTest({ userId, sport, limit = DEFAULT_LIMIT }) {
 
     if (row.ok) reads.push({ ...row, date: session.date });
     else unreadable[row.reason] = (unreadable[row.reason] || 0) + 1;
+    if (row.blocks.length) compared.push({ date: session.date, blocks: row.blocks });
   }
 
   reads.sort((a, b) => new Date(a.date) - new Date(b.date));
-  return { test, anchor, reads, unreadable, considered: sessions.length };
+  compared.sort((a, b) => new Date(a.date) - new Date(b.date));
+  return { test, anchor, reads, compared, unreadable, considered: sessions.length };
 }
 
 module.exports = {
