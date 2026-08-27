@@ -4912,6 +4912,22 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
               </div>
             )}
 
+            {/* The session read against the lactate test: zones, blood, threshold.
+                On Summary, because that is the tab the athlete lands on — it
+                spent its first outing behind Map/Graph, where nobody saw it. */}
+            {chartTraining?.records?.length > 60 && (
+              <div className="px-4 py-4 border-b border-gray-100">
+                <SessionVsTestPanel
+                  records={chartTraining.records}
+                  laps={laps}
+                  sport={merged?.sport || sport}
+                  athleteId={athleteId}
+                  activityKey={activityWeatherKey}
+                  activityDate={merged?.start_date || merged?.startDate || merged?.date}
+                />
+              </div>
+            )}
+
             {/* Comments */}
             {commentsTarget.trainingId && (
             <div className="px-4 py-4 border-b border-gray-100">
@@ -5049,18 +5065,6 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
               <TimeInZonesBar records={chartTraining.records} sport={merged?.sport} authUser={authUser} />
             )}
 
-            {/* The session read against the lactate test: zones, blood, threshold */}
-            {chartTraining?.records?.length > 60 && (
-              <SessionVsTestPanel
-                className="mt-4"
-                records={chartTraining.records}
-                laps={laps}
-                sport={merged?.sport || sport}
-                athleteId={athleteId}
-                activityKey={activityWeatherKey}
-                activityDate={merged?.start_date || merged?.startDate || merged?.date}
-              />
-            )}
 
             {/* Entire Workout — extended stats + Min/Avg/Max */}
             {chartTraining?.records?.length > 5 && (() => {

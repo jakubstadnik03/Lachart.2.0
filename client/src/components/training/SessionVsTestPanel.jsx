@@ -24,11 +24,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   CartesianGrid, ComposedChart, Line, ReferenceArea, ReferenceLine,
-  ResponsiveContainer, Scatter, Tooltip, XAxis, YAxis, ZAxis,
+  ResponsiveContainer, Scatter, Tooltip, XAxis, YAxis,
 } from 'recharts';
 import api, { getActivityWeather, getThresholdDrift } from '../../services/api';
 import {
-  analyseSession, lactateCurveShift, sportKind, testHrSlope,
+  analyseSession, compareToTestCurve, lactateCurveShift, sportKind, testHrSlope,
   testLactateCurve, thresholdToDemand, zoneAgreement,
 } from '../../utils/hrPowerProfile';
 import { extractLactateThresholds } from '../../utils/extractLactateThresholds';
@@ -46,6 +46,19 @@ const ZONES = [
   { id: 'Z4', label: 'Threshold', color: '#f97316' },
   { id: 'Z5', label: 'VO₂max', color: '#ef4444' },
 ];
+
+/**
+ * Scatter points, sized here rather than by a ZAxis.
+ *
+ * Recharts derives a symbol's size from the z scale, and a ZAxis with no
+ * dataKey resolves every point to zero — the symbols render, in the right
+ * place, with the right colour, as paths of `M0,0`. Nothing is visibly wrong
+ * except that the chart is empty, which is a bad way to find out.
+ */
+function Dot({ cx, cy, r, color, opacity }) {
+  if (!Number.isFinite(cx) || !Number.isFinite(cy)) return null;
+  return <circle cx={cx} cy={cy} r={r} fill={color} fillOpacity={opacity} />;
+}
 
 const CONFIDENCE_UI = {
   high: { label: 'Solid read', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
@@ -217,6 +230,66 @@ function ZoneSplitBars({ agreement, kind }) {
   );
 }
 
+/** "20 min" / "1h05" — a block length, said the way a coach would say it. */
+function fmtBlock(sec) {
+  const m = Math.round((Number(sec) || 0) / 60);
+  if (m < 60) return `${m} min`;
+  const h = Math.floor(m / 60);
+  const rem = m % 60;
+  return rem ? `${h}h${String(rem).padStart(2, '0')}` : `${h}h`;
+}
+
+/**
+ * The plainest thing the test can say about today, and the one that shows on
+ * an easy ride.
+ *
+ * Everything else in this panel either models the threshold or needs blood.
+ * This needs neither: the athlete held 250 W, the test measured 250 W, and the
+ * two heart rates are simply subtracted. No extrapolation means no reason to
+ * refuse a Z1 session — which is most sessions.
+ */
+function AtTheSameIntensity({ comparison, kind, storageMode }) {
+  if (!comparison) return null;
+  const { blocks, fromAverage, meanDeltaHr } = comparison;
+  const lower = meanDeltaHr < 0;
+  const notable = Math.abs(meanDeltaHr) >= 3;
+
+  return (
+    <div className="mt-3">
+      <h4 className="mb-1 text-[13px] font-bold text-gray-900">At the same intensity</h4>
+      <ul className="space-y-1.5">
+        {blocks.map((b) => {
+          const delta = Math.round(b.deltaHr);
+          const tone = Math.abs(delta) < 3 ? 'text-gray-500'
+            : delta < 0 ? 'text-emerald-600' : 'text-rose-600';
+          return (
+            <li key={`${b.sec}-${Math.round(b.demand)}`} className="text-[13px] leading-relaxed text-gray-700">
+              <strong>{fmtBlock(b.sec)}</strong> at{' '}
+              <strong>{fmtDemand(b.demand, kind, storageMode)}</strong> with your heart at{' '}
+              <strong>{Math.round(b.hr)} bpm</strong> — on test day that intensity cost you{' '}
+              <strong>{Math.round(b.testHr)} bpm</strong>
+              {Math.abs(delta) >= 1 && (
+                <span className={`font-semibold ${tone}`}>
+                  {' '}({delta < 0 ? `${Math.abs(delta)} lower` : `${delta} higher`})
+                </span>
+              )}
+              .
+            </li>
+          );
+        })}
+      </ul>
+      <p className="mt-1.5 text-[11px] leading-relaxed text-gray-400">
+        {fromAverage
+          ? 'Nothing held still for long enough to quote, so this is the session average.'
+          : 'Read straight off your test\u2019s stages — nothing here is extrapolated.'}
+        {notable && (lower
+          ? ' A lower heart rate for the same effort is the shape aerobic fitness improves in.'
+          : ' A higher heart rate for the same effort usually means heat, fatigue or illness before it means lost fitness.')}
+      </p>
+    </div>
+  );
+}
+
 // ── Layer 1: the session on the test's axes ────────────────────────────────
 
 function ZoneScatter({ result, anchor, governingTest, slopeFit, kind, storageMode }) {
@@ -257,11 +330,20 @@ function ZoneScatter({ result, anchor, governingTest, slopeFit, kind, storageMod
         line.push({ d, testHr: slopeFit.intercept + slopeFit.slope * d });
       }
     }
+    // Both series share one dataset keyed on intensity. A <Scatter> holding its
+    // own `data` inside a ComposedChart never binds to the axes — the group
+    // renders and not one point in it does.
+    const data = [
+      ...cloud.map((p) => ({ d: p.demand, hr: p.hr, min: Math.round(p.t / 60) })),
+      ...line,
+    ].sort((a, b) => a.d - b.d);
+
     return {
       domain,
-      hrDomain,
+      hrDomain: [Math.floor(hrDomain[0]), Math.ceil(hrDomain[1])],
+      data,
       line,
-      cloud: cloud.map((p) => ({ d: p.demand, hr: p.hr, min: Math.round(p.t / 60) })),
+      cloud,
       bands: zoneSlices(demandBounds, domain),
       hrBands: zoneSlices(hrBounds, hrDomain),
       agreement: demandBounds && hrBounds
@@ -278,18 +360,21 @@ function ZoneScatter({ result, anchor, governingTest, slopeFit, kind, storageMod
     <>
       <div className="mt-3 h-56 w-full">
         <ResponsiveContainer width="100%" height="100%">
-          <ComposedChart data={chart.line} margin={{ top: 8, right: 8, bottom: 18, left: 0 }}>
+          <ComposedChart data={chart.data} margin={{ top: 8, right: 8, bottom: 18, left: 0 }}>
             <CartesianGrid stroke="#f1f5f9" vertical={false} />
             {/* Intensity zones run vertically, heart-rate zones horizontally, so
                 a point's position states both at once and a mismatch is visible
                 as a point sitting in two differently coloured strips. */}
+            {/* Uneven on purpose: two bands at equal weight multiply into mud
+                wherever they cross. Intensity carries the colour, heart rate
+                only tints, and the pair stays readable at the intersections. */}
             {chart.bands.map((b) => (
               <ReferenceArea key={`d-${b.id}`} x1={b.from} x2={b.to}
-                fill={b.color} fillOpacity={0.10} stroke="none" ifOverflow="hidden" />
+                fill={b.color} fillOpacity={0.16} stroke="none" ifOverflow="hidden" />
             ))}
             {chart.hrBands.map((b) => (
               <ReferenceArea key={`h-${b.id}`} y1={b.from} y2={b.to}
-                fill={b.color} fillOpacity={0.10} stroke="none" ifOverflow="hidden" />
+                fill={b.color} fillOpacity={0.06} stroke="none" ifOverflow="hidden" />
             ))}
             <XAxis
               type="number"
@@ -307,13 +392,13 @@ function ZoneScatter({ result, anchor, governingTest, slopeFit, kind, storageMod
             <YAxis
               type="number"
               domain={chart.hrDomain}
+              tickFormatter={(v) => Math.round(v)}
               tick={{ fontSize: 10, fill: '#94a3b8' }}
               axisLine={false}
               tickLine={false}
-              width={34}
-              label={{ value: 'bpm', angle: -90, position: 'insideLeft', fontSize: 10, fill: '#94a3b8' }}
+              width={40}
+              label={{ value: 'bpm', angle: -90, position: 'insideLeft', offset: 12, fontSize: 10, fill: '#94a3b8' }}
             />
-            <ZAxis range={[18, 18]} />
             <Tooltip
               contentStyle={{ fontSize: 11, borderRadius: 8, border: '1px solid #e2e8f0' }}
               formatter={(v, name) => [`${Math.round(v)} bpm`, name === 'testHr' ? 'Test curve' : 'This session']}
@@ -326,9 +411,10 @@ function ZoneScatter({ result, anchor, governingTest, slopeFit, kind, storageMod
                 label={{ value: 'LT1', position: 'top', fontSize: 9, fill: '#64748b' }} />
             )}
             {anchor.lt2Hr > 0 && <ReferenceLine y={anchor.lt2Hr} stroke={TEST_COLOR} strokeDasharray="3 3" />}
-            <Scatter data={chart.cloud} dataKey="hr" fill={NOW_COLOR} fillOpacity={0.42} shape="circle" />
+            <Scatter dataKey="hr" shape={<Dot r={3} color={NOW_COLOR} opacity={0.45} />} isAnimationActive={false} />
             {chart.line.length > 0 && (
-              <Line type="monotone" dataKey="testHr" stroke={TEST_COLOR} strokeWidth={2} dot={false} />
+              <Line type="monotone" dataKey="testHr" stroke={TEST_COLOR} strokeWidth={2}
+                dot={false} connectNulls isAnimationActive={false} />
             )}
           </ComposedChart>
         </ResponsiveContainer>
@@ -430,7 +516,6 @@ function LactateVsCurve({ anchor, samples, kind, storageMode }) {
               width={34}
               label={{ value: 'mmol/L', angle: -90, position: 'insideLeft', fontSize: 10, fill: '#94a3b8' }}
             />
-            <ZAxis range={[70, 70]} />
             <Tooltip
               contentStyle={{ fontSize: 11, borderRadius: 8, border: '1px solid #e2e8f0' }}
               formatter={(v) => [`${Number(v).toFixed(1)} mmol/L`, '']}
@@ -438,7 +523,7 @@ function LactateVsCurve({ anchor, samples, kind, storageMode }) {
             />
             <Line data={curveData} type="monotone" dataKey="lac" stroke={TEST_COLOR} strokeWidth={2}
               dot={{ r: 2, fill: TEST_COLOR }} />
-            <Scatter data={measured} dataKey="lac" fill={LACTATE_COLOR} shape="circle" />
+            <Scatter data={measured} dataKey="lac" shape={<Dot r={5} color={LACTATE_COLOR} opacity={1} />} isAnimationActive={false} />
           </ComposedChart>
         </ResponsiveContainer>
       </div>
@@ -629,7 +714,7 @@ function DriftHistory({ athleteId, kind, storageMode }) {
                 name === 'trendDelta' ? '28-day trend' : 'That session',
               ]} />
             <ReferenceLine y={0} stroke={TEST_COLOR} strokeDasharray="3 3" />
-            <Scatter dataKey="deltaDemand" fill={NOW_COLOR} fillOpacity={0.28} shape="circle" />
+            <Scatter dataKey="deltaDemand" shape={<Dot r={3} color={NOW_COLOR} opacity={0.3} />} isAnimationActive={false} />
             <Line type="monotone" dataKey="trendDelta" stroke={NOW_COLOR} strokeWidth={2} dot={false} />
           </ComposedChart>
         </ResponsiveContainer>
@@ -655,23 +740,26 @@ export default function SessionVsTestPanel({
   laps = [],
   sport,
   athleteId = null,
+  /** Pass the athlete's tests when the caller already holds them — saves a fetch. */
+  tests: testsProp = null,
   activityKey = null,
   activityDate = null,
   tempC: tempCProp = null,
   className = '',
 }) {
-  const [tests, setTests] = useState(null);
+  const [tests, setTests] = useState(testsProp);
   const [tempC, setTempC] = useState(tempCProp);
   const kind = sportKind(sport);
 
   useEffect(() => {
     let cancelled = false;
+    if (testsProp) { setTests(testsProp); return undefined; }
     if (kind === 'swim' || kind === 'other') { setTests([]); return undefined; }
     api.get(athleteId ? `/test/list/${athleteId}` : '/test')
       .then((res) => { if (!cancelled) setTests(Array.isArray(res.data) ? res.data : []); })
       .catch(() => { if (!cancelled) setTests([]); });
     return () => { cancelled = true; };
-  }, [athleteId, kind]);
+  }, [athleteId, kind, testsProp]);
 
   useEffect(() => {
     if (tempCProp != null || !activityKey) return undefined;
@@ -708,6 +796,10 @@ export default function SessionVsTestPanel({
   }, [records, sport, anchor, tempC, slopeFit, tests]);
 
   const lactateSamples = useMemo(() => lactateSamplesFromLaps(laps, kind), [laps, kind]);
+  const comparison = useMemo(
+    () => compareToTestCurve(result?.cloud, anchor, { tempAdjustBpm: result?.tempAdjustBpm || 0 }),
+    [result, anchor],
+  );
 
   if (kind === 'swim' || kind === 'other') return null;
   if (tests === null) {
@@ -746,6 +838,9 @@ export default function SessionVsTestPanel({
           </span>
         )}
       </div>
+
+      {/* First, because it is the sentence most sessions can support. */}
+      <AtTheSameIntensity comparison={comparison} kind={kind} storageMode={storageMode} />
 
       {hasCloud ? (
         <ZoneScatter result={result} anchor={anchor} governingTest={governingTest}

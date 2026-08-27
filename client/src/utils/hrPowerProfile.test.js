@@ -2,8 +2,11 @@ import {
   analyseSession,
   buildDriftHistory,
   gradeFactor,
+  compareToTestCurve,
   lactateCurveShift,
   sessionCloud,
+  steadyBlocks,
+  testHrCurve,
   testHrSlope,
   testLactateCurve,
   thresholdToDemand,
@@ -288,6 +291,128 @@ describe('testLactateCurve', () => {
   it('gives up on a test with too few usable stages', () => {
     expect(testLactateCurve({ ...bikeAnchor, points: bikeAnchor.points.slice(0, 2) })).toBeNull();
     expect(testLactateCurve(null)).toBeNull();
+  });
+});
+
+describe('testHrCurve', () => {
+  // Fixture stages: 150,180,210,240,270,300 W at 123.6…177.1 bpm on a straight line.
+  it('reads the test heart rate at an intensity between two stages', () => {
+    const at = testHrCurve(bikeAnchor).at(225);
+    expect(at).toBeCloseTo(A_TEST + B * 225, 4);
+  });
+
+  it('refuses to answer outside the stages the test actually rode', () => {
+    expect(testHrCurve(bikeAnchor).at(400)).toBeNull();
+    expect(testHrCurve(bikeAnchor).at(100)).toBeNull();
+  });
+
+  it('needs three stages with a heart rate on them', () => {
+    expect(testHrCurve({ ...bikeAnchor, points: bikeAnchor.points.map((p) => ({ ...p, hr: 0 })) })).toBeNull();
+    expect(testHrCurve(null)).toBeNull();
+  });
+});
+
+describe('steadyBlocks', () => {
+  const bin = (demand, hr, sec = 30) => ({ demand, hr, sec, t: 0 });
+
+  it('merges a drifting block into one statement rather than forty', () => {
+    // 12 bins = 6 min, wandering 240→260 W.
+    const cloud = Array.from({ length: 12 }, (_, i) => bin(240 + i * 1.8, 140));
+    const [b] = steadyBlocks(cloud);
+    expect(b.sec).toBe(360);
+    expect(b.demand).toBeGreaterThan(240);
+    expect(b.demand).toBeLessThan(260);
+  });
+
+  it('splits when the effort genuinely changes', () => {
+    const cloud = [
+      ...Array.from({ length: 12 }, () => bin(200, 130)),
+      ...Array.from({ length: 12 }, () => bin(320, 170)),
+    ];
+    const blocks = steadyBlocks(cloud);
+    expect(blocks).toHaveLength(2);
+    expect(blocks.map((b) => Math.round(b.demand)).sort((a, b2) => a - b2)).toEqual([200, 320]);
+  });
+
+  it('drops stretches too short to describe', () => {
+    expect(steadyBlocks(Array.from({ length: 4 }, () => bin(200, 130)))).toEqual([]);
+  });
+
+  it('returns the longest block first', () => {
+    const cloud = [
+      ...Array.from({ length: 11 }, () => bin(200, 130)),
+      ...Array.from({ length: 30 }, () => bin(300, 165)),
+    ];
+    expect(Math.round(steadyBlocks(cloud)[0].demand)).toBe(300);
+  });
+});
+
+describe('compareToTestCurve', () => {
+  const bin = (demand, hr, sec = 30) => ({ demand, hr, sec, t: 0 });
+  /** 20 min held at 250 W with a heart rate of 120. */
+  const easyRide = Array.from({ length: 40 }, () => bin(250, 120));
+
+  it('answers the question an easy ride actually raises', () => {
+    const r = compareToTestCurve(easyRide, bikeAnchor);
+    const [b] = r.blocks;
+    expect(b.sec).toBe(1200);
+    expect(Math.round(b.demand)).toBe(250);
+    expect(Math.round(b.hr)).toBe(120);
+    // The test measured 250 W directly — no extrapolation involved.
+    expect(b.testHr).toBeCloseTo(A_TEST + B * 250, 4);
+    expect(b.deltaHr).toBeLessThan(0);
+    expect(r.fromAverage).toBe(false);
+  });
+
+  it('answers a Z1 ride, which the threshold fit refuses outright', () => {
+    // 160 W sits below LT1, so the threshold engine will not extrapolate from
+    // it — the band it accepts starts just under the aerobic threshold.
+    const asSession = analyseSession({ records: ride([WARMUP, [1800, 160]], { gainW: 0 }), sport: 'bike', anchor: bikeAnchor });
+    expect(asSession.ok).toBe(false);
+    expect(asSession.reason).toBe('not-enough-steady-state');
+
+    // But the test rode a 150 W stage, so it knows what 160 W cost that day.
+    const z1 = Array.from({ length: 40 }, () => bin(160, 105));
+    const r = compareToTestCurve(z1, bikeAnchor);
+    expect(r.blocks).toHaveLength(1);
+    expect(r.blocks[0].testHr).toBeCloseTo(A_TEST + B * 160, 4);
+    expect(Math.round(r.blocks[0].deltaHr)).toBe(Math.round(105 - (A_TEST + B * 160)));
+  });
+
+  it('falls back to the session average when nothing held still', () => {
+    const wandering = Array.from({ length: 40 }, (_, i) => bin(200 + (i % 2 ? 90 : 0), 140));
+    const r = compareToTestCurve(wandering, bikeAnchor);
+    expect(r.fromAverage).toBe(true);
+    expect(r.blocks).toHaveLength(1);
+  });
+
+  it('reports several blocks, longest first, and caps the list', () => {
+    const cloud = [
+      ...Array.from({ length: 40 }, () => bin(250, 120)),
+      ...Array.from({ length: 20 }, () => bin(180, 105)),
+      ...Array.from({ length: 30 }, () => bin(290, 150)),
+    ];
+    const r = compareToTestCurve(cloud, bikeAnchor);
+    expect(r.blocks.length).toBeGreaterThanOrEqual(3);
+    expect(r.blocks.length).toBeLessThanOrEqual(4);
+    expect(r.blocks[0].sec).toBeGreaterThanOrEqual(r.blocks[1].sec);
+  });
+
+  it('takes the heat correction off the measured heart rate, not the test', () => {
+    const plain = compareToTestCurve(easyRide, bikeAnchor);
+    const hot = compareToTestCurve(easyRide, bikeAnchor, { tempAdjustBpm: 6 });
+    expect(hot.blocks[0].hr).toBeCloseTo(plain.blocks[0].hr - 6, 4);
+    expect(hot.blocks[0].testHr).toBeCloseTo(plain.blocks[0].testHr, 6);
+  });
+
+  it('says nothing when the ride sat outside the tested range', () => {
+    const tooHard = Array.from({ length: 40 }, () => bin(420, 180));
+    expect(compareToTestCurve(tooHard, bikeAnchor)).toBeNull();
+  });
+
+  it('gives up without a usable test or cloud', () => {
+    expect(compareToTestCurve(easyRide, null)).toBeNull();
+    expect(compareToTestCurve([], bikeAnchor)).toBeNull();
   });
 });
 

@@ -661,6 +661,147 @@ function zoneAgreement(cloud, { demandBounds, hrBounds } = {}) {
   return { demandSec, hrSec, totalSec, agreeSec, hrHigherSec, hrLowerSec, verdict };
 }
 
+/**
+ * The test's heart rate as a function of intensity, read straight off its
+ * stages.
+ *
+ * The threshold fit elsewhere in this file extrapolates to LT2, which is why it
+ * refuses easy sessions: reaching 384 W from a ride held at 250 W multiplies
+ * every small error. But the question an athlete actually asks after an easy
+ * ride — "I sat at 250 W and my heart was at 120; what was it on test day?" —
+ * needs no extrapolation at all. The test measured 250 W. Look it up.
+ *
+ * Null outside the tested range, for the same reason as the lactate curve: past
+ * the last stage there is no measurement, only a guess with a number attached.
+ */
+function testHrCurve(anchor) {
+  if (!anchor) return null;
+  const kind = sportKind(anchor.sport);
+  const pts = (anchor.points || [])
+    .map((p) => ({
+      demand: thresholdToDemand(p.x, { kind, storageMode: anchor.storageMode }),
+      hr: Number(p.hr),
+    }))
+    .filter((p) => Number.isFinite(p.demand) && p.demand > 0 && Number.isFinite(p.hr) && p.hr > 40)
+    .sort((a, b) => a.demand - b.demand);
+
+  if (pts.length < 3) return null;
+  const min = pts[0].demand;
+  const max = pts[pts.length - 1].demand;
+
+  return {
+    points: pts,
+    min,
+    max,
+    at(demand) {
+      const d = Number(demand);
+      if (!Number.isFinite(d) || d < min || d > max) return null;
+      for (let i = 0; i < pts.length - 1; i += 1) {
+        const a = pts[i];
+        const b = pts[i + 1];
+        if (d >= a.demand && d <= b.demand) {
+          const span = b.demand - a.demand;
+          if (span < 1e-9) return a.hr;
+          return a.hr + ((d - a.demand) / span) * (b.hr - a.hr);
+        }
+      }
+      return null;
+    },
+  };
+}
+
+/** Held-still stretches of a session, however easy — the floor is the test's, not LT1's. */
+const BLOCK_MIN_SEC = 300;
+const BLOCK_TOLERANCE = 0.08;
+
+/**
+ * The session as a handful of "you held X for Y minutes" statements.
+ *
+ * Deliberately looser than steadySegments(): that one feeds a regression and
+ * has to reject anything it cannot fit a line through, this one only has to
+ * describe what happened. Easy rides qualify, and so does the work portion of
+ * an interval session.
+ *
+ * Bins are merged while they stay within a tolerance of the running mean, so a
+ * ride that drifted from 240 to 260 W reads as one block at 250 rather than
+ * forty separate readings.
+ *
+ * @param {Array} cloud  sessionCloud() output
+ * @returns {Array<{sec:number, demand:number, hr:number}>} longest first
+ */
+function steadyBlocks(cloud, { minSec = BLOCK_MIN_SEC, tolerance = BLOCK_TOLERANCE } = {}) {
+  if (!Array.isArray(cloud) || !cloud.length) return [];
+  const blocks = [];
+  let run = null;
+
+  const close = () => {
+    if (run && run.sec >= minSec) {
+      blocks.push({ sec: run.sec, demand: run.dSum / run.n, hr: run.hSum / run.n });
+    }
+    run = null;
+  };
+
+  for (const bin of cloud) {
+    const sec = Number(bin.sec) || 0;
+    if (sec <= 0) continue;
+    const mean_ = run ? run.dSum / run.n : null;
+    if (run && Math.abs(bin.demand - mean_) <= mean_ * tolerance) {
+      run.dSum += bin.demand; run.hSum += bin.hr; run.n += 1; run.sec += sec;
+    } else {
+      close();
+      run = { dSum: bin.demand, hSum: bin.hr, n: 1, sec };
+    }
+  }
+  close();
+
+  return blocks.sort((a, b) => b.sec - a.sec);
+}
+
+/**
+ * What the test says about the stretches this session actually rode.
+ *
+ * The headline the athlete wanted: "20 min at 250 W, 120 bpm — on test day
+ * 250 W cost you 140." No model, no extrapolation, no threshold: two measured
+ * numbers at the same intensity, subtracted.
+ *
+ * Falls back to the session average when nothing held still for long enough,
+ * because an easy ride that wandered is still a comparison worth making and a
+ * blank panel teaches people to stop looking.
+ *
+ * @returns {null | {blocks:Array, fromAverage:boolean, meanDeltaHr:number}}
+ */
+function compareToTestCurve(cloud, anchor, { tempAdjustBpm = 0 } = {}) {
+  const curve = testHrCurve(anchor);
+  if (!curve || !Array.isArray(cloud) || !cloud.length) return null;
+
+  const describe = (b) => {
+    const testHr = curve.at(b.demand);
+    if (testHr == null) return null;
+    const hr = b.hr - tempAdjustBpm;
+    return { ...b, hr, testHr, deltaHr: hr - testHr };
+  };
+
+  let blocks = steadyBlocks(cloud).map(describe).filter(Boolean);
+  let fromAverage = false;
+
+  if (!blocks.length) {
+    const totalSec = cloud.reduce((s, b) => s + (Number(b.sec) || 0), 0);
+    const avg = {
+      sec: totalSec,
+      demand: cloud.reduce((s, b) => s + b.demand * b.sec, 0) / totalSec,
+      hr: cloud.reduce((s, b) => s + b.hr * b.sec, 0) / totalSec,
+    };
+    const described = describe(avg);
+    if (!described) return null;
+    blocks = [described];
+    fromAverage = true;
+  }
+
+  const weight = blocks.reduce((s, b) => s + b.sec, 0);
+  const meanDeltaHr = blocks.reduce((s, b) => s + b.deltaHr * b.sec, 0) / weight;
+  return { blocks: blocks.slice(0, 4), fromAverage, meanDeltaHr };
+}
+
 // ── Step 4: the fit ─────────────────────────────────────────────────────────
 
 /**
@@ -1008,6 +1149,7 @@ function buildDriftHistory(sessions, { testDate, windowDays = 28 } = {}) {
 module.exports = {
   analyseSession,
   buildDriftHistory,
+  compareToTestCurve,
   decoupling,
   demandToThreshold,
   estimateHrLag,
@@ -1016,7 +1158,9 @@ module.exports = {
   lactateCurveShift,
   sessionCloud,
   sportKind,
+  steadyBlocks,
   steadySegments,
+  testHrCurve,
   testHrSlope,
   testLactateCurve,
   thresholdToDemand,
