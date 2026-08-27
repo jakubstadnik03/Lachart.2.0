@@ -36,8 +36,16 @@ const { extractAnchor } = require('../utils/lactateAnchor');
  */
 const ENGINE_VERSION = 2;
 
-/** How many sessions back to walk. Beyond a season the test itself is ancient. */
-const DEFAULT_LIMIT = 80;
+/**
+ * How many sessions back to walk.
+ *
+ * Eighty was chosen when the only consumer was a threshold fit that read one
+ * session in forty. The season chart reads almost all of them, and on an
+ * athlete who trains twice a day eighty sessions is a month — which drew a
+ * "season" four points wide. Every read is cached per activity and invalidated
+ * only by a new test or a new engine, so the cost of a wider walk is paid once.
+ */
+const DEFAULT_LIMIT = 250;
 
 // ── Turning three storage shapes into one records array ────────────────────
 

@@ -47,7 +47,7 @@ router.get('/', verifyToken, async (req, res) => {
     }
 
     const sport = sportKind(req.query.sport || 'bike');
-    const limit = Math.min(200, Math.max(5, Number(req.query.limit) || 80));
+    const limit = Math.min(500, Math.max(5, Number(req.query.limit) || 250));
 
     const { test, anchor, reads, compared, sportTests, unreadable, considered, skipped } = await readSessionsSinceTest({
       userId: target._id,
