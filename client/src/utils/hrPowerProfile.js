@@ -1279,6 +1279,117 @@ export function projectThresholdTimeline(sessions, anchor, {
   return out;
 }
 
+/**
+ * The test's lactate curve, redrawn where the training says it sits now.
+ *
+ * A projection expressed as "LT2 is 22 W lower" is a fact about one point. The
+ * curve is the thing an athlete recognises, and what they want to see is it
+ * moving — so each measured stage is slid along the intensity axis and the same
+ * shape redrawn at its new place.
+ *
+ * The slide is not uniform. LT1 and LT2 move by different amounts — that is the
+ * whole reason they are estimated separately — so the shift is interpolated
+ * between them and held flat beyond, which lets the curve tilt as well as
+ * translate. A winter of base work slides the bottom of the curve right while
+ * the top stays put, and a flat translation would draw that as something it
+ * is not.
+ *
+ * Lactate values are carried across untouched. What moves is the intensity at
+ * which each one appears, which is what a shifted curve means.
+ *
+ * @returns {null | {points:Array<{demand:number, lactate:number}>, shiftAt:Function}}
+ */
+export function shiftedLactateCurve(anchor, projection) {
+  const curve = testLactateCurve(anchor);
+  if (!curve || !projection) return null;
+  const lo = projection.lt1;
+  const hi = projection.lt2;
+  if (!lo && !hi) return null;
+
+  const loD = lo?.fromDemand;
+  const hiD = hi?.fromDemand;
+
+  /** How far the curve has moved at this intensity. */
+  const shiftAt = (demand) => {
+    if (lo && hi && Number.isFinite(loD) && Number.isFinite(hiD) && hiD > loD) {
+      const t = (demand - loD) / (hiD - loD);
+      // Clamped: beyond the thresholds there is no evidence of further tilt,
+      // and extending the trend outward would invent it.
+      const clamped = Math.max(0, Math.min(1, t));
+      return lo.shift + (hi.shift - lo.shift) * clamped;
+    }
+    return (hi || lo).shift;
+  };
+
+  const points = curve.points
+    .map((p) => ({ demand: p.demand + shiftAt(p.demand), lactate: p.lactate }))
+    .filter((p) => p.demand > 0)
+    .sort((a, b) => a.demand - b.demand);
+
+  return { points, shiftAt };
+}
+
+/** A zone edit has to be worth the disruption: below this, leave them alone. */
+const ADVICE_MIN_PCT = 3;
+/** And it has to be supported: a hint is not grounds for rewriting how someone trains. */
+const ADVICE_MIN_SESSIONS = 8;
+const ADVICE_MIN_MINUTES = 240;
+/** Past this the test is old enough that a real change is the likely explanation. */
+const ADVICE_TEST_AGE_DAYS = 42;
+
+/**
+ * Should the athlete's zones be rewritten, and to what?
+ *
+ * Deliberately reluctant. Zones are the thing every session is prescribed
+ * against, so changing them changes what the athlete does tomorrow — and this
+ * estimate is made of heart rate, which carries heat, fatigue and illness
+ * along with fitness. A number that moves for a fortnight of hot weather must
+ * not quietly rewrite a training plan.
+ *
+ * So all four have to hold: the move is big enough to matter, it rests on
+ * enough training to be believed, the estimate itself is not flagged as a
+ * hint, and the test is old enough that the athlete plausibly changed. Failing
+ * any of them, the honest advice is to leave the zones and go and test.
+ *
+ * @returns {null | {thresholds:{lt1, lt2}, reason:string, direction, biggestPct:number}}
+ */
+export function zoneAdviceFor(projection, { testDate = null, now = null } = {}) {
+  if (!projection) return null;
+  const { lt1, lt2 } = projection;
+  const usable = [lt1, lt2].filter((e) => e && e.confidence !== 'low');
+  if (!usable.length) return null;
+
+  const biggest = usable.reduce((a, b) => (Math.abs(a.shiftPct) > Math.abs(b.shiftPct) ? a : b));
+  if (Math.abs(biggest.shiftPct) < ADVICE_MIN_PCT) return null;
+  if (projection.sessions < ADVICE_MIN_SESSIONS) return null;
+  if (projection.minutes < ADVICE_MIN_MINUTES) return null;
+
+  const testMs = testDate ? new Date(testDate).getTime() : NaN;
+  const nowMs = now ? new Date(now).getTime() : Date.now();
+  const ageDays = Number.isFinite(testMs) ? (nowMs - testMs) / 86400000 : null;
+  if (ageDays != null && ageDays < ADVICE_TEST_AGE_DAYS) return null;
+
+  // Only thresholds that carry their own evidence are proposed; the other is
+  // left at its tested value rather than dragged along by its neighbour.
+  const thresholds = {
+    lt1: lt1 && lt1.confidence !== 'low' ? lt1.toDemand : null,
+    lt2: lt2 && lt2.confidence !== 'low' ? lt2.toDemand : null,
+  };
+  if (!thresholds.lt1 && !thresholds.lt2) return null;
+
+  return {
+    thresholds,
+    direction: biggest.shift > 0 ? 'up' : 'down',
+    biggestPct: biggest.shiftPct,
+    sessions: projection.sessions,
+    minutes: projection.minutes,
+    testAgeDays: ageDays == null ? null : Math.round(ageDays),
+    reason: biggest.shift > 0
+      ? 'Your zones are set below where you are training.'
+      : 'Your zones are set above where you are training.',
+  };
+}
+
 // ── History: many sessions against one test ─────────────────────────────────
 
 const CONFIDENCE_WEIGHT = { high: 1, medium: 0.55, low: 0.2 };

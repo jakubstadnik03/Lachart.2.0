@@ -26,13 +26,14 @@ import {
   CartesianGrid, ComposedChart, Line, ReferenceArea, ReferenceLine,
   ResponsiveContainer, Scatter, Tooltip, XAxis, YAxis,
 } from 'recharts';
-import api, { getActivityWeather, getThresholdDrift } from '../../services/api';
+import api, { getActivityWeather, getThresholdDrift, updateUserProfile } from '../../services/api';
 import {
-  analyseSession, compareToTestCurve, lactateCurveShift, sportKind, testHrSlope,
-  testLactateCurve, thresholdToDemand, zoneAgreement,
+  analyseSession, compareToTestCurve, lactateCurveShift, shiftedLactateCurve,
+  sportKind, testHrSlope, testLactateCurve, thresholdToDemand, zoneAdviceFor,
+  zoneAgreement,
 } from '../../utils/hrPowerProfile';
 import { extractLactateThresholds } from '../../utils/extractLactateThresholds';
-import { ltZoneBounds, measuredMaxHr } from '../../utils/trainingZoneBounds';
+import { ltZoneBounds, ltZones, measuredMaxHr } from '../../utils/trainingZoneBounds';
 
 const TEST_COLOR = '#94a3b8';
 const NOW_COLOR = '#7c3aed';
@@ -748,6 +749,116 @@ const LT1_COLOR = '#0ea5e9';
 const LT2_COLOR = '#f97316';
 
 /**
+ * The curve, and where it sits now.
+ *
+ * "LT2 is 22 W lower than your test" is a fact about one point, and it reads
+ * like an accusation. The curve is the object athletes actually recognise, and
+ * the thing they want to know is which way it has gone — so the test curve is
+ * drawn as measured and the same shape redrawn at the intensities the training
+ * puts it at, with the two LT2s joined so the distance between them is the
+ * answer.
+ *
+ * It tilts as well as slides, because LT1 and LT2 are estimated separately and
+ * genuinely move by different amounts.
+ */
+function CurveShift({ anchor, projection, kind, storageMode }) {
+  const chart = useMemo(() => {
+    const test = testLactateCurve(anchor);
+    const now = shiftedLactateCurve(anchor, projection);
+    if (!test || !now) return null;
+
+    const rows = [
+      ...test.points.map((p) => ({ d: p.demand, testLac: p.lactate })),
+      ...now.points.map((p) => ({ d: p.demand, nowLac: p.lactate })),
+    ].sort((a, b) => a.d - b.d);
+
+    const ds = rows.map((r) => r.d);
+    const pad = (Math.max(...ds) - Math.min(...ds)) * 0.06 || 1;
+    return {
+      rows,
+      domain: [Math.min(...ds) - pad, Math.max(...ds) + pad],
+      marks: [
+        { key: 'LT1', color: LT1_COLOR, est: projection.lt1 },
+        { key: 'LT2', color: LT2_COLOR, est: projection.lt2 },
+      ].filter((m) => m.est),
+    };
+  }, [anchor, projection]);
+
+  if (!chart) return null;
+
+  return (
+    <div className="mt-3">
+      <h4 className="mb-1 text-[13px] font-bold text-gray-900">How the curve has moved</h4>
+      <div className="h-52 w-full">
+        <ResponsiveContainer width="100%" height="100%">
+          <ComposedChart data={chart.rows} margin={{ top: 22, right: 12, bottom: 18, left: 0 }}>
+            <CartesianGrid stroke="#f1f5f9" vertical={false} />
+            <XAxis
+              type="number" dataKey="d" domain={chart.domain}
+              tickFormatter={(v) => axisTick(v, kind, storageMode)}
+              tick={{ fontSize: 10, fill: '#94a3b8' }}
+              axisLine={{ stroke: '#e2e8f0' }} tickLine={false}
+              label={{
+                value: kind === 'bike' ? 'Power (W)' : 'Pace',
+                position: 'insideBottom', offset: -12, fontSize: 10, fill: '#94a3b8',
+              }}
+            />
+            <YAxis
+              type="number" tick={{ fontSize: 10, fill: '#94a3b8' }}
+              axisLine={false} tickLine={false} width={40}
+              label={{ value: 'mmol/L', angle: -90, position: 'insideLeft', offset: 12, fontSize: 10, fill: '#94a3b8' }}
+            />
+            <Tooltip
+              contentStyle={{ fontSize: 11, borderRadius: 8, border: '1px solid #e2e8f0' }}
+              formatter={(v, name) => [`${Number(v).toFixed(1)} mmol/L`,
+                name === 'testLac' ? 'On test day' : 'Estimated now']}
+              labelFormatter={(v) => `${axisTick(v, kind, storageMode)}${kind === 'bike' ? ' W' : ''}`}
+            />
+            {/* Each threshold's travel, drawn as the gap it moved across. */}
+            {chart.marks.map((m) => (
+              <ReferenceArea
+                key={m.key}
+                x1={Math.min(m.est.fromDemand, m.est.toDemand)}
+                x2={Math.max(m.est.fromDemand, m.est.toDemand)}
+                fill={m.color} fillOpacity={0.12} stroke="none" ifOverflow="hidden"
+                label={{ value: m.key, position: 'top', offset: 6, fontSize: 10, fontWeight: 600, fill: m.color }}
+              />
+            ))}
+            {chart.marks.map((m) => (
+              <ReferenceLine key={`f-${m.key}`} x={m.est.fromDemand}
+                stroke={m.color} strokeDasharray="3 3" strokeOpacity={0.6} />
+            ))}
+            {chart.marks.map((m) => (
+              <ReferenceLine key={`t-${m.key}`} x={m.est.toDemand} stroke={m.color} strokeWidth={2} />
+            ))}
+            <Line type="monotone" dataKey="testLac" stroke={TEST_COLOR} strokeWidth={2}
+              strokeDasharray="4 3" dot={{ r: 2.5, fill: TEST_COLOR }} connectNulls isAnimationActive={false} />
+            <Line type="monotone" dataKey="nowLac" stroke={NOW_COLOR} strokeWidth={2.5}
+              dot={{ r: 2.5, fill: NOW_COLOR }} connectNulls isAnimationActive={false} />
+          </ComposedChart>
+        </ResponsiveContainer>
+      </div>
+
+      <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px] text-gray-500">
+        <span className="flex items-center gap-1">
+          <span className="inline-block h-0 w-4 border-t-2 border-dashed" style={{ borderColor: TEST_COLOR }} />
+          your test
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="inline-block h-0.5 w-4" style={{ background: NOW_COLOR }} /> estimated now
+        </span>
+        {chart.marks.map((m) => (
+          <span key={m.key} className="flex items-center gap-1">
+            <span className="inline-block h-2 w-3 rounded-sm" style={{ background: m.color, opacity: 0.35 }} />
+            {m.key} moved {fmtDemandDelta(m.est.shift, m.est.toDemand, kind, storageMode)}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/**
  * The season: measured tests as points, the estimate as the line between them.
  *
  * Each point on the line is re-estimated from a trailing six weeks using only
@@ -852,7 +963,84 @@ function ThresholdTimeline({ timeline, testMarkers, kind, storageMode }) {
   );
 }
 
-function DriftHistory({ athleteId, kind, storageMode }) {
+/** Which profile key this sport's zones live under. */
+const ZONE_KEY = { bike: 'cycling', run: 'running', swim: 'swimming' };
+
+/**
+ * Offer to rewrite the zones, once the evidence is worth the disruption.
+ *
+ * Zones are what every session is prescribed against, so this is the one place
+ * in the panel that changes what the athlete does tomorrow. It therefore asks
+ * rather than acts, shows the numbers it would write before writing them, and
+ * says plainly that the source is an estimate.
+ *
+ * The written zones do not feed back into this reading — the analysis is
+ * anchored to the test, never to the profile — so accepting the advice cannot
+ * make the next estimate agree with itself.
+ */
+function ZoneAdvice({ advice, projection, anchor, kind, storageMode, onApplied }) {
+  const [state, setState] = useState('idle');
+
+  if (!advice) return null;
+
+  const lt1 = advice.thresholds.lt1 ?? projection.lt1?.fromDemand ?? null;
+  const lt2 = advice.thresholds.lt2 ?? projection.lt2?.fromDemand ?? null;
+  if (!(lt2 > 0)) return null;
+
+  const apply = async () => {
+    setState('saving');
+    try {
+      const key = ZONE_KEY[kind];
+      const powerBounds = ltZones({ lt1, lt2, ascending: true });
+      // Heart-rate zones are left exactly as the test measured them. Only the
+      // intensity moved; the heart rates at the thresholds are the anchor this
+      // whole estimate is built on, and rewriting them would erase it.
+      const profile = (await api.get('/user/profile')).data || {};
+      const powerZones = { ...(profile.powerZones || {}), [key]: powerBounds };
+      await updateUserProfile({
+        ...profile,
+        powerZones,
+        zonesSource: 'estimate',
+        zonesNote: `estimated from ${advice.sessions} sessions since the test`,
+      });
+      setState('done');
+      onApplied?.();
+    } catch {
+      setState('error');
+    }
+  };
+
+  return (
+    <div className="mt-3 rounded-lg border border-violet-200 bg-violet-50/60 px-3 py-2.5">
+      <div className="text-[13px] font-bold text-violet-900">Worth rewriting your zones</div>
+      <p className="mt-0.5 text-[12px] leading-relaxed text-violet-800">
+        {advice.reason} Across {advice.sessions} sessions
+        {advice.testAgeDays ? ` and ${Math.round(advice.testAgeDays / 7)} weeks since you tested` : ''},
+        your {kind === 'bike' ? 'power' : 'pace'} zones would move to{' '}
+        {advice.thresholds.lt1 ? <>LT1 <strong>{fmtDemand(lt1, kind, storageMode)}</strong>, </> : null}
+        LT2 <strong>{fmtDemand(lt2, kind, storageMode)}</strong>.
+      </p>
+      <p className="mt-1 text-[11px] leading-relaxed text-violet-700/80">
+        Heart-rate zones stay as the test measured them — only the intensity moved. A real test
+        beats this; treat it as a stopgap until you do one.
+      </p>
+      <div className="mt-2 flex items-center gap-2">
+        <button
+          type="button"
+          onClick={apply}
+          disabled={state === 'saving' || state === 'done'}
+          className="rounded-lg bg-violet-600 px-3 py-1.5 text-[12px] font-semibold text-white hover:bg-violet-700 disabled:bg-violet-300"
+        >
+          {state === 'saving' ? 'Updating…' : state === 'done' ? 'Zones updated' : 'Update my zones'}
+        </button>
+        {state === 'error' && <span className="text-[11px] text-rose-600">Could not save — try again.</span>}
+        {state === 'done' && <span className="text-[11px] text-violet-700">Retest when you can.</span>}
+      </div>
+    </div>
+  );
+}
+
+function DriftHistory({ athleteId, anchor, kind, storageMode, governingTest }) {
   const [state, setState] = useState({ loading: true, data: null });
 
   useEffect(() => {
@@ -880,6 +1068,11 @@ function DriftHistory({ athleteId, kind, storageMode }) {
       </div>
 
       <ProjectedThresholds projection={data.projection} kind={kind} storageMode={storageMode} />
+      <ZoneAdvice
+        advice={zoneAdviceFor(data.projection, { testDate: governingTest?.date })}
+        projection={data.projection} anchor={anchor} kind={kind} storageMode={storageMode}
+      />
+      <CurveShift anchor={anchor} projection={data.projection} kind={kind} storageMode={storageMode} />
       <ThresholdTimeline timeline={data.timeline} testMarkers={data.testMarkers}
         kind={kind} storageMode={storageMode} />
 
@@ -1042,7 +1235,8 @@ export default function SessionVsTestPanel({
 
       <LactateVsCurve anchor={anchor} samples={lactateSamples} kind={kind} storageMode={storageMode} />
       <DriftFromHeartRate result={result} kind={kind} storageMode={storageMode} testDateLabel={testDateLabel} />
-      <DriftHistory athleteId={athleteId} kind={kind} storageMode={storageMode} />
+      <DriftHistory athleteId={athleteId} anchor={anchor} kind={kind}
+        storageMode={storageMode} governingTest={governingTest} />
     </div>
   );
 }

@@ -8,12 +8,14 @@ import {
   projectThresholdShift,
   projectThresholdTimeline,
   sessionCloud,
+  shiftedLactateCurve,
   steadyBlocks,
   testHrCurve,
   testHrSlope,
   testLactateCurve,
   thresholdToDemand,
   toSeries,
+  zoneAdviceFor,
   zoneAgreement,
 } from './hrPowerProfile';
 
@@ -622,6 +624,102 @@ describe('projectThresholdTimeline', () => {
   it('says nothing when there is nothing to say', () => {
     expect(projectThresholdTimeline([], bikeAnchor)).toEqual([]);
     expect(projectThresholdTimeline(season(4, () => 5), bikeAnchor, { now: NOW })).toEqual([]);
+  });
+});
+
+describe('shiftedLactateCurve', () => {
+  const at = (shift, base) => ({ shift, fromDemand: base, toDemand: base + shift });
+
+  it('slides every stage by the same amount when both thresholds agree', () => {
+    const c = shiftedLactateCurve(bikeAnchor, { lt1: at(20, 210), lt2: at(20, 280) });
+    const original = testLactateCurve(bikeAnchor).points;
+    c.points.forEach((p, i) => {
+      expect(p.demand).toBeCloseTo(original[i].demand + 20, 6);
+      expect(p.lactate).toBeCloseTo(original[i].lactate, 6);
+    });
+  });
+
+  it('tilts when LT1 moves and LT2 does not — what base training looks like', () => {
+    const c = shiftedLactateCurve(bikeAnchor, { lt1: at(30, 210), lt2: at(0, 280) });
+    // At LT1 the curve has moved a lot; at LT2 not at all.
+    expect(c.shiftAt(210)).toBeCloseTo(30, 6);
+    expect(c.shiftAt(280)).toBeCloseTo(0, 6);
+    expect(c.shiftAt(245)).toBeCloseTo(15, 6);
+  });
+
+  it('holds the shift flat outside the two thresholds rather than extending it', () => {
+    const c = shiftedLactateCurve(bikeAnchor, { lt1: at(30, 210), lt2: at(0, 280) });
+    expect(c.shiftAt(120)).toBeCloseTo(30, 6);
+    expect(c.shiftAt(400)).toBeCloseTo(0, 6);
+  });
+
+  it('uses the one threshold it has when the other is missing', () => {
+    const c = shiftedLactateCurve(bikeAnchor, { lt1: null, lt2: at(-15, 280) });
+    expect(c.shiftAt(180)).toBeCloseTo(-15, 6);
+    expect(c.shiftAt(300)).toBeCloseTo(-15, 6);
+  });
+
+  it('carries the lactate values across untouched', () => {
+    const c = shiftedLactateCurve(bikeAnchor, { lt1: at(-25, 210), lt2: at(-25, 280) });
+    expect(c.points.map((p) => p.lactate))
+      .toEqual(testLactateCurve(bikeAnchor).points.map((p) => p.lactate));
+  });
+
+  it('says nothing without a curve or a projection', () => {
+    expect(shiftedLactateCurve(bikeAnchor, null)).toBeNull();
+    expect(shiftedLactateCurve(bikeAnchor, { lt1: null, lt2: null })).toBeNull();
+    expect(shiftedLactateCurve(null, { lt2: at(10, 280) })).toBeNull();
+  });
+});
+
+describe('zoneAdviceFor', () => {
+  const OLD_TEST = new Date(Date.now() - 90 * 86400000);
+  const est = (shiftPct, confidence = 'high', toDemand = 300) =>
+    ({ shiftPct, shift: (shiftPct / 100) * 280, toDemand, fromDemand: 280, confidence });
+  const solid = (over = {}) => ({
+    lt1: est(6), lt2: est(6), sessions: 20, minutes: 900, ...over,
+  });
+
+  it('advises a rewrite when the move is big, supported and the test is old', () => {
+    const a = zoneAdviceFor(solid(), { testDate: OLD_TEST });
+    expect(a).not.toBeNull();
+    expect(a.direction).toBe('up');
+    expect(a.thresholds.lt2).toBe(300);
+  });
+
+  it('leaves zones alone for a move too small to be worth the disruption', () => {
+    expect(zoneAdviceFor(solid({ lt1: est(1.5), lt2: est(1.5) }), { testDate: OLD_TEST })).toBeNull();
+  });
+
+  it('will not rewrite a training plan off a hint', () => {
+    expect(zoneAdviceFor(solid({ lt1: est(8, 'low'), lt2: est(8, 'low') }), { testDate: OLD_TEST })).toBeNull();
+  });
+
+  it('will not rewrite off a fortnight of training', () => {
+    expect(zoneAdviceFor(solid({ sessions: 4 }), { testDate: OLD_TEST })).toBeNull();
+    expect(zoneAdviceFor(solid({ minutes: 60 }), { testDate: OLD_TEST })).toBeNull();
+  });
+
+  it('stays quiet while the test is still fresh', () => {
+    // A week after testing, a moved estimate is heat or fatigue, not fitness.
+    expect(zoneAdviceFor(solid(), { testDate: new Date(Date.now() - 7 * 86400000) })).toBeNull();
+  });
+
+  it('proposes only the threshold that carries its own evidence', () => {
+    const a = zoneAdviceFor(solid({ lt1: est(7, 'low', 240), lt2: est(7, 'high', 300) }), { testDate: OLD_TEST });
+    expect(a.thresholds.lt1).toBeNull();
+    expect(a.thresholds.lt2).toBe(300);
+  });
+
+  it('says which way the zones are wrong', () => {
+    const down = zoneAdviceFor(solid({ lt1: est(-6), lt2: est(-6) }), { testDate: OLD_TEST });
+    expect(down.direction).toBe('down');
+    expect(down.reason).toMatch(/above where you are training/);
+  });
+
+  it('says nothing without a projection', () => {
+    expect(zoneAdviceFor(null, { testDate: OLD_TEST })).toBeNull();
+    expect(zoneAdviceFor({ lt1: null, lt2: null, sessions: 20, minutes: 900 }, { testDate: OLD_TEST })).toBeNull();
   });
 });
 
