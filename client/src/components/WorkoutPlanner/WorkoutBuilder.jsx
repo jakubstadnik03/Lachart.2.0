@@ -66,6 +66,155 @@ export function repairGroupMembership(list) {
   return out;
 }
 
+/**
+ * The list as the eye reads it: a repeat block is one thing, not four.
+ *
+ * Every reorder in the builder used to work on single steps, which is right
+ * for a loose step and wrong for anything in a block. Nudging a repeat block
+ * down meant nudging each of its steps past each of its neighbour's steps, and
+ * the intermediate states were incoherent — half a block sitting inside
+ * another one — so a mis-timed render could show a block that no longer
+ * existed. Reordering by unit means the invalid states never occur.
+ *
+ * @returns {Array<{from:number, to:number, groupId:string|null}>} inclusive ranges
+ */
+export function unitsOf(list) {
+  const units = [];
+  let i = 0;
+  while (i < list.length) {
+    const gid = list[i]?.groupId;
+    if (!gid) { units.push({ from: i, to: i, groupId: null }); i += 1; continue; }
+    let j = i;
+    while (j + 1 < list.length && list[j + 1]?.groupId === gid) j += 1;
+    units.push({ from: i, to: j, groupId: gid });
+    i = j + 1;
+  }
+  return units;
+}
+
+/** Swap two whole units, so a block hops a block instead of landing inside it. */
+function swapUnits(list, ui, dir) {
+  const units = unitsOf(list);
+  const target = ui + dir;
+  if (ui < 0 || target < 0 || target >= units.length) return list;
+  const a = units[Math.min(ui, target)];
+  const b = units[Math.max(ui, target)];
+  return repairGroupMembership([
+    ...list.slice(0, a.from),
+    ...list.slice(b.from, b.to + 1),
+    ...list.slice(a.from, a.to + 1),
+    ...list.slice(b.to + 1),
+  ]);
+}
+
+/** Move a whole repeat block one place up or down. */
+export function moveGroup(list, groupId, dir) {
+  const ui = unitsOf(list).findIndex((u) => u.groupId === groupId);
+  if (ui < 0) return list;
+  return swapUnits(list, ui, dir);
+}
+
+/**
+ * Move one step, reading the arrow the way the athlete meant it.
+ *
+ * Inside a block the arrows reorder that block's own steps, and stop at its
+ * edges: pushing the last step of a block downwards means "this block goes
+ * after the next one", not "this step leaves the block", because leaving is
+ * what dragging is for and an arrow press is too cheap to be destructive.
+ *
+ * Outside a block, a step steps over the whole of its neighbour. Landing in
+ * the middle of somebody's 5x8min is never what one press of an arrow meant.
+ *
+ * Membership is repaired either way — the old version swapped raw array
+ * entries and told nobody, so an arrow could leave a step carrying the groupId
+ * of a block it was no longer next to, and expandSteps would go on repeating
+ * it there.
+ */
+export function moveStepOrGroup(list, index, dir) {
+  if (!Array.isArray(list) || !dir || !list[index]) return list;
+  const units = unitsOf(list);
+  const ui = units.findIndex((u) => index >= u.from && index <= u.to);
+  if (ui < 0) return list;
+  const unit = units[ui];
+
+  if (unit.groupId && unit.to > unit.from) {
+    const target = index + dir;
+    if (target >= unit.from && target <= unit.to) {
+      const out = [...list];
+      [out[index], out[target]] = [out[target], out[index]];
+      return repairGroupMembership(out);
+    }
+    return swapUnits(list, ui, dir);
+  }
+
+  return swapUnits(list, ui, dir);
+}
+
+/**
+ * A progressive ramp, described rather than enumerated.
+ *
+ * The ramp builder used to emit four independent steps with the watts already
+ * baked in, and then forget it had ever been a ramp. Changing "start at Z1" or
+ * "make it six steps" meant editing every step by hand and recomputing the
+ * interpolation in your head — for a shape whose entire definition is four
+ * numbers.
+ *
+ * So the definition is kept on the block header and the steps are derived from
+ * it. Editing the spec regenerates them; editing a step by hand detaches the
+ * spec (see rampSpecOf), because a hand-tuned ramp is no longer described by
+ * its endpoints and claiming otherwise would silently discard the edit on the
+ * next regeneration.
+ *
+ * @param {object} spec  {rampType, count, durationSeconds, from:{type,value}, to:{type,value}}
+ * @param {object} context  zone/threshold context for resolveTargetWatts
+ * @returns {Array} steps, without ids or group fields — the caller owns those
+ */
+export function buildRampSteps(spec, context) {
+  const count = Math.max(2, Math.min(12, Number(spec?.count) || 0));
+  const dur = Number(spec?.durationSeconds) || 0;
+  if (!dur || !spec?.from || !spec?.to) return [];
+
+  const fromWatts = resolveTargetWatts(spec.from, context);
+  const toWatts = resolveTargetWatts(spec.to, context);
+  if (!Number.isFinite(fromWatts) || !Number.isFinite(toWatts)) return [];
+
+  const label = String(spec.rampType || 'warmup');
+  return Array.from({ length: count }, (_, i) => {
+    const frac = count > 1 ? i / (count - 1) : 1;
+    // Warm-up climbs from `from` to `to`; a cool-down runs the same line
+    // backwards, so the two share one description instead of two.
+    const w = Math.round(label === 'cooldown'
+      ? toWatts + (fromWatts - toWatts) * frac
+      : fromWatts + (toWatts - fromWatts) * frac);
+    return {
+      stepType: label,
+      isRamp: false,
+      durationSeconds: dur,
+      powerTarget: { type: 'watts', value: w },
+      label: `${label.charAt(0).toUpperCase()}${label.slice(1)} ${i + 1}`,
+    };
+  });
+}
+
+/**
+ * The ramp description on a block, if the block is still faithfully described
+ * by it. A step edited by hand — a different duration, a target that is no
+ * longer the plain watts the ramp produced — means the block has outgrown its
+ * spec, and it is then shown and edited as ordinary steps.
+ */
+export function rampSpecOf(members, context) {
+  const spec = members?.[0]?.rampSpec;
+  if (!spec) return null;
+  const generated = buildRampSteps({ ...spec, count: members.length }, context);
+  if (generated.length !== members.length) return null;
+  const matches = members.every((m, i) => (
+    m.durationSeconds === generated[i].durationSeconds
+    && m.powerTarget?.type === 'watts'
+    && Math.abs(Number(m.powerTarget.value) - generated[i].powerTarget.value) <= 1
+  ));
+  return matches ? { ...spec, count: members.length } : null;
+}
+
 /** Normalize drag/drop ids — dataset attrs are always strings. */
 function normalizeReorderId(id) {
   if (id == null || id === '') return null;
@@ -1695,21 +1844,24 @@ function QuickProgressiveAdder({ context, onAdd }) {
 
   const handleAdd = () => {
     if (!durSecs || steps < 2) return;
-    const newSteps = Array.from({ length: steps }, (_, i) => {
-      const frac = steps > 1 ? i / (steps - 1) : 1;
-      const w = Math.round(rampType === 'warmup'
-        ? fromWatts + (toWatts - fromWatts) * frac
-        : toWatts + (fromWatts - toWatts) * frac
-      );
-      return {
-        clientId: uid(),
-        stepType: rampType,
-        isRamp: false,
-        durationSeconds: durSecs,
-        powerTarget: { type: 'watts', value: w },
-        label: `${rampType.charAt(0).toUpperCase() + rampType.slice(1)} ${i + 1}`,
-      };
-    });
+    // The ramp arrives as a block that remembers its own description, so the
+    // four numbers that defined it stay editable instead of being dissolved
+    // into N hand-tuned steps the moment it is added.
+    const spec = {
+      rampType,
+      count: steps,
+      durationSeconds: durSecs,
+      from: { type: fromType, value: fromVal },
+      to: { type: toType, value: toVal },
+    };
+    const gid = uid();
+    const newSteps = buildRampSteps(spec, context).map((st, i) => ({
+      ...st,
+      clientId: uid(),
+      groupId: gid,
+      ...(i === 0 ? { isGroupHeader: true, groupRepeat: 1, rampSpec: spec } : {}),
+    }));
+    if (!newSteps.length) return;
     onAdd(newSteps);
     setOpen(false);
   };
@@ -2334,10 +2486,45 @@ export default function WorkoutBuilder({ initialSteps = [], context = {}, sport 
     notify(next);
   };
   const deleteStep   = (idx)     => notify(steps.filter((_,i)=>i!==idx));
-  const moveStep     = (idx,dir) => {
-    const n=[...steps], t=idx+dir;
-    if (t<0||t>=n.length) return;
-    [n[idx],n[t]]=[n[t],n[idx]]; notify(n);
+  const moveStep = (idx, dir) => {
+    const next = moveStepOrGroup(steps, idx, dir);
+    if (next !== steps) notify(next);
+  };
+
+  /** The repeat header's own arrows: the whole block, one place. */
+  const moveWholeGroup = (groupId, dir) => {
+    const next = moveGroup(steps, groupId, dir);
+    if (next !== steps) notify(next);
+  };
+
+  /**
+   * Edit a ramp by its description rather than step by step.
+   *
+   * The members are regenerated from the new spec, so changing the step count
+   * re-interpolates the whole line instead of appending a copy of the last
+   * step. Client ids are reused where they can be, so React keeps the rows it
+   * already has and the list does not visibly rebuild on every keystroke.
+   */
+  const updateRampSpec = (groupId, patch) => {
+    const idxs = steps.map((st, i) => (st.groupId === groupId ? i : -1)).filter((i) => i >= 0);
+    if (!idxs.length) return;
+    const header = steps[idxs[0]];
+    const spec = { ...header.rampSpec, count: idxs.length, ...patch };
+    const built = buildRampSteps(spec, ctx);
+    if (!built.length) return;
+
+    const rebuilt = built.map((st, i) => ({
+      ...st,
+      clientId: steps[idxs[i]]?.clientId || uid(),
+      groupId,
+      ...(i === 0 ? { isGroupHeader: true, groupRepeat: header.groupRepeat || 1, rampSpec: spec } : {}),
+    }));
+
+    notify(repairGroupMembership([
+      ...steps.slice(0, idxs[0]),
+      ...rebuilt,
+      ...steps.slice(idxs[idxs.length - 1] + 1),
+    ]));
   };
 
   // Drag-resize callback from WorkoutChart
@@ -2610,6 +2797,11 @@ export default function WorkoutBuilder({ initialSteps = [], context = {}, sport 
                 const gIdxs = steps.map((x,i)=>x.groupId===s.groupId?i:-1).filter(i=>i>=0);
                 const reps  = steps.find(x=>x.groupId===s.groupId&&x.isGroupHeader)?.groupRepeat||1;
                 const lapSecs = gIdxs.reduce((sum,gi)=>sum+(steps[gi].durationSeconds||0),0);
+                // A block that still matches the ramp it was created from is
+                // edited as a ramp; one that has been hand-tuned falls back to
+                // the ordinary repeat header, because its endpoints no longer
+                // describe it and regenerating would throw the edits away.
+                const ramp = rampSpecOf(gIdxs.map((gi) => steps[gi]), ctx);
                 {
                   const dragId = `g:${s.groupId}`;
                   const isBeingDragged = dragIdx === dragId;
@@ -2635,10 +2827,13 @@ export default function WorkoutBuilder({ initialSteps = [], context = {}, sport 
                       <div className="flex items-center gap-2 flex-wrap">
                         <Bars3Icon className="w-5 h-5 text-slate-300 shrink-0" aria-hidden />
                         <ArrowPathIcon className="w-4 h-4 text-violet-500 shrink-0" />
-                        <span className="text-sm font-bold text-violet-600">Repeat</span>
+                        <span className="text-sm font-bold text-violet-600">
+                          {ramp ? (ramp.rampType === 'cooldown' ? 'Cool-down ramp' : 'Warm-up ramp') : 'Repeat'}
+                        </span>
                         {/* A stepper, not a bare number field: a repeat count is
                             nudged far more often than typed, and the buttons
                             work on a phone without a number keypad. */}
+                        {!ramp && (
                         <div className="flex items-center gap-1 bg-white border border-violet-200 rounded-lg px-1 py-0.5" draggable={false}>
                           <button type="button" aria-label="One repeat fewer" disabled={reps <= 1}
                             onClick={() => updateGroupRepeat(s.groupId, Math.max(1, reps - 1))}
@@ -2654,16 +2849,83 @@ export default function WorkoutBuilder({ initialSteps = [], context = {}, sport 
                             +
                           </button>
                         </div>
-                        <span className="text-sm font-bold text-violet-500">×</span>
-                        <button
-                          type="button"
-                          onClick={() => ungroupGroup(s.groupId)}
-                          className="ml-auto text-xs font-semibold text-slate-400 hover:text-red-500 px-2 py-1 rounded-lg hover:bg-red-50"
-                        >
-                          Ungroup
-                        </button>
+                        )}
+                        {!ramp && <span className="text-sm font-bold text-violet-500">×</span>}
+                        {/* Dragging the header moves the block too, but a block
+                            is a big target to drag on a phone and a nudge is
+                            what people actually want. */}
+                        <div className="ml-auto flex items-center gap-1" draggable={false}>
+                          <button
+                            type="button"
+                            aria-label="Move this block up"
+                            disabled={gIdxs[0] === 0}
+                            onClick={() => moveWholeGroup(s.groupId, -1)}
+                            className="w-7 h-7 rounded-md flex items-center justify-center text-violet-600 hover:bg-violet-50 disabled:text-slate-300 disabled:hover:bg-transparent"
+                          >
+                            <ChevronUpIcon className="w-4 h-4" />
+                          </button>
+                          <button
+                            type="button"
+                            aria-label="Move this block down"
+                            disabled={gIdxs[gIdxs.length - 1] === steps.length - 1}
+                            onClick={() => moveWholeGroup(s.groupId, 1)}
+                            className="w-7 h-7 rounded-md flex items-center justify-center text-violet-600 hover:bg-violet-50 disabled:text-slate-300 disabled:hover:bg-transparent"
+                          >
+                            <ChevronDownIcon className="w-4 h-4" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => ungroupGroup(s.groupId)}
+                            className="text-xs font-semibold text-slate-400 hover:text-red-500 px-2 py-1 rounded-lg hover:bg-red-50"
+                          >
+                            {ramp ? 'Split' : 'Ungroup'}
+                          </button>
+                        </div>
                       </div>
-                      {lapSecs > 0 && (
+                      {ramp ? (
+                        <div className="pl-7 flex flex-col gap-2" draggable={false}
+                          onPointerDown={(e) => e.stopPropagation()}>
+                          <div className="flex items-center gap-2 flex-wrap text-xs">
+                            <span className="text-slate-500">Steps</span>
+                            <div className="flex items-center gap-1 bg-white border border-violet-200 rounded-lg px-1 py-0.5">
+                              <button type="button" aria-label="One ramp step fewer" disabled={ramp.count <= 2}
+                                onClick={() => updateRampSpec(s.groupId, { count: ramp.count - 1 })}
+                                className="w-6 h-6 rounded text-violet-600 font-bold hover:bg-violet-50 disabled:text-slate-300 disabled:hover:bg-transparent">−</button>
+                              <span className="w-6 text-center font-bold text-violet-700">{ramp.count}</span>
+                              <button type="button" aria-label="One ramp step more" disabled={ramp.count >= 12}
+                                onClick={() => updateRampSpec(s.groupId, { count: ramp.count + 1 })}
+                                className="w-6 h-6 rounded text-violet-600 font-bold hover:bg-violet-50 disabled:text-slate-300 disabled:hover:bg-transparent">+</button>
+                            </div>
+                            <span className="text-slate-500">×</span>
+                            <input
+                              type="text" inputMode="numeric" aria-label="Duration of each ramp step"
+                              defaultValue={fmtDuration(ramp.durationSeconds)}
+                              onBlur={(e) => {
+                                const secs = parseDuration(e.target.value);
+                                if (secs && secs !== ramp.durationSeconds) updateRampSpec(s.groupId, { durationSeconds: secs });
+                                else e.target.value = fmtDuration(ramp.durationSeconds);
+                              }}
+                              className="w-16 text-center font-bold text-violet-700 bg-white border border-violet-200 rounded-lg px-1 py-1 focus:outline-none"
+                            />
+                          </div>
+                          <div className="flex items-center gap-2 flex-wrap text-xs text-slate-500">
+                            {/* Endpoints, in the units the ramp was aimed in —
+                                changing one re-interpolates every step between. */}
+                            <span>{ramp.rampType === 'cooldown' ? 'From' : 'From'}</span>
+                            <span className="font-semibold text-slate-700">
+                              {Math.round(resolveTargetWatts(ramp.from, ctx))} W
+                            </span>
+                            <span>→</span>
+                            <span className="font-semibold text-slate-700">
+                              {Math.round(resolveTargetWatts(ramp.to, ctx))} W
+                            </span>
+                            <span className="text-slate-400">· {fmtShort(ramp.count * ramp.durationSeconds)} total</span>
+                          </div>
+                          <p className="text-[11px] text-slate-400">
+                            Editing any step below turns this back into ordinary steps.
+                          </p>
+                        </div>
+                      ) : lapSecs > 0 && (
                         <div className="text-xs text-slate-500 pl-7">
                           {fmtDuration(lapSecs)} per lap · <span className="font-semibold text-slate-700">{fmtShort(reps * lapSecs)}</span> total
                         </div>
