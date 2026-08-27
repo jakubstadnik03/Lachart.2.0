@@ -76,6 +76,28 @@ router.get('/', verifyToken, async (req, res) => {
     const projection = projectThresholdShift(compared || [], anchor);
     const timeline = projectThresholdTimeline(compared || [], anchor);
 
+    /**
+     * The sessions the estimate was built from, newest first, each with how
+     * much of it sat near a threshold. An estimate nobody can trace back to
+     * the training behind it is a number to be taken on faith, and this one
+     * asks the athlete to change how they train.
+     */
+    const contributors = (compared || [])
+      .map((c) => {
+        const minutes = (c.blocks || []).reduce((s2, b) => s2 + (Number(b.sec) || 0), 0) / 60;
+        const deltas = (c.blocks || []).map((b) => Number(b.deltaHr)).filter(Number.isFinite);
+        return {
+          id: c.id,
+          title: c.title,
+          date: c.date,
+          minutes: Math.round(minutes),
+          blocks: (c.blocks || []).length,
+          meanDeltaHr: deltas.length ? deltas.reduce((a, b) => a + b, 0) / deltas.length : null,
+        };
+      })
+      .filter((c) => c.minutes > 0)
+      .sort((a, b) => new Date(b.date) - new Date(a.date));
+
     // The measured points the estimated line runs between. Every test of this
     // sport, not just the governing one: the estimate only covers the period
     // since the last test, and the earlier ones are what give a season its
@@ -103,6 +125,7 @@ router.get('/', verifyToken, async (req, res) => {
         projection,
         timeline,
         testMarkers,
+        contributors,
         reason: skipped?.reason || 'no-readable-sessions',
         coverage: {
           considered: considered || 0,
@@ -148,6 +171,7 @@ router.get('/', verifyToken, async (req, res) => {
       projection,
       timeline,
       testMarkers,
+      contributors,
       coverage: {
         considered: considered || 0,
         read: reads.length,

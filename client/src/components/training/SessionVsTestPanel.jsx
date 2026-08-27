@@ -689,11 +689,11 @@ function DriftFromHeartRate({ result, kind, storageMode, testDateLabel }) {
  * block of easy volume lifts LT1 while LT2 sits still, and one averaged number
  * would hide exactly the thing that block was for.
  */
-function ProjectedThresholds({ projection, kind, storageMode }) {
+function ProjectedThresholds({ projection, anchor, kind, storageMode }) {
   if (!projection) return null;
   const rows = [
-    { key: 'LT1', label: 'Aerobic threshold', est: projection.lt1 },
-    { key: 'LT2', label: 'Anaerobic threshold', est: projection.lt2 },
+    { key: 'LT1', label: 'Aerobic threshold', est: projection.lt1, hr: Number(anchor?.lt1Hr) || null },
+    { key: 'LT2', label: 'Anaerobic threshold', est: projection.lt2, hr: Number(anchor?.lt2Hr) || null },
   ].filter((r) => r.est);
   if (!rows.length) return null;
 
@@ -707,7 +707,7 @@ function ProjectedThresholds({ projection, kind, storageMode }) {
       </div>
 
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-        {rows.map(({ key, label, est }) => {
+        {rows.map(({ key, label, est, hr }) => {
           const better = kind === 'bike' ? est.shift > 0 : est.shift > 0;
           const moved = Math.abs(est.shiftPct) >= 1.5;
           return (
@@ -727,6 +727,15 @@ function ProjectedThresholds({ projection, kind, storageMode }) {
                   {fmtDemand(est.toDemand, kind, storageMode)}
                 </span>
               </div>
+              {/* The heart rate is the anchor, not an output: what moved is the
+                  intensity at which this heart rate now appears. Printing it
+                  beside the watts is what makes the estimate legible. */}
+              {hr ? (
+                <div className="text-[11px] tabular-nums text-gray-500">
+                  at <strong className="text-gray-700">{Math.round(hr)} bpm</strong>
+                  <span className="text-gray-400"> — unchanged, it is what this is measured against</span>
+                </div>
+              ) : null}
               <div className="text-[11px] tabular-nums text-gray-500">
                 {moved
                   ? `${fmtDemandDelta(est.shift, est.toDemand, kind, storageMode)} (${est.shiftPct > 0 ? '+' : ''}${est.shiftPct.toFixed(1)}%) · ${est.minutes} min near ${key}`
@@ -762,6 +771,7 @@ const LT2_COLOR = '#f97316';
  * genuinely move by different amounts.
  */
 function CurveShift({ anchor, projection, kind, storageMode }) {
+  const thresholdHr = { LT1: Number(anchor?.lt1Hr) || null, LT2: Number(anchor?.lt2Hr) || null };
   const chart = useMemo(() => {
     const test = testLactateCurve(anchor);
     const now = shiftedLactateCurve(anchor, projection);
@@ -851,6 +861,7 @@ function CurveShift({ anchor, projection, kind, storageMode }) {
           <span key={m.key} className="flex items-center gap-1">
             <span className="inline-block h-2 w-3 rounded-sm" style={{ background: m.color, opacity: 0.35 }} />
             {m.key} moved {fmtDemandDelta(m.est.shift, m.est.toDemand, kind, storageMode)}
+            {thresholdHr[m.key] ? ` at ${Math.round(thresholdHr[m.key])} bpm` : ''}
           </span>
         ))}
       </div>
@@ -871,7 +882,7 @@ function CurveShift({ anchor, projection, kind, storageMode }) {
  * line was wrong; that comparison is the honest way to show how much an
  * estimate from heart rate is worth.
  */
-function ThresholdTimeline({ timeline, testMarkers, kind, storageMode }) {
+function ThresholdTimeline({ timeline, testMarkers, anchor, kind, storageMode }) {
   const data = useMemo(() => {
     const rows = (timeline || []).map((p) => ({
       ms: new Date(p.date).getTime(), lt1: p.lt1, lt2: p.lt2,
@@ -948,11 +959,13 @@ function ThresholdTimeline({ timeline, testMarkers, kind, storageMode }) {
       <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px] text-gray-500">
         {hasLt1 && (
           <span className="flex items-center gap-1">
-            <span className="inline-block h-0.5 w-4" style={{ background: LT1_COLOR }} /> LT1
+            <span className="inline-block h-0.5 w-4" style={{ background: LT1_COLOR }} />
+            LT1{anchor?.lt1Hr ? ` at ${Math.round(anchor.lt1Hr)} bpm` : ''}
           </span>
         )}
         <span className="flex items-center gap-1">
-          <span className="inline-block h-0.5 w-4" style={{ background: LT2_COLOR }} /> LT2
+          <span className="inline-block h-0.5 w-4" style={{ background: LT2_COLOR }} />
+          LT2{anchor?.lt2Hr ? ` at ${Math.round(anchor.lt2Hr)} bpm` : ''}
         </span>
         <span className="flex items-center gap-1">
           <span className="inline-block h-2 w-2 rounded-full bg-gray-400" /> a test you actually did
@@ -978,7 +991,7 @@ const ZONE_KEY = { bike: 'cycling', run: 'running', swim: 'swimming' };
  * anchored to the test, never to the profile — so accepting the advice cannot
  * make the next estimate agree with itself.
  */
-function ZoneAdvice({ advice, projection, anchor, kind, storageMode, onApplied }) {
+function ZoneAdvice({ advice, projection, anchor, kind, storageMode, onApplied }) {  // eslint-disable-line no-unused-vars
   const [state, setState] = useState('idle');
 
   if (!advice) return null;
@@ -1018,7 +1031,8 @@ function ZoneAdvice({ advice, projection, anchor, kind, storageMode, onApplied }
         {advice.testAgeDays ? ` and ${Math.round(advice.testAgeDays / 7)} weeks since you tested` : ''},
         your {kind === 'bike' ? 'power' : 'pace'} zones would move to{' '}
         {advice.thresholds.lt1 ? <>LT1 <strong>{fmtDemand(lt1, kind, storageMode)}</strong>, </> : null}
-        LT2 <strong>{fmtDemand(lt2, kind, storageMode)}</strong>.
+        LT2 <strong>{fmtDemand(lt2, kind, storageMode)}</strong>
+        {anchor?.lt2Hr ? <> — the intensity at which you now reach {Math.round(anchor.lt2Hr)} bpm</> : null}.
       </p>
       <p className="mt-1 text-[11px] leading-relaxed text-violet-700/80">
         Heart-rate zones stay as the test measured them — only the intensity moved. A real test
@@ -1036,6 +1050,64 @@ function ZoneAdvice({ advice, projection, anchor, kind, storageMode, onApplied }
         {state === 'error' && <span className="text-[11px] text-rose-600">Could not save — try again.</span>}
         {state === 'done' && <span className="text-[11px] text-violet-700">Retest when you can.</span>}
       </div>
+    </div>
+  );
+}
+
+/**
+ * The sessions the estimate was built from, openable.
+ *
+ * This reading asks an athlete to change how they train, and "127 sessions"
+ * is a number to be taken on faith unless it can be opened. Each row says how
+ * long of it sat near a threshold and which way its heart rate ran, and links
+ * to the session itself.
+ */
+function Contributors({ contributors, athleteId, kind }) {
+  const [open, setOpen] = useState(false);
+  if (!contributors?.length) return null;
+  const shown = open ? contributors.slice(0, 40) : [];
+
+  return (
+    <div className="mt-2">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="text-[11px] font-semibold text-gray-400 underline decoration-dotted underline-offset-2 hover:text-gray-600"
+      >
+        {open ? 'Hide the sessions this came from' : `Show the ${contributors.length} sessions this came from`}
+      </button>
+      {open && (
+        <ul className="mt-2 max-h-64 space-y-0.5 overflow-y-auto pr-1">
+          {shown.map((c) => {
+            const delta = Number.isFinite(c.meanDeltaHr) ? Math.round(c.meanDeltaHr) : null;
+            const tone = delta == null || Math.abs(delta) < 3 ? 'text-gray-400'
+              : delta < 0 ? 'text-emerald-600' : 'text-rose-600';
+            const href = `/training-calendar/${c.id}${athleteId ? `?athleteId=${athleteId}` : ''}`;
+            return (
+              <li key={c.id}>
+                <a
+                  href={href}
+                  className="flex items-baseline gap-2 rounded px-1.5 py-1 text-[11px] hover:bg-gray-50"
+                >
+                  <span className="w-16 shrink-0 tabular-nums text-gray-400">
+                    {new Date(c.date).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}
+                  </span>
+                  <span className="flex-1 truncate text-gray-700">{c.title || 'Session'}</span>
+                  <span className="shrink-0 tabular-nums text-gray-400">{c.minutes} min</span>
+                  <span className={`w-14 shrink-0 text-right tabular-nums font-semibold ${tone}`}>
+                    {delta == null ? '—' : `${delta > 0 ? '+' : ''}${delta} bpm`}
+                  </span>
+                </a>
+              </li>
+            );
+          })}
+          {contributors.length > 40 && (
+            <li className="px-1.5 py-1 text-[11px] text-gray-400">
+              …and {contributors.length - 40} more, not listed.
+            </li>
+          )}
+        </ul>
+      )}
     </div>
   );
 }
@@ -1067,14 +1139,15 @@ function DriftHistory({ athleteId, anchor, kind, storageMode, governingTest }) {
         </span>
       </div>
 
-      <ProjectedThresholds projection={data.projection} kind={kind} storageMode={storageMode} />
+      <ProjectedThresholds projection={data.projection} anchor={anchor} kind={kind} storageMode={storageMode} />
+      <Contributors contributors={data.contributors} athleteId={athleteId} kind={kind} />
       <ZoneAdvice
         advice={zoneAdviceFor(data.projection, { testDate: governingTest?.date })}
         projection={data.projection} anchor={anchor} kind={kind} storageMode={storageMode}
       />
       <CurveShift anchor={anchor} projection={data.projection} kind={kind} storageMode={storageMode} />
       <ThresholdTimeline timeline={data.timeline} testMarkers={data.testMarkers}
-        kind={kind} storageMode={storageMode} />
+        anchor={anchor} kind={kind} storageMode={storageMode} />
 
       {series.length > 0 && (
       <div className="mt-3 h-36 w-full">

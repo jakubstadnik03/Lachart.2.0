@@ -252,7 +252,12 @@ async function readSessionsSinceTest({ userId, sport, limit = DEFAULT_LIMIT }) {
     if (isFresh(hit)) {
       if (hit.ok) reads.push({ ...hit, date: hit.activityDate });
       else unreadable[hit.reason] = (unreadable[hit.reason] || 0) + 1;
-      if (hit.blocks?.length) compared.push({ date: hit.activityDate, blocks: hit.blocks });
+      if (hit.blocks?.length) {
+        compared.push({
+          date: hit.activityDate, blocks: hit.blocks,
+          id: hit.activityKey, title: hit.title, sport: hit.sport,
+        });
+      }
       continue;
     }
 
@@ -309,7 +314,12 @@ async function readSessionsSinceTest({ userId, sport, limit = DEFAULT_LIMIT }) {
 
     if (row.ok) reads.push({ ...row, date: session.date });
     else unreadable[row.reason] = (unreadable[row.reason] || 0) + 1;
-    if (row.blocks.length) compared.push({ date: session.date, blocks: row.blocks });
+    if (row.blocks.length) {
+      compared.push({
+        date: session.date, blocks: row.blocks,
+        id: session.key, title: session.title, sport: session.sport,
+      });
+    }
   }
 
   reads.sort((a, b) => new Date(a.date) - new Date(b.date));
