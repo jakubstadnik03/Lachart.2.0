@@ -4924,6 +4924,8 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                   athleteId={athleteId}
                   activityKey={activityWeatherKey}
                   activityDate={merged?.start_date || merged?.startDate || merged?.date}
+                  sessionTitle={merged?.titleManual || merged?.name || merged?.title || ''}
+                  plannedTarget={plannedWorkout?.category || plannedWorkout?.title || null}
                 />
               </div>
             )}
@@ -5946,6 +5948,8 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                 athleteId={athleteId}
                 activityKey={activityWeatherKey}
                 activityDate={merged?.start_date || merged?.startDate || merged?.date}
+                sessionTitle={merged?.titleManual || merged?.name || merged?.title || ''}
+                plannedTarget={plannedWorkout?.category || plannedWorkout?.title || null}
               />
             </div>
           )}

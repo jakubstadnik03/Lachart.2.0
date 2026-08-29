@@ -7,7 +7,9 @@ import {
   localSlopeAt,
   projectThresholdShift,
   projectThresholdTimeline,
+  judgeThresholdSplit,
   sessionCloud,
+  sessionIntent,
   shiftedLactateCurve,
   steadyBlocks,
   testHrCurve,
@@ -773,6 +775,62 @@ describe('timeAtThresholds', () => {
   it('says nothing without a session or a threshold', () => {
     expect(timeAtThresholds([], { lt1Demand: 210, lt2Demand: 280 })).toBeNull();
     expect(timeAtThresholds([bin(250)], { lt2Demand: 0 })).toBeNull();
+  });
+});
+
+describe('sessionIntent', () => {
+  it('reads the threshold a session was named for', () => {
+    expect(sessionIntent({ title: 'Bike LT2' })).toBe('lt2');
+    expect(sessionIntent({ title: '5x30 LT1' })).toBe('lt1');
+    expect(sessionIntent({ title: 'Threshold intervals' })).toBe('lt2');
+  });
+
+  it('does not let LT2 be caught by the LT1 rule', () => {
+    expect(sessionIntent({ title: 'Bike LT2 + LT1 finish' })).toBe('lt2');
+  });
+
+  it('recognises a session meant to be easy', () => {
+    expect(sessionIntent({ title: 'Bike - rege' })).toBe('easy');
+    expect(sessionIntent({ title: 'Easy spin' })).toBe('easy');
+  });
+
+  it('lets the plan override the title', () => {
+    expect(sessionIntent({ title: 'Morning Ride', plannedTarget: 'lt2' })).toBe('lt2');
+  });
+
+  it('says nothing about a ride that names no intention', () => {
+    expect(sessionIntent({ title: 'Afternoon Ride' })).toBeNull();
+    expect(sessionIntent({})).toBeNull();
+  });
+
+  it('is not fooled by a number that happens to contain 1 or 2', () => {
+    expect(sessionIntent({ title: '2x20 min' })).toBeNull();
+    expect(sessionIntent({ title: '12 km run' })).toBeNull();
+  });
+});
+
+describe('judgeThresholdSplit', () => {
+  it('counts the range between the thresholds as hitting an LT2 day', () => {
+    const j = judgeThresholdSplit('lt2');
+    expect(j.between).toBe('good');
+    expect(j.atLt2).toBe('good');
+    expect(j.belowLt1).toBe('short');
+  });
+
+  it('marks falling short, not going harder', () => {
+    expect(judgeThresholdSplit('lt2').aboveLt2).toBe('neutral');
+    expect(judgeThresholdSplit('lt1').atLt2).toBe('neutral');
+  });
+
+  it('flips the miss on an easy day', () => {
+    const j = judgeThresholdSplit('easy');
+    expect(j.belowLt1).toBe('good');
+    expect(j.aboveLt2).toBe('short');
+  });
+
+  it('judges nothing without an intent', () => {
+    const j = judgeThresholdSplit(null);
+    expect(Object.values(j).every((v) => v === 'neutral')).toBe(true);
   });
 });
 

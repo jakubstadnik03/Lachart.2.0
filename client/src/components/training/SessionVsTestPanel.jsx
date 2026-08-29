@@ -29,8 +29,8 @@ import {
 import api, { getActivityWeather, getThresholdDrift, updateUserProfile } from '../../services/api';
 import {
   analyseSession, compareToTestCurve, lactateCurveShift, shiftedLactateCurve,
-  sportKind, testHrSlope, testLactateCurve, thresholdToDemand, timeAtThresholds,
-  zoneAdviceFor, zoneAgreement,
+  judgeThresholdSplit, sessionIntent, sportKind, testHrSlope, testLactateCurve,
+  thresholdToDemand, timeAtThresholds, zoneAdviceFor, zoneAgreement,
 } from '../../utils/hrPowerProfile';
 import { extractLactateThresholds } from '../../utils/extractLactateThresholds';
 import { ltZoneBounds, ltZones, measuredMaxHr } from '../../utils/trainingZoneBounds';
@@ -303,7 +303,7 @@ function AtTheSameIntensity({ comparison, kind, storageMode }) {
  * comes out eleven watts wide, so "42 minutes in Z4" means something different
  * for them than for anyone else, while "42 minutes at LT2" does not.
  */
-function TimeAtThresholds({ result, anchor, kind, storageMode }) {
+function TimeAtThresholds({ result, anchor, kind, storageMode, title, plannedTarget }) {
   const split = useMemo(() => {
     if (!result?.cloud?.length) return null;
     return timeAtThresholds(result.cloud, {
@@ -311,6 +311,9 @@ function TimeAtThresholds({ result, anchor, kind, storageMode }) {
       lt2Demand: result.lt2Demand ?? thresholdToDemand(anchor?.lt2, { kind, storageMode }),
     });
   }, [result, anchor, kind, storageMode]);
+
+  const intent = sessionIntent({ title, plannedTarget });
+  const verdict = judgeThresholdSplit(intent);
 
   if (!split) return null;
 
@@ -323,6 +326,14 @@ function TimeAtThresholds({ result, anchor, kind, storageMode }) {
   ].filter((r) => r.sec > 0);
 
   const pct = (sec) => Math.round((sec / split.totalSec) * 100);
+  /** Colour the row against what the session was for — never against nothing. */
+  const toneOf = (key) => ({
+    good: 'text-emerald-600',
+    short: 'text-rose-600',
+    neutral: 'text-gray-900',
+  }[verdict[key]] || 'text-gray-900');
+  const good = rows.filter((r) => verdict[r.key] === 'good').reduce((a, r) => a + r.sec, 0);
+  const short = rows.filter((r) => verdict[r.key] === 'short').reduce((a, r) => a + r.sec, 0);
 
   return (
     <div className="mt-3">
@@ -338,11 +349,23 @@ function TimeAtThresholds({ result, anchor, kind, storageMode }) {
           <li key={r.key} className="flex items-baseline gap-2 text-[12px]">
             <span className="inline-block h-2 w-2 shrink-0 rounded-sm" style={{ background: r.color }} />
             <span className="flex-1 text-gray-600">{r.label}</span>
-            <span className="tabular-nums font-semibold text-gray-900">{fmtBlock(r.sec)}</span>
-            <span className="w-9 text-right tabular-nums text-gray-400">{pct(r.sec)}%</span>
+            <span className={`tabular-nums font-semibold ${toneOf(r.key)}`}>{fmtBlock(r.sec)}</span>
+            <span className={`w-9 text-right tabular-nums ${verdict[r.key] === 'neutral' ? 'text-gray-400' : toneOf(r.key)}`}>
+              {pct(r.sec)}%
+            </span>
           </li>
         ))}
       </ul>
+      {intent && (
+        <p className="mt-1.5 text-[12px] leading-relaxed text-gray-600">
+          {intent === 'easy'
+            ? <>Read as an easy session: <strong className="text-emerald-600">{fmtBlock(good)}</strong> below
+              threshold{short > 0 ? <>, <strong className="text-rose-600">{fmtBlock(short)}</strong> harder than that</> : ' throughout'}.</>
+            : <>Read as {intent === 'lt2' ? 'a threshold' : 'an aerobic'} session:{' '}
+              <strong className="text-emerald-600">{fmtBlock(good)}</strong> in the range it was aimed at
+              {short > 0 ? <>, <strong className="text-rose-600">{fmtBlock(short)}</strong> below it</> : ''}.</>}
+        </p>
+      )}
       <p className="mt-1 text-[11px] leading-relaxed text-gray-400">
         &ldquo;At&rdquo; means within 3% of the threshold your test measured
         {anchor?.lt2 ? ` — LT2 is ${fmtDemand(thresholdToDemand(anchor.lt2, { kind, storageMode }), kind, storageMode)}` : ''}
@@ -1287,6 +1310,9 @@ export default function SessionVsTestPanel({
   tests: testsProp = null,
   activityKey = null,
   activityDate = null,
+  /** What the session was for — used only to say whether it hit that, never invented. */
+  sessionTitle = '',
+  plannedTarget = null,
   tempC: tempCProp = null,
   className = '',
 }) {
@@ -1384,7 +1410,8 @@ export default function SessionVsTestPanel({
 
       {/* First, because it is the sentence most sessions can support. */}
       <AtTheSameIntensity comparison={comparison} kind={kind} storageMode={storageMode} />
-      <TimeAtThresholds result={result} anchor={anchor} kind={kind} storageMode={storageMode} />
+      <TimeAtThresholds result={result} anchor={anchor} kind={kind} storageMode={storageMode}
+        title={sessionTitle} plannedTarget={plannedTarget} />
 
       {hasCloud ? (
         <ZoneScatter result={result} anchor={anchor} governingTest={governingTest}

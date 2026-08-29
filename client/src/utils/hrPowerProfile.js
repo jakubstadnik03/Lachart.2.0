@@ -842,6 +842,62 @@ export function timeAtThresholds(cloud, { lt1Demand, lt2Demand, band = AT_THRESH
   return out.totalSec > 0 ? out : null;
 }
 
+/**
+ * What intensity this session was meant to hit.
+ *
+ * Time below LT1 is a miss on a threshold day and exactly right on a recovery
+ * ride, so the split above can only be judged against an intention. Read from
+ * the plan when there is one, and otherwise from the title, which in practice
+ * is where athletes record what a session was for ("Bike LT2", "5x30 LT1").
+ *
+ * Returns null rather than guessing. A verdict invented from no evidence is
+ * worse than no verdict, and most rides are not aimed at a threshold at all.
+ *
+ * @returns {'lt1'|'lt2'|'easy'|null}
+ */
+export function sessionIntent({ title = '', plannedTarget = null } = {}) {
+  const t = String(plannedTarget || '').toLowerCase();
+  if (t.includes('lt2') || t.includes('threshold') || t === 'zone4') return 'lt2';
+  if (t.includes('lt1') || t === 'zone2') return 'lt1';
+
+  const s = String(title || '').toLowerCase();
+  // Order matters: "LT2" must not be caught by a looser LT1 rule.
+  if (/\blt\s*2\b|\bthreshold\b|\banaerob/.test(s)) return 'lt2';
+  if (/\blt\s*1\b|\baerob\b/.test(s)) return 'lt1';
+  if (/\brege\b|\brecovery\b|\beasy\b|\bregener/.test(s)) return 'easy';
+  return null;
+}
+
+/**
+ * Judge a threshold split against what the session was for.
+ *
+ * Green is time spent where the session was aimed — and for a threshold day
+ * that includes the range between LT1 and LT2, not only the narrow band at the
+ * threshold itself, because real interval work lives in that range. Red is
+ * time that fell short of it. Everything else stays neutral: harder than
+ * intended is not automatically a failure, and without an intent nothing is
+ * judged at all.
+ *
+ * @returns {Object} bucket key → 'good' | 'short' | 'neutral'
+ */
+export function judgeThresholdSplit(intent) {
+  const neutral = {
+    belowLt1: 'neutral', atLt1: 'neutral', between: 'neutral',
+    atLt2: 'neutral', aboveLt2: 'neutral',
+  };
+  if (intent === 'lt2') {
+    return { ...neutral, belowLt1: 'short', atLt1: 'short', between: 'good', atLt2: 'good' };
+  }
+  if (intent === 'lt1') {
+    return { ...neutral, belowLt1: 'short', atLt1: 'good', between: 'good' };
+  }
+  if (intent === 'easy') {
+    // The miss on an easy day is the other direction.
+    return { ...neutral, belowLt1: 'good', atLt1: 'good', atLt2: 'short', aboveLt2: 'short' };
+  }
+  return neutral;
+}
+
 // ── Step 4: the fit ─────────────────────────────────────────────────────────
 
 /**
