@@ -14,6 +14,7 @@ import {
   testHrSlope,
   testLactateCurve,
   thresholdToDemand,
+  timeAtThresholds,
   toSeries,
   zoneAdviceFor,
   zoneAgreement,
@@ -720,6 +721,58 @@ describe('zoneAdviceFor', () => {
   it('says nothing without a projection', () => {
     expect(zoneAdviceFor(null, { testDate: OLD_TEST })).toBeNull();
     expect(zoneAdviceFor({ lt1: null, lt2: null, sessions: 20, minutes: 900 }, { testDate: OLD_TEST })).toBeNull();
+  });
+});
+
+describe('timeAtThresholds', () => {
+  // LT1 210 W, LT2 280 W. Bands: 203.7–216.3 and 271.6–288.4.
+  const bin = (demand, sec = 30) => ({ demand, hr: 150, sec, t: 0 });
+  const split = (bins) => timeAtThresholds(bins, { lt1Demand: 210, lt2Demand: 280 });
+
+  it('counts time held at a threshold as being at it', () => {
+    const r = split([bin(280), bin(276), bin(285)]);
+    expect(r.atLt2).toBe(90);
+    expect(r.aboveLt2).toBe(0);
+  });
+
+  it('does not let a steady effort flicker across the boundary', () => {
+    // 208–214 W is one athlete holding LT1, not three different intensities.
+    const r = split([bin(208), bin(211), bin(214)]);
+    expect(r.atLt1).toBe(90);
+    expect(r.belowLt1).toBe(0);
+    expect(r.between).toBe(0);
+  });
+
+  it('separates the five places an effort can sit', () => {
+    const r = split([bin(150), bin(210), bin(245), bin(280), bin(340)]);
+    expect(r).toMatchObject({ belowLt1: 30, atLt1: 30, between: 30, atLt2: 30, aboveLt2: 30 });
+    expect(r.totalSec).toBe(150);
+  });
+
+  it('is not fooled by a session that never approached either threshold', () => {
+    const r = split([bin(120), bin(130), bin(125)]);
+    expect(r.belowLt1).toBe(90);
+    expect(r.atLt2).toBe(0);
+  });
+
+  it('folds everything under LT2 together when LT1 is missing', () => {
+    const r = timeAtThresholds([bin(150), bin(245)], { lt1Demand: null, lt2Demand: 280 });
+    expect(r.between).toBe(60);
+    expect(r.atLt1).toBe(0);
+    expect(r.belowLt1).toBe(0);
+  });
+
+  it('ignores an LT1 that has collapsed onto LT2', () => {
+    // Thresholds this close describe nobody; treating them as separate bands
+    // would produce two overlapping ones.
+    const r = timeAtThresholds([bin(150), bin(278)], { lt1Demand: 275, lt2Demand: 280 });
+    expect(r.atLt1).toBe(0);
+    expect(r.atLt2).toBe(30);
+  });
+
+  it('says nothing without a session or a threshold', () => {
+    expect(timeAtThresholds([], { lt1Demand: 210, lt2Demand: 280 })).toBeNull();
+    expect(timeAtThresholds([bin(250)], { lt2Demand: 0 })).toBeNull();
   });
 });
 

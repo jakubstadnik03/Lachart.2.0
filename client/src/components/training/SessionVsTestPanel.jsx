@@ -29,8 +29,8 @@ import {
 import api, { getActivityWeather, getThresholdDrift, updateUserProfile } from '../../services/api';
 import {
   analyseSession, compareToTestCurve, lactateCurveShift, shiftedLactateCurve,
-  sportKind, testHrSlope, testLactateCurve, thresholdToDemand, zoneAdviceFor,
-  zoneAgreement,
+  sportKind, testHrSlope, testLactateCurve, thresholdToDemand, timeAtThresholds,
+  zoneAdviceFor, zoneAgreement,
 } from '../../utils/hrPowerProfile';
 import { extractLactateThresholds } from '../../utils/extractLactateThresholds';
 import { ltZoneBounds, ltZones, measuredMaxHr } from '../../utils/trainingZoneBounds';
@@ -289,6 +289,65 @@ function AtTheSameIntensity({ comparison, kind, storageMode }) {
         {notable && (lower
           ? ' A lower heart rate for the same effort is the shape aerobic fitness improves in.'
           : ' A higher heart rate for the same effort usually means heat, fatigue or illness before it means lost fitness.')}
+      </p>
+    </div>
+  );
+}
+
+/**
+ * How long the session spent at each measured threshold.
+ *
+ * Five-zone time-in-zone answers a question the zone model invented; LT1 and
+ * LT2 are the two intensities this athlete had measured. The distinction is not
+ * academic — one athlete's thresholds sit far enough apart that the derived Z4
+ * comes out eleven watts wide, so "42 minutes in Z4" means something different
+ * for them than for anyone else, while "42 minutes at LT2" does not.
+ */
+function TimeAtThresholds({ result, anchor, kind, storageMode }) {
+  const split = useMemo(() => {
+    if (!result?.cloud?.length) return null;
+    return timeAtThresholds(result.cloud, {
+      lt1Demand: result.lt1Demand ?? thresholdToDemand(anchor?.lt1, { kind, storageMode }),
+      lt2Demand: result.lt2Demand ?? thresholdToDemand(anchor?.lt2, { kind, storageMode }),
+    });
+  }, [result, anchor, kind, storageMode]);
+
+  if (!split) return null;
+
+  const rows = [
+    { key: 'aboveLt2', label: 'Above LT2', color: '#ef4444', sec: split.aboveLt2 },
+    { key: 'atLt2', label: 'At LT2', color: '#f97316', sec: split.atLt2 },
+    { key: 'between', label: 'Between LT1 and LT2', color: '#fbbf24', sec: split.between },
+    { key: 'atLt1', label: 'At LT1', color: '#34d399', sec: split.atLt1 },
+    { key: 'belowLt1', label: 'Below LT1', color: '#60a5fa', sec: split.belowLt1 },
+  ].filter((r) => r.sec > 0);
+
+  const pct = (sec) => Math.round((sec / split.totalSec) * 100);
+
+  return (
+    <div className="mt-3">
+      <h4 className="mb-1.5 text-[13px] font-bold text-gray-900">Time at your thresholds</h4>
+      <div className="flex h-4 overflow-hidden rounded">
+        {[...rows].reverse().map((r) => (
+          <div key={r.key} title={`${r.label} — ${fmtBlock(r.sec)}`}
+            style={{ width: `${(r.sec / split.totalSec) * 100}%`, background: r.color, opacity: 0.85 }} />
+        ))}
+      </div>
+      <ul className="mt-1.5 space-y-0.5">
+        {rows.map((r) => (
+          <li key={r.key} className="flex items-baseline gap-2 text-[12px]">
+            <span className="inline-block h-2 w-2 shrink-0 rounded-sm" style={{ background: r.color }} />
+            <span className="flex-1 text-gray-600">{r.label}</span>
+            <span className="tabular-nums font-semibold text-gray-900">{fmtBlock(r.sec)}</span>
+            <span className="w-9 text-right tabular-nums text-gray-400">{pct(r.sec)}%</span>
+          </li>
+        ))}
+      </ul>
+      <p className="mt-1 text-[11px] leading-relaxed text-gray-400">
+        &ldquo;At&rdquo; means within 3% of the threshold your test measured
+        {anchor?.lt2 ? ` — LT2 is ${fmtDemand(thresholdToDemand(anchor.lt2, { kind, storageMode }), kind, storageMode)}` : ''}
+        {anchor?.lt1 ? `, LT1 ${fmtDemand(thresholdToDemand(anchor.lt1, { kind, storageMode }), kind, storageMode)}` : ''}.
+        Measured intensities, not zones derived from them.
       </p>
     </div>
   );
@@ -1325,6 +1384,7 @@ export default function SessionVsTestPanel({
 
       {/* First, because it is the sentence most sessions can support. */}
       <AtTheSameIntensity comparison={comparison} kind={kind} storageMode={storageMode} />
+      <TimeAtThresholds result={result} anchor={anchor} kind={kind} storageMode={storageMode} />
 
       {hasCloud ? (
         <ZoneScatter result={result} anchor={anchor} governingTest={governingTest}

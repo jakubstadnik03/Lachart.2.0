@@ -802,6 +802,60 @@ function compareToTestCurve(cloud, anchor, { tempAdjustBpm = 0 } = {}) {
   return { blocks: blocks.slice(0, 4), fromAverage, meanDeltaHr };
 }
 
+/** How close to a threshold still counts as being at it. */
+const AT_THRESHOLD_BAND = 0.03;
+
+/**
+ * Time spent at the thresholds themselves, rather than in zones derived from
+ * them.
+ *
+ * Five-zone time-in-zone answers a question the zone model invented. LT1 and
+ * LT2 are the two intensities this athlete actually had measured, and the
+ * useful question about a session is how much of it was spent at them — which
+ * a zone split can hide entirely. One athlete's Z4 came out eleven watts wide
+ * because their thresholds sit far apart, so "42 minutes in Z4" meant
+ * something different for them than for anyone else, while "42 minutes at
+ * LT2" means the same thing for everybody.
+ *
+ * Five buckets: below LT1, at LT1, between, at LT2, above. The bands are ±3%
+ * of the threshold, wide enough that holding an effort steady lands in one
+ * rather than flickering across the boundary.
+ *
+ * @param {Array}  cloud   sessionCloud() output
+ * @param {object} o
+ * @param {number} o.lt1Demand
+ * @param {number} o.lt2Demand
+ * @returns {null | {belowLt1, atLt1, between, atLt2, aboveLt2, totalSec}}
+ */
+function timeAtThresholds(cloud, { lt1Demand, lt2Demand, band = AT_THRESHOLD_BAND } = {}) {
+  if (!Array.isArray(cloud) || !cloud.length) return null;
+  if (!(lt2Demand > 0)) return null;
+
+  const lt2Lo = lt2Demand * (1 - band);
+  const lt2Hi = lt2Demand * (1 + band);
+  const hasLt1 = lt1Demand > 0 && lt1Demand < lt2Lo;
+  const lt1Lo = hasLt1 ? lt1Demand * (1 - band) : null;
+  const lt1Hi = hasLt1 ? lt1Demand * (1 + band) : null;
+
+  const out = { belowLt1: 0, atLt1: 0, between: 0, atLt2: 0, aboveLt2: 0, totalSec: 0 };
+
+  for (const bin of cloud) {
+    const sec = Number(bin.sec) || 0;
+    const d = Number(bin.demand);
+    if (!(sec > 0) || !Number.isFinite(d)) continue;
+    out.totalSec += sec;
+
+    if (d > lt2Hi) out.aboveLt2 += sec;
+    else if (d >= lt2Lo) out.atLt2 += sec;
+    else if (!hasLt1) out.between += sec;
+    else if (d > lt1Hi) out.between += sec;
+    else if (d >= lt1Lo) out.atLt1 += sec;
+    else out.belowLt1 += sec;
+  }
+
+  return out.totalSec > 0 ? out : null;
+}
+
 // ── Step 4: the fit ─────────────────────────────────────────────────────────
 
 /**
@@ -1510,6 +1564,7 @@ module.exports = {
   testHrSlope,
   testLactateCurve,
   thresholdToDemand,
+  timeAtThresholds,
   toSeries,
   zoneAdviceFor,
   zoneAgreement,
