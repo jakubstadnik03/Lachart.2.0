@@ -4912,24 +4912,6 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
               </div>
             )}
 
-            {/* The session read against the lactate test: zones, blood, threshold.
-                On Summary, because that is the tab the athlete lands on — it
-                spent its first outing behind Map/Graph, where nobody saw it. */}
-            {chartTraining?.records?.length > 60 && (
-              <div className="px-4 py-4 border-b border-gray-100">
-                <SessionVsTestPanel
-                  records={chartTraining.records}
-                  laps={laps}
-                  sport={merged?.sport || sport}
-                  athleteId={athleteId}
-                  activityKey={activityWeatherKey}
-                  activityDate={merged?.start_date || merged?.startDate || merged?.date}
-                  sessionTitle={merged?.titleManual || merged?.name || merged?.title || ''}
-                  plannedTarget={plannedWorkout?.category || plannedWorkout?.title || null}
-                />
-              </div>
-            )}
-
             {/* Comments */}
             {commentsTarget.trainingId && (
             <div className="px-4 py-4 border-b border-gray-100">
@@ -4947,6 +4929,26 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                 <ActivityWeather activityKey={activityWeatherKey} />
               </div>
             )}
+
+            {/* The session read against the lactate test: zones, blood, threshold.
+                On Summary, because that is the tab the athlete lands on. Below
+                the comments and the conditions, which are short and are what
+                someone opening a session reads first — this is the long read. */}
+            {chartTraining?.records?.length > 60 && (
+              <div className="px-4 py-4 border-b border-gray-100">
+                <SessionVsTestPanel
+                  records={chartTraining.records}
+                  laps={laps}
+                  sport={merged?.sport || sport}
+                  athleteId={athleteId}
+                  activityKey={activityWeatherKey}
+                  activityDate={merged?.start_date || merged?.startDate || merged?.date}
+                  sessionTitle={merged?.titleManual || merged?.name || merged?.title || ''}
+                  plannedTarget={plannedWorkout?.category || plannedWorkout?.title || null}
+                />
+              </div>
+            )}
+
 
             {/* Planned section moved → Edit tab. Quick "Add planned" shortcut
                 when there's no plan yet, so Summary doesn't lose discoverability. */}
