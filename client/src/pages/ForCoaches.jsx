@@ -6,30 +6,42 @@ import SiteNav from '../components/About/SiteNav';
 import SiteFooter from '../components/About/SiteFooter';
 
 /**
- * Dedicated coach landing page (/for-coaches).
+ * Landing page for coaching a roster (/for-coaches).
  *
- * Uses the shared marketing design kit (tokens, STYLE, reveal, nav, footer)
- * so it renders as one system with the About page. Also the SEO landing page
- * for "lactate testing software for coaches".
+ * This page used to sell two jobs at once — testing clients and coaching
+ * athletes — and the two readers want opposite things. Testing now has
+ * /for-testers, so this one is free to be what a coach with athletes on the
+ * books actually needs: their training arriving on its own, analysed, and the
+ * week going back out to their watch.
+ *
+ * Lactate is still here, because it is what makes the zones worth anything —
+ * but as the anchor under the coaching, not as the product. A visitor who only
+ * tests is pointed at the other page rather than sold a calendar.
+ *
+ * Uses the shared marketing design kit so all three job pages render as one
+ * system.
  */
 
 const CANONICAL = 'https://lachart.net/for-coaches';
 
 const STEPS = [
-  { n: '1', t: 'Test', d: 'Run a step test on your client — power or pace, lactate, heart rate. Or let them sync from Strava & Garmin.' },
-  { n: '2', t: 'Store', d: 'Every test saved to their profile forever. Overlay curves over time to show progress at a glance.' },
-  { n: '3', t: 'Report', d: 'Export a polished PDF with LT1, LT2, OBLA and full zones — carrying your logo, studio name and contact.' },
-  { n: '4', t: 'Analyse', d: 'Read their training with power/HR/pace curves, laps, intervals, form & fitness (CTL/ATL/TSB).' },
-  { n: '5', t: 'Plan', d: 'Build structured workouts straight into each athlete’s calendar. Plan, log and review in one place.' },
+  { n: '1', t: 'Add them', d: 'Invite an athlete or create them yourself. They connect Strava, Garmin or Apple Health once and every ride, run and swim lands in your workspace from then on.' },
+  { n: '2', t: 'Set the zones', d: 'From a lactate test rather than a percentage of an estimate — yours, or one a studio ran. Every number downstream is anchored to those two thresholds.' },
+  { n: '3', t: 'Build the week', d: 'Structured sessions with targets in watts, pace, heart rate or their own zones, dropped straight onto the athlete’s calendar.' },
+  { n: '4', t: 'It reaches the watch', d: 'The session is written into their Garmin Connect calendar as a structured workout — the steps become laps, with targets, on the device.' },
+  { n: '5', t: 'Read what happened', d: 'Planned against completed, load and form, laps and intervals, and the same session compared with every previous attempt at it.' },
 ];
 
 const FEATURES = [
-  { t: 'One workspace, every athlete', d: 'Switch between clients in a tap. Status dots (green / amber / red) show who is due for a re-test.' },
-  { t: 'Branded PDF reports', d: 'Your logo, studio name and contact on every test report — a professional handout you give the athlete.' },
-  { t: 'Multi-method thresholds', d: 'LT1, LT2, OBLA, D-max, IAT and log-log computed together — a consensus result, not one formula’s guess.' },
-  { t: 'Test on their behalf', d: 'Enter a client’s lactate step test and their zones, curve and report are ready instantly.' },
-  { t: 'Plan for your athletes', d: 'Push structured workouts into any athlete’s training calendar and track completion.' },
-  { t: 'Full training analysis', d: 'Laps, intervals, HR/power/cadence streams, training load and zone distribution — per athlete.' },
+  { t: 'One workspace, every athlete', d: 'Switch between athletes in a tap. Status dots show at a glance who is training, who has gone quiet and who is due to be retested.' },
+  { t: 'Their data arrives on its own', d: 'Strava, Garmin and Apple Health sync in the background — power, pace, heart rate, cadence, laps and per-second streams. Nothing to upload, nothing to chase.' },
+  { t: 'Load, form and fitness', d: 'TSS per session, CTL, ATL and TSB per athlete, with a plain-English read on whether they are fresh, productive or digging a hole.' },
+  { t: 'The same session, every time they did it', d: 'Repeat workouts are recognised and grouped, so 5×8min in August sits beside the same session in March — power, heart rate and what moved between them.' },
+  { t: 'Structured workouts onto their watch', d: 'Build the session once and it appears in their Garmin Connect calendar with every step and target intact. They press start; you see it come back.' },
+  { t: 'Planned versus completed', d: 'Duration, distance, load and average power side by side with what you asked for — per session and across the week.' },
+  { t: 'Zones out of a real test', d: 'LT1 and LT2 by six methods with the measured points on top, and power, pace and heart-rate zones generated from them.' },
+  { t: 'The season, not just the week', d: 'An annual structure with blocks and target load, races with a countdown and taper, and a weekly review you write once and keep.' },
+  { t: 'Talk about the session itself', d: 'Comments live on the training, not in a separate thread — the athlete asks about Tuesday under Tuesday.' },
 ];
 
 const Check = () => (
@@ -44,9 +56,9 @@ const ForCoaches = () => {
   return (
     <div className="lc-page lc-page-in">
       <Helmet>
-        <title>Lactate Testing Software for Coaches — Branded Reports & Athlete Management | LaChart</title>
-        <meta name="description" content="LaChart is lactate testing software built for coaches and testing studios: store every test, generate branded PDF reports with your logo, evaluate LT1/LT2, and plan & analyse your athletes' training. 2 weeks free." />
-        <meta name="keywords" content="lactate testing software, lactate testing software for coaches, lactate test report, branded lactate report, lactate testing studio software, coaching platform, LT1 LT2 software, athlete management software, endurance coaching software" />
+        <title>Coaching Software for Endurance Coaches — Athlete Training, Load &amp; Structured Workouts | LaChart</title>
+        <meta name="description" content="Coaching software for endurance coaches: your athletes connect Strava or Garmin, you read their load, form and every session, build structured workouts that reach their watch, and set their zones from a real lactate test. 2 weeks free." />
+        <meta name="keywords" content="endurance coaching software, athlete management software, training plan software, structured workouts Garmin, TSS CTL ATL TSB, coaching platform, training load analysis, coach training calendar, lactate threshold zones" />
         <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large" />
         <link rel="canonical" href={CANONICAL} />
         <meta property="og:title" content="Lactate Testing Software for Coaches | LaChart" />
@@ -79,9 +91,10 @@ const ForCoaches = () => {
             <Eyebrow>For coaches &amp; testing studios</Eyebrow>
             <h1 className="lc-huge" style={{ margin: '18px 0 18px' }}>Coach a team. <em>Without spreadsheets.</em></h1>
             <p className="lc-lead" style={{ maxWidth: 560 }}>
-              You already test lactate. LaChart is the software that stores every test, turns it into a
-              <strong style={{ color: LC.text }}> branded PDF report with your logo</strong>, evaluates LT1 &amp; LT2, and
-              lets you plan and analyse your athletes&rsquo; training — all in one workspace.
+              Your athletes connect Strava or Garmin once and their training arrives on its own. You read
+              it — load, form, laps, the same session against every previous attempt — build next week,
+              and <strong style={{ color: LC.text }}>it lands on their watch</strong>. All of it anchored
+              to zones from a real lactate test instead of a percentage of a guess.
             </p>
             <div style={{ display: 'flex', gap: 12, marginTop: 28, flexWrap: 'wrap', alignItems: 'center' }}>
               <Link to="/signup?plan=coach" className="lc-btn-primary">🎁 Start your 2-week free trial</Link>
@@ -98,12 +111,24 @@ const ForCoaches = () => {
         <style>{`@media (max-width: 900px){ .lc-fc-hero { grid-template-columns: 1fr !important; gap: 32px !important; } }`}</style>
       </header>
 
+      {/* Testing-only readers belong on the other page — sending them into a
+          calendar pitch is how a lab coach concludes this is not for them. */}
+      <section className="lc-sectpad" style={{ paddingTop: 8, paddingBottom: 8 }}>
+        <div ref={pushRef} className="lc-reveal lc-card" style={{ display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'space-between' }}>
+          <p style={{ margin: 0, color: LC.muted, fontSize: 14.5, lineHeight: 1.55, maxWidth: 620 }}>
+            <strong style={{ color: LC.ink }}>Only test people?</strong> If you run step tests for clients
+            and hand back a report — no calendars, no athletes to follow — that is its own product.
+          </p>
+          <Link to="/for-testers" className="lc-btn-ghost">See LaChart for testers →</Link>
+        </div>
+      </section>
+
       {/* Workflow */}
       <section className="lc-sectpad" style={{ paddingTop: 24 }}>
         <div ref={pushRef} className="lc-reveal" style={{ marginBottom: 34 }}>
           <Eyebrow>The workflow</Eyebrow>
-          <h2 className="lc-big" style={{ margin: '14px 0 8px' }}>From a drop of blood to a training plan</h2>
-          <p className="lc-lead">Everything a coach does around a lactate test — in one connected flow, per athlete.</p>
+          <h2 className="lc-big" style={{ margin: '14px 0 8px' }}>From their watch to yours and back</h2>
+          <p className="lc-lead">The loop a coach actually runs, per athlete, without a spreadsheet in the middle of it.</p>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 16 }}>
           {STEPS.map((s, i) => (
@@ -121,13 +146,13 @@ const ForCoaches = () => {
         <div ref={pushRef} className="lc-reveal" style={{ marginBottom: 30 }}>
           <Eyebrow>Inside the workspace</Eyebrow>
           <h2 className="lc-big" style={{ margin: '14px 0 8px' }}>See what your athletes get</h2>
-          <p className="lc-lead">Lactate testing, a full training calendar and auto-generated zones — one tool for the whole coaching relationship.</p>
+          <p className="lc-lead">A calendar they can follow, zones that came from their own physiology, and sessions that explain themselves.</p>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 20 }}>
           {[
-            { img: '/about-design/lactate-testing-page.png', label: 'Lactate testing', cap: 'Enter a step test — the curve, LT1, LT2 and zones compute instantly.' },
-            { img: '/about-design/training-calendar.png', label: 'Training calendar', cap: 'Plan, log and review each athlete’s week in one place.' },
-            { img: '/about-design/zones-generator.png', label: 'Training zones', cap: 'Power, heart-rate and pace zones straight from the test.' },
+            { img: '/about-design/training-calendar.png', label: 'Training calendar', cap: 'Build the week, push it to their Garmin, and see what came back against it.' },
+            { img: '/about-design/training-log-page.png', label: 'Session analysis', cap: 'Laps, intervals, streams and load — and the same session every time they have done it.' },
+            { img: '/about-design/zones-generator.png', label: 'Training zones', cap: 'Power, heart-rate and pace zones straight from their lactate test.' },
           ].map((g, i) => (
             <div key={g.label} ref={pushRef} className={`lc-reveal d${i + 1}`}>
               <BrowserFrame label={g.label}>
