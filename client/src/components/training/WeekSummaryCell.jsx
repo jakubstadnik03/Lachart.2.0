@@ -39,7 +39,7 @@ export default function WeekSummaryCell({ weekSummary, formatHours, formatKm, us
     rows:   L ? 'space-y-2.5' : 'space-y-1.5',
     bar:    L ? 'h-1.5'       : 'h-[3px]',
     fire:   L ? 'w-4 h-4'     : 'w-3.5 h-3.5',
-    arrow:  L ? 'w-6 h-6'     : 'w-5 h-5',
+    arrow:  L ? 'w-6 h-6'     : 'w-4 h-4',
   };
 
   // Planned side, per sport. The week summary carries planned time and TSS as
@@ -118,15 +118,20 @@ export default function WeekSummaryCell({ weekSummary, formatHours, formatKm, us
   return (
     <div className={`bg-gray-50 ${cls.pad} border-l-4 border-primary/30 ${L ? 'min-h-[240px]' : 'min-h-[145px]'} min-w-[150px] flex flex-col ${cls.gap}`}>
       {/* Headline: the week's time, against its plan */}
+      {/* The headline never wraps. In a 180px column the percentage badge and
+          the trend arrow together are wide enough to fold "/ 5:15" onto its
+          own line and break "4 done · 4 planned" across three — which is how
+          the same cell that reads fine on the calendar looked broken on the
+          dashboard. It shrinks or truncates instead. */}
       <div className="flex items-start justify-between gap-1">
-        <div className="min-w-0">
-          <div className="flex items-baseline gap-1.5 leading-tight">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-baseline gap-1 leading-tight whitespace-nowrap">
             <span className={`${cls.big} font-extrabold text-gray-900`}>{formatHours(totalSeconds)}</span>
             {plannedSeconds > 0 && (
               <span className={`${cls.prefix} font-medium text-gray-400`}>/ {formatHours(plannedSeconds)}</span>
             )}
           </div>
-          <div className={`${cls.micro} text-gray-400 mt-0.5`}>
+          <div className={`${cls.micro} text-gray-400 mt-0.5 whitespace-nowrap truncate`}>
             {sessionCount > 0 ? `${sessionCount} done` : 'nothing done'}
             {plannedCount > 0 && ` · ${plannedCount} planned`}
           </div>
