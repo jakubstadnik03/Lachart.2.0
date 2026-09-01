@@ -103,9 +103,10 @@ const ForCoaches = () => {
             <p style={{ color: LC.muted, fontSize: 13.5, marginTop: 14 }}>No charge today · cancel anytime · unlimited athletes</p>
           </div>
           <div ref={pushRef} className="lc-reveal right lc-float">
-            <BrowserFrame label="lachart.net · coach dashboard">
-              <img src="/about-design/dashboard-home.png" alt="LaChart coach dashboard showing an athlete's lactate curve, training zones and form & fitness" loading="eager" style={{ display: 'block', width: '100%' }} />
-            </BrowserFrame>
+            <img src="/marketing/coach-sceen.webp"
+              alt="A coach at a standing desk reviewing an athlete's lactate test on two screens"
+              loading="eager" width="1600" height="1067"
+              style={{ display: 'block', width: '100%', borderRadius: 18, boxShadow: '0 24px 60px rgba(15,23,41,.18)' }} />
           </div>
         </div>
         <style>{`@media (max-width: 900px){ .lc-fc-hero { grid-template-columns: 1fr !important; gap: 32px !important; } }`}</style>
@@ -137,6 +138,18 @@ const ForCoaches = () => {
               <h3 style={{ margin: '12px 0 6px', fontSize: 17, color: LC.ink }}>{s.t}</h3>
               <p style={{ margin: 0, fontSize: 14, color: LC.muted, lineHeight: 1.5 }}>{s.d}</p>
             </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="lc-sectpad" style={{ paddingTop: 8, paddingBottom: 8 }}>
+        <div ref={pushRef} className="lc-reveal" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
+          {[
+            ['/marketing/coach-athlete-phone.webp', 'A coach and an athlete going through a session together after training'],
+            ['/marketing/coach-graph.webp', 'A coach reading an athlete\u2019s week at a desk'],
+          ].map(([src, alt]) => (
+            <img key={src} src={src} alt={alt} loading="lazy" width="1600" height="1067"
+              style={{ display: 'block', width: '100%', borderRadius: 14, aspectRatio: '3 / 2', objectFit: 'cover' }} />
           ))}
         </div>
       </section>

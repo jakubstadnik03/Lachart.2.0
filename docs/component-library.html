@@ -1,0 +1,855 @@
+<!DOCTYPE html>
+<html lang="cs"><head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lachart — Component Library</title>
+<style>/* ==========================================================================
+   LaChart — Colors & Type tokens
+   Source: client/tailwind.config.js, client/public/index.html, brand spec
+   ========================================================================== */
+
+/* Webfont — served locally from /fonts (brand master files) */
+@font-face {
+  font-family: 'Hind Vadodara';
+  src: url('fonts/HindVadodara-Light.ttf') format('truetype');
+  font-weight: 300; font-style: normal; font-display: swap;
+}
+@font-face {
+  font-family: 'Hind Vadodara';
+  src: url('fonts/HindVadodara-Regular.ttf') format('truetype');
+  font-weight: 400; font-style: normal; font-display: swap;
+}
+@font-face {
+  font-family: 'Hind Vadodara';
+  src: url('fonts/HindVadodara-Medium.ttf') format('truetype');
+  font-weight: 500; font-style: normal; font-display: swap;
+}
+@font-face {
+  font-family: 'Hind Vadodara';
+  src: url('fonts/HindVadodara-SemiBold.ttf') format('truetype');
+  font-weight: 600; font-style: normal; font-display: swap;
+}
+@font-face {
+  font-family: 'Hind Vadodara';
+  src: url('fonts/HindVadodara-Bold.ttf') format('truetype');
+  font-weight: 700; font-style: normal; font-display: swap;
+}
+
+:root {
+  /* ---------- Brand colors (from tailwind.config.js) ---------- */
+  --lc-primary:         #767EB5;   /* LaChart purple — signature */
+  --lc-primary-dark:    #5E6590;
+  --lc-primary-50:      #EEF0F8;
+  --lc-primary-100:     #DADDEE;
+  --lc-primary-200:     #B8BDDB;
+  --lc-primary-tint:    #E9ECF6;   /* selected row / bg wash */
+
+  --lc-secondary:       #599FD0;   /* mid blue */
+  --lc-secondary-dark:  #4780A8;
+  --lc-tertiary:        #7BC2EB;   /* light blue — used in logo curve */
+
+  /* ---------- Warm accent ---------- */
+  /* Use SPARINGLY — CTAs, PRs, key data highlights only. Never for body type. */
+  --lc-accent:          #FF6B4A;   /* coral — primary warm accent */
+  --lc-accent-dark:     #E85535;   /* hover / press */
+  --lc-accent-tint:     #FFE6DF;   /* background wash, PR badge bg */
+
+  /* ---------- Neutrals ---------- */
+  --lc-white:           #F9FBFD;   /* app near-white */
+  --lc-custom-gray:     #FCFCFC;
+  --lc-bg:              #F3F4F6;   /* html/body bg */
+  --lc-surface:         #FFFFFF;
+  --lc-border:          #E5E7EB;
+  --lc-border-soft:     #F1F2F5;
+
+  --lc-text:            #1D2C4C;   /* primary text */
+  --lc-text-light:      #4A5E82;   /* secondary text */
+  --lc-text-muted:      #6B7280;
+  --lc-text-ink:        #0A0E1A;   /* deepest text / dark headlines */
+
+  /* ---------- Semantic ---------- */
+  --lc-success:         #4BA87D;   /* greenos */
+  --lc-warning:         #F59E0B;
+  --lc-danger:          #E05347;
+  --lc-danger-dark:     #B84238;
+  --lc-info:            #599FD0;
+
+  /* ---------- Status dots (from Menu.jsx) ---------- */
+  --lc-status-fresh:    #4ADE80;   /* tested < 6w */
+  --lc-status-stale:    #FACC15;   /* tested 6–12w */
+  --lc-status-old:      #F87171;   /* > 12w */
+  --lc-status-pending:  #FBBF24;
+
+  /* ---------- Chart / zones palette (from styles/theme.js) ---------- */
+  --lc-chart-grid:      rgba(0,0,0,.15);
+  --lc-chart-measured:  #000000;
+  --lc-chart-loglog:    #52525B;
+  --lc-zone-obla-20:    #86EFAC;
+  --lc-zone-obla-25:    #FDBA74;
+  --lc-zone-obla-30:    #818CF8;
+  --lc-zone-obla-35:    #FDA4AF;
+  --lc-zone-bsln-05:    #0D9488;
+  --lc-zone-bsln-10:    #C026D3;
+  --lc-zone-ltp1:       #BEF264;
+  --lc-zone-ltp2:       #FCD34D;
+
+  /* ---------- Typography ---------- */
+  --lc-font-sans: 'Hind Vadodara', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --lc-font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+
+  /* Type scale — tuned for app + marketing carousels */
+  --lc-fs-display:  clamp(3rem, 6vw, 5rem);   /* 48–80px */
+  --lc-fs-h1:       2.5rem;                    /* 40 */
+  --lc-fs-h2:       2rem;                      /* 32 */
+  --lc-fs-h3:       1.5rem;                    /* 24 */
+  --lc-fs-h4:       1.25rem;                   /* 20 */
+  --lc-fs-body:     1rem;                      /* 16 */
+  --lc-fs-small:    0.875rem;                  /* 14 */
+  --lc-fs-xs:       0.75rem;                   /* 12 */
+
+  --lc-lh-tight:    1.1;
+  --lc-lh-snug:     1.25;
+  --lc-lh-normal:   1.5;
+  --lc-lh-relaxed:  1.65;
+
+  --lc-fw-regular:  400;
+  --lc-fw-medium:   500;
+  --lc-fw-semibold: 600;
+  --lc-fw-bold:     700;
+
+  /* ---------- Spacing / radii / shadow (extracted from CRA + tailwind defaults used) ---------- */
+  --lc-space-1:  4px;
+  --lc-space-2:  8px;
+  --lc-space-3:  12px;
+  --lc-space-4:  16px;
+  --lc-space-5:  20px;
+  --lc-space-6:  24px;
+  --lc-space-8:  32px;
+  --lc-space-10: 40px;
+  --lc-space-12: 48px;
+  --lc-space-16: 64px;
+
+  --lc-radius-sm:  6px;
+  --lc-radius-md:  8px;      /* default card/input */
+  --lc-radius-lg:  12px;     /* large cards */
+  --lc-radius-xl:  16px;
+  --lc-radius-2xl: 24px;
+  --lc-radius-full: 9999px;
+
+  /* Menu.jsx uses shadow-md on sidebar; cards use shadow-sm/md */
+  --lc-shadow-xs: 0 1px 2px 0 rgba(10, 14, 26, 0.05);
+  --lc-shadow-sm: 0 1px 2px 0 rgba(10, 14, 26, 0.05), 0 1px 3px 0 rgba(10, 14, 26, 0.06);
+  --lc-shadow-md: 0 4px 6px -1px rgba(10, 14, 26, 0.08), 0 2px 4px -2px rgba(10, 14, 26, 0.06);
+  --lc-shadow-lg: 0 10px 15px -3px rgba(10, 14, 26, 0.10), 0 4px 6px -4px rgba(10, 14, 26, 0.06);
+  --lc-shadow-brand: 0 10px 30px -10px rgba(118, 126, 181, 0.45);
+
+  /* Motion — from Menu.jsx (framer-motion spring defaults) */
+  --lc-ease-standard: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --lc-ease-in:       cubic-bezier(0.4, 0, 1, 1);
+  --lc-ease-out:      cubic-bezier(0, 0, 0.2, 1);
+  --lc-dur-fast:      150ms;
+  --lc-dur-base:      220ms;
+  --lc-dur-slow:      320ms;
+
+  /* ---------- Semantic aliases ---------- */
+  --fg1: var(--lc-text);
+  --fg2: var(--lc-text-light);
+  --fg3: var(--lc-text-muted);
+  --bg1: var(--lc-bg);
+  --bg2: var(--lc-surface);
+  --brand: var(--lc-primary);
+  --brand-ink: var(--lc-text-ink);
+  --danger: var(--lc-danger);
+  --success: var(--lc-success);
+}
+
+/* ---------- Base elements ---------- */
+html, body {
+  font-family: var(--lc-font-sans);
+  color: var(--fg1);
+  background: var(--bg1);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: "ss01", "cv11";
+}
+
+h1, .h1 { font-size: var(--lc-fs-h1); font-weight: var(--lc-fw-bold);    line-height: var(--lc-lh-tight); letter-spacing: -0.02em; color: var(--fg1); }
+h2, .h2 { font-size: var(--lc-fs-h2); font-weight: var(--lc-fw-bold);    line-height: var(--lc-lh-snug);  letter-spacing: -0.015em; color: var(--fg1); }
+h3, .h3 { font-size: var(--lc-fs-h3); font-weight: var(--lc-fw-semibold); line-height: var(--lc-lh-snug);  color: var(--fg1); }
+h4, .h4 { font-size: var(--lc-fs-h4); font-weight: var(--lc-fw-semibold); line-height: var(--lc-lh-snug);  color: var(--fg1); }
+
+.display {
+  font-size: var(--lc-fs-display);
+  font-weight: var(--lc-fw-bold);
+  line-height: 1.02;
+  letter-spacing: -0.035em;
+}
+
+p { font-size: var(--lc-fs-body); line-height: var(--lc-lh-relaxed); color: var(--fg2); }
+small, .small { font-size: var(--lc-fs-small); color: var(--fg3); }
+.eyebrow { font-size: var(--lc-fs-xs); font-weight: var(--lc-fw-semibold); letter-spacing: 0.14em; text-transform: uppercase; color: var(--fg2); }
+code, pre { font-family: var(--lc-font-mono); }
+</style>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:var(--lc-font-sans);background:var(--lc-bg)}
+.wrap{max-width:1440px;margin:0 auto;padding:56px 40px 120px}
+.page-title{font:800 34px var(--lc-font-sans);color:var(--lc-text-ink);margin:0 0 6px;letter-spacing:-.02em}
+.page-sub{font:500 15px var(--lc-font-sans);color:#8B93A7;margin:0 0 56px}
+section{margin-bottom:64px}
+h2{font:800 22px var(--lc-font-sans);color:var(--lc-text-ink);margin:0 0 24px;padding-bottom:12px;border-bottom:1px solid var(--lc-border)}
+.grid{display:flex;flex-wrap:wrap;gap:28px;align-items:flex-start}
+.comp{display:flex;flex-direction:column;gap:10px}
+.comp-label{font:700 11px var(--lc-font-sans);letter-spacing:.08em;text-transform:uppercase;color:#8B93A7}
+.card{background:#fff;border-radius:18px;padding:18px;box-shadow:var(--lc-shadow-sm);transition:transform .18s var(--lc-ease-standard),box-shadow .18s var(--lc-ease-standard);cursor:pointer}
+.card:hover{transform:translateY(-4px);box-shadow:var(--lc-shadow-lg)}
+.iosprev{transition:transform .18s var(--lc-ease-standard),box-shadow .18s var(--lc-ease-standard);cursor:pointer}
+.iosprev:hover{transform:translateY(-4px);box-shadow:0 20px 40px rgba(0,0,0,.28)}
+.thresh-card,.stat-box{transition:transform .15s var(--lc-ease-standard),box-shadow .15s var(--lc-ease-standard);cursor:pointer}
+.thresh-card:hover,.stat-box:hover{transform:translateY(-2px);box-shadow:0 6px 14px rgba(10,14,26,.08)}
+.session{transition:transform .15s var(--lc-ease-standard),box-shadow .15s var(--lc-ease-standard);cursor:pointer}
+.session:hover{transform:translateX(3px);box-shadow:0 6px 16px rgba(10,14,26,.1)}
+.filter-pill,.pill{transition:background .15s,color .15s,transform .15s;cursor:pointer}
+.filter-pill:hover{background:#E9ECF6;border-color:transparent;transform:translateY(-1px)}
+.pill:hover{filter:brightness(.96);transform:translateY(-1px)}
+.segmented .seg{transition:background .15s,color .15s;cursor:pointer}
+.segmented .seg:not(.active):hover{background:rgba(255,255,255,.6);color:#4A5E82}
+.wo-tab{transition:color .15s,border-color .15s;cursor:pointer}
+.wo-tab:hover{color:var(--lc-text-ink)}
+.btn-outline{transition:background .15s,color .15s}
+.btn-outline:hover{background:var(--lc-primary);color:#fff}
+.zones-row{transition:background .15s;cursor:pointer;margin:0 -8px;padding:9px 8px!important;border-radius:8px}
+.zones-row:hover{background:#F7F8FA}
+.cal-day{transition:background .15s;cursor:pointer;border-radius:10px}
+.cal-day:hover:not(.muted) .num{background:#EEF0F8}
+.chev{transition:transform .15s}
+.session:hover .chev{transform:translateX(3px)}
+.comp{transition:transform .18s var(--lc-ease-standard)}
+.laps-table:hover{transform:none;box-shadow:var(--lc-shadow-sm)}
+.laps-table>div{transition:background .15s;cursor:pointer}
+.laps-table>div:not(:first-child):hover{background:#F7F8FA}
+.legend-chip{transition:transform .15s;cursor:pointer}
+.legend-chip:hover{transform:translateY(-1px)}
+[data-tip]{position:relative}
+[data-tip]::after{content:attr(data-tip);position:absolute;bottom:calc(100% + 9px);left:50%;transform:translateX(-50%) translateY(4px);background:#1D2C4C;color:#fff;font:600 11.5px var(--lc-font-sans);padding:6px 11px;border-radius:8px;white-space:nowrap;opacity:0;pointer-events:none;transition:opacity .15s,transform .15s;z-index:80;box-shadow:0 8px 20px rgba(0,0,0,.22)}
+[data-tip]::before{content:'';position:absolute;bottom:calc(100% + 4px);left:50%;transform:translateX(-50%) translateY(4px);border:5px solid transparent;border-top-color:#1D2C4C;opacity:0;transition:opacity .15s,transform .15s;pointer-events:none;z-index:80}
+[data-tip]:hover::after,[data-tip]:hover::before{opacity:1;transform:translateX(-50%) translateY(0)}
+.seg-active-swap{transition:opacity .2s}
+.eyebrow-lbl{font:700 11px/1 var(--lc-font-sans);letter-spacing:.08em;text-transform:uppercase;color:#8B93A7}
+.row{display:flex;gap:12px}
+.row>.card{flex:1;min-width:0}
+.big-num{font:800 32px/1 var(--lc-font-sans);color:var(--lc-text-ink);letter-spacing:-.02em}
+.unit{font:600 15px var(--lc-font-sans);color:#8B93A7;margin-left:3px}
+.pill{display:inline-flex;align-items:center;gap:6px;padding:6px 13px;border-radius:999px;font:700 12px var(--lc-font-sans)}
+.pill-green{background:#DCFCE7;color:#16A34A}
+.pill-dot{width:6px;height:6px;border-radius:50%;background:#16A34A}
+.stat-box{background:#F7F8FA;border:1px solid var(--lc-border-soft);border-radius:12px;padding:10px 12px;flex:1}
+.stat-box .lbl{font:700 10px var(--lc-font-sans);letter-spacing:.06em;text-transform:uppercase;color:#9AA1B2;margin-bottom:4px}
+.stat-box .val{font:800 20px var(--lc-font-sans);color:var(--lc-text-ink)}
+.thresh-card{border-radius:14px;padding:14px 16px;flex:1}
+.thresh-lt1{background:#E6F6EE}
+.thresh-lt2{background:#FCE9E7}
+.thresh-lbl{font:800 11px var(--lc-font-sans);letter-spacing:.05em}
+.thresh-val{font:800 26px var(--lc-font-sans);color:var(--lc-text-ink);margin:4px 0}
+.thresh-sub{font:600 12px var(--lc-font-sans);color:#6B7280}
+.segmented{display:flex;background:#EEF0F3;border-radius:12px;padding:3px;gap:2px}
+.segmented .seg{flex:1;text-align:center;padding:8px 6px;border-radius:9px;font:700 13px var(--lc-font-sans);color:#7B8296}
+.segmented .seg.active{background:#fff;color:#1D2C4C;box-shadow:0 1px 3px rgba(0,0,0,.1)}
+.filters{display:flex;gap:8px;flex-wrap:wrap}
+.filter-pill{display:flex;align-items:center;gap:6px;padding:7px 12px;border-radius:999px;background:#fff;border:1px solid var(--lc-border);font:700 12px var(--lc-font-sans);color:#374151}
+.filter-pill .fdot{width:7px;height:7px;border-radius:50%}
+.filter-pill.active{background:#EEF0F3;border-color:transparent}
+.session{display:flex;align-items:center;gap:12px;background:#fff;border-radius:14px;padding:12px 14px;border-left:4px solid var(--c);}
+.session .ic{width:38px;height:38px;border-radius:10px;background:var(--bg);display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.session .t{font:700 15px var(--lc-font-sans);color:var(--lc-text-ink)}
+.session .m{font:500 12.5px var(--lc-font-sans);color:#8B93A7;margin-top:2px}
+.chev{color:#C7CBD6}
+.progress-seg{display:flex;gap:4px}
+.progress-seg span{flex:1;height:5px;border-radius:3px;background:#E7E9F0}
+.progress-seg span.on{background:#3B82F6}
+.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:0;text-align:center}
+.cal-dow{font:700 10px var(--lc-font-sans);color:#9AA1B2;padding:4px 0 8px;letter-spacing:.05em}
+.cal-day{padding:6px 0 10px;font:600 14px var(--lc-font-sans);color:#1D2C4C}
+.cal-day.muted{color:#C7CBD6}
+.cal-day .num{width:26px;height:26px;line-height:26px;border-radius:50%;margin:0 auto 4px}
+.cal-day.sel .num{background:var(--lc-primary);color:#fff}
+.cal-dots{display:flex;gap:2px;justify-content:center;height:5px}
+.cal-dots i{width:4px;height:4px;border-radius:50%;display:block}
+.iosprev{background:#20242E;border-radius:22px;padding:16px 18px 20px;color:#fff}
+.iosprev .lbl{font:800 10px var(--lc-font-sans);letter-spacing:.1em;color:#8890A6;margin-bottom:14px}
+.iosprev .t{display:flex;flex-direction:column;align-items:center;gap:5px;font:600 11px var(--lc-font-sans);color:#7C84A0}
+.iosprev .t.on{color:#9BA4E8}
+.section-hdr{display:flex;align-items:center;justify-content:space-between}
+.section-hdr h3{margin:0;font:800 20px var(--lc-font-sans);color:var(--lc-text-ink)}
+.section-hdr .sub{font:500 13px var(--lc-font-sans);color:#8B93A7;margin:3px 0 0}
+.legend-chip{display:flex;align-items:center;gap:6px;padding:6px 12px;border-radius:999px;font:700 12px var(--lc-font-sans)}
+.legend-chip.off{opacity:.35}
+.zones-row{display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--lc-border-soft);font:600 14px var(--lc-font-sans)}
+.zones-row:last-child{border-bottom:none}
+.zdot{width:9px;height:9px;border-radius:50%;margin-right:8px;display:inline-block;vertical-align:middle}
+.btn-outline{border:1.5px solid var(--lc-primary);color:var(--lc-primary);background:#fff;border-radius:14px;padding:13px;text-align:center;font:700 15px var(--lc-font-sans)}
+.wo-tab{font:700 13px var(--lc-font-sans);color:#9AA1B2;padding:0 2px 8px;border-bottom:2.5px solid transparent}
+.wo-tab.active{color:var(--lc-text-ink);border-color:var(--lc-text-ink)}
+.sheet-tabs{display:flex;align-items:center;gap:8px}
+.sheet-tab{flex:1;text-align:center;padding:9px 4px;border-radius:12px;font:600 12px var(--lc-font-sans);color:#8B93A7}
+.sheet-tab .v{display:block;font:800 15px var(--lc-font-sans);color:var(--lc-text-ink)}
+.sheet-tab.active{background:#F1F2F6}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+<h1 class="page-title">Lachart — Component Library</h1>
+<p class="page-sub">Jednotlivé komponenty z appky, rozebrané samostatně pro znovupoužití.</p>
+
+<section>
+<h2>Dashboard &amp; Home</h2>
+<div class="grid">
+
+<div class="comp"><div class="comp-label">Form · Today</div>
+<div class="card" style="width:361px;display:flex;gap:20px;align-items:center">
+<div>
+<svg width="96" height="96" viewBox="0 0 96 96"><circle cx="48" cy="48" r="40" fill="none" stroke="#EEF0F3" stroke-width="9"></circle><circle id="tsbring" cx="48" cy="48" r="40" fill="none" stroke="#22C55E" stroke-width="9" stroke-linecap="round" transform="rotate(-90 48 48)"></circle><text x="48" y="46" text-anchor="middle" font-size="20" font-weight="800" fill="#1D2C4C">+25</text><text x="48" y="62" text-anchor="middle" font-size="9" font-weight="700" letter-spacing="1" fill="#9AA1B2">TSB</text></svg>
+</div>
+<div style="display:flex;flex-direction:column;gap:10px;flex:1">
+<span class="pill pill-green" style="width:fit-content" data-tip="TSB between 5 and 25 = fresh"><i class="pill-dot"></i>Fresh</span>
+<div style="display:flex;gap:8px">
+<div class="stat-box" data-tip="Chronic load (CTL)"><div class="lbl">Fitness</div><div class="val">59</div></div>
+<div class="stat-box" data-tip="Acute load (ATL)"><div class="lbl">Fatigue</div><div class="val">31</div></div>
+</div>
+</div>
+</div></div>
+
+<div class="comp"><div class="comp-label">Thresholds · Bike</div>
+<div class="card" style="width:361px">
+<div class="row">
+<div class="thresh-card thresh-lt1" data-tip="Aerobic threshold"><div class="thresh-lbl" style="color:#16A34A">LT1</div><div class="thresh-val">374<span class="unit">W</span></div><div class="thresh-sub">2.7 mmol · <b>146</b> bpm</div></div>
+<div class="thresh-card thresh-lt2" data-tip="Anaerobic threshold"><div class="thresh-lbl" style="color:#DC5A45">LT2</div><div class="thresh-val">418<span class="unit">W</span></div><div class="thresh-sub">4.2 mmol · <b>160</b> bpm</div></div>
+</div>
+</div></div>
+
+<div class="comp"><div class="comp-label">LT2 Trend · Bike</div>
+<div class="card" style="width:361px">
+<div class="big-num">418<span class="unit" style="font-size:20px">W</span></div>
+<div style="font:600 13px var(--lc-font-sans);color:#8B93A7;margin:6px 0 14px"><b style="color:#16A34A">+ 12 W</b> over 8 tests</div>
+<div class="progress-seg"><span></span><span></span><span class="on"></span><span class="on"></span><span class="on"></span><span class="on"></span><span class="on"></span><span class="on"></span></div>
+</div></div>
+
+<div class="comp"><div class="comp-label">Daily TSS · This week</div>
+<div class="card" style="width:361px">
+<div class="section-hdr" style="margin-bottom:16px"><div style="font:700 13px var(--lc-font-sans);color:#1D2C4C">27.4. — 3.5.</div></div>
+<svg id="tssbars" width="100%" height="120" viewBox="0 0 330 120"></svg>
+<div style="display:flex;margin-top:6px">
+<div style="flex:1;text-align:center;font:700 11px var(--lc-font-sans);color:#9AA1B2">M<div style="color:#1D2C4C;font-size:13px;margin-top:2px">97</div></div>
+<div style="flex:1;text-align:center;font:700 11px var(--lc-font-sans);color:#9AA1B2">T<div style="color:#1D2C4C;font-size:13px;margin-top:2px">109</div></div>
+<div style="flex:1;text-align:center;font:700 11px var(--lc-font-sans);color:#9AA1B2">W<div style="color:#1D2C4C;font-size:13px;margin-top:2px">101</div></div>
+<div style="flex:1;text-align:center;font:700 11px var(--lc-font-sans);color:#9AA1B2">T<div style="color:#1D2C4C;font-size:13px;margin-top:2px">103</div></div>
+<div style="flex:1;text-align:center;font:700 11px var(--lc-font-sans);color:#9AA1B2">F<div style="color:#1D2C4C;font-size:13px;margin-top:2px">93</div></div>
+<div style="flex:1;text-align:center;font:700 11px var(--lc-font-sans);color:#9AA1B2">S<div style="color:#1D2C4C;font-size:13px;margin-top:2px">14</div></div>
+<div style="flex:1;text-align:center;font:700 11px var(--lc-font-sans);color:#9AA1B2">S<div style="color:#1D2C4C;font-size:13px;margin-top:2px">·</div></div>
+</div>
+</div></div>
+
+<div class="comp"><div class="comp-label">Weekly Summary</div>
+<div class="card" style="width:361px">
+<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px">
+<div class="stat-box"><div class="lbl">Time</div><div class="val">16h 42m</div></div>
+<div class="stat-box"><div class="lbl">TSS</div><div class="val">517</div></div>
+<div class="stat-box"><div class="lbl">Distance</div><div class="val">369 km</div></div>
+<div class="stat-box"><div class="lbl">Sessions</div><div class="val">13</div></div>
+</div>
+</div></div>
+
+<div class="comp"><div class="comp-label">iOS nav preview</div>
+<div class="iosprev" style="width:300px">
+<div class="lbl">IOS</div>
+<div class="row" style="justify-content:space-around">
+<div class="t on"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 11l9-8 9 8"></path><path d="M5 10v10h14V10"></path></svg>Home</div>
+<div class="t"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="8" height="8" rx="1"></rect><rect x="13" y="3" width="8" height="8" rx="1"></rect><rect x="3" y="13" width="8" height="8" rx="1"></rect><rect x="13" y="13" width="8" height="8" rx="1"></rect></svg>Test</div>
+<div class="t"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="17" rx="2"></rect><path d="M3 9h18M8 2v4M16 2v4"></path></svg>Cal</div>
+<div class="t"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z"></path></svg>Train</div>
+</div>
+</div></div>
+
+<div class="comp"><div class="comp-label">Threshold trend (mini pair)</div>
+<div class="card" style="width:361px">
+<div class="section-hdr" style="margin-bottom:14px"><div><h3 style="font-size:19px">Threshold trend</h3><p class="sub">LT1 &amp; LT2 over time</p></div>
+<div class="segmented" style="width:110px"><div class="seg active">Bike</div><div class="seg">Run</div></div></div>
+<div class="row">
+<div style="flex:1;background:#F7F8FA;border-radius:14px;padding:14px">
+<div style="font:800 11px var(--lc-font-sans);letter-spacing:.05em;color:#8B5CF6">LT2 · THRESHOLD</div>
+<div style="font:800 24px var(--lc-font-sans);margin:6px 0" id="thr-lt2-val"> 415 W</div>
+<span class="pill" style="background:#FCE9E7;color:#DC5A45;padding:3px 8px;font-size:11px" id="thr-lt2-arrow">▼ -11</span>
+<svg id="lt2mini" width="100%" height="60" viewBox="0 0 140 60" style="margin-top:8px"></svg>
+</div>
+<div style="flex:1;background:#F7F8FA;border-radius:14px;padding:14px">
+<div style="font:800 11px var(--lc-font-sans);letter-spacing:.05em;color:#16A34A">LT1 · AEROBIC</div>
+<div style="font:800 24px var(--lc-font-sans);margin:6px 0" id="thr-lt1-val">350 W</div>
+<span class="pill" style="background:#FCE9E7;color:#DC5A45;padding:3px 8px;font-size:11px" id="thr-lt1-arrow">▼ -3</span>
+<svg id="lt1mini" width="100%" height="60" viewBox="0 0 140 60" style="margin-top:8px"></svg>
+</div>
+</div>
+</div></div>
+
+<div class="comp"><div class="comp-label">Last lactate test (full)</div>
+<div class="card" style="width:361px">
+<div style="font:800 19px var(--lc-font-sans);margin-bottom:2px">Last lactate test</div>
+<div style="font:600 13px var(--lc-font-sans);color:#8B93A7;margin-bottom:14px">Mar 9 · 9 stages · 230→470 W</div>
+<svg id="lactatemain" width="100%" height="170" viewBox="0 0 320 190"></svg>
+<div class="row" style="margin-top:16px">
+<div class="thresh-card thresh-lt1"><div class="thresh-lbl" style="color:#16A34A">LT1</div><div class="thresh-val">350<span class="unit">W</span></div><div class="thresh-sub">1.9 mmol · <b>141</b> bpm</div></div>
+<div class="thresh-card thresh-lt2"><div class="thresh-lbl" style="color:#DC5A45">LT2</div><div class="thresh-val">415<span class="unit">W</span></div><div class="thresh-sub">4.0 mmol · <b>159</b> bpm</div></div>
+</div>
+<div class="row" style="margin-top:10px">
+<div class="stat-box"><div class="lbl">Base LA</div><div class="val" style="font-size:17px">1.2 mmol</div></div>
+<div class="stat-box"><div class="lbl">Peak LA</div><div class="val" style="font-size:17px">8.0 mmol</div></div>
+</div>
+<div style="margin-top:14px">
+<div class="section-hdr" style="margin-bottom:4px"><span style="font:800 12px var(--lc-font-sans);letter-spacing:.05em;color:#8B93A7">ZONES · POWER · HR</span><span style="color:var(--lc-primary);font:700 13px var(--lc-font-sans)">✎ Edit</span></div>
+<div class="zones-row" data-tip="Active recovery"><span><i class="zdot" style="background:#599FD0"></i>Z1</span><span>175–315 W</span><span style="color:#DC5A45">71–127</span></div>
+<div class="zones-row" data-tip="Endurance"><span><i class="zdot" style="background:#2DBFB0"></i>Z2</span><span>315–350 W</span><span style="color:#DC5A45">127–141</span></div>
+<div class="zones-row" data-tip="Tempo"><span><i class="zdot" style="background:#F5C542"></i>Z3</span><span>350–415 W</span><span style="color:#DC5A45">141–159</span></div>
+<div class="zones-row" data-tip="Threshold"><span><i class="zdot" style="background:#F5824A"></i>Z4</span><span>415–432 W</span><span style="color:#DC5A45">159–165</span></div>
+<div class="zones-row" data-tip="VO2max"><span><i class="zdot" style="background:#E05347"></i>Z5</span><span>432–457 W</span><span style="color:#DC5A45">165–174</span></div>
+</div>
+<div class="btn-outline" style="margin-top:16px">Open full test ›</div>
+</div></div>
+
+<div class="comp"><div class="comp-label">Apple Health · stats row</div>
+<div class="card" style="width:361px">
+<div style="display:flex;align-items:center;gap:8px;font:800 16px var(--lc-font-sans);margin-bottom:12px">♥ Apple Health</div>
+<div class="row"><div class="stat-box"><div class="lbl">Resting HR</div><div class="val">46 bpm</div></div><div class="stat-box"><div class="lbl">Low HR</div><div class="val">36 bpm</div></div><div class="stat-box"><div class="lbl">Sleep</div><div class="val">7h 39m</div></div><div class="stat-box"><div class="lbl">HRV</div><div class="val">86.1 ms</div></div></div>
+</div></div>
+
+<div class="comp"><div class="comp-label">Apple Health · HRV detail sheet</div>
+<div class="card" style="width:393px;border-radius:26px">
+<div style="width:36px;height:5px;border-radius:3px;background:#D8DAE2;margin:0 auto 14px"></div>
+<div class="sheet-tabs" id="metrictabs" style="margin-bottom:18px">
+<div class="sheet-tab" data-m="sleep">Sleep<span class="v">7:39</span></div>
+<div class="sheet-tab" data-m="restinghr">Resting HR<span class="v">46</span></div>
+<div class="sheet-tab active" data-m="hrv">HRV<span class="v">86.1</span></div>
+<div class="sheet-tab" data-m="lowhr">Low HR<span class="v">36</span></div>
+<span style="color:#B0B6C4;font-size:18px;padding:0 4px">✕</span>
+</div>
+<div class="section-hdr" style="align-items:flex-start">
+<div style="font:800 30px var(--lc-font-sans)" id="m-value">86.1<span class="unit" id="m-unit">ms</span></div>
+<span class="pill pill-green" data-tip="Normal range 41–100 ms" id="m-pill">In your normal range</span>
+</div>
+<div class="section-hdr" style="margin:2px 0 14px;font:600 13px var(--lc-font-sans);color:#8B93A7"><span>Tue 1 Sep</span><span id="m-range">Normal: 41–100 ms</span></div>
+<svg id="hrvchart" width="100%" height="180" viewBox="0 0 340 190"></svg>
+<div style="text-align:center;font:600 12px var(--lc-font-sans);color:#B0B6C4;margin:6px 0 14px">Tap a point to see that day</div>
+<div class="filters" style="justify-content:space-between;margin-bottom:14px">
+<div class="filter-pill">7d</div><div class="filter-pill">14d</div><div class="filter-pill active" style="background:var(--lc-primary);color:#fff">30d</div><div class="filter-pill">60d</div><div class="filter-pill">90d</div>
+</div>
+<div style="border:1px solid var(--lc-border);border-radius:14px;padding:14px;font:500 13.5px/1.6 var(--lc-font-sans);color:#4A5E82" id="m-insight">Your baseline is 71 ms; normal range 41–100 ms. A stable HRV around your baseline means recovery is keeping up with training.</div>
+</div></div>
+
+</div>
+</section>
+
+<section>
+<h2>Calendar</h2>
+<div class="grid">
+
+<div class="comp"><div class="comp-label">Month grid</div>
+<div class="card" style="width:361px;padding:14px 14px 6px">
+<div class="section-hdr" style="padding:0 4px 10px">‹ <b style="color:var(--lc-primary);letter-spacing:.05em">AUGUST 2026 ▾</b> ›</div>
+<div class="cal-grid">
+<div class="cal-dow">M</div><div class="cal-dow">T</div><div class="cal-dow">W</div><div class="cal-dow">T</div><div class="cal-dow">F</div><div class="cal-dow">S</div><div class="cal-dow">S</div>
+</div>
+<div class="cal-grid" id="calgrid"></div>
+</div></div>
+
+<div class="comp"><div class="comp-label">Day session list</div>
+<div class="card" style="width:361px;border:1px solid #DADDEE">
+<div class="section-hdr" style="margin-bottom:12px"><div style="font:700 15px var(--lc-font-sans)">Sat <b style="font-size:17px">1</b> <span style="color:#C7CBD6;font-weight:500;font-size:13px">+ theme</span></div><span style="color:#C7CBD6;font-size:20px">+</span></div>
+<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px"><i style="width:7px;height:7px;border-radius:50%;background:#F5A623"></i><span style="font:700 13px var(--lc-font-sans);color:#374151">64 ms</span></div>
+<div style="display:flex;flex-direction:column;gap:10px">
+<div class="session" style="--c:#599FD0;--bg:#E9F2FB"><div class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#599FD0" stroke-width="1.8"><circle cx="6" cy="17" r="3.5"></circle><circle cx="18" cy="17" r="3.5"></circle><path d="M6 17l4-9h4l4 9M10 8h5"></path></svg></div><div style="flex:1"><div class="t">2×29.5min + 2×45s</div><div class="m">3h55m · 106.45 km · 259 W · 179 TSS</div></div></div>
+<div class="session" style="--c:#2DBFB0;--bg:#E4F7F4"><div class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2DBFB0" stroke-width="1.8"><path d="M3 8v8M8 8v8M13 8v8M18 8v8M3 6h18M3 18h18"></path></svg></div><div style="flex:1"><div class="t">Afternoon Swim</div><div class="m">50m · 3.02 km · 1:41/100m · 45 TSS</div></div></div>
+<div class="session" style="--c:#F5824A;--bg:#FCEBE0"><div class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#F5824A" stroke-width="1.8"><circle cx="16" cy="5" r="2"></circle><path d="M9 20l3-6 -3-3 1-5 4 3 3 1M9 11l-4 2"></path></svg></div><div style="flex:1"><div class="t">7×4min</div><div class="m">42m · 10.01 km · 4:14/km · 44 TSS</div></div></div>
+</div>
+</div></div>
+
+</div>
+</section>
+
+<section>
+<h2>Training</h2>
+<div class="grid">
+
+<div class="comp"><div class="comp-label">Power Radar</div>
+<div class="card" style="width:361px">
+<div class="section-hdr"><div><h3 style="font-size:19px">Power Radar</h3><p class="sub">Peak power across durations</p></div>
+<div class="segmented" style="width:150px"><div class="seg active" style="display:flex;gap:5px;align-items:center;justify-content:center">🚴 Bike</div><div class="seg">🏃 Run</div></div></div>
+<div style="display:flex;align-items:center;gap:10px;margin:16px 0 6px"><span style="font:700 11px var(--lc-font-sans);letter-spacing:.06em;color:#9AA1B2">COMPARE</span>
+<div class="filter-pill">30d</div><div class="filter-pill active" style="background:var(--lc-primary);color:#fff">90d</div><div class="filter-pill">Monthly</div><div class="filter-pill">All time</div></div>
+<svg id="powerradar" width="100%" height="270" viewBox="0 0 340 300"></svg>
+<div style="display:flex;justify-content:center;gap:20px;margin-top:8px;font:600 13px var(--lc-font-sans);color:#374151">
+<span data-tip="Best power ever"><i class="zdot" style="background:#B9BEC9"></i>All Time</span><span data-tip="Best power in the last 90 days"><i class="zdot" style="background:#3B82F6"></i>Past 90 days</span></div>
+</div></div>
+
+<div class="comp"><div class="comp-label">Interval Trainings list</div>
+<div class="card" style="width:361px">
+<div class="section-hdr" style="margin-bottom:12px"><div style="display:flex;align-items:center;gap:8px;font:800 14px var(--lc-font-sans)">📶 INTERVAL TRAININGS <span style="color:#9AA1B2;font-weight:600">(316)</span></div><div style="font:600 13px;color:#9AA1B2">1/79 ‹ ›</div></div>
+<div class="filters" style="margin-bottom:14px">
+<div class="filter-pill active"><i class="fdot" style="background:#555"></i>All 316</div>
+<div class="filter-pill"><i class="fdot" style="background:#599FD0"></i>Endurance 14</div>
+<div class="filter-pill"><i class="fdot" style="background:#2DBFB0"></i>LT1 11</div>
+<div class="filter-pill"><i class="fdot" style="background:#8B5CF6"></i>LT2 25</div>
+</div>
+<div class="filters" style="margin-bottom:16px">
+<div class="filter-pill"><i class="fdot" style="background:#E05347"></i>VO₂max 3</div>
+<div class="filter-pill"><i class="fdot" style="background:#B9BEC9"></i>Uncategorized 261</div>
+</div>
+<div style="display:flex;flex-direction:column;gap:10px">
+<div class="session" style="--c:#2DBFB0;--bg:#E4F7F4"><div class="ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2DBFB0" stroke-width="1.8"><path d="M3 8v8M8 8v8M13 8v8M18 8v8M3 6h18M3 18h18"></path></svg></div><div style="flex:1"><div class="t">5×1.5min + 2×...</div><div class="m">Today · 1h · 4.20 km · 21 laps</div></div><span class="chev">›</span></div>
+<div class="session" style="--c:#2DBFB0;--bg:#E4F7F4"><div class="ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2DBFB0" stroke-width="1.8"><path d="M3 8v8M8 8v8M13 8v8M18 8v8M3 6h18M3 18h18"></path></svg></div><div style="flex:1"><div class="t">2×11.5min + 2...</div><div class="m">Yesterday · 1h 10m · 5 km · 20 laps</div></div><span class="chev">›</span></div>
+<div class="session" style="--c:#599FD0;--bg:#E9F2FB"><div class="ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#599FD0" stroke-width="1.8"><circle cx="6" cy="17" r="3.5"></circle><circle cx="18" cy="17" r="3.5"></circle><path d="M6 17l4-9h4l4 9M10 8h5"></path></svg></div><div style="flex:1"><div class="t">4×5min + 4×3...</div><div class="m">Yesterday · 1h 31m · 58.17 km · 15 laps · 234 W</div></div><span class="chev">›</span></div>
+<div class="session" style="--c:#F5824A;--bg:#FCEBE0"><div class="ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#F5824A" stroke-width="1.8"><circle cx="16" cy="5" r="2"></circle><path d="M9 20l3-6 -3-3 1-5 4 3 3 1M9 11l-4 2"></path></svg></div><div style="flex:1"><div class="t">Run brick</div><div class="m">2d ago · 44m · 11.76 km · 14 laps · 392 W</div></div><span class="chev">›</span></div>
+</div>
+</div></div>
+
+<div class="comp"><div class="comp-label">Pace Radar</div>
+<div class="card" style="width:361px">
+<div class="section-hdr"><div><h3 style="font-size:19px">Pace Radar</h3><p class="sub">Best pace across distances</p></div>
+<div class="segmented" style="width:150px"><div class="seg">🚴 Bike</div><div class="seg active" style="display:flex;gap:5px;align-items:center;justify-content:center">🏃 Run</div></div></div>
+<div style="display:flex;align-items:center;gap:10px;margin:16px 0 6px"><span style="font:700 11px var(--lc-font-sans);letter-spacing:.06em;color:#9AA1B2">COMPARE</span>
+<div class="filter-pill">30d</div><div class="filter-pill active" style="background:var(--lc-primary);color:#fff">90d</div><div class="filter-pill">Monthly</div></div>
+<svg id="paceradar" width="100%" height="150" viewBox="0 0 340 160"><text x="170" y="14" text-anchor="middle" font-size="12" font-weight="700" fill="#1D2C4C">400m</text><path d="M170 30 L260 90 L170 150 L80 90 Z" fill="none" stroke="#E2E4EC" stroke-width="1"></path><path d="M170 30 L215 60 L170 100 L125 60 Z" fill="none" stroke="#E2E4EC" stroke-width="1"></path><path d="M170 30 L170 150 M170 30L260 90 M170 30L80 90" stroke="#E2E4EC"></path><g class="pace-run"><path d="M170 30 L225 68 L195 95 L128 68 Z" fill="#F5824A" fill-opacity=".18" stroke="#F5824A" stroke-width="2"></path></g><g class="pace-bike" style="display:none"><path d="M170 30 L245 82 L205 118 L110 78 Z" fill="#599FD0" fill-opacity=".18" stroke="#599FD0" stroke-width="2"></path></g></svg>
+</div></div>
+
+<div class="comp"><div class="comp-label">Training History chart</div>
+<div class="card" style="width:361px">
+<div class="section-hdr" style="margin-bottom:12px"><div style="font:800 13px var(--lc-font-sans);letter-spacing:.06em;color:#9AA1B2">TRAINING HISTORY</div><div style="font:600 13px;color:#9AA1B2">☰ 6/175 ‹ ›</div></div>
+<div class="filters" style="margin-bottom:14px">
+<div class="filter-pill active"><i class="fdot" style="background:#555"></i>All 316</div>
+<div class="filter-pill"><i class="fdot" style="background:#599FD0"></i>Endurance 14</div>
+<div class="filter-pill"><i class="fdot" style="background:#2DBFB0"></i>LT1 11</div>
+<div class="filter-pill"><i class="fdot" style="background:#8B5CF6"></i>LT2 25</div>
+</div>
+<div style="background:#F7F8FA;border-radius:12px;padding:11px 14px;font:700 14px var(--lc-font-sans);color:#1D2C4C;margin-bottom:14px">4×15min · x1 · 3d ago ▾</div>
+<div class="segmented" style="margin-bottom:10px"><div class="seg active">Power</div><div class="seg">HR</div><div class="seg">Lactate</div><div class="seg">RPE</div></div>
+<div class="segmented" style="margin-bottom:14px"><div class="seg active">▤ Bars</div><div class="seg">〰 Line</div><div class="seg">∿ Trace</div></div>
+<div style="background:#F7F8FA;border-radius:14px;padding:14px">
+<div style="text-align:center;font:600 13px var(--lc-font-sans);color:#B0B6C4;margin-bottom:10px">Tap a bar to inspect a lap</div>
+<svg id="trainhistbars" width="100%" height="160" viewBox="0 0 300 170"></svg>
+<div style="text-align:center;font:600 12px var(--lc-font-sans);color:#9AA1B2;margin-top:4px">8/29/26</div>
+</div>
+</div></div>
+
+<div class="comp"><div class="comp-label">Progress row</div>
+<div class="card" style="width:361px">
+<div class="section-hdr"><div style="font:800 16px var(--lc-font-sans)">Progress</div><div style="font:600 13px;color:#9AA1B2">1–1 of 1 ‹ ›</div></div>
+<div style="display:flex;align-items:center;gap:10px;margin-top:10px">
+<div style="width:22px;height:22px;border-radius:50%;background:var(--lc-primary);color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px">✓</div>
+<div style="font:700 14px var(--lc-font-sans)">8/29/26</div>
+<div style="font:600 13px var(--lc-font-sans);color:#8B93A7;flex:1">4×15min</div>
+<div style="font:800 15px var(--lc-font-sans);color:#1D2C4C">274 W</div>
+<span style="color:#E05347">↓</span><span class="chev">›</span>
+</div>
+</div></div>
+
+<div class="comp"><div class="comp-label">Add Lactate row</div>
+<div class="card" style="width:361px">
+<div class="section-hdr"><div style="display:flex;align-items:center;gap:8px;font:800 14px var(--lc-font-sans);color:#8B5CF6">🧪 ADD LACTATE</div><span class="pill" style="background:#EEF0F8;color:#767EB5">262 READY</span></div>
+</div></div>
+
+</div>
+</section>
+
+<section>
+<h2>Workout Detail</h2>
+<div class="grid">
+
+<div class="comp"><div class="comp-label">Workout header bar</div>
+<div class="card" style="width:393px;border-left:4px solid var(--lc-secondary);border-radius:14px">
+<div class="section-hdr">
+<div style="display:flex;align-items:center;gap:10px"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#599FD0" stroke-width="1.8"><circle cx="6" cy="17" r="3.5"></circle><circle cx="18" cy="17" r="3.5"></circle><path d="M6 17l4-9h4l4 9M10 8h5"></path></svg><div><div style="font:800 18px var(--lc-font-sans)">Bike LT2</div><div style="font:500 12.5px var(--lc-font-sans);color:#8B93A7">Saturday, 29 August ...</div></div></div>
+<div style="display:flex;align-items:center;gap:12px;color:#8B93A7"><span class="pill" style="border:1.5px solid var(--lc-primary);color:var(--lc-primary)">🧪 Lactate</span><span>✎</span><span>⤴</span><span>✕</span></div>
+</div>
+</div></div>
+
+<div class="comp"><div class="comp-label">Tabs row</div>
+<div class="card" style="width:393px"><div style="display:flex;gap:18px">
+<div class="wo-tab">Summary</div><div class="wo-tab active">Map/Graph</div><div class="wo-tab">Laps</div><div class="wo-tab">Peaks</div><div class="wo-tab">Compare</div>
+</div></div></div>
+
+<div class="comp"><div class="comp-label">Map/Graph chart</div>
+<div class="card" style="width:361px;display:flex;flex-direction:column;gap:12px">
+<div class="filters">
+<span class="legend-chip" style="background:#F3EFFB;color:#8B5CF6" data-tip="Click to hide">● Power</span>
+<span class="legend-chip" style="background:#FCE9E7;color:#E05347" data-tip="Click to hide">● Heart Rate</span>
+<span class="legend-chip" style="background:#E4F7F4;color:#2DBFB0" data-tip="Click to hide">● Speed</span>
+<span class="legend-chip" style="background:#F1F2F5;color:#B0B6C4" data-tip="Not recorded">● Cadence</span>
+</div>
+<div style="display:flex;align-items:center;gap:12px;font:600 13px var(--lc-font-sans);color:#374151">Smoothness: <input type="range" style="flex:1" disabled=""><span>11s avg</span></div>
+<div style="font:500 12.5px var(--lc-font-sans);color:#9AA1B2">Drag across the chart to zoom &amp; measure a segment</div>
+<svg id="wograph" width="100%" height="190" viewBox="0 0 320 200"></svg>
+<div style="display:flex;justify-content:space-between;font:600 11px var(--lc-font-sans);color:#9AA1B2">0 m<span>52.99 km</span><span>105.99 k</span></div>
+</div></div>
+
+<div class="comp"><div class="comp-label">Time in Zones</div>
+<div class="card" style="width:361px">
+<div class="section-hdr" style="margin-bottom:10px"><span style="font:800 12px var(--lc-font-sans);letter-spacing:.05em;color:#8B93A7">TIME IN ZONES</span><span style="font:700 13px var(--lc-font-sans);color:#8B93A7">FTP 384 W</span></div>
+<div style="display:flex;height:26px;border-radius:8px;overflow:hidden;margin-bottom:10px">
+<div style="width:28%;background:#599FD0;display:flex;align-items:center;justify-content:center;color:#fff;font:700 11px sans-serif">28%</div>
+<div style="width:22%;background:#2DBFB0;display:flex;align-items:center;justify-content:center;color:#fff;font:700 11px sans-serif">22%</div>
+<div style="width:11%;background:#F5C542;display:flex;align-items:center;justify-content:center;color:#fff;font:700 10px sans-serif">11%</div>
+<div style="width:30%;background:#F5824A;display:flex;align-items:center;justify-content:center;color:#fff;font:700 11px sans-serif">30%</div>
+<div style="width:9%;background:#E05347"></div>
+</div>
+<div style="display:flex;justify-content:space-between;text-align:center;font:600 12px var(--lc-font-sans)">
+<div><i class="zdot" style="background:#599FD0"></i>Z1<div>41m<br><span style="color:#9AA1B2">28%</span></div></div>
+<div><i class="zdot" style="background:#2DBFB0"></i>Z2<div>31m<br><span style="color:#9AA1B2">22%</span></div></div>
+<div><i class="zdot" style="background:#F5C542"></i>Z3<div>16m<br><span style="color:#9AA1B2">11%</span></div></div>
+<div><i class="zdot" style="background:#F5824A"></i>Z4<div>43m<br><span style="color:#9AA1B2">30%</span></div></div>
+<div><i class="zdot" style="background:#E05347"></i>Z5<div>13m<br><span style="color:#9AA1B2">9%</span></div></div>
+</div>
+</div></div>
+
+<div class="comp"><div class="comp-label">Entire Workout stats</div>
+<div class="card" style="width:361px">
+<div style="font:800 12px var(--lc-font-sans);letter-spacing:.05em;color:#8B93A7;margin-bottom:6px">ENTIRE WORKOUT</div>
+<div class="section-hdr" style="margin-bottom:10px"><span style="font:700 15px var(--lc-font-sans)">Work</span><span style="font:800 20px var(--lc-font-sans)">2,809 kJ</span><span style="font:600 13px var(--lc-font-sans);color:#8B93A7">IF</span><span style="font:800 20px var(--lc-font-sans)">0.86</span></div>
+<div class="section-hdr" style="font:700 12px var(--lc-font-sans);color:#8B93A7"><span></span><span>MIN</span><span>AVG</span><span>MAX</span></div>
+<div class="zones-row" data-tip="Min · Avg · Max"><span>Speed</span><span>0.2</span><span style="font:800 16px var(--lc-font-sans);color:#1D2C4C">42.2</span><span>47.4 km/h</span></div>
+<div class="zones-row" data-tip="Min · Avg · Max"><span>Heart Rate</span><span>81</span><span style="font:800 16px var(--lc-font-sans);color:#1D2C4C">132</span><span>151 bpm</span></div>
+</div></div>
+
+<div class="comp"><div class="comp-label">Laps · Power chart</div>
+<div class="card" style="width:361px">
+<div style="font:800 11px var(--lc-font-sans);letter-spacing:.06em;color:#9AA1B2;margin-bottom:10px">LAPS · POWER</div>
+<svg id="lapsbars" width="100%" height="160" viewBox="0 0 300 170"></svg>
+</div></div>
+
+<div class="comp"><div class="comp-label">Auto laps pill</div>
+<div class="card" style="width:361px"><div style="font:600 13.5px var(--lc-font-sans);color:#4A5E82">Auto laps: <span class="pill" style="background:#EEF0F3;color:#374151">⚡ Smart detect</span></div></div></div>
+
+<div class="comp"><div class="comp-label">Laps table</div>
+<div class="card laps-table" style="width:393px;padding:0;overflow:hidden">
+<div style="display:grid;grid-template-columns:.5fr 1fr 1fr 1fr .8fr .8fr .6fr;padding:10px 14px;font:800 11px var(--lc-font-sans);color:#9AA1B2;border-bottom:1px solid var(--lc-border-soft)"><span>#</span><span>TIME</span><span>DIST</span><span>PWR</span><span>HR</span><span>RPM</span><span>LA</span></div>
+<div style="display:grid;grid-template-columns:.5fr 1fr 1fr 1fr .8fr .8fr .6fr;align-items:center;padding:10px 14px;background:#FEF9E7;border-left:4px solid #F5A623;font:700 13px var(--lc-font-sans)"><span style="color:#F5A623">1</span><span>5:00</span><span>3.09 km</span><span style="color:#F5A623">206W</span><span>109</span><span>86</span><span style="color:#8B5CF6">+</span></div>
+<div style="display:grid;grid-template-columns:.5fr 1fr 1fr 1fr .8fr .8fr .6fr;align-items:center;padding:10px 14px;border-left:4px solid #2DBFB0;font:700 13px var(--lc-font-sans)"><span>2</span><span>4:59</span><span>3.28 km</span><span>245W</span><span>116</span><span>85</span><span style="color:#8B5CF6">+</span></div>
+<div style="display:grid;grid-template-columns:.5fr 1fr 1fr 1fr .8fr .8fr .6fr;align-items:center;padding:10px 14px;border-left:4px solid #2DBFB0;font:700 13px var(--lc-font-sans)"><span>3</span><span>5:00</span><span>3.47 km</span><span>283W</span><span>125</span><span>83</span><span style="color:#8B5CF6">+</span></div>
+<div style="display:grid;grid-template-columns:.5fr 1fr 1fr 1fr .8fr .8fr .6fr;align-items:center;padding:10px 14px;border-left:4px solid #8B5CF6;font:700 13px var(--lc-font-sans)"><span>4</span><span>4:59</span><span>3.62 km</span><span style="color:#3B82F6">319W</span><span>132</span><span>83</span><span style="color:#8B5CF6">+</span></div>
+<div style="display:grid;grid-template-columns:.5fr 1fr 1fr 1fr .8fr .8fr .6fr;align-items:center;padding:10px 14px;border-left:4px solid #2DBFB0;font:700 13px var(--lc-font-sans)"><span>5</span><span>10:00</span><span>7.00 km</span><span>287W</span><span>125</span><span>83</span><span style="color:#8B5CF6">+</span></div>
+<div style="display:grid;grid-template-columns:.5fr 1fr 1fr 1fr .8fr .8fr .6fr;align-items:center;padding:10px 14px;border-left:4px solid #2DBFB0;font:700 13px var(--lc-font-sans)"><span>6</span><span>6:00</span><span>4.26 km</span><span>298W</span><span>125</span><span>82</span><span style="color:#8B5CF6">+</span></div>
+</div></div>
+
+</div>
+</section>
+
+</div>
+
+<script>
+const svgNS='http://www.w3.org/2000/svg';
+function polar(cx,cy,r,angleDeg){const a=(angleDeg-90)*Math.PI/180;return [cx+r*Math.cos(a),cy+r*Math.sin(a)];}
+function el(tag,attrs){const e=document.createElementNS(svgNS,tag);for(const k in attrs)e.setAttribute(k,attrs[k]);return e;}
+
+function buildBars(id,data,w,h,{color='#767EB5',lightIdx=[],gap=10,radius=4}={}){
+  const svg=document.getElementById(id); if(!svg)return;
+  const max=Math.max(...data), min=0, n=data.length;
+  const barW=(w-gap*(n-1))/n;
+  data.forEach((v,i)=>{
+    const barH=(v-min)/(max-min)*(h-4);
+    const x=i*(barW+gap), y=h-barH;
+    svg.appendChild(el('rect',{x,y,width:barW,height:barH,rx:radius,fill:lightIdx.includes(i)?color+'55':color}));
+  });
+}
+
+function buildLine(id,data,w,h,{stroke='#1D2C4C',fill=null,dot=false,padTop=8,padBottom=8}={}){
+  const svg=document.getElementById(id); if(!svg)return;
+  const min=Math.min(...data), max=Math.max(...data), n=data.length, innerH=h-padTop-padBottom;
+  const pts=data.map((v,i)=>[i/(n-1)*w, padTop+innerH-((v-min)/((max-min)||1))*innerH]);
+  if(fill){
+    const areaPts=[[0,h],...pts,[w,h]].map(p=>p.join(',')).join(' ');
+    svg.appendChild(el('polygon',{points:areaPts,fill}));
+  }
+  svg.appendChild(el('polyline',{points:pts.map(p=>p.join(',')).join(' '),fill:'none',stroke,'stroke-width':2.5,'stroke-linecap':'round','stroke-linejoin':'round'}));
+  if(dot)pts.forEach(p=>svg.appendChild(el('circle',{cx:p[0],cy:p[1],r:4,fill:'#fff',stroke,'stroke-width':2.5})));
+  return pts;
+}
+
+function buildRadar(id,cx,cy,maxR,datasets,n){
+  const svg=document.getElementById(id); if(!svg)return;
+  [0.25,0.5,0.75,1].forEach(l=>{
+    const pts=Array.from({length:n},(_,i)=>polar(cx,cy,maxR*l,i*360/n));
+    svg.appendChild(el('polygon',{points:pts.map(p=>p.join(',')).join(' '),fill:'none',stroke:'#E2E4EC','stroke-width':1}));
+  });
+  for(let i=0;i<n;i++){
+    const p=polar(cx,cy,maxR,i*360/n);
+    svg.appendChild(el('line',{x1:cx,y1:cy,x2:p[0],y2:p[1],stroke:'#E2E4EC','stroke-width':1}));
+  }
+  datasets.forEach(ds=>{
+    const pts=ds.values.map((v,i)=>polar(cx,cy,maxR*v,i*360/n));
+    svg.appendChild(el('polygon',{points:pts.map(p=>p.join(',')).join(' '),fill:ds.fill,stroke:ds.stroke,'stroke-width':2}));
+    pts.forEach(p=>svg.appendChild(el('circle',{cx:p[0],cy:p[1],r:4,fill:ds.stroke})));
+  });
+}
+
+(function(){const c=document.getElementById('tsbring');const R=40,C=2*Math.PI*R,frac=.78;c.setAttribute('stroke-dasharray',`${C*frac} ${C}`);})();
+
+buildBars('tssbars',[97,109,101,103,93,14,2],330,110,{gap:10});
+buildLine('lt2mini',[0.68,0.45,0.22,1.0,0.82],140,60,{stroke:'#1D2C4C',fill:'rgba(29,44,76,.08)'});
+buildLine('lt1mini',[0.55,0.38,0.18,0.9,0.78],140,60,{stroke:'#3B82F6',fill:'rgba(59,130,246,.1)'});
+
+buildRadar('powerradar',170,150,110,[{values:[1,1,1,1,1],stroke:'#B9BEC9',fill:'rgba(185,190,201,.15)'},{values:[0.52,0.68,0.93,0.97,1.0],stroke:'#3B82F6',fill:'rgba(59,130,246,.28)'}],5);
+
+const TH_DATA={
+  power:{values:[230,270,310,295,315,225,340,378,378,382,390,300,255,215],color:'#767EB5',fmt:v=>Math.round(v)+'W'},
+  hr:{values:[110,118,125,121,128,112,135,142,141,144,146,130,120,115],color:'#E05347',fmt:v=>Math.round(v)+'bpm'},
+  lactate:{values:[1.2,1.4,1.6,1.5,1.8,1.3,2.4,3.1,3.3,3.6,4.0,2.2,1.9,1.6],color:'#2DBFB0',fmt:v=>v.toFixed(1)+'mmol'},
+  rpe:{values:[4,5,6,5,6,4,7,8,8,8,9,6,5,4],color:'#F5824A',fmt:v=>Math.round(v)}
+};
+let thMetric='power', thType='bars';
+function renderTrainHist(){
+  const svg=document.getElementById('trainhistbars'); svg.innerHTML='';
+  const w=300,h=160,{values,color}=TH_DATA[thMetric];
+  const max=Math.max(...values), min=0, n=values.length;
+  if(thType==='bars'){
+    const gap=5, barW=(w-gap*(n-1))/n;
+    values.forEach((v,i)=>{const barH=(v-min)/(max-min)*(h-4), x=i*(barW+gap), y=h-barH;
+      svg.appendChild(el('rect',{x,y,width:barW,height:barH,rx:4,fill:[5,11,12,13].includes(i)?color+'55':color}));});
+  } else {
+    const pts=values.map((v,i)=>[i/(n-1)*w, h-((v-min)/(max-min))*(h-4)]);
+    if(thType==='line'){
+      svg.appendChild(el('polygon',{points:[[0,h],...pts,[w,h]].map(p=>p.join(',')).join(' '),fill:color+'22'}));
+      svg.appendChild(el('polyline',{points:pts.map(p=>p.join(',')).join(' '),fill:'none',stroke:color,'stroke-width':2.5,'stroke-linecap':'round','stroke-linejoin':'round'}));
+    } else {
+      svg.appendChild(el('polyline',{points:pts.map(p=>p.join(',')).join(' '),fill:'none',stroke:color,'stroke-width':1,'stroke-dasharray':'2,4'}));
+    }
+    pts.forEach(p=>svg.appendChild(el('circle',{cx:p[0],cy:p[1],r:thType==='trace'?4:3,fill:thType==='trace'?color:'#fff',stroke:color,'stroke-width':2})));
+  }
+}
+renderTrainHist();
+
+(function(){
+  const data=[0.02,0.05,0.01,0.10,0.20,0.32,0.48,0.72,1.0];
+  const pts=buildLine('lactatemain',data,320,150,{stroke:'#1D2C4C',fill:'rgba(29,44,76,.06)',dot:true});
+  const svg=document.getElementById('lactatemain');
+  const lt1x=pts[4][0], lt2x=pts[6][0];
+  svg.insertBefore(el('line',{x1:lt1x,y1:0,x2:lt1x,y2:150,stroke:'#16A34A','stroke-width':1.5,'stroke-dasharray':'4,4'}),svg.firstChild.nextSibling);
+  svg.insertBefore(el('line',{x1:lt2x,y1:0,x2:lt2x,y2:150,stroke:'#E05347','stroke-width':1.5,'stroke-dasharray':'4,4'}),svg.firstChild.nextSibling);
+})();
+
+(function(){
+  const grid=document.getElementById('calgrid');
+  const days=[
+    {d:3,dots:['#F5824A','#F5824A','#F5824A']},{d:4,dots:['#3B82F6']},{d:5,dots:['#3B82F6','#3B82F6']},{d:6,dots:['#3B82F6']},{d:7,dots:[]},{d:8,dots:['#8B5CF6']},{d:9,dots:['#8B5CF6','#8B5CF6']},
+    {d:10,dots:['#8B5CF6','#3B82F6','#3B82F6']},{d:11,dots:['#F5824A','#3B82F6','#3B82F6']},{d:12,dots:['#2DBFB0','#3B82F6']},{d:13,dots:['#2DBFB0','#3B82F6']},{d:14,dots:['#3B82F6']},{d:15,dots:['#F5824A','#3B82F6','#3B82F6']},{d:16,dots:['#3B82F6','#8B5CF6']},
+    {d:17,dots:['#8B5CF6','#3B82F6','#F5824A']},{d:18,dots:['#2DBFB0','#3B82F6']},{d:19,dots:['#2DBFB0','#3B82F6']},{d:20,dots:['#2DBFB0','#3B82F6']},{d:21,dots:['#F5824A','#3B82F6','#3B82F6']},{d:22,dots:['#F5824A','#3B82F6','#3B82F6']},{d:23,dots:['#3B82F6','#8B5CF6']},
+    {d:24,dots:['#F5824A','#8B5CF6','#3B82F6']},{d:25,dots:['#2DBFB0','#3B82F6']},{d:26,dots:['#2DBFB0','#3B82F6','#3B82F6']},{d:27,dots:['#3B82F6']},{d:28,dots:['#3B82F6','#F5824A','#3B82F6']},{d:29,dots:['#3B82F6']},{d:30,dots:['#3B82F6','#F5824A','#8B5CF6']},
+    {d:31,dots:['#2DBFB0','#3B82F6']},{d:1,dots:['#2DBFB0'],sel:true},{d:2,dots:[],muted:true},{d:3,dots:[],muted:true},{d:4,dots:[],muted:true},{d:5,dots:[],muted:true},{d:6,dots:[],muted:true},
+    {d:7,dots:[],muted:true},{d:8,dots:[],muted:true},{d:9,dots:[],muted:true},{d:10,dots:[],muted:true},{d:11,dots:[],muted:true},{d:12,dots:[],muted:true},{d:13,dots:['#8B5CF6'],muted:true},
+  ];
+  const labels={'#F5824A':'Run','#3B82F6':'Bike','#2DBFB0':'Swim','#8B5CF6':'Other'};
+  grid.innerHTML=days.map(x=>`<div class="cal-day ${x.sel?'sel':''} ${x.muted?'muted':''}" ${x.dots.length?`data-tip="${x.dots.map(c=>labels[c]).join(', ')}"`:''}><div class="num">${x.d}</div><div class="cal-dots">${x.dots.map(c=>`<i style="background:${c}"></i>`).join('')}</div></div>`).join('');
+})();
+
+const METRICS={
+  hrv:{value:'86.1',unit:'ms',range:'Normal: 41–100 ms',band:[41,100],avg:71,color:'#16A34A',bandColor:'#DCFCE7',min:0,max:180,insight:'Your baseline is 71 ms; normal range 41–100 ms. A stable HRV around your baseline means recovery is keeping up with training.',data:[71,38,45,46,165,50,112,48,70,32,88,38,68,80,105,58,64,100,52,84,58,74,86]},
+  sleep:{value:'7:39',unit:'h',range:'Normal: 6:30–9:00 h',band:[6.5,9],avg:7.3,color:'#3B82F6',bandColor:'#DBEAFE',min:5,max:9,insight:'Your average is 7.3 h; normal range 6:30–9:00 h. Consistent sleep duration supports recovery between sessions.',data:[6.9,7.1,6.5,7.8,8.2,7.0,6.2,7.5,8.0,7.3,6.8,7.9,8.1,7.2,6.6,7.4,7.7,8.3,6.9,7.1,7.6,7.8,7.65]},
+  restinghr:{value:'46',unit:'bpm',range:'Normal: 40–55 bpm',band:[40,55],avg:47,color:'#E05347',bandColor:'#FCE9E7',min:35,max:60,insight:'Your baseline is 47 bpm; normal range 40–55 bpm. A rising resting heart rate can be an early sign of fatigue.',data:[48,52,45,44,50,55,42,47,49,51,44,46,48,53,45,44,47,49,46,45,48,47,46]},
+  lowhr:{value:'36',unit:'bpm',range:'Normal: 35–45 bpm',band:[35,45],avg:37,color:'#2DBFB0',bandColor:'#E4F7F4',min:30,max:48,insight:'Your baseline is 37 bpm; normal range 35–45 bpm. Your lowest heart rate overnight reflects deep recovery.',data:[38,40,35,37,41,39,36,38,40,37,35,36,39,41,38,37,36,39,38,37,36,38,36]}
+};
+function renderMetric(key){
+  const m=METRICS[key];
+  const svg=document.getElementById('hrvchart'); svg.innerHTML='';
+  const w=340,h=170,padTop=10,padBottom=10,innerH=h-padTop-padBottom;
+  const y=v=>padTop+innerH-((v-m.min)/(m.max-m.min))*innerH;
+  const bandTop=y(m.band[1]), bandBot=y(m.band[0]);
+  svg.appendChild(el('rect',{x:0,y:bandTop,width:w,height:bandBot-bandTop,fill:m.bandColor,opacity:.6}));
+  const avgY=y(m.avg);
+  svg.appendChild(el('line',{x1:0,y1:avgY,x2:w,y2:avgY,stroke:'#F59E0B','stroke-width':1.5,'stroke-dasharray':'5,4'}));
+  const pts=m.data.map((v,i)=>[i/(m.data.length-1)*w,y(v)]);
+  svg.appendChild(el('polyline',{points:pts.map(p=>p.join(',')).join(' '),fill:'none',stroke:m.color,'stroke-width':2.5,'stroke-linecap':'round','stroke-linejoin':'round'}));
+  [0,4,9,13,pts.length-1].forEach(i=>svg.appendChild(el('circle',{cx:pts[i][0],cy:pts[i][1],r:4,fill:m.color})));
+  svg.appendChild(el('line',{x1:pts[pts.length-1][0],y1:0,x2:pts[pts.length-1][0],y2:h,stroke:m.color,'stroke-width':1.5,'stroke-dasharray':'3,3'}));
+  [['2 Aug',0,'start'],['12 Aug',w/3,'middle'],['22 Aug',2*w/3,'middle'],['1 Sep',w,'end']].forEach(([t,x,anchor])=>{const el2=el('text',{x,y:h+2,'font-size':10,fill:'#9AA1B2','text-anchor':anchor});el2.textContent=t;svg.appendChild(el2);});
+  document.getElementById('m-value').firstChild.textContent=m.value;
+  document.getElementById('m-unit').textContent=m.unit;
+  document.getElementById('m-range').textContent=m.range;
+  document.getElementById('m-insight').textContent=m.insight;
+  document.getElementById('m-pill').setAttribute('data-tip',m.range.replace('Normal: ',''));
+}
+document.querySelectorAll('#metrictabs .sheet-tab').forEach(tab=>tab.addEventListener('click',()=>{
+  document.querySelectorAll('#metrictabs .sheet-tab').forEach(t=>t.classList.remove('active'));
+  tab.classList.add('active');
+  renderMetric(tab.dataset.m);
+}));
+renderMetric('hrv');
+
+(function(){
+  const svg=document.getElementById('wograph');
+  const n=40; const power=[],hr=[],speed=[];
+  for(let i=0;i<n;i++){
+    let base=45+ (i/n)*10;
+    const inInterval = [ [6,9],[12,15],[18,21],[24,27],[30,33] ].some(([a,b])=>i>=a&&i<b);
+    power.push(inInterval? 82+Math.sin(i)*4 : (i%6===0?48: base+ (Math.random()*4)));
+    hr.push(inInterval? 78+Math.sin(i)*3 : base+18);
+    speed.push(inInterval? 88+Math.sin(i)*3 : base+22);
+  }
+  function line(data,color,fillOp){
+    const w=320,h=180,max=100;
+    const pts=data.map((v,i)=>[i/(data.length-1)*w, h-(v/max)*h]);
+    const areaPts=[[0,h],...pts,[w,h]].map(p=>p.join(',')).join(' ');
+    svg.appendChild(el('polygon',{points:areaPts,fill:color,opacity:fillOp}));
+    svg.appendChild(el('polyline',{points:pts.map(p=>p.join(',')).join(' '),fill:'none',stroke:color,'stroke-width':1.8}));
+  }
+  [20,40,60,80,100].forEach(v=>{const yy=180-(v/100)*180;svg.appendChild(el('line',{x1:0,y1:yy,x2:320,y2:yy,stroke:'#EEF0F3','stroke-width':1}));});
+  line(speed,'#2DBFB0',.12); line(hr,'#E05347',.12); line(power,'#8B5CF6',.22);
+})();
+
+buildBars('lapsbars',[206,245,330,283,246,319,375,378,385,392,330,270,185],300,150,{color:'#5C6BC0',lightIdx:[10,11,12],gap:6});
+
+document.querySelectorAll('.segmented').forEach(group=>{
+  const btns=[...group.querySelectorAll('.seg')];
+  btns.forEach(btn=>btn.addEventListener('click',()=>{
+    btns.forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    const card=group.closest('.card');
+    if(!card)return;
+    const isBike=btn.textContent.includes('Bike');
+    const pr=card.querySelector('#powerradar');
+    if(pr){pr.innerHTML='';buildRadar('powerradar',170,150,110, isBike? [{values:[1,1,1,1,1],stroke:'#B9BEC9',fill:'rgba(185,190,201,.15)'},{values:[0.52,0.68,0.93,0.97,1.0],stroke:'#3B82F6',fill:'rgba(59,130,246,.28)'}] : [{values:[1,1,1,1,1],stroke:'#B9BEC9',fill:'rgba(185,190,201,.15)'},{values:[0.4,0.58,0.8,0.9,0.88],stroke:'#F5824A',fill:'rgba(245,130,74,.25)'}],5);}
+    const pace=card.querySelector('#paceradar');
+    if(pace){pace.querySelector('.pace-bike').style.display=isBike?'block':'none';pace.querySelector('.pace-run').style.display=isBike?'none':'block';}
+    if(card.querySelector('#trainhistbars')){
+      const txt=btn.textContent.trim();
+      if(['Power','HR','Lactate','RPE'].includes(txt))thMetric=txt.toLowerCase();
+      if(txt.includes('Bars'))thType='bars'; else if(txt.includes('Line'))thType='line'; else if(txt.includes('Trace'))thType='trace';
+      renderTrainHist();
+    }
+    if(card.querySelector('#lt2mini')){
+      const THR={bike:{lt2:'415 W',lt1:'350 W',lt2arrow:'▼ -11',lt1arrow:'▼ -3',lt2data:[0.68,0.45,0.22,1.0,0.82],lt1data:[0.55,0.38,0.18,0.9,0.78]},
+                 run:{lt2:'4:15 /km',lt1:'4:50 /km',lt2arrow:'▲ +0:05',lt1arrow:'▲ +0:03',lt2data:[0.4,0.55,0.7,0.6,0.9],lt1data:[0.3,0.42,0.6,0.5,0.8]}};
+      const t=THR[isBike?'bike':'run'];
+      document.getElementById('thr-lt2-val').textContent=' '+t.lt2;
+      document.getElementById('thr-lt1-val').textContent=t.lt1;
+      document.getElementById('thr-lt2-arrow').textContent=t.lt2arrow;
+      document.getElementById('thr-lt1-arrow').textContent=t.lt1arrow;
+      document.getElementById('lt2mini').innerHTML='';
+      document.getElementById('lt1mini').innerHTML='';
+      buildLine('lt2mini',t.lt2data,140,60,{stroke:'#1D2C4C',fill:'rgba(29,44,76,.08)'});
+      buildLine('lt1mini',t.lt1data,140,60,{stroke:'#3B82F6',fill:'rgba(59,130,246,.1)'});
+    }
+  }));
+});
+document.querySelectorAll('.filters').forEach(group=>{
+  const pills=[...group.querySelectorAll('.filter-pill')];
+  pills.forEach(p=>p.addEventListener('click',()=>{pills.forEach(x=>{x.classList.remove('active');x.style.background='';x.style.color='';});p.classList.add('active');}));
+});
+document.querySelectorAll('.wo-tab').forEach(tab=>tab.addEventListener('click',()=>{
+  [...tab.parentElement.querySelectorAll('.wo-tab')].forEach(s=>s.classList.remove('active'));
+  tab.classList.add('active');
+}));
+document.querySelectorAll('.cal-day:not(.muted)').forEach(day=>day.addEventListener('click',()=>{
+  document.querySelectorAll('.cal-day').forEach(d=>d.classList.remove('sel'));
+  day.classList.add('sel');
+}));
+document.querySelectorAll('.legend-chip').forEach(c=>c.addEventListener('click',()=>c.classList.toggle('off')));
+</script>
+
+
+</body></html>

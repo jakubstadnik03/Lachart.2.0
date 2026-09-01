@@ -105,9 +105,10 @@ const ForAthletes = () => {
             </ul>
           </div>
           <div ref={pushRef} className="lc-reveal right lc-float">
-            <BrowserFrame label="lachart.net · dashboard">
-              <img src="/about-design/dashboard-home.png" alt="LaChart dashboard with the athlete's lactate curve, zones and form & fitness" loading="eager" style={{ display: 'block', width: '100%' }} />
-            </BrowserFrame>
+            <img src="/marketing/athlete-running.webp"
+              alt="A runner settling into a steady effort on an empty track at dawn"
+              loading="eager" width="1600" height="1067"
+              style={{ display: 'block', width: '100%', borderRadius: 18, boxShadow: '0 24px 60px rgba(15,23,41,.18)' }} />
           </div>
         </div>
         <style>{`@media (max-width: 900px){ .lc-fa-hero { grid-template-columns: 1fr !important; gap: 32px !important; } }`}</style>
@@ -127,6 +128,20 @@ const ForAthletes = () => {
               <h3 style={{ margin: '12px 0 6px', fontSize: 17, color: LC.ink }}>{s.t}</h3>
               <p style={{ margin: 0, fontSize: 14, color: LC.muted, lineHeight: 1.5 }}>{s.d}</p>
             </div>
+          ))}
+        </div>
+      </section>
+
+      {/* A breath of photography between the diagram and the screenshots. */}
+      <section className="lc-sectpad" style={{ paddingTop: 8, paddingBottom: 8 }}>
+        <div ref={pushRef} className="lc-reveal" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 16 }}>
+          {[
+            ['/marketing/winter-summer-estetic.webp', 'The same road in winter and in summer, one rider between them'],
+            ['/marketing/athlete-indoor-bike.webp', 'A turbo session in a garage, late'],
+            ['/marketing/lactate-test-athlete-outdoor.webp', 'A lactate reading taken at the roadside, mid-ride'],
+          ].map(([src, alt]) => (
+            <img key={src} src={src} alt={alt} loading="lazy" width="1600" height="1067"
+              style={{ display: 'block', width: '100%', borderRadius: 14, aspectRatio: '3 / 2', objectFit: 'cover' }} />
           ))}
         </div>
       </section>

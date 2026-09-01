@@ -143,6 +143,20 @@ const ForTesters = () => {
         </div>
       </section>
 
+      {/* The section that described the visit had no picture of one. */}
+      <section className="lc-sectpad" style={{ paddingTop: 8, paddingBottom: 8 }}>
+        <div ref={pushRef} className="lc-reveal" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
+          {[
+            ['/marketing/athlete-testing.webp', 'A step test running in a performance lab, technician recording the stages'],
+            ['/marketing/testing.webp', 'A capillary sample taken from a cyclist mid-stage'],
+            ['/marketing/pdf-report.webp', 'The finished report handed across the desk to the athlete'],
+          ].map(([src, alt]) => (
+            <img key={src} src={src} alt={alt} loading="lazy" width="1600" height="1067"
+              style={{ display: 'block', width: '100%', borderRadius: 14, aspectRatio: '3 / 2', objectFit: 'cover' }} />
+          ))}
+        </div>
+      </section>
+
       {/* The report */}
       <section className="lc-sectpad" style={{ paddingTop: 24 }}>
         <div ref={pushRef} className="lc-reveal" style={{ marginBottom: 30 }}>
