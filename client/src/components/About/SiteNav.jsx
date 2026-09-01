@@ -16,7 +16,6 @@ const DEFAULT_LINKS = [
   ['/for-coaches', 'For coaches'],
   ['/for-athletes', 'For athletes'],
   ['/about#features', 'Features'],
-  ['/about#methodology', 'Science'],
   ['/about#download', 'App'],
   ['/how-to-use', 'Tutorials'],
   ['/about#pricing', 'Pricing'],

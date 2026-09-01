@@ -308,10 +308,12 @@ export default function About() {
             </Link>
             <div className="lc-nav-links" style={{ display: 'flex', gap: 4 }}>
               {[
-                ['solutions',   'For whom'],
-                ['/for-coaches', 'For coaches'],
+                // Same three jobs as SiteNav, so the header does not change
+                // shape when you move between the marketing pages.
+                ['/for-testers',  'For testers'],
+                ['/for-coaches',  'For coaches'],
+                ['/for-athletes', 'For athletes'],
                 ['features',    'Features'],
-                ['methodology', 'Science'],
                 ['download',    'App'],           // iOS launch hero section
                 ['/how-to-use', 'Tutorials'],
                 ['pricing',     'Pricing'],
@@ -382,10 +384,10 @@ export default function About() {
               }}
             >
               {[
-                ['solutions',   'For whom'],
-                ['/for-coaches', 'For coaches'],
+                ['/for-testers',  'For testers'],
+                ['/for-coaches',  'For coaches'],
+                ['/for-athletes', 'For athletes'],
                 ['features',    'Features'],
-                ['methodology', 'Science'],
                 ['download',    'App'],
                 ['/how-to-use', 'Tutorials'],
                 ['pricing',     'Pricing'],
