@@ -19,6 +19,8 @@
 import { resolveActivityTss } from './computeTss';
 import { enrichProfileForTss } from './inferThresholdsFromActivities';
 import { localCalendarDateKey, activityCalendarDateKey } from './formFitnessFromActivities';
+import { completedSecs } from './completedSessionStats';
+import { plannedWorkoutDurationSecs } from './planCompliance';
 
 const ALPHA_CTL = 1 / 42;
 const ALPHA_ATL = 1 / 7;
@@ -130,6 +132,8 @@ export function projectAtpSeason({
   actualDailyTss = {},
   plannedDailyTss = {},
   races = [],
+  sportsByWeek = {},
+  testsByWeek = {},
   today = new Date(),
 } = {}) {
   const sorted = [...(weeks || [])]
@@ -217,6 +221,8 @@ export function projectAtpSeason({
       completedTss: Math.round(completedTss),
       plannedTss: Math.round(plannedTss),
       races: racesByWeek.get(w.weekStart) || [],
+      sports: sportsByWeek[w.weekStart] || null,
+      tests: testsByWeek[w.weekStart] || [],
       weeksToEvent,
       atpCtl: Math.round(atp.ctl),
       atpTsb: Math.round(atp.ctl - atp.atl),
@@ -241,6 +247,104 @@ export function projectAtpSeason({
   }), { atpTss: 0, plannedTss: 0, completedTss: 0 });
 
   return { rows, totals };
+}
+
+/** Which of the four columns a sport belongs in. */
+function atpSportBucket(sport) {
+  const v = String(sport || '').toLowerCase();
+  if (v.includes('swim')) return 'swim';
+  if (v.includes('ride') || v.includes('cycl') || v.includes('bike') || v.includes('virtual') || v.includes('mtb')) return 'bike';
+  if (v.includes('run') || v.includes('walk') || v.includes('hike') || v.includes('trail')) return 'run';
+  if (v.includes('gym') || v.includes('weight') || v.includes('strength')) return 'strength';
+  return 'other';
+}
+
+/**
+ * Hours and sessions per sport, per week — done against planned.
+ *
+ * The season is planned in TSS because that is what projects fitness, but a
+ * coach writing the week thinks in "six hours on the bike, two runs". Both
+ * belong in the same table: the TSS column says whether the week is the right
+ * size, these say what it is made of.
+ *
+ * @returns {Object} weekStartKey → { bike: { sec, count, plannedSec, plannedCount }, … }
+ */
+export function buildWeeklySportTotals({ activities = [], plannedWorkouts = [] } = {}) {
+  const out = {};
+  const slot = (wk, bucket) => {
+    const week = out[wk] || (out[wk] = {});
+    return week[bucket] || (week[bucket] = { sec: 0, count: 0, plannedSec: 0, plannedCount: 0 });
+  };
+
+  for (const a of activities || []) {
+    const day = activityCalendarDateKey(a);
+    const wk = day ? mondayKeyOf(day) : null;
+    if (!wk) continue;
+    const s = slot(wk, atpSportBucket(a?.sport || a?.type));
+    s.sec += completedSecs(a);
+    s.count += 1;
+  }
+
+  // A plan that has already been done is counted on the actual side by the
+  // activity it produced; counting it here too would double the week.
+  for (const pw of plannedWorkouts || []) {
+    if (pw?.status === 'completed' || pw?.status === 'skipped') continue;
+    const day = typeof pw?.date === 'string' ? pw.date.slice(0, 10) : localCalendarDateKey(pw?.date);
+    if (!day) continue;
+    const wk = mondayKeyOf(day);
+    if (!wk) continue;
+    const s = slot(wk, atpSportBucket(pw?.sport));
+    s.plannedSec += plannedWorkoutDurationSecs(pw);
+    s.plannedCount += 1;
+  }
+  return out;
+}
+
+/**
+ * Tests, per week — the ones that happened and the ones still on the calendar.
+ *
+ * A lactate test is the thing a block is built around: it sets the zones the
+ * next weeks are written in. The season plan is where a coach decides when to
+ * retest, so the plan is where the test has to be visible — both the one done
+ * in March and the one pencilled in for June, which the calendar already
+ * carries as a planned session with the sport "lactate".
+ *
+ * @returns {Object} weekStartKey → [{ done, id, sport, title, date }]
+ */
+export function buildWeeklyTests({ tests = [], plannedWorkouts = [] } = {}) {
+  const out = {};
+  const push = (day, entry) => {
+    const wk = day ? mondayKeyOf(day) : null;
+    if (!wk) return;
+    (out[wk] || (out[wk] = [])).push(entry);
+  };
+
+  for (const t of tests || []) {
+    const day = typeof t?.date === 'string' ? t.date.slice(0, 10) : localCalendarDateKey(t?.date);
+    push(day, {
+      done: true,
+      id: String(t?._id || t?.id || ''),
+      sport: t?.sport || null,
+      title: t?.title || 'Test',
+      date: day,
+    });
+  }
+
+  for (const pw of plannedWorkouts || []) {
+    if (String(pw?.sport || '').toLowerCase() !== 'lactate') continue;
+    if (pw?.status === 'completed') continue;
+    const day = typeof pw?.date === 'string' ? pw.date.slice(0, 10) : localCalendarDateKey(pw?.date);
+    push(day, {
+      done: false,
+      id: String(pw?._id || ''),
+      sport: pw?.sport || null,
+      title: pw?.title || 'Test',
+      date: day,
+    });
+  }
+
+  for (const wk of Object.keys(out)) out[wk].sort((a, b) => String(a.date).localeCompare(String(b.date)));
+  return out;
 }
 
 /**

@@ -37,7 +37,69 @@ function TsbCell({ value, muted }) {
   return <span className={`tabular-nums ${tone}`}>{value > 0 ? `+${value}` : value}</span>;
 }
 
-function WeekRow({ row, peakWeeklyTss, onChange, editable, isEven }) {
+/** Hours as h:mm — the unit a coach writes a week in. */
+function fmtHours(sec) {
+  if (!(sec > 0)) return null;
+  const total = Math.round(sec / 60);
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
+}
+
+const SPORT_COLS = [
+  { key: 'bike', label: 'Bike', color: '#767EB5' },
+  { key: 'run', label: 'Run', color: '#f97316' },
+  { key: 'swim', label: 'Swim', color: '#599FD0' },
+];
+
+/**
+ * One sport's week: what was done over what was planned.
+ *
+ * Empty rather than "0:00 / 0:00" when the sport is not in this week at all —
+ * a season table is mostly empty cells and printing zeros in every one of them
+ * buries the weeks that say something.
+ */
+function SportCell({ totals, color }) {
+  const done = fmtHours(totals?.sec);
+  const planned = fmtHours(totals?.plannedSec);
+  if (!done && !planned) return <span className="text-slate-300">—</span>;
+  return (
+    <span className="tabular-nums whitespace-nowrap">
+      <span className="font-semibold" style={{ color: done ? color : '#cbd5e1' }}>{done || '—'}</span>
+      {planned && <span className="text-slate-400"> / {planned}</span>}
+    </span>
+  );
+}
+
+/**
+ * The tests that fall in this week: done ones from the test list, and ones
+ * still ahead, which live on the calendar as a planned session with the sport
+ * "lactate". A pencilled-in retest is a planning decision, so it belongs in
+ * the plan next to the block it is going to re-zone.
+ */
+function TestsCell({ tests, onOpenTest }) {
+  if (!tests?.length) return <span className="text-slate-300">—</span>;
+  return (
+    <span className="flex flex-col gap-0.5">
+      {tests.map((t) => (
+        <button
+          key={`${t.done ? 'd' : 'p'}-${t.id}`}
+          type="button"
+          onClick={onOpenTest ? () => onOpenTest(t) : undefined}
+          className={`text-left text-[11px] font-semibold rounded px-1.5 py-0.5 leading-tight truncate max-w-[150px] ${
+            onOpenTest ? 'hover:underline' : 'cursor-default'
+          }`}
+          style={t.done
+            ? { backgroundColor: '#fee2e2', color: '#b91c1c' }
+            : { backgroundColor: '#f1f5f9', color: '#64748b', border: '1px dashed #cbd5e1' }}
+          title={`${t.title}${t.sport ? ` · ${t.sport}` : ''} · ${t.date}${t.done ? '' : ' (planned)'}`}
+        >
+          {t.title}
+        </button>
+      ))}
+    </span>
+  );
+}
+
+function WeekRow({ row, peakWeeklyTss, onChange, editable, isEven, onOpenTest }) {
   const [tssDraft, setTssDraft] = useState(null);
   const [notesDraft, setNotesDraft] = useState(null);
 
@@ -144,6 +206,12 @@ function WeekRow({ row, peakWeeklyTss, onChange, editable, isEven }) {
             ? <span className="tabular-nums text-slate-400" title="Scheduled, not done yet">{row.plannedTss}*</span>
             : <span className="text-slate-300">0</span>}
       </td>
+      {SPORT_COLS.map((c) => (
+        <td key={c.key} className={`${TD} text-right`}>
+          <SportCell totals={row.sports?.[c.key]} color={c.color} />
+        </td>
+      ))}
+      <td className="px-2 py-1"><TestsCell tests={row.tests} onOpenTest={onOpenTest} /></td>
       <td className={`${TD} text-center`}><RampCell value={row.atpRamp} /></td>
       <td className="px-1 py-1 min-w-[150px]">
         {editable ? (
@@ -168,7 +236,7 @@ function WeekRow({ row, peakWeeklyTss, onChange, editable, isEven }) {
   );
 }
 
-export default function AtpTable({ rows = [], peakWeeklyTss = 700, onWeekChange, editable = true }) {
+export default function AtpTable({ rows = [], peakWeeklyTss = 700, onWeekChange, editable = true, onOpenTest = null }) {
   const months = useMemo(() => groupRowsByMonth(rows), [rows]);
 
   if (!rows.length) {
@@ -187,6 +255,12 @@ export default function AtpTable({ rows = [], peakWeeklyTss = 700, onWeekChange,
             <th className={`${TH} text-left`}>Period</th>
             <th className={`${TH} text-right`}>TSS</th>
             <th className={`${TH} text-right`}>Completed</th>
+            {SPORT_COLS.map((c) => (
+              <th key={c.key} className={`${TH} text-right`} style={{ color: c.color }}>
+                {c.label}<br />h done/plan
+              </th>
+            ))}
+            <th className={`${TH} text-left`}>Tests</th>
             <th className={`${TH} text-center`}>Ramp<br />Rate</th>
             <th className={`${TH} text-left`}>Details</th>
             <th className={`${TH} text-center text-blue-500`}>Fitness (CTL)<br />ATP</th>
@@ -199,7 +273,7 @@ export default function AtpTable({ rows = [], peakWeeklyTss = 700, onWeekChange,
           {months.map((m) => (
             <React.Fragment key={m.key}>
               <tr className="bg-slate-200/70">
-                <td colSpan={13} className="px-2 py-1 text-[11px] font-bold text-slate-600 sticky left-0">
+                <td colSpan={17} className="px-2 py-1 text-[11px] font-bold text-slate-600 sticky left-0">
                   {m.label}
                 </td>
               </tr>
@@ -211,6 +285,7 @@ export default function AtpTable({ rows = [], peakWeeklyTss = 700, onWeekChange,
                   onChange={onWeekChange}
                   editable={editable}
                   isEven={i % 2 === 0}
+                  onOpenTest={onOpenTest}
                 />
               ))}
             </React.Fragment>

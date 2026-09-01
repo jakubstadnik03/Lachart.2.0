@@ -11,6 +11,7 @@
  * and then re-projects the entire season rather than patching one row.
  */
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   PlusIcon, Cog6ToothIcon, SparklesIcon, TrashIcon, ArrowPathIcon,
 } from '@heroicons/react/24/outline';
@@ -23,12 +24,14 @@ import {
   updateAtpWeeks, autoPeriodizeAtp, deleteAtpPlan,
 } from '../services/atpApi';
 import { getPlannedWorkouts } from '../services/workoutPlannerApi';
+import { getTestingsByAthleteId } from '../services/api';
 import {
   fetchCalendarActivitiesForPmc, readCalendarActivitiesCache,
 } from '../utils/calendarActivitiesForPmc';
 import { mergeProfileZones } from '../utils/inferThresholdsFromActivities';
 import {
   buildActualDailyTss, buildPlannedDailyTss, projectAtpSeason, mondayKeyOf,
+  buildWeeklySportTotals, buildWeeklyTests,
 } from '../utils/atpProjection';
 import AtpChart from '../components/ATP/AtpChart';
 import AtpTable from '../components/ATP/AtpTable';
@@ -53,6 +56,7 @@ export default function AtpPage() {
   const { user } = useAuth();
   const { selectedAthleteId } = useAthleteSelection();
   const { addNotification } = useNotification();
+  const navigate = useNavigate();
 
   const isCoachLike = COACH_ROLES.includes(String(user?.role || '').toLowerCase());
   const coachAthleteId = isCoachLike && selectedAthleteId && selectedAthleteId !== user?._id
@@ -63,6 +67,7 @@ export default function AtpPage() {
   const [plan, setPlan] = useState(null);
   const [activities, setActivities] = useState([]);
   const [plannedWorkouts, setPlannedWorkouts] = useState([]);
+  const [tests, setTests] = useState([]);
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -121,6 +126,15 @@ export default function AtpPage() {
       .catch(() => setPlannedWorkouts([]));
   }, [plan?.startDate, plan?.endDate, coachAthleteId]);
 
+  // Lactate tests, so the season can show when the zones it is written in
+  // were last measured — and when they are due to be measured again.
+  useEffect(() => {
+    if (!athleteId) { setTests([]); return; }
+    getTestingsByAthleteId(athleteId)
+      .then((list) => setTests(Array.isArray(list) ? list : []))
+      .catch(() => setTests([]));
+  }, [athleteId]);
+
   // ── Projection ───────────────────────────────────────────────────────────
   const tssProfile = useMemo(
     () => mergeProfileZones(profile, user) || profile || user,
@@ -137,12 +151,24 @@ export default function AtpPage() {
     [plannedWorkouts],
   );
 
+  const sportsByWeek = useMemo(
+    () => buildWeeklySportTotals({ activities, plannedWorkouts }),
+    [activities, plannedWorkouts],
+  );
+
+  const testsByWeek = useMemo(
+    () => buildWeeklyTests({ tests, plannedWorkouts }),
+    [tests, plannedWorkouts],
+  );
+
   const { rows, totals } = useMemo(() => projectAtpSeason({
     weeks: plan?.weeks || [],
     actualDailyTss,
     plannedDailyTss,
     races: plan?.races || [],
-  }), [plan?.weeks, plan?.races, actualDailyTss, plannedDailyTss]);
+    sportsByWeek,
+    testsByWeek,
+  }), [plan?.weeks, plan?.races, actualDailyTss, plannedDailyTss, sportsByWeek, testsByWeek]);
 
   /** Biggest week the athlete has actually done — the honest starting point. */
   const suggestedPeakTss = useMemo(() => {
@@ -155,6 +181,17 @@ export default function AtpPage() {
     if (!vals.length) return null;
     return Math.round(Math.max(...vals) / 10) * 10;
   }, [actualDailyTss]);
+
+  /**
+   * A test in the table opens where it can be read: a finished one on the
+   * testing page, a pencilled-in one on the calendar week it sits in — which
+   * is where it would be moved or filled in.
+   */
+  const handleOpenTest = useCallback((t) => {
+    if (!t) return;
+    if (t.done && t.id) navigate(`/testing?testId=${encodeURIComponent(t.id)}`);
+    else if (t.date) navigate(`/training-calendar?date=${encodeURIComponent(t.date)}`);
+  }, [navigate]);
 
   // ── Mutations ────────────────────────────────────────────────────────────
   const handleCreate = async (payload) => {
@@ -407,6 +444,7 @@ export default function AtpPage() {
           rows={rows}
           peakWeeklyTss={plan.peakWeeklyTss}
           onWeekChange={handleWeekChange}
+          onOpenTest={handleOpenTest}
         />
       </div>
 
