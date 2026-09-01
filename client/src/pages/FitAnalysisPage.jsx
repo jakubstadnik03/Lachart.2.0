@@ -4513,7 +4513,9 @@ const FitAnalysisPage = () => {
             items={healthItems}
             loading={healthLoading}
             error={healthError}
-            canLog={(healthCatalog?.bodySites?.length || 0) > 0}
+            // Desktop logs an injury from the calendar header; only the phone,
+            // which has no such header, still needs the button here.
+            canLog={isMobile && (healthCatalog?.bodySites?.length || 0) > 0}
             onLogNew={() => setHealthShowNew(true)}
             onCheckIn={setHealthCheckInTarget}
             onOpenEpisode={(item) => document.getElementById(panelDomId(item?.episode?._id))?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
@@ -4621,6 +4623,9 @@ const FitAnalysisPage = () => {
           autoOpenSelectedActivity={!!activityId}
           initialAnchorDate={selectedTraining?.timestamp ? new Date(selectedTraining.timestamp) : null}
           onSelectActivity={handleCalendarActivitySelect}
+          // The header carries the injury entry point on desktop, so the strip
+          // above the grid is left to say what is actually open.
+          onLogInjury={(healthCatalog?.bodySites?.length || 0) > 0 ? () => setHealthShowNew(true) : null}
           onAddLactate={handleCalendarAddLactate}
           onEditActivity={handleCalendarEditActivity}
           onMonthChange={handleCalendarMonthChange}

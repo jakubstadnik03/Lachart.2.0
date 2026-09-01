@@ -74,7 +74,7 @@ import { useCategories, hexToRgba } from '../../context/CategoryContext';
 import { activityAccentColor } from '../../utils/activityAccentColor';
 import { DAY_THEME_PRESETS, dayThemePresetColor, PERIOD_TYPES, periodColor, buildPeriodsByDate } from '../../utils/calendarThemes';
 import { computePowerTss, computeHrTss, canToggleTss, resolveActivityTss, getAvailableTssModes, getActivityTssDisplayMode, cycleTssMode, tssModeLabel, tssToggleDisabledReason } from '../../utils/computeTss';
-import { compareActivitiesChronologically, buildChronologicalDayItems, matchesCalendarSportFilter, activitySportBucket, plannedSportBucket, sportFilterChip, sortPlannedWorkoutsForDay, reorderPlannedWorkoutIds, pairPlannedWithActivities, planSportMatchesActivity, dedupeCalendarActivities } from '../../utils/calendarDayOrdering';
+import { compareActivitiesChronologically, buildChronologicalDayItems, sortPlannedWorkoutsForDay, reorderPlannedWorkoutIds, pairPlannedWithActivities, planSportMatchesActivity, dedupeCalendarActivities } from '../../utils/calendarDayOrdering';
 import { stravaHalfCadenceToSpm, cadenceDisplayUnit } from '../../utils/cadenceDisplay';
 import { completedSecs } from '../../utils/completedSessionStats';
 import { notifyTssDisplayModeChanged, clearFormFitnessCache } from '../../utils/uiPrefs';
@@ -655,6 +655,99 @@ function pairingStateFor(pw, acts, todayDateStr) {
   if (!pwDateStr) return null;
   if (pwDateStr < todayDateStr) return 'missed';
   return null;
+}
+
+/**
+ * MonthYearPicker — the calendar's title, and the fastest way off this month.
+ *
+ * Stepping to next March with the arrows is seven clicks; the title has always
+ * been the obvious place to click and did nothing. A year stepper and twelve
+ * months is the whole control: no day grid, because the calendar below is the
+ * day grid and picking a day here would only fight it.
+ */
+function MonthYearPicker({ date, onPick, label }) {
+  const [open, setOpen] = React.useState(false);
+  const [year, setYear] = React.useState(date.getFullYear());
+  const ref = React.useRef(null);
+
+  React.useEffect(() => {
+    if (!open) return;
+    setYear(date.getFullYear());
+    const close = (e) => { if (!ref.current?.contains(e.target)) setOpen(false); };
+    const esc = (e) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('mousedown', close);
+    document.addEventListener('keydown', esc);
+    return () => {
+      document.removeEventListener('mousedown', close);
+      document.removeEventListener('keydown', esc);
+    };
+  }, [open, date]);
+
+  const months = React.useMemo(
+    () => Array.from({ length: 12 }, (_, m) =>
+      new Date(2000, m, 1).toLocaleDateString(undefined, { month: 'short' })),
+    [],
+  );
+  const now = new Date();
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        type="button"
+        onClick={() => setOpen(v => !v)}
+        className="flex items-center gap-1.5 rounded-lg px-2 py-1 -mx-2 text-base md:text-lg lg:text-xl font-semibold text-gray-900 hover:bg-gray-50 transition-colors"
+        aria-haspopup="dialog"
+        aria-expanded={open}
+      >
+        {label}
+        <ChevronDownIcon className={`w-4 h-4 text-gray-400 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+
+      {open && (
+        <div className="absolute left-0 top-full mt-2 z-30 w-64 rounded-2xl border border-gray-200 bg-white shadow-xl p-3">
+          <div className="flex items-center justify-between mb-2">
+            <button
+              type="button"
+              onClick={() => setYear(y => y - 1)}
+              className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500"
+              aria-label="Previous year"
+            >
+              <ChevronLeftIcon className="w-4 h-4" />
+            </button>
+            <span className="text-sm font-bold text-gray-800 tabular-nums">{year}</span>
+            <button
+              type="button"
+              onClick={() => setYear(y => y + 1)}
+              className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500"
+              aria-label="Next year"
+            >
+              <ChevronRightIcon className="w-4 h-4" />
+            </button>
+          </div>
+          <div className="grid grid-cols-3 gap-1">
+            {months.map((m, i) => {
+              const isShown = year === date.getFullYear() && i === date.getMonth();
+              const isNow = year === now.getFullYear() && i === now.getMonth();
+              return (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => { onPick(new Date(year, i, 1)); setOpen(false); }}
+                  className={`py-2 rounded-lg text-sm font-semibold transition-colors ${
+                    isShown ? 'bg-primary text-white'
+                      : isNow ? 'text-primary hover:bg-primary/10'
+                        : 'text-gray-600 hover:bg-gray-100'
+                  }`}
+                >
+                  {m}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 // ─── Planned workout card (desktop) ──────────────────────────────────────────
@@ -7918,6 +8011,8 @@ export default function CalendarView({
   onVisiblePeriodChange = null,
   onAddLactate = null,
   commentCounts = {},
+  /** Opens the injury/illness wizard — rendered in the header next to + Period. */
+  onLogInjury = null,
   /** Array of PlannedWorkout objects: { _id, date (YYYY-MM-DD), title, sport, steps, status } */
   plannedWorkouts = [],
   /** Array of DayPlan objects: { _id, date (YYYY-MM-DD), title, category, notes }
@@ -8030,13 +8125,6 @@ export default function CalendarView({
   const fullscreenScrollRef = useRef(null);
   const pendingScrollRestore = useRef(null); // { prevScrollHeight } — set before anchor shift, consumed in useLayoutEffect
 
-  // Initialize sportFilter from localStorage or default to 'all'
-  const getInitialSportFilter = () => {
-    const saved = localStorage.getItem('calendarView_sportFilter');
-    return saved || 'all';
-  };
-
-  const [sportFilter, setSportFilter] = useState(getInitialSportFilter);
   const [categoryFilter, setCategoryFilter] = useState(() => localStorage.getItem('calendarView_categoryFilter') || 'all');
   const [expandedDays, setExpandedDays] = useState(new Set());
 
@@ -8639,11 +8727,6 @@ export default function CalendarView({
     localStorage.setItem('calendarView_categoryFilter', categoryFilter || 'all');
   }, [categoryFilter]);
 
-  // Save sportFilter to localStorage when it changes
-  useEffect(() => {
-    localStorage.setItem('calendarView_sportFilter', sportFilter);
-  }, [sportFilter]);
-
   // Track Alt key during drag to toggle copy mode
   useEffect(() => {
     if (!draggedPw) return;
@@ -8784,13 +8867,6 @@ export default function CalendarView({
   // itself needs to sit after plannedByDay is defined.
   const autoOpenedIdRef = useRef(null);
 
-  const uniqueSportBuckets = useMemo(() => {
-    const set = new Set();
-    activities.forEach((a) => set.add(sportFilterChip(activitySportBucket(a))));
-    plannedWorkouts.forEach((pw) => set.add(sportFilterChip(plannedSportBucket(pw))));
-    return ['all', ...['bike', 'run', 'swim', 'other'].filter((b) => set.has(b))];
-  }, [activities, plannedWorkouts]);
-
   // Optimistic handler — mark selected immediately, then call parent
   const handleRepeatWorkout = useCallback((pw, weeks) => {
     if (!onCopyPlannedWorkout || !pw.date) return;
@@ -8819,23 +8895,19 @@ export default function CalendarView({
     // the TSS. Same function the day rows and the planner use, so a week's
     // total agrees with the days it is made of.
     let list = dedupeCalendarActivities(activities);
-    if (sportFilter !== 'all') list = list.filter((a) => matchesCalendarSportFilter(a, sportFilter));
     if (categoryFilter && categoryFilter !== 'all') {
       list = list.filter(a => a.category === categoryFilter);
     }
     return list;
-  }, [activities, sportFilter, categoryFilter]);
+  }, [activities, categoryFilter]);
 
   const filteredPlannedWorkouts = useMemo(() => {
     let list = plannedWorkouts;
-    if (sportFilter !== 'all') {
-      list = list.filter((pw) => sportFilterChip(plannedSportBucket(pw)) === sportFilter);
-    }
     if (categoryFilter && categoryFilter !== 'all') {
       list = list.filter((pw) => pw.category === categoryFilter);
     }
     return list;
-  }, [plannedWorkouts, sportFilter, categoryFilter]);
+  }, [plannedWorkouts, categoryFilter]);
 
   const activitiesByDay = useMemo(() => {
     const map = new Map();
@@ -9467,10 +9539,18 @@ export default function CalendarView({
   };
 
   const calendarContent = (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.25 }} className={`${isFullscreen ? 'fixed inset-0 z-[9998] bg-white flex flex-col p-4 md:p-5' : (isMobile ? 'bg-white' : 'bg-white rounded-2xl border border-gray-200 shadow-sm p-4 md:p-5 mb-4 md:mb-6')} ${isMobile ? '' : 'overflow-hidden'}`}>
-      {/* Header — desktop only */}
+    // overflow-x-clip rather than overflow-hidden: the header below sticks to
+    // the top of the page's scroller, and an `overflow: hidden` ancestor would
+    // make it stick to a box that never scrolls — i.e. not stick at all. Clip
+    // still trims the grid to the card's rounded corners.
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.25 }} className={`${isFullscreen ? 'fixed inset-0 z-[9998] bg-white flex flex-col p-4 md:p-5 overflow-hidden' : (isMobile ? 'bg-white' : 'bg-white rounded-2xl border border-gray-200 shadow-sm p-4 md:p-5 mb-4 md:mb-6 overflow-x-clip')}`}>
+      {/* Header — desktop only.
+          The controls follow the grid down. A month of training is taller than
+          the screen, and having to scroll back up to change the month or the
+          view is what a header is for. The negative margins let it cover the
+          card's own padding, so nothing slides through the gap. */}
       {!isMobile && (
-      <div className="flex flex-col sm:flex-row flex-wrap items-start sm:items-center justify-between gap-2 md:gap-3 mb-3 md:mb-4">
+      <div className={`flex flex-col sm:flex-row flex-wrap items-start sm:items-center justify-between gap-2 md:gap-3 mb-3 md:mb-4 ${isFullscreen ? '' : 'sticky top-0 z-20 bg-white -mx-4 md:-mx-5 px-4 md:px-5 -mt-4 md:-mt-5 pt-4 md:pt-5 pb-2 border-b border-gray-100'}`}>
         <div className="flex items-center gap-1.5 md:gap-2">
           <button
             onClick={prev}
@@ -9493,49 +9573,24 @@ export default function CalendarView({
             <ChevronRightIcon className="w-4 h-4 md:w-5 md:h-5" />
           </button>
         </div>
-        <div className="text-base md:text-lg lg:text-xl font-semibold text-gray-900">
-          {isFullscreen
-            ? (() => {
-                const ws = startOfWeek(anchorDate);
-                const we = addDays(addDays(ws, -2*7), 16*7 - 1);
-                return `${ws.toLocaleDateString(undefined,{month:'short',year:'numeric'})} – ${we.toLocaleDateString(undefined,{month:'short',year:'numeric'})}`;
-              })()
-            : anchorDate.toLocaleString(undefined, { month: 'long', year: 'numeric' })
-          }
-        </div>
+        {isFullscreen ? (
+          <div className="text-base md:text-lg lg:text-xl font-semibold text-gray-900">
+            {(() => {
+              const ws = startOfWeek(anchorDate);
+              const we = addDays(addDays(ws, -2*7), 16*7 - 1);
+              return `${ws.toLocaleDateString(undefined,{month:'short',year:'numeric'})} – ${we.toLocaleDateString(undefined,{month:'short',year:'numeric'})}`;
+            })()}
+          </div>
+        ) : (
+          <MonthYearPicker
+            date={anchorDate}
+            onPick={setAnchorDate}
+            label={anchorDate.toLocaleString(undefined, { month: 'long', year: 'numeric' })}
+          />
+        )}
         <div className="flex items-center gap-1.5 md:gap-2">
           {/* Category filter */}
           <CalendarCategoryFilter value={categoryFilter} onChange={setCategoryFilter} activities={activities} />
-          {/* Sport filter pills */}
-          <div className="flex items-center gap-1">
-            {uniqueSportBuckets.map(bucket => {
-              const isActive = sportFilter === bucket;
-              const iconMap = { bike: '/icon/bike.svg', run: '/icon/run.svg', swim: '/icon/swim.svg' };
-              const labelMap = { all: 'All', bike: 'Bike', run: 'Run', swim: 'Swim', other: 'Other' };
-              const icon = iconMap[bucket];
-              return (
-                <button
-                  key={bucket}
-                  type="button"
-                  onClick={() => setSportFilter(bucket)}
-                  className={`inline-flex items-center gap-1 px-2 md:px-2.5 py-1 md:py-1.5 rounded-lg md:rounded-xl text-sm font-semibold border transition-all ${
-                    isActive
-                      ? 'bg-primary text-white border-primary shadow-sm'
-                      : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50'
-                  }`}
-                >
-                  {icon ? (
-                    <img
-                      src={icon}
-                      alt={bucket}
-                      className={`w-3 h-3 md:w-3.5 md:h-3.5 object-contain ${isActive ? 'invert' : ''}`}
-                    />
-                  ) : null}
-                  <span>{labelMap[bucket]}</span>
-                </button>
-              );
-            })}
-          </div>
           {!isFullscreen && (
             <button
               onClick={() => setView('week')}
@@ -9559,6 +9614,18 @@ export default function CalendarView({
               className="px-2 md:px-3 py-1 md:py-1.5 rounded-lg md:rounded-xl border shadow-sm transition-colors text-xs md:text-sm bg-white border-gray-200 hover:bg-gray-50 text-gray-700"
             >
               + Period
+            </button>
+          )}
+          {/* An injury is something that happens to a week, like a camp or a
+              race — it belongs with the other things you add to the calendar,
+              not on a line of its own above it. */}
+          {onLogInjury && (
+            <button
+              onClick={onLogInjury}
+              title="Log an injury or illness"
+              className="px-2 md:px-3 py-1 md:py-1.5 rounded-lg md:rounded-xl border shadow-sm transition-colors text-xs md:text-sm bg-white border-amber-200 hover:bg-amber-50 text-amber-700"
+            >
+              + Injury
             </button>
           )}
           <button
