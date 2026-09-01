@@ -1498,7 +1498,10 @@ const WeeklyCalendar = ({
   }, [plannedWorkouts, currentWeek]);
 
   const weekSummaryAside = (compact) => (
-    <div className={compact ? 'min-w-[138px] flex-shrink-0 self-stretch' : 'min-h-0 min-w-0 h-full self-stretch'}>
+    // The calendar gives this column minmax(155px, 195px); at 138 the same
+    // cell had to wrap "4 done · 4 planned" over three lines and truncate the
+    // TSS pair. Same component, same room.
+    <div className={compact ? 'w-[180px] flex-shrink-0 self-stretch' : 'min-h-0 min-w-0 h-full self-stretch'}>
       <WeekSummaryColumn
         summary={weekSummary}
         user={user}

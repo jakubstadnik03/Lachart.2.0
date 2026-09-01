@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect, useRef } from 'react';
-import { Cog6ToothIcon } from '@heroicons/react/24/outline';
+import { Cog6ToothIcon, ChevronLeftIcon, ChevronRightIcon } from '@heroicons/react/24/outline';
 import EChartsModule from 'echarts-for-react';
 import { formatDuration, formatDistance } from '../../utils/fitAnalysisUtils';
 import { resolveActivityTss } from '../../utils/computeTss';
@@ -528,15 +528,62 @@ function ZoneRows({ secMap, colors, zoneNames }) {
 /**
  * Period analytics: volume, zones (from avg power/pace/HR), TSS, distance, list by training category.
  */
+/**
+ * Shift a period by whole periods — a month back is the month before, a week
+ * back is the seven days before. The label is rebuilt the way the calendar
+ * builds it, so a shifted month reads "July 2026" and not "July 2026 (-1)".
+ */
+function shiftPeriod(period, steps) {
+  if (!period || !steps) return period;
+  const isWeek = period.view === 'week';
+  const start = new Date(period.periodStart);
+  const end = new Date(period.periodEnd);
+  if (isWeek) {
+    start.setDate(start.getDate() + steps * 7);
+    end.setDate(end.getDate() + steps * 7);
+    const opt = { month: 'short', day: 'numeric' };
+    return {
+      ...period,
+      periodStart: start,
+      periodEnd: end,
+      label: `${start.toLocaleDateString(undefined, opt)} – ${end.toLocaleDateString(undefined, { ...opt, year: 'numeric' })}`,
+    };
+  }
+  const shifted = new Date(start.getFullYear(), start.getMonth() + steps, 1);
+  const monthEnd = new Date(shifted.getFullYear(), shifted.getMonth() + 1, 0);
+  monthEnd.setHours(23, 59, 59, 999);
+  return {
+    ...period,
+    periodStart: shifted,
+    periodEnd: monthEnd,
+    label: shifted.toLocaleString(undefined, { month: 'long', year: 'numeric' }),
+  };
+}
+
 export default function CalendarPeriodStats({
   activities = [],
-  period,
+  period: periodProp,
   user = null,
   userProfile = null,
   isMobile = false,
   onSelectActivity = null,
   athleteId = null,
 }) {
+  /**
+   * The summary opens on whatever the calendar is showing, and can then walk
+   * back through the season on its own — comparing this month with the three
+   * before it is the reason to look at a summary at all, and dragging the
+   * whole calendar along for each step made that four page-loads of scrolling.
+   *
+   * Moving the calendar resets it: the calendar is the louder control, so when
+   * it moves it wins rather than leaving the two quietly out of step.
+   */
+  const [periodOffset, setPeriodOffset] = useState(0);
+  const anchorKey = periodProp
+    ? `${periodProp.view}|${new Date(periodProp.periodStart).getTime()}`
+    : '';
+  useEffect(() => { setPeriodOffset(0); }, [anchorKey]);
+  const period = useMemo(() => shiftPeriod(periodProp, periodOffset), [periodProp, periodOffset]);
   const { getCategory } = useCategories();
   const effectiveProfile = useMemo(
     () => mergeProfileZones(userProfile, user) || userProfile || user,
@@ -1735,14 +1782,42 @@ export default function CalendarPeriodStats({
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-3 sm:p-5">
         {/* Header */}
         <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
-          <div>
+          <div className="min-w-0">
             <h2 className="text-sm sm:text-base font-bold text-gray-900">Period summary</h2>
-            <p className="text-xs text-gray-500 mt-0.5">
-              {period.label}
-              <span className="text-gray-400 ml-1">
-                ({periodView === 'week' ? 'week' : 'month'})
-              </span>
-            </p>
+            <div className="flex items-center gap-1 mt-0.5">
+              <button
+                type="button"
+                onClick={() => setPeriodOffset((v) => v - 1)}
+                aria-label={periodView === 'week' ? 'Previous week' : 'Previous month'}
+                className="w-6 h-6 rounded-lg flex items-center justify-center text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
+              >
+                <ChevronLeftIcon className="w-4 h-4" />
+              </button>
+              <p className="text-xs text-gray-500 whitespace-nowrap">
+                {period.label}
+                <span className="text-gray-400 ml-1">
+                  ({periodView === 'week' ? 'week' : 'month'})
+                </span>
+              </p>
+              <button
+                type="button"
+                onClick={() => setPeriodOffset((v) => v + 1)}
+                aria-label={periodView === 'week' ? 'Next week' : 'Next month'}
+                className="w-6 h-6 rounded-lg flex items-center justify-center text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
+              >
+                <ChevronRightIcon className="w-4 h-4" />
+              </button>
+              {periodOffset !== 0 && (
+                <button
+                  type="button"
+                  onClick={() => setPeriodOffset(0)}
+                  title="Back to the period the calendar is showing"
+                  className="ml-1 px-2 py-0.5 rounded-lg text-[11px] font-semibold bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+                >
+                  Back to calendar
+                </button>
+              )}
+            </div>
           </div>
           <span className="text-xs text-gray-400 font-medium">
             {aggregates.count} {aggregates.count === 1 ? 'activity' : 'activities'}
