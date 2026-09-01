@@ -1,4 +1,5 @@
 import React, { useMemo, useState, useEffect, useRef } from 'react';
+import { Cog6ToothIcon } from '@heroicons/react/24/outline';
 import EChartsModule from 'echarts-for-react';
 import { formatDuration, formatDistance } from '../../utils/fitAnalysisUtils';
 import { resolveActivityTss } from '../../utils/computeTss';
@@ -639,7 +640,37 @@ export default function CalendarPeriodStats({
     return { power: combine(monthlyZones.power), hr: combine(monthlyZones.hr) };
   }, [monthlyZones]);
 
+  // The panels that live inside the Overview stack, as opposed to the tabs
+  // that have always had a section of their own.
+  const OVERVIEW_PANELS = ['fitness', 'week', 'split', 'daily', 'trend'];
   const [activeTab, setActiveTab] = useState('overview');
+  // Which panels the athlete has taken out of the row. Their row, their call —
+  // and it has to survive a reload or it is not a setting, it is a mood.
+  const [hiddenPanels, setHiddenPanels] = useState(() => {
+    try {
+      const raw = localStorage.getItem('periodSummary_hiddenPanels');
+      const parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch { return []; }
+  });
+  const [pickerOpen, setPickerOpen] = useState(false);
+  useEffect(() => {
+    try { localStorage.setItem('periodSummary_hiddenPanels', JSON.stringify(hiddenPanels)); }
+    catch { /* a private window is not a reason to lose the panel */ }
+  }, [hiddenPanels]);
+
+  /**
+   * Overview is every panel at once; picking one shows that panel alone.
+   * The panels themselves ask this rather than being wrapped in a switch,
+   * because several of them are conditional on their own data as well.
+   */
+  const showPanel = (id) => activeTab === 'overview' || activeTab === id;
+
+  // Hiding the panel you are looking at would otherwise leave the card blank
+  // with no tab selected to explain why.
+  useEffect(() => {
+    if (activeTab !== 'overview' && hiddenPanels.includes(activeTab)) setActiveTab('overview');
+  }, [hiddenPanels, activeTab]);
   const [showZoneDetails, setShowZoneDetails] = useState(false);
 
   // Mobile only: enable vertical scroll-snap on the surrounding scroller so
@@ -1676,12 +1707,27 @@ export default function CalendarPeriodStats({
     return null;
   };
 
-  const tabs = [
-    { id: 'overview', label: 'Overview' },
+  /**
+   * Everything this summary can show, one entry per panel.
+   *
+   * "Overview" is the whole stack, the way it has always read; the entries
+   * after it are the same panels on their own. A coach comparing two blocks
+   * wants the fitness curve filling the screen, not scrolled past on the way
+   * to something else — and an athlete who never looks at the zone donut can
+   * take it out of the row entirely.
+   */
+  const ALL_PANELS = [
+    { id: 'overview', label: 'Overview', fixed: true },
+    { id: 'fitness', label: 'Form & Fitness' },
+    { id: 'week', label: 'Week vs week' },
+    { id: 'split', label: 'Sport split' },
+    { id: 'daily', label: 'Daily load' },
+    { id: 'trend', label: 'Load trend' },
     { id: 'zones', label: 'Zones' },
     { id: 'activities', label: 'Activities' },
     { id: 'compare', label: 'vs Last Year' },
   ];
+  const tabs = ALL_PANELS.filter((t) => t.fixed || !hiddenPanels.includes(t.id));
 
   return (
     <>
@@ -1703,26 +1749,81 @@ export default function CalendarPeriodStats({
           </span>
         </div>
 
-        {/* Tab bar — horizontally scrollable on mobile */}
-        <div className="flex gap-1.5 mb-4 overflow-x-auto scrollbar-hide pb-0.5 -mx-4 px-4 sm:mx-0 sm:px-0">
-          {tabs.map((t) => (
+        {/* Panel row — horizontally scrollable on mobile, with the picker
+            pinned at its end so it does not scroll out of reach. */}
+        <div className="flex items-center gap-1.5 mb-4">
+          <div className="flex gap-1.5 overflow-x-auto scrollbar-hide pb-0.5 -mx-4 px-4 sm:mx-0 sm:px-0 flex-1">
+            {tabs.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => setActiveTab(t.id)}
+                className={`shrink-0 px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors ${
+                  activeTab === t.id
+                    ? 'bg-primary text-white'
+                    : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+          <div className="relative shrink-0">
             <button
-              key={t.id}
               type="button"
-              onClick={() => setActiveTab(t.id)}
-              className={`shrink-0 px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors ${
-                activeTab === t.id
-                  ? 'bg-primary text-white'
-                  : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+              onClick={() => setPickerOpen((v) => !v)}
+              title="Choose which panels appear"
+              aria-expanded={pickerOpen}
+              className={`w-8 h-8 rounded-xl flex items-center justify-center transition-colors ${
+                pickerOpen ? 'bg-primary text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
               }`}
             >
-              {t.label}
+              <Cog6ToothIcon className="w-4 h-4" />
             </button>
-          ))}
+            {pickerOpen && (
+              <>
+                <div className="fixed inset-0 z-20" onClick={() => setPickerOpen(false)} />
+                <div className="absolute right-0 top-full mt-1.5 z-30 w-52 rounded-xl border border-gray-200 bg-white shadow-xl p-1.5">
+                  <div className="px-2 py-1 text-[10px] font-bold text-gray-400 uppercase tracking-wide">
+                    Panels
+                  </div>
+                  {ALL_PANELS.filter((t) => !t.fixed).map((t) => {
+                    const on = !hiddenPanels.includes(t.id);
+                    return (
+                      <button
+                        key={t.id}
+                        type="button"
+                        onClick={() => setHiddenPanels((prev) => (
+                          on ? [...prev, t.id] : prev.filter((id) => id !== t.id)
+                        ))}
+                        className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs text-gray-600 hover:bg-gray-50 text-left"
+                      >
+                        <span
+                          className={`w-3.5 h-3.5 rounded flex items-center justify-center border ${
+                            on ? 'bg-primary border-primary' : 'border-gray-300'
+                          }`}
+                        >
+                          {on && (
+                            <svg viewBox="0 0 12 12" className="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" strokeWidth={2.5}>
+                              <path d="M2.5 6.5l2.5 2.5 4.5-5" strokeLinecap="round" strokeLinejoin="round" />
+                            </svg>
+                          )}
+                        </span>
+                        {t.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+          </div>
         </div>
 
-        {/* ===================== OVERVIEW TAB ===================== */}
-        {activeTab === 'overview' && (
+        {/* ===================== OVERVIEW TAB =====================
+            Overview is the whole stack; the panels inside it can also be
+            picked one at a time, so this opens for any of them and each
+            decides for itself whether it is the one being asked for. */}
+        {(activeTab === 'overview' || OVERVIEW_PANELS.includes(activeTab)) && (
           <div className="space-y-5">
             {/* Stat cards */}
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
@@ -1786,7 +1887,7 @@ export default function CalendarPeriodStats({
             </div>
 
             {/* Form & Fitness — combined zoomable chart, same PMC source as dashboard */}
-            {effectiveAthleteId && (
+            {showPanel('fitness') && effectiveAthleteId && (
               <PmcCombinedChart
                 athleteId={effectiveAthleteId}
                 userProfile={effectiveProfile}
@@ -1797,7 +1898,7 @@ export default function CalendarPeriodStats({
             )}
 
             {/* Weekly comparison */}
-            {weekComparison && (
+            {showPanel('week') && weekComparison && (
               <div className="space-y-3">
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                   <div className="bg-gray-50 rounded-xl p-3">
@@ -1875,6 +1976,7 @@ export default function CalendarPeriodStats({
             )}
 
             {/* Sport split + Intensity distribution side by side */}
+            {showPanel('split') && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4" style={{ scrollSnapAlign: 'start', scrollMarginTop: 12 }}>
               {/* Sport split */}
               {aggregates.totalSec > 0 && (
@@ -1942,9 +2044,10 @@ export default function CalendarPeriodStats({
                 </div>
               )}
             </div>
+            )}
 
             {/* Daily load stacked bar */}
-            {aggregates.dayKeys.length > 0 && Chart && dailyStackedOption && (
+            {showPanel('daily') && aggregates.dayKeys.length > 0 && Chart && dailyStackedOption && (
               <div style={{ scrollSnapAlign: 'start', scrollMarginTop: 12 }}>
                 <div className="flex items-center justify-between mb-2">
                   <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
@@ -1970,7 +2073,7 @@ export default function CalendarPeriodStats({
             )}
 
             {/* Load trend — last 12 weeks */}
-            {Chart && weeklyTrendOption && weeklyTrend.length >= 2 && (
+            {showPanel('trend') && Chart && weeklyTrendOption && weeklyTrend.length >= 2 && (
               <div style={{ scrollSnapAlign: 'start', scrollMarginTop: 12 }}>
                 <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
                   Load trend (last 12 weeks)
