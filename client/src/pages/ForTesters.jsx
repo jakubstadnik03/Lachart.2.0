@@ -110,10 +110,16 @@ const ForTesters = () => {
               ))}
             </ul>
           </div>
+          {/* A composed shot, not a screenshot — it carries its own background,
+              so a BrowserFrame around it would be a browser drawn around a
+              photograph of a track. */}
           <div ref={pushRef} className="lc-reveal right lc-float">
-            <BrowserFrame label="lachart.net · lactate testing">
-              <img src="/about-design/lactate-testing-page.png" alt="LaChart lactate testing screen with the curve, threshold methods and measured stages" loading="eager" style={{ display: 'block', width: '100%' }} />
-            </BrowserFrame>
+            <img
+              src="/about-design/hero-lactate-curve.jpg"
+              alt="A lactate curve with LT1 and LT2 marked and a test-to-test zone comparison, shown on a tablet and phone beside a running track"
+              loading="eager"
+              style={{ display: 'block', width: '100%', borderRadius: 18, boxShadow: '0 24px 60px rgba(15,23,41,.16)' }}
+            />
           </div>
         </div>
         <style>{`@media (max-width: 900px){ .lc-ftr-hero { grid-template-columns: 1fr !important; gap: 32px !important; } }`}</style>
@@ -148,13 +154,18 @@ const ForTesters = () => {
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 20 }}>
           {[
-            { img: '/about-design/lactate-testing-page.png', label: 'The curve', cap: 'Measured points, the fitted curve, and every threshold method with its lactate and heart rate.' },
-            { img: '/about-design/zones-generator.png', label: 'Their zones', cap: 'Power, pace and heart-rate zones computed from the thresholds you just measured.' },
+            { img: '/about-design/lachart-test-pdf.png', label: 'The report', framed: false, cap: 'Every threshold method with the power, heart rate and lactate at each — so the number you chose is one you can defend.' },
+            { img: '/about-design/zones-generator.png', label: 'Their zones', framed: true, cap: 'Power, pace and heart-rate zones computed from the thresholds you just measured.' },
           ].map((g, i) => (
             <div key={g.label} ref={pushRef} className={`lc-reveal d${i + 1}`}>
-              <BrowserFrame label={g.label}>
-                <img src={g.img} alt={`LaChart ${g.label}`} loading="lazy" style={{ display: 'block', width: '100%' }} />
-              </BrowserFrame>
+              {g.framed ? (
+                <BrowserFrame label={g.label}>
+                  <img src={g.img} alt={`LaChart ${g.label}`} loading="lazy" style={{ display: 'block', width: '100%' }} />
+                </BrowserFrame>
+              ) : (
+                <img src={g.img} alt={`LaChart ${g.label}`} loading="lazy"
+                  style={{ display: 'block', width: '100%' }} />
+              )}
               <p style={{ color: LC.muted, fontSize: 13.5, margin: '12px 4px 0', lineHeight: 1.5 }}>{g.cap}</p>
             </div>
           ))}
