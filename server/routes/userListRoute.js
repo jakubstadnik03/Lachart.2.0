@@ -3278,11 +3278,35 @@ router.get("/admin/billing", verifyToken, async (req, res) => {
             return (end - start) / (30.44 * 24 * 60 * 60 * 1000);
         };
 
+        /**
+         * True when Stripe will never have charged this subscription.
+         *
+         * A trial that is set to cancel does not convert — Stripe ends it
+         * instead of billing it — so its "paying window" is empty however long
+         * ago the trial ended. Without this the estimate credited a full month
+         * the moment a trial lapsed, and the admin table showed €6.99 against
+         * people who cancelled and were never invoiced.
+         */
+        const neverBilled = (s) => {
+            if (s.status === 'incomplete' || s.status === 'incomplete_expired') return true;
+            const trialEnd = s.trialEnd ? new Date(s.trialEnd) : null;
+            if (!trialEnd) return false;
+            // Still inside the trial: nothing has been charged yet either way.
+            if (trialEnd > now) return true;
+            // Trial is over, but it was set to cancel — Stripe cancelled rather
+            // than converting it.
+            if (s.cancelAtPeriodEnd && s.status === 'trialing') return true;
+            if (s.canceledAt && new Date(s.canceledAt) <= trialEnd) return true;
+            return false;
+        };
+
         const subscribers = subs.map((s) => {
             const u = userById.get(String(s.userId));
             const { start, end } = payingWindow(s);
-            // A started billing cycle counts as paid (billing happens up front).
-            const paidMonths = end > start ? Math.floor(monthsBetween(start, end)) + 1 : 0;
+            // A started billing cycle counts as paid (billing happens up front),
+            // but only when a cycle actually started.
+            const paidMonths = neverBilled(s) ? 0
+                : (end > start ? Math.floor(monthsBetween(start, end)) + 1 : 0);
             const estimatedRevenue = Math.round(paidMonths * planPrice(s.plan) * 100) / 100;
             return {
                 userId: s.userId,
@@ -3388,12 +3412,16 @@ router.get("/admin/billing", verifyToken, async (req, res) => {
                 // Replace per-user estimates with real paid totals where we can.
                 const custRevenue = new Map(Object.entries(byCustomer));
                 const subByUser = new Map(subs.map((s) => [String(s.userId), s]));
+                // Stripe is the source of truth here, so a customer with no
+                // paid invoice has paid nothing — the absence of an invoice is
+                // an answer, not a gap to fall back on. Leaving the estimate in
+                // place mixed measured and guessed figures in one column, which
+                // is why it never added up to the total above it.
                 subscribers.forEach((row) => {
                     const sub = subByUser.get(String(row.userId));
-                    if (sub?.stripeCustomerId && custRevenue.has(sub.stripeCustomerId)) {
-                        row.estimatedRevenue = custRevenue.get(sub.stripeCustomerId);
-                        row.revenueSource = 'stripe';
-                    }
+                    if (!sub?.stripeCustomerId) return;
+                    row.estimatedRevenue = custRevenue.get(sub.stripeCustomerId) || 0;
+                    row.revenueSource = 'stripe';
                 });
             } catch (err) {
                 console.error('[Admin billing] Stripe invoice fetch failed, using estimate:', err?.message);
