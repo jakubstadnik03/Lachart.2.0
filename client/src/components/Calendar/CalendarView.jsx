@@ -5252,6 +5252,21 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
             )}
 
 
+            {/* What the session was asked to be, graded step by step. The
+                phone's Edit tab holds the plan's numbers; this is the plan as
+                the athlete reads it on the day — targets, and whether each
+                one landed. */}
+            {planSteps.length > 0 && (
+              <div className="px-4 py-4 border-b border-gray-100">
+                <WorkoutStepsCompliance
+                  steps={planSteps}
+                  records={chartTraining?.records}
+                  sport={merged?.sport || sport}
+                  context={zoneContext}
+                />
+              </div>
+            )}
+
             {/* Planned section moved → Edit tab. Quick "Add planned" shortcut
                 when there's no plan yet, so Summary doesn't lose discoverability. */}
             {!plannedWorkout && (
