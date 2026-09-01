@@ -61,6 +61,8 @@ const LactateTestingSoftwareForCoaches = lazy(() => import('./pages/blog/Lactate
 const WhatIsVlamax = lazy(() => import('./pages/blog/WhatIsVlamax'));
 const AdminDashboard = lazy(() => import('./pages/AdminDashboard'));
 const WorkoutPlannerPage = lazy(() => import('./pages/WorkoutPlannerPage'));
+const ForTestersPage = lazy(() => import('./pages/ForTesters'));
+const ForAthletesPage = lazy(() => import('./pages/ForAthletes'));
 const HealthPage = lazy(() => import('./pages/HealthPage'));
 const AtpPage = lazy(() => import('./pages/AtpPage'));
 const WorkoutExecutionPage = lazy(() => import('./pages/WorkoutExecutionPage'));
@@ -284,6 +286,8 @@ function AppRoutes() {
         {/* Veřejné routy */}
         <Route path="/" element={<RootRoute />} />
         <Route path="/about" element={<About />} />
+        <Route path="/for-testers" element={<ForTestersPage />} />
+        <Route path="/for-athletes" element={<ForAthletesPage />} />
         <Route path="/for-coaches" element={<ForCoaches />} />
         <Route path="/how-to-use" element={<Tutorials />} />
         <Route path="/tutorials" element={<Tutorials />} />

@@ -9,8 +9,12 @@ import { LC } from './marketingKit';
  * page; ForCoaches injects it. Links default to the About-page sections.
  */
 const DEFAULT_LINKS = [
-  ['/about#solutions', 'For whom'],
+  // The three jobs, named. One account type covered two very different coach
+  // products and the site sold them as one, so the reader had to work out which
+  // was theirs from a feature list aimed at somebody else.
+  ['/for-testers', 'For testers'],
   ['/for-coaches', 'For coaches'],
+  ['/for-athletes', 'For athletes'],
   ['/about#features', 'Features'],
   ['/about#methodology', 'Science'],
   ['/about#download', 'App'],
