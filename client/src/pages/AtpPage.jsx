@@ -68,6 +68,7 @@ export default function AtpPage() {
   const [activities, setActivities] = useState([]);
   const [plannedWorkouts, setPlannedWorkouts] = useState([]);
   const [tests, setTests] = useState([]);
+  const [chartMode, setChartMode] = useState('load');
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -422,7 +423,26 @@ export default function AtpPage() {
 
       {/* Chart */}
       <div className="rounded-xl ring-1 ring-slate-200 bg-white p-2 mb-4">
-        <AtpChart rows={rows} totals={totals} />
+        {/* The same season, measured two ways. Load asks whether each week is
+            the right size; volume asks what it is made of, which is the
+            question a base block gets judged on. */}
+        <div className="flex justify-end px-1 pb-1">
+          <div className="inline-flex rounded-lg bg-slate-100 p-0.5">
+            {[['load', 'Load'], ['volume', 'Volume']].map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setChartMode(id)}
+                className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors ${
+                  chartMode === id ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <AtpChart rows={rows} totals={totals} mode={chartMode} />
       </div>
 
       {/* Period key */}

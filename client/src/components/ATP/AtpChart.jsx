@@ -30,6 +30,27 @@ const COLORS = {
   axis: '#94a3b8',
 };
 
+/** The bars can read as load or as hours; the sports keep the app's colours. */
+const VOLUME_SPORTS = [
+  { key: 'bike', label: 'Bike', color: '#767EB5' },
+  { key: 'run', label: 'Run', color: '#f97316' },
+  { key: 'swim', label: 'Swim', color: '#599FD0' },
+  { key: 'strength', label: 'Strength', color: '#8b5cf6' },
+];
+
+/** Hours in a week's sport, done and still planned. */
+function sportSecs(row, key) {
+  const s = row?.sports?.[key];
+  return { done: s?.sec || 0, planned: s?.plannedSec || 0 };
+}
+function weekVolumeSecs(row) {
+  return VOLUME_SPORTS.reduce((sum, sp) => {
+    const { done, planned } = sportSecs(row, sp.key);
+    return sum + done + planned;
+  }, 0);
+}
+const fmtH = (sec) => (sec > 0 ? `${Math.floor(sec / 3600)}:${String(Math.round((sec % 3600) / 60)).padStart(2, '0')}` : '—');
+
 const M = { top: 18, right: 46, bottom: 0, left: 46 };
 const PLOT_H = 300;
 const MONTH_H = 20;
@@ -57,7 +78,7 @@ function areaPath(rows, valueFor, xFor, yFor, baseY) {
   return `${top}L${last.toFixed(1)},${baseY.toFixed(1)}L${first.toFixed(1)},${baseY.toFixed(1)}Z`;
 }
 
-export default function AtpChart({ rows = [], totals = {}, onWeekClick }) {
+export default function AtpChart({ rows = [], totals = {}, onWeekClick, mode = 'load' }) {
   const wrapRef = useRef(null);
   const [width, setWidth] = useState(1100);
   const [hover, setHover] = useState(null);
@@ -99,8 +120,11 @@ export default function AtpChart({ rows = [], totals = {}, onWeekClick }) {
     const metricMax = Math.max(10, ...metricVals) * 1.1;
     const metricMin = Math.min(0, ...metricVals) * 1.15;
 
+    const volMax = Math.max(3600, ...rows.map(weekVolumeSecs)) * 1.12;
+
     const xFor = (i) => M.left + i * colW + colW / 2;
     const yTss = (v) => plotBottom - (v / tssMax) * PLOT_H;
+    const yVol = (v) => plotBottom - (v / volMax) * PLOT_H;
     const yMetric = (v) => plotBottom - ((v - metricMin) / (metricMax - metricMin)) * PLOT_H;
 
     // Month bands: consecutive weeks whose start falls in the same month.
@@ -123,7 +147,7 @@ export default function AtpChart({ rows = [], totals = {}, onWeekClick }) {
 
     return {
       n, colW, plotW, svgW, svgH, plotTop, plotBottom,
-      tssMax, metricMax, metricMin, xFor, yTss, yMetric, months, bands,
+      tssMax, volMax, metricMax, metricMin, xFor, yTss, yVol, yMetric, months, bands,
     };
   }, [rows, width]);
 
@@ -145,8 +169,9 @@ export default function AtpChart({ rows = [], totals = {}, onWeekClick }) {
   }
 
   const {
-    colW, svgW, svgH, plotTop, plotBottom, xFor, yTss, yMetric, months, bands, metricMin,
+    colW, svgW, svgH, plotTop, plotBottom, xFor, yTss, yVol, yMetric, months, bands, metricMin,
   } = geo;
+  const volumeMode = mode === 'volume';
   const zeroY = yMetric(0);
   const hoverRow = hover ? rows[hover.i] : null;
 
@@ -180,14 +205,16 @@ export default function AtpChart({ rows = [], totals = {}, onWeekClick }) {
           );
         })}
 
-        {/* TSS gridlines */}
+        {/* Left axis — whatever the bars are measured in */}
         {[0.25, 0.5, 0.75, 1].map((f) => {
           const y = plotBottom - f * PLOT_H;
           return (
             <g key={f}>
               <line x1={M.left} y1={y} x2={M.left + geo.plotW} y2={y} stroke={COLORS.grid} strokeWidth="1" />
               <text x={M.left - 6} y={y + 3} fontSize="9" fill={COLORS.axis} textAnchor="end">
-                {Math.round(geo.tssMax * f)}
+                {volumeMode
+                  ? `${Math.round((geo.volMax * f) / 3600)}h`
+                  : Math.round(geo.tssMax * f)}
               </text>
             </g>
           );
@@ -215,11 +242,46 @@ export default function AtpChart({ rows = [], totals = {}, onWeekClick }) {
         <path d={areaPath(rows, (r) => r.atpCtl, xFor, yMetric, plotBottom)} fill={COLORS.atpCtlFill} />
         <path d={areaPath(rows, (r) => r.atpTsb, xFor, yMetric, zeroY)} fill={COLORS.atpTsbFill} />
 
-        {/* Weekly TSS: plan behind, done in front, coloured by period */}
+        {/* The bars, read one of two ways. Load is the season's own currency —
+            one number per week, coloured by the period it belongs to. Volume
+            is what the week is made of: the same hours stacked by sport, which
+            is how a coach checks that a base block is actually mostly bike.
+            The fitness and form layers are unchanged either way; they hang off
+            the right axis and are the plan's spine whichever bars are shown. */}
         {rows.map((r, i) => {
           const x = M.left + i * colW;
           const bw = Math.max(3, colW * 0.62);
           const bx = x + (colW - bw) / 2;
+
+          if (volumeMode) {
+            let cursor = 0;
+            return (
+              <g key={r.weekStart}>
+                {VOLUME_SPORTS.map((sp) => {
+                  const { done, planned } = sportSecs(r, sp.key);
+                  const segs = [];
+                  if (done > 0) {
+                    const y0 = yVol(cursor + done);
+                    const y1 = yVol(cursor);
+                    segs.push(
+                      <rect key={`${sp.key}-d`} x={bx} y={y0} width={bw} height={Math.max(0, y1 - y0)} fill={sp.color} rx="1" />,
+                    );
+                    cursor += done;
+                  }
+                  if (planned > 0) {
+                    const y0 = yVol(cursor + planned);
+                    const y1 = yVol(cursor);
+                    segs.push(
+                      <rect key={`${sp.key}-p`} x={bx} y={y0} width={bw} height={Math.max(0, y1 - y0)} fill={sp.color} opacity="0.35" rx="1" />,
+                    );
+                    cursor += planned;
+                  }
+                  return segs;
+                })}
+              </g>
+            );
+          }
+
           const tgtY = yTss(r.targetTss || 0);
           const doneY = yTss(r.completedTss || 0);
           const planY = yTss((r.completedTss || 0) + (r.plannedTss || 0));
@@ -361,10 +423,25 @@ export default function AtpChart({ rows = [], totals = {}, onWeekClick }) {
             </div>
           )}
           <div className="grid grid-cols-2 gap-x-2 gap-y-0.5 tabular-nums">
-            <span className="text-slate-400">Plan</span>
-            <span className="font-semibold text-slate-700 text-right">{hoverRow.targetTss} TSS</span>
-            <span className="text-slate-400">Done</span>
-            <span className="font-semibold text-slate-700 text-right">{hoverRow.completedTss} TSS</span>
+            {volumeMode ? VOLUME_SPORTS.map((sp) => {
+              const { done, planned } = sportSecs(hoverRow, sp.key);
+              if (!done && !planned) return null;
+              return (
+                <React.Fragment key={sp.key}>
+                  <span style={{ color: sp.color }}>{sp.label}</span>
+                  <span className="font-semibold text-slate-700 text-right">
+                    {fmtH(done)}{planned > 0 && <span className="text-slate-400"> / {fmtH(done + planned)}</span>}
+                  </span>
+                </React.Fragment>
+              );
+            }) : (
+              <>
+                <span className="text-slate-400">Plan</span>
+                <span className="font-semibold text-slate-700 text-right">{hoverRow.targetTss} TSS</span>
+                <span className="text-slate-400">Done</span>
+                <span className="font-semibold text-slate-700 text-right">{hoverRow.completedTss} TSS</span>
+              </>
+            )}
             <span className="text-blue-500">CTL plan</span>
             <span className="font-semibold text-right text-blue-600">{hoverRow.atpCtl}</span>
             <span className="text-blue-700">CTL actual</span>
