@@ -6,6 +6,7 @@ import ReactDOM from 'react-dom';
 import TrainingFormComponent from '../TrainingForm';
 import SessionProgressChart from '../training/SessionProgressChart';
 import TimeInZonesBar from '../training/TimeInZonesBar';
+import PeakValuesChart, { readPower, readHeartRate } from '../training/PeakValuesChart';
 import ActivityPeaksTab from '../training/ActivityPeaksTab';
 import SessionVsTestPanel from '../training/SessionVsTestPanel';
 import RunSplitsTable from '../training/RunSplitsTable';
@@ -5961,6 +5962,151 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                 />
               </div>
               )}
+
+              {/* ── Planned section (edit / view) ── */}
+              <div className="border-t border-gray-100 px-5 py-4">
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">{plannedWorkout && !editingPlanned && dur > 0 ? 'Planned vs Completed' : 'Planned'}</span>
+                  {plannedWorkout && !editingPlanned && (
+                    <button
+                      onClick={() => setEditingPlanned(true)}
+                      className="flex items-center gap-1 text-[10px] font-semibold px-2 py-1 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 transition-colors"
+                    >
+                      <PencilIcon className="w-3 h-3" /> Edit
+                    </button>
+                  )}
+                </div>
+
+                {editingPlanned ? (
+                  <div className="flex flex-col gap-3">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Title</label>
+                        <input type="text" value={planForm.title} onChange={e => setPlanForm(p => ({ ...p, title: e.target.value }))} placeholder={title}
+                          className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2" />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Target TSS</label>
+                        <input type="number" value={planForm.targetTss} onChange={e => setPlanForm(p => ({ ...p, targetTss: e.target.value }))} placeholder={tss > 0 ? String(Math.round(tss)) : ''}
+                          className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2" min="0" />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">
+                          Duration {planForm.durationMins > 0 && <span className="font-normal normal-case text-gray-400">({formatMinutes(planForm.durationMins)})</span>}
+                        </label>
+                        <input type="text" value={planForm.durationDisplay}
+                          onChange={e => setPlanForm(p => ({ ...p, durationDisplay: e.target.value, durationMins: null }))}
+                          onBlur={() => { const mins = parseDurationToMinutes(planForm.durationDisplay); if (mins != null && mins > 0) setPlanForm(p => ({ ...p, durationMins: mins, durationDisplay: formatMinutes(mins) })); }}
+                          placeholder={dur > 0 ? formatMinutes(Math.round(dur/60)) : '1:30'}
+                          className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2" />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Distance</label>
+                        <input type="text" value={planForm.distanceDisplay}
+                          onChange={e => setPlanForm(p => ({ ...p, distanceDisplay: e.target.value, distanceKm: null }))}
+                          onBlur={() => {
+                            const metres = parsePlanDistanceToMetres(planForm.distanceDisplay);
+                            if (metres != null && metres > 0) {
+                              setPlanForm(p => ({
+                                ...p,
+                                distanceKm: formatDistanceInputFromMetres(metres, unitSystem, { isSwim: isSwimForm }),
+                                distanceDisplay: formatDistanceFieldDisplay(metres, unitSystem, { isSwim: isSwimForm }),
+                              }));
+                            }
+                          }}
+                          placeholder={dist > 0 ? formatDistance(dist, unitSystem).formatted : distanceInputPlaceholder(unitSystem, isSwimForm)}
+                          className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2" />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Planned description</label>
+                      <textarea value={planForm.description} onChange={e => setPlanForm(p => ({ ...p, description: e.target.value }))} placeholder="Workout plan, intervals, coach instructions…" rows={3}
+                        className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 resize-none" />
+                    </div>
+                    <div className="flex gap-2">
+                      {plannedWorkout && (
+                        <button onClick={() => setEditingPlanned(false)} className="flex-1 py-2 rounded-xl border border-gray-200 text-sm font-semibold text-gray-500 hover:bg-gray-50 transition-colors">Cancel</button>
+                      )}
+                      <button onClick={handleSavePlan} disabled={savingPlan} className="flex-1 py-2 rounded-xl text-sm font-bold text-white transition-colors disabled:opacity-50" style={{ backgroundColor: color }}>
+                        {savingPlan ? 'Saving…' : plannedWorkout ? 'Save' : 'Add Planned'}
+                      </button>
+                      {plannedWorkout && onEditPlanned && (
+                        <button onClick={() => onEditPlanned(plannedWorkout)} className="flex-1 py-2 rounded-xl border text-sm font-semibold transition-colors flex items-center justify-center gap-1.5"
+                          style={{ borderColor: color + '60', color, backgroundColor: color + '08' }}>
+                          <PencilIcon className="w-3.5 h-3.5" /> Build Workout
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  plannedWorkout ? (
+                    <div className="flex flex-wrap gap-4 items-start">
+                      {/* Planned vs Completed comparison — TrainingPeaks-style two
+                          columns so the athlete/coach sees target vs actual at a glance. */}
+                      {(() => {
+                        const fmtPaceDD = (distM, durS) => {
+                          if (!(distM > 0 && durS > 0)) return '—';
+                          const full = formatPaceFromDistanceAndDuration(distM, durS, unitSystem, isSwim ? 'swim' : 'run');
+                          return full ? full.replace(/\s*\/\s*\S+$/, '').trim() : '—';
+                        };
+                        const stripUnit = (s) => (s ? s.replace(/\s*\/\s*\S+$/, '').trim() : '—');
+                        const rows = [];
+                        rows.push(['Duration', plannedDur > 0 ? fmtDur(plannedDur) : '—', dur > 0 ? fmtDur(dur) : '—']);
+                        if (plannedDist > 0 || dist > 0) {
+                          rows.push(['Distance', plannedDist > 0 ? fmtDist(plannedDist) : '—', dist > 0 ? fmtDist(dist) : '—']);
+                        }
+                        if (isBike) {
+                          if (power > 0) rows.push(['Avg Power', '—', `${Math.round(power)} W`]);
+                        } else if (isRun || isSwim) {
+                          rows.push([`Pace ${paceUnitShort(unitSystem, isSwim ? 'swim' : 'run')}`, fmtPaceDD(plannedDist, plannedDur), stripUnit(paceStr)]);
+                        }
+                        if (plannedTss > 0 || tss > 0) {
+                          rows.push(['TSS', plannedTss > 0 ? String(Math.round(plannedTss)) : '—', tss > 0 ? String(Math.round(tss)) : '—']);
+                        }
+                        if (hr > 0) rows.push(['Avg HR', '—', `${Math.round(hr)} bpm`]);
+                        return (
+                          <div className="w-full sm:w-auto sm:min-w-[280px] rounded-xl border border-gray-100 overflow-hidden">
+                            <div className="grid grid-cols-[1fr_5.5rem_5.5rem] bg-gray-50 border-b border-gray-100 text-[9px] font-bold uppercase tracking-wide text-gray-400">
+                              <span className="px-3 py-1.5">&nbsp;</span>
+                              <span className="px-3 py-1.5 text-right">Planned</span>
+                              <span className="px-3 py-1.5 text-right text-emerald-600">Completed</span>
+                            </div>
+                            <div className="divide-y divide-gray-50">
+                              {rows.map(([label, p, c]) => (
+                                <div key={label} className="grid grid-cols-[1fr_5.5rem_5.5rem] items-center text-[11px]">
+                                  <span className="px-3 py-2 text-gray-500 font-medium">{label}</span>
+                                  <span className="px-3 py-2 text-right tabular-nums text-gray-500">{p}</span>
+                                  <span className="px-3 py-2 text-right tabular-nums font-bold text-gray-800">{c}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })()}
+                      {planSteps.length > 0 && (
+                        <div className="flex-1 min-w-[200px]">
+                          <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide mb-2">Intervals</div>
+                          <div className="flex flex-wrap gap-1">
+                            {planSteps.filter(s => !s.isGroupHeader).map((s, i) => {
+                              const stepColor = s.type === 'work' ? color : s.type === 'warmup' ? '#fbbf24' : s.type === 'cooldown' ? '#38bdf8' : '#6ee7b7';
+                              return (
+                                <div key={i} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-gray-50 border-l-2 text-[10px]" style={{ borderLeftColor: stepColor }}>
+                                  <span className="font-semibold text-gray-700 capitalize">{s.type || 'Step'}{s.groupId ? ` ×${s.groupRepeat || 1}` : ''}</span>
+                                  <span className="font-bold text-gray-500">{fmtPlanDuration(s.durationSeconds)}</span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <button onClick={() => setEditingPlanned(true)} className="text-sm font-semibold px-4 py-2 rounded-xl border border-dashed border-gray-300 text-gray-400 hover:border-gray-400 hover:text-gray-600 transition-colors">
+                      + Add planned workout
+                    </button>
+                  )
+                )}
+              </div>
             </div>
 
             <div className="min-w-0">
@@ -6005,6 +6151,36 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                   />
                 </div>
               ) : null}
+
+              {/* ── What the session was worth, three ways ──
+                  The trace above says what happened minute by minute; these
+                  say what it amounts to. Peak values are the only reading
+                  here that can be held against another day without lining
+                  two rides up in time, and time in zones is the one a coach
+                  checks before deciding whether the week was ridden as
+                  written. Both were already computed elsewhere in the app
+                  and neither was reachable from the session itself. */}
+              {chartTraining?.records?.length > 30 && (
+                <div className="px-5 py-4 border-b border-gray-50 grid gap-5 md:grid-cols-2 2xl:grid-cols-3">
+                  <PeakValuesChart
+                    records={chartTraining.records}
+                    read={readPower}
+                    color="#767EB5"
+                    unit="W"
+                    title="Peak values (power)"
+                  />
+                  <PeakValuesChart
+                    records={chartTraining.records}
+                    read={readHeartRate}
+                    color="#ef4444"
+                    unit="bpm"
+                    title="Peak values (heart rate)"
+                  />
+                  <div className="md:col-span-2 2xl:col-span-1">
+                    <TimeInZonesBar records={chartTraining.records} sport={merged?.sport} authUser={authUser} />
+                  </div>
+                </div>
+              )}
 
               {isRun && (
                 <RunSplitsTable
@@ -6168,7 +6344,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
               )}
             </div>
 
-            {/* Full width: both of these are two-column tables of their own. */}
+            {/* Full width — a comparison of two sessions is a wide table. */}
             <div className="min-w-0 xl:col-span-2">
               {/* ── Compare with past sessions (desktop collapsible) ── */}
               {showCompare && (
@@ -6183,151 +6359,6 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                   {showCompareDesktop && <CompareContent merged={merged} athleteId={athleteId} onOpen={act => setNestedActivity(act)} />}
                 </div>
               )}
-
-              {/* ── Planned section (edit / view) ── */}
-              <div className="border-t border-gray-100 px-5 py-4">
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">{plannedWorkout && !editingPlanned && dur > 0 ? 'Planned vs Completed' : 'Planned'}</span>
-                  {plannedWorkout && !editingPlanned && (
-                    <button
-                      onClick={() => setEditingPlanned(true)}
-                      className="flex items-center gap-1 text-[10px] font-semibold px-2 py-1 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 transition-colors"
-                    >
-                      <PencilIcon className="w-3 h-3" /> Edit
-                    </button>
-                  )}
-                </div>
-
-                {editingPlanned ? (
-                  <div className="flex flex-col gap-3">
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Title</label>
-                        <input type="text" value={planForm.title} onChange={e => setPlanForm(p => ({ ...p, title: e.target.value }))} placeholder={title}
-                          className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2" />
-                      </div>
-                      <div>
-                        <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Target TSS</label>
-                        <input type="number" value={planForm.targetTss} onChange={e => setPlanForm(p => ({ ...p, targetTss: e.target.value }))} placeholder={tss > 0 ? String(Math.round(tss)) : ''}
-                          className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2" min="0" />
-                      </div>
-                      <div>
-                        <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">
-                          Duration {planForm.durationMins > 0 && <span className="font-normal normal-case text-gray-400">({formatMinutes(planForm.durationMins)})</span>}
-                        </label>
-                        <input type="text" value={planForm.durationDisplay}
-                          onChange={e => setPlanForm(p => ({ ...p, durationDisplay: e.target.value, durationMins: null }))}
-                          onBlur={() => { const mins = parseDurationToMinutes(planForm.durationDisplay); if (mins != null && mins > 0) setPlanForm(p => ({ ...p, durationMins: mins, durationDisplay: formatMinutes(mins) })); }}
-                          placeholder={dur > 0 ? formatMinutes(Math.round(dur/60)) : '1:30'}
-                          className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2" />
-                      </div>
-                      <div>
-                        <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Distance</label>
-                        <input type="text" value={planForm.distanceDisplay}
-                          onChange={e => setPlanForm(p => ({ ...p, distanceDisplay: e.target.value, distanceKm: null }))}
-                          onBlur={() => {
-                            const metres = parsePlanDistanceToMetres(planForm.distanceDisplay);
-                            if (metres != null && metres > 0) {
-                              setPlanForm(p => ({
-                                ...p,
-                                distanceKm: formatDistanceInputFromMetres(metres, unitSystem, { isSwim: isSwimForm }),
-                                distanceDisplay: formatDistanceFieldDisplay(metres, unitSystem, { isSwim: isSwimForm }),
-                              }));
-                            }
-                          }}
-                          placeholder={dist > 0 ? formatDistance(dist, unitSystem).formatted : distanceInputPlaceholder(unitSystem, isSwimForm)}
-                          className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2" />
-                      </div>
-                    </div>
-                    <div>
-                      <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Planned description</label>
-                      <textarea value={planForm.description} onChange={e => setPlanForm(p => ({ ...p, description: e.target.value }))} placeholder="Workout plan, intervals, coach instructions…" rows={3}
-                        className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 resize-none" />
-                    </div>
-                    <div className="flex gap-2">
-                      {plannedWorkout && (
-                        <button onClick={() => setEditingPlanned(false)} className="flex-1 py-2 rounded-xl border border-gray-200 text-sm font-semibold text-gray-500 hover:bg-gray-50 transition-colors">Cancel</button>
-                      )}
-                      <button onClick={handleSavePlan} disabled={savingPlan} className="flex-1 py-2 rounded-xl text-sm font-bold text-white transition-colors disabled:opacity-50" style={{ backgroundColor: color }}>
-                        {savingPlan ? 'Saving…' : plannedWorkout ? 'Save' : 'Add Planned'}
-                      </button>
-                      {plannedWorkout && onEditPlanned && (
-                        <button onClick={() => onEditPlanned(plannedWorkout)} className="flex-1 py-2 rounded-xl border text-sm font-semibold transition-colors flex items-center justify-center gap-1.5"
-                          style={{ borderColor: color + '60', color, backgroundColor: color + '08' }}>
-                          <PencilIcon className="w-3.5 h-3.5" /> Build Workout
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                ) : (
-                  plannedWorkout ? (
-                    <div className="flex flex-wrap gap-4 items-start">
-                      {/* Planned vs Completed comparison — TrainingPeaks-style two
-                          columns so the athlete/coach sees target vs actual at a glance. */}
-                      {(() => {
-                        const fmtPaceDD = (distM, durS) => {
-                          if (!(distM > 0 && durS > 0)) return '—';
-                          const full = formatPaceFromDistanceAndDuration(distM, durS, unitSystem, isSwim ? 'swim' : 'run');
-                          return full ? full.replace(/\s*\/\s*\S+$/, '').trim() : '—';
-                        };
-                        const stripUnit = (s) => (s ? s.replace(/\s*\/\s*\S+$/, '').trim() : '—');
-                        const rows = [];
-                        rows.push(['Duration', plannedDur > 0 ? fmtDur(plannedDur) : '—', dur > 0 ? fmtDur(dur) : '—']);
-                        if (plannedDist > 0 || dist > 0) {
-                          rows.push(['Distance', plannedDist > 0 ? fmtDist(plannedDist) : '—', dist > 0 ? fmtDist(dist) : '—']);
-                        }
-                        if (isBike) {
-                          if (power > 0) rows.push(['Avg Power', '—', `${Math.round(power)} W`]);
-                        } else if (isRun || isSwim) {
-                          rows.push([`Pace ${paceUnitShort(unitSystem, isSwim ? 'swim' : 'run')}`, fmtPaceDD(plannedDist, plannedDur), stripUnit(paceStr)]);
-                        }
-                        if (plannedTss > 0 || tss > 0) {
-                          rows.push(['TSS', plannedTss > 0 ? String(Math.round(plannedTss)) : '—', tss > 0 ? String(Math.round(tss)) : '—']);
-                        }
-                        if (hr > 0) rows.push(['Avg HR', '—', `${Math.round(hr)} bpm`]);
-                        return (
-                          <div className="w-full sm:w-auto sm:min-w-[280px] rounded-xl border border-gray-100 overflow-hidden">
-                            <div className="grid grid-cols-[1fr_5.5rem_5.5rem] bg-gray-50 border-b border-gray-100 text-[9px] font-bold uppercase tracking-wide text-gray-400">
-                              <span className="px-3 py-1.5">&nbsp;</span>
-                              <span className="px-3 py-1.5 text-right">Planned</span>
-                              <span className="px-3 py-1.5 text-right text-emerald-600">Completed</span>
-                            </div>
-                            <div className="divide-y divide-gray-50">
-                              {rows.map(([label, p, c]) => (
-                                <div key={label} className="grid grid-cols-[1fr_5.5rem_5.5rem] items-center text-[11px]">
-                                  <span className="px-3 py-2 text-gray-500 font-medium">{label}</span>
-                                  <span className="px-3 py-2 text-right tabular-nums text-gray-500">{p}</span>
-                                  <span className="px-3 py-2 text-right tabular-nums font-bold text-gray-800">{c}</span>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        );
-                      })()}
-                      {planSteps.length > 0 && (
-                        <div className="flex-1 min-w-[200px]">
-                          <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide mb-2">Intervals</div>
-                          <div className="flex flex-wrap gap-1">
-                            {planSteps.filter(s => !s.isGroupHeader).map((s, i) => {
-                              const stepColor = s.type === 'work' ? color : s.type === 'warmup' ? '#fbbf24' : s.type === 'cooldown' ? '#38bdf8' : '#6ee7b7';
-                              return (
-                                <div key={i} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-gray-50 border-l-2 text-[10px]" style={{ borderLeftColor: stepColor }}>
-                                  <span className="font-semibold text-gray-700 capitalize">{s.type || 'Step'}{s.groupId ? ` ×${s.groupRepeat || 1}` : ''}</span>
-                                  <span className="font-bold text-gray-500">{fmtPlanDuration(s.durationSeconds)}</span>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <button onClick={() => setEditingPlanned(true)} className="text-sm font-semibold px-4 py-2 rounded-xl border border-dashed border-gray-300 text-gray-400 hover:border-gray-400 hover:text-gray-600 transition-colors">
-                      + Add planned workout
-                    </button>
-                  )
-                )}
-              </div>
             </div>
           </div>
 
