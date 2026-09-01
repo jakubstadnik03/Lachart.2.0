@@ -1,7 +1,7 @@
 import React from 'react';
 import { ArrowUpIcon, ArrowDownIcon, MinusIcon, FireIcon } from '@heroicons/react/24/outline';
 import SportIcon from '../shared/SportIcon';
-import { plannedWorkoutDurationSecs } from '../../utils/plannedWorkoutDuration';
+import { plannedWorkoutDurationSecs } from '../../utils/planCompliance';
 
 /** Sport colours for the bars, shared with the calendar's own summaries. */
 export const SPORT_COLORS_CELL = { bike: '#767EB5', run: '#f97316', swim: '#599FD0', other: '#9ca3af' };

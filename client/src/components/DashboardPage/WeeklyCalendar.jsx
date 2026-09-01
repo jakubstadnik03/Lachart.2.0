@@ -46,8 +46,9 @@ import { useCategories, hexToRgba } from '../../context/CategoryContext';
 import { activityAccentColor } from '../../utils/activityAccentColor';
 import { plannedCardAppearance } from '../../utils/plannedCardAppearance';
 import WeekSummaryCell from '../training/WeekSummaryCell';
-import { PlanMiniChart } from '../training/WorkoutProfile';
-import { plannedWorkoutDurationSecs } from '../../utils/plannedWorkoutDuration';
+import { PlanMiniChart, ActivityMiniChart, CardProfileBand, activityProfileBars } from '../training/WorkoutProfile';
+import { activityCompletedStats } from '../../utils/activityStatsLine';
+import { plannedWorkoutDurationSecs } from '../../utils/planCompliance';
 import { dayThemePresetColor, periodColor, buildPeriodsByDate } from '../../utils/calendarThemes';
 import { stravaHalfCadenceToSpm } from '../../utils/cadenceDisplay';
 import { findCompliance, outlineBorder } from '../../utils/planCompliance';
@@ -236,6 +237,7 @@ function WeeklyDayChronologicalList({
   handleActivityClick,
   catBadgeStyle,
   catLabel,
+  userProfile = null,
   overflowClassName = 'text-[11px] text-gray-400 text-center',
 }) {
   const { items, pwToAct } = buildChronologicalDayItems(dayPlanned, allActivities, pairPlannedWithActivities);
@@ -281,6 +283,7 @@ function WeeklyDayChronologicalList({
             catBadgeStyle={catBadgeStyle}
             catLabel={catLabel}
             compact={compact}
+            userProfile={userProfile}
           />
         );
       })}
@@ -399,6 +402,10 @@ function PlannedMiniCard({ pw, onSelect, onStart, onCopy, onDelete, onRepeat, pa
   const isCompletedPair = pw.status === 'completed' || pairingState === 'completed';
   const isMissedPair    = pairingState === 'missed' && !isCompletedPair;
   const isPurelyPlanned = !isCompletedPair && !isMissedPair && !linkedActivity;
+  const isSkipped = pw.status === 'skipped';
+  // Once a plan has a ride against it, the card shows the shape that was
+  // ridden rather than the one that was asked for — same rule as the calendar.
+  const actualBars = linkedActivity ? activityProfileBars(linkedActivity) : null;
   const isCompleted = isCompletedPair; // keeps existing menu logic working
 
   // When merged with an actual activity, prefer real time/distance/sport/category
@@ -566,10 +573,16 @@ function PlannedMiniCard({ pw, onSelect, onStart, onCopy, onDelete, onRepeat, pa
           >
             {pw.title || 'Planned workout'}
           </span>
-          {isPurelyPlanned && pw.steps?.length > 0 && (
-            <PlanMiniChart steps={pw.steps} color={planColor} width={72} height={14} />
-          )}
         </div>
+        {/* The coach's instruction, the same two lines the calendar shows. */}
+        {pw.description && (
+          <div
+            className="text-[11px] leading-snug text-gray-500"
+            style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}
+          >
+            {pw.description}
+          </div>
+        )}
         {isCompletedPair && complianceStyle && (displayDurStr || displayDistStr || effectiveCategory) && (
           <div className="flex items-center gap-1.5 text-[11px] text-gray-600 font-semibold min-w-0 flex-wrap">
             {(displayDurStr || displayDistStr) && (
@@ -604,6 +617,16 @@ function PlannedMiniCard({ pw, onSelect, onStart, onCopy, onDelete, onRepeat, pa
             {displayDistStr && <span className="tabular-nums">{displayDistStr}</span>}
           </div>
         )}
+        {/* The session's shape, drawn the way the calendar draws it: a band
+            across the card's floor rather than a chip beside the title, and
+            for a session that was done as well as one still ahead. */}
+        {!isSkipped && (actualBars || pw.steps?.length > 0) && (
+          <CardProfileBand bleed="-mx-2 -mb-2">
+            {actualBars
+              ? <ActivityMiniChart bars={actualBars} color={planColor} height={16} />
+              : <PlanMiniChart steps={pw.steps} color={planColor} width={140} height={16} fluid />}
+          </CardProfileBand>
+        )}
       </button>
       <button
         ref={btnRef}
@@ -617,9 +640,11 @@ function PlannedMiniCard({ pw, onSelect, onStart, onCopy, onDelete, onRepeat, pa
   );
 }
 
-function WeekActCard({ act, isSelected, onClick, catBadgeStyle, compact = false }) {
+function WeekActCard({ act, isSelected, onClick, catBadgeStyle, compact = false, userProfile = null }) {
   const { getCategory } = useCategories();
   const title = act.title || act.name || act.originalFileName || 'Activity';
+  const statsLine = activityCompletedStats(act, userProfile);
+  const bars = activityProfileBars(act);
   // Shared with the calendar page. This used to take the badge's border colour,
   // which is the category at 35% alpha — the right hue but a paler one, so the
   // two calendars still did not match even where they agreed on the category.
@@ -628,7 +653,7 @@ function WeekActCard({ act, isSelected, onClick, catBadgeStyle, compact = false 
   return (
     <button
       onClick={onClick}
-      className={`w-full text-left rounded-xl border transition-all flex items-center gap-1.5 ${
+      className={`w-full text-left rounded-xl border transition-all flex flex-col gap-1 ${
         compact ? 'p-1.5' : 'px-2 py-1.5'
       } ${
         isSelected
@@ -638,12 +663,35 @@ function WeekActCard({ act, isSelected, onClick, catBadgeStyle, compact = false 
       style={{ borderLeftColor: color, borderLeftWidth: 3, touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
       title={title}
     >
-      <SportIcon sport={act.sport} className={`flex-shrink-0 ${compact ? 'w-3 h-3' : 'w-3.5 h-3.5'}`} />
-      <span
-        className={`font-bold flex-1 min-w-0 truncate leading-tight ${compact ? 'text-xs' : 'text-[13px]'} ${isSelected ? 'text-white' : 'text-gray-800'}`}
-      >
-        {title}
+      <span className="flex items-center gap-1.5 min-w-0">
+        <SportIcon sport={act.sport} className={`flex-shrink-0 ${compact ? 'w-3 h-3' : 'w-3.5 h-3.5'}`} />
+        <span
+          className={`font-bold flex-1 min-w-0 truncate leading-tight ${compact ? 'text-xs' : 'text-[13px]'} ${isSelected ? 'text-white' : 'text-gray-800'}`}
+        >
+          {title}
+        </span>
       </span>
+      {/* The same three facts the calendar prints under a session's name. A
+          bare title made the same ride read as a name here and as time,
+          distance and load one screen over. */}
+      {act.description && (
+        <span
+          className={`text-[11px] leading-snug ${isSelected ? 'text-white/75' : 'text-gray-500'}`}
+          style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}
+        >
+          {act.description}
+        </span>
+      )}
+      {statsLine && (
+        <span className={`text-[11px] leading-tight truncate tabular-nums ${isSelected ? 'text-white/80' : 'text-gray-500'}`}>
+          {statsLine}
+        </span>
+      )}
+      {bars && (
+        <CardProfileBand bleed={compact ? '-mx-1.5 -mb-1.5' : '-mx-2 -mb-1.5'}>
+          <ActivityMiniChart bars={bars} color={isSelected ? '#ffffff' : color} height={16} />
+        </CardProfileBand>
+      )}
     </button>
   );
 }
@@ -1137,7 +1185,11 @@ const WeeklyCalendar = ({
       const inPrev = prevWeekKeys.has(key);
       if (!inCurrent && !inPrev) return;
 
-      const tss = (resolveActivityTss(act, effectiveUserProfile, { user }) || 0) + tssDisplayMode * 0;
+      // `+ tssDisplayMode * 0` used to sit here to keep the mode in the memo's
+      // dependencies. The mode is a string, so the expression was NaN and every
+      // TSS in the week's totals with it — invisible until the summary column
+      // started printing the number. The dependency array carries it now.
+      const tss = resolveActivityTss(act, effectiveUserProfile, { user }) || 0;
       const sec = activityDurationSec(act);
       const dist = activityDistanceMeters(act);
 
@@ -1168,6 +1220,10 @@ const WeeklyCalendar = ({
       weekSummary: { sessions, totalTss, totalSec, totalDist, bySport },
       prevWeekSummary: { totalTss: prevTotalTss }
     };
+    // tssDisplayMode is not read here — resolveActivityTss picks the mode up
+    // itself — but the totals do change when it flips, so it stays a
+    // dependency on purpose and the rule is told as much.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [effectiveActivities, weekDays, effectiveUserProfile, user, tssDisplayMode]);
 
   // Store handleActivityClick in ref whenever it changes
@@ -1592,6 +1648,7 @@ const WeeklyCalendar = ({
                           handleActivityClick={handleActivityClick}
                           catBadgeStyle={catBadgeStyle}
                           catLabel={catLabel}
+                          userProfile={effectiveUserProfile}
                           overflowClassName="text-[10px] text-gray-400 text-center"
                         />
                       </div>
@@ -1654,6 +1711,7 @@ const WeeklyCalendar = ({
                       handleActivityClick={handleActivityClick}
                       catBadgeStyle={catBadgeStyle}
                       catLabel={catLabel}
+                      userProfile={effectiveUserProfile}
                     />
                   </div>
                 </div>
@@ -2333,6 +2391,7 @@ const WeeklyCalendar = ({
                     handleActivityClick={handleActivityClick}
                     catBadgeStyle={catBadgeStyle}
                     catLabel={catLabel}
+                    userProfile={effectiveUserProfile}
                     overflowClassName="text-[10px] text-gray-400 text-center"
                   />
                 </div>
@@ -2407,6 +2466,7 @@ const WeeklyCalendar = ({
                       handleActivityClick={handleActivityClick}
                       catBadgeStyle={catBadgeStyle}
                       catLabel={catLabel}
+                      userProfile={effectiveUserProfile}
                     />
                   </div>
                 </div>

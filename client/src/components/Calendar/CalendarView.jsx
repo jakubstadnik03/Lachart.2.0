@@ -47,15 +47,14 @@ import {
   formatPaceFromSpeedMps,
   formatPaceMMSS,
   formatSpeed,
-  getUserUnits,
   parseDistanceInputToMetres,
   paceSecondsToDisplaySeconds,
   paceUnitShort,
-  resolveDistanceUnitSystem,
 } from '../../utils/unitsConverter';
 import { distinctiveTitleTokens, isGenericTitle } from '../../utils/compareSimilarity';
 import { buildStructureTitle } from '../../utils/workoutStructureTitle';
-import { plannedWorkoutDurationSecs } from '../../utils/plannedWorkoutDuration';
+import { plannedWorkoutDurationSecs } from '../../utils/planCompliance';
+import { activityCompletedStats, fmtPlanDuration, userUnitSystem } from '../../utils/activityStatsLine';
 import WeekSummaryCell, { SPORT_COLORS_CELL } from '../training/WeekSummaryCell';
 import { PlanMiniChart, activityProfileBars, ActivityMiniChart, CardProfileBand } from '../training/WorkoutProfile';
 import { classifyLaps } from '../../utils/lapClassify';
@@ -115,13 +114,6 @@ function FitBoundsToRoute({ positions }) {
 // ─── Planned workout helpers ──────────────────────────────────────────────────
 const SPORT_PLAN_COLORS = { bike: '#767EB5', run: '#f97316', swim: '#38bdf8' };
 
-function fmtPlanDuration(s) {
-  if (!s) return '';
-  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
-  if (h > 0) return m > 0 ? `${h}h${m}m` : `${h}h`;
-  return `${m}m`;
-}
-
 /**
  * Lap time in seconds, excluding stopped time.
  * Devices record both a moving/timer clock and a wall clock per lap —
@@ -173,11 +165,6 @@ function outlineBorder({ color, leftColor, leftWidth = 2, width = 1, style = 'so
   };
 }
 
-/** Resolve display unit system — prefers auth user / localStorage units over API profile. */
-function userUnitSystem(user) {
-  return resolveDistanceUnitSystem({ units: getUserUnits(user) });
-}
-
 /** Split distance into table { val, unit } for planned/completed rows. */
 function distDisplayParts(meters, unitSystem) {
   if (!meters || meters <= 0) return { val: null, unit: '' };
@@ -187,55 +174,6 @@ function distDisplayParts(meters, unitSystem) {
   else if (unit === 'km') val = value % 1 === 0 ? String(value) : value.toFixed(1);
   else val = String(Math.round(value));
   return { val, unit };
-}
-
-/** Compact completed line: time · distance · avg power/pace · TSS. */
-function activityCompletedStats(activity, profile = null) {
-  if (!activity) return null;
-  // The whole session, the same clock the week summary sums. Showing the
-  // moving time here instead meant a week's cards added up to less than the
-  // week's own total — 15:03 of rides against the 15:20 printed beside them —
-  // with nothing on screen to say the two were answering different questions.
-  const dur = completedSecs(activity);
-  const dist = Number(activity.distance || activity.totalDistance || 0);
-  const power = Number(
-    activity.normalizedPower || activity.avgPower || activity.average_watts || activity.averagePower || 0,
-  );
-  const s = String(activity.sport || activity.type || '').toLowerCase();
-  const isSwim = s.includes('swim');
-  const isRun = s.includes('run') || s.includes('hike') || s.includes('walk') || s.includes('trail');
-  const isBike = s.includes('ride') || s.includes('cycl') || s.includes('bike') || s.includes('virtual');
-
-  const unitSystem = userUnitSystem(profile);
-  const durStr = dur > 0 ? fmtPlanDuration(dur) : null;
-  const distStr = dist > 0 ? formatDistance(dist, unitSystem).formatted : null;
-
-  let paceOrPower = null;
-  if (isBike && power > 0) {
-    paceOrPower = `${Math.round(power)} W`;
-  } else if (isSwim || isRun) {
-    const avgSpeed = Number(activity.avgSpeed || activity.average_speed || 0);
-    const sport = activity.sport || activity.type || '';
-    // Pace is a different question from how long the session took: it asks how
-    // fast the athlete was while moving, so it keeps the moving clock and only
-    // falls back to the whole session when there is no other number.
-    const paceSecs = Number(
-      activity.movingTime || activity.moving_time || activity.totalTimerTime || dur,
-    );
-    if (avgSpeed > 0) {
-      paceOrPower = formatPaceFromSpeedMps(avgSpeed, unitSystem, sport);
-    } else if (dist > 0 && paceSecs > 0) {
-      paceOrPower = formatPaceFromDistanceAndDuration(dist, paceSecs, unitSystem, sport);
-    }
-  }
-
-  const tssVal = profile
-    ? resolveActivityTss(activity, profile, { user: profile })
-    : Number(activity.tss || activity.trainingStressScore || activity.trainingLoad || activity.manualTss || 0);
-  const tssStr = tssVal > 0 ? `${Math.round(tssVal)} TSS` : null;
-
-  const parts = [durStr, distStr, paceOrPower, tssStr].filter(Boolean);
-  return parts.length ? parts.join(' · ') : null;
 }
 
 function plannedWorkoutPreviewStats(pw, sportKey) {
