@@ -2,6 +2,10 @@ import React, { useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { Helmet } from 'react-helmet';
 import { LC, STYLE, Eyebrow, BrowserFrame, useReveal } from '../components/About/marketingKit';
+import {
+  APP_CARDS_STYLE, PhotoShowcase, LactateTestCard, ThresholdPairCard, ZonesCard, ThresholdTrendCard,
+  TimeInZonesCard,
+} from '../components/About/appCards';
 import SiteNav from '../components/About/SiteNav';
 import SiteFooter from '../components/About/SiteFooter';
 import { COACH_PLAN_PRICE_LABEL } from '../constants/planPricing';
@@ -84,6 +88,7 @@ const ForTesters = () => {
       </Helmet>
 
       <style>{STYLE}</style>
+      <style>{APP_CARDS_STYLE}</style>
 
       <SiteNav ctaHref="/signup?plan=coach" />
 
@@ -113,12 +118,11 @@ const ForTesters = () => {
           {/* A composed shot, not a screenshot — it carries its own background,
               so a BrowserFrame around it would be a browser drawn around a
               photograph of a track. */}
-          <div ref={pushRef} className="lc-reveal right lc-float">
-            <img
-              src="/about-design/hero-lactate-curve.jpg"
+          <div ref={pushRef} className="lc-reveal right">
+            <PhotoShowcase
+              src="/about-design/hero-lactate-curve.jpg" ratio="4 / 3" priority cardScale={0.78}
               alt="A lactate curve with LT1 and LT2 marked and a test-to-test zone comparison, shown on a tablet and phone beside a running track"
-              loading="eager"
-              style={{ display: 'block', width: '100%', borderRadius: 18, boxShadow: '0 24px 60px rgba(15,23,41,.16)' }}
+              cards={[<ThresholdPairCard key="thresholds" />]}
             />
           </div>
         </div>
@@ -143,17 +147,32 @@ const ForTesters = () => {
         </div>
       </section>
 
-      {/* The section that described the visit had no picture of one. */}
+      {/* The section that described the visit had no picture of one — and a
+          screenshot parked beside a photograph reads as two separate things.
+          The app sits *on* the photo instead: the curve over the lab, the
+          zones over the sample, the test-to-test shift over the report. */}
       <section className="lc-sectpad" style={{ paddingTop: 8, paddingBottom: 8 }}>
-        <div ref={pushRef} className="lc-reveal" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
-          {[
-            ['/marketing/athlete-testing.webp', 'A step test running in a performance lab, technician recording the stages'],
-            ['/marketing/testing.webp', 'A capillary sample taken from a cyclist mid-stage'],
-            ['/marketing/pdf-report.webp', 'The finished report handed across the desk to the athlete'],
-          ].map(([src, alt]) => (
-            <img key={src} src={src} alt={alt} loading="lazy" width="1600" height="1067"
-              style={{ display: 'block', width: '100%', borderRadius: 14, aspectRatio: '3 / 2', objectFit: 'cover' }} />
-          ))}
+        <div ref={pushRef} className="lc-reveal">
+          <PhotoShowcase
+            src="/marketing/athlete-testing.webp"
+            alt="A step test running in a performance lab, technician recording the stages"
+            width="1600" height="1067"
+            cards={[<LactateTestCard key="curve" />, <ThresholdPairCard key="thresholds" />]}
+          />
+        </div>
+        <div ref={pushRef} className="lc-reveal" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 20, marginTop: 20 }}>
+          <PhotoShowcase
+            src="/marketing/testing.webp" ratio="4 / 3"
+            alt="A capillary sample taken from a cyclist mid-stage"
+            width="1600" height="1067"
+            cards={[<ZonesCard key="zones" />]}
+          />
+          <PhotoShowcase
+            src="/marketing/pdf-report.webp" ratio="4 / 3"
+            alt="The finished report handed across the desk to the athlete"
+            width="1600" height="1067"
+            cards={[<ThresholdTrendCard key="trend" />]}
+          />
         </div>
       </section>
 
@@ -199,6 +218,22 @@ const ForTesters = () => {
               <p style={{ margin: 0, fontSize: 14, color: LC.muted, lineHeight: 1.55 }}>{f.d}</p>
             </div>
           ))}
+        </div>
+      </section>
+
+      {/* The components themselves, live — the reader can switch sport, pick a
+          stage off the curve and see the zones move before they sign up. */}
+      <section className="lc-sectpad" style={{ paddingTop: 24 }}>
+        <div ref={pushRef} className="lc-reveal" style={{ marginBottom: 30 }}>
+          <Eyebrow>Try it here</Eyebrow>
+          <h2 className="lc-big" style={{ margin: '14px 0 8px' }}>The real thing, not a screenshot</h2>
+          <p className="lc-lead">These are the components out of the app. Click a stage on the curve, switch sport, pick a zone.</p>
+        </div>
+        <div ref={pushRef} className="lc-reveal" style={{ display: 'flex', flexWrap: 'wrap', gap: 20, justifyContent: 'center' }}>
+          <LactateTestCard />
+          <ZonesCard />
+          <ThresholdTrendCard />
+          <TimeInZonesCard />
         </div>
       </section>
 

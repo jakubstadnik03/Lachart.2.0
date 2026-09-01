@@ -54,8 +54,8 @@ export default function About() {
   // Nav-shadow on scroll + Back-to-top visibility. One scroll listener
   // drives both + a scroll progress ratio (0..1) that the back-to-top
   // button reads as a conic-gradient `--p` to render a filling border.
-  // Visibility kicks in early (~120 px) so the button appears as soon as
-  // the user starts scrolling, not deep into the page.
+  // Visibility kicks in at ~40 px so the button is there on the first flick
+  // of the wheel, not once the reader is already committed to the page.
   const [navScrolled, setNavScrolled] = useState(false);
   const [showToTop, setShowToTop] = useState(false);
   const toTopRef = useRef(null);
@@ -63,7 +63,7 @@ export default function About() {
     const onScroll = () => {
       const y = window.scrollY;
       setNavScrolled(y > 8);
-      setShowToTop(y > 120);
+      setShowToTop(y > 40);
       // Compute scroll progress (0 → 1). max scroll = doc height − viewport.
       const max = Math.max(1,
         (document.documentElement.scrollHeight || document.body.scrollHeight) - window.innerHeight);
@@ -270,7 +270,10 @@ export default function About() {
         viewport. Supported in all modern evergreen browsers (Chrome 90+,
         Safari 15.4+, Firefox 81+).
       */}
-      <div className="lc-page lc-page-in" style={{ overflowX: 'clip' }}>
+      {/* lc-snap opts this page into proximity scroll-snapping — see the
+          .lc-snap block in marketingKit. The other marketing pages are short
+          enough to read straight through and do not use it. */}
+      <div className="lc-page lc-page-in lc-snap" style={{ overflowX: 'clip' }}>
         <div className="lc-progress" aria-hidden />
         {/* ── 1. Top banner ────────────────────────────────────────────── */}
         <div style={{
@@ -1749,7 +1752,7 @@ export default function About() {
         <SiteFooter />
 
         {/* Back-to-top floating button with a scroll-progress ring around
-            the edge. Shows as soon as the user scrolls past ~120 px. The
+            the edge. Shows as soon as the user scrolls past ~40 px. The
             ring fills clockwise as the page is scrolled — `--p` (0..1) is
             written on every scroll frame and the conic-gradient mask in
             CSS turns that into the visible progress arc. */}

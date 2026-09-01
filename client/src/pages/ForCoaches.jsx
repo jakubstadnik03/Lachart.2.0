@@ -2,6 +2,11 @@ import React, { useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { Helmet } from 'react-helmet';
 import { LC, STYLE, Eyebrow, BrowserFrame, useReveal } from '../components/About/marketingKit';
+import {
+  APP_CARDS_STYLE, PhotoShowcase, CalendarCard, SessionListCard, WeekTssCard,
+  FormCard, TrainingHistoryCard, WorkoutGraphCard, LapsTableCard, PowerRadarCard,
+  ProgressCard, IntervalTrainingsCard, ThresholdTrendCard,
+} from '../components/About/appCards';
 import SiteNav from '../components/About/SiteNav';
 import SiteFooter from '../components/About/SiteFooter';
 
@@ -44,6 +49,31 @@ const FEATURES = [
   { t: 'Talk about the session itself', d: 'Comments live on the training, not in a separate thread — the athlete asks about Tuesday under Tuesday.' },
 ];
 
+/* The checklist a coach arrives with when they are already on TrainingPeaks
+   or Coachbox. Every line maps to something the app ships — the calendar and
+   builder in WorkoutPlanner, CTL/ATL/TSB in FormFitnessChart, peak curves in
+   ActivityPeaksTab, the season plan in ATP, laps and streams in FitAnalysis. */
+const PARITY = [
+  ['Unlimited athletes', 'One workspace, switch between them in a tap.'],
+  ['Training calendar', 'Plan and completed on one grid, per athlete.'],
+  ['Structured workout builder', 'Steps, ramps, repeats and groups with real targets.'],
+  ['Workout library', 'Save a session as a template and reuse it across the roster.'],
+  ['Push to Garmin', 'The session lands on their watch as a structured workout.'],
+  ['Planned vs completed', 'Duration, distance, load and power against what you asked for.'],
+  ['TSS, IF and work', 'Load per session and per week, on power, pace or heart rate.'],
+  ['Fitness / fatigue / form', 'CTL, ATL and TSB per athlete across the season.'],
+  ['Annual training plan', 'Periodised blocks, target load, races and taper.'],
+  ['Peak power & pace curves', '5 s to 5 h, this block against all time.'],
+  ['Laps & stream analysis', 'Every lap and every channel, drag to zoom and measure.'],
+  ['Workout comparison', 'The same session against every previous attempt.'],
+  ['Time in zones', 'Per session and per period, from measured thresholds.'],
+  ['Strava, Garmin & Apple Health', 'Automatic sync, plus .FIT upload.'],
+  ['Automatic categorisation', 'Sessions sorted into endurance, LT1, LT2 and VO₂max.'],
+  ['Comments on the session', 'The athlete asks about Tuesday under Tuesday.'],
+  ['Health monitoring', 'Sleep, HRV, resting HR, illness and injury episodes.'],
+  ['Branded PDF reports', 'Your logo on the test report the athlete keeps.'],
+];
+
 const Check = () => (
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={LC.primary} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><path d="M20 6 9 17l-5-5" /></svg>
 );
@@ -81,6 +111,7 @@ const ForCoaches = () => {
       </Helmet>
 
       <style>{STYLE}</style>
+      <style>{APP_CARDS_STYLE}</style>
 
       <SiteNav ctaHref="/signup?plan=coach" />
 
@@ -102,11 +133,13 @@ const ForCoaches = () => {
             </div>
             <p style={{ color: LC.muted, fontSize: 13.5, marginTop: 14 }}>No charge today · cancel anytime · unlimited athletes</p>
           </div>
-          <div ref={pushRef} className="lc-reveal right lc-float">
-            <img src="/marketing/coach-sceen.webp"
+          <div ref={pushRef} className="lc-reveal right">
+            <PhotoShowcase
+              src="/marketing/coach-sceen.webp" ratio="4 / 3" priority
               alt="A coach at a standing desk reviewing an athlete's lactate test on two screens"
-              loading="eager" width="1600" height="1067"
-              style={{ display: 'block', width: '100%', borderRadius: 18, boxShadow: '0 24px 60px rgba(15,23,41,.18)' }} />
+              width="1600" height="1067"
+              cards={[<FormCard key="form" />]}
+            />
           </div>
         </div>
         <style>{`@media (max-width: 900px){ .lc-fc-hero { grid-template-columns: 1fr !important; gap: 32px !important; } }`}</style>
@@ -142,14 +175,64 @@ const ForCoaches = () => {
         </div>
       </section>
 
+      {/* The workspace over the work — the calendar and the day that came back
+          from it, laid on the photograph rather than beside it. */}
       <section className="lc-sectpad" style={{ paddingTop: 8, paddingBottom: 8 }}>
-        <div ref={pushRef} className="lc-reveal" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
-          {[
-            ['/marketing/coach-athlete-phone.webp', 'A coach and an athlete going through a session together after training'],
-            ['/marketing/coach-graph.webp', 'A coach reading an athlete\u2019s week at a desk'],
-          ].map(([src, alt]) => (
-            <img key={src} src={src} alt={alt} loading="lazy" width="1600" height="1067"
-              style={{ display: 'block', width: '100%', borderRadius: 14, aspectRatio: '3 / 2', objectFit: 'cover' }} />
+        <div ref={pushRef} className="lc-reveal">
+          <PhotoShowcase
+            src="/marketing/coach-graph.webp"
+            alt="A coach reading an athlete’s week at a desk"
+            width="1600" height="1067"
+            cards={[<CalendarCard key="calendar" />, <SessionListCard key="sessions" />]}
+          />
+        </div>
+        <div ref={pushRef} className="lc-reveal" style={{ marginTop: 20 }}>
+          <PhotoShowcase
+            src="/marketing/coach-athlete-phone.webp" ratio="21 / 9"
+            alt="A coach and an athlete going through a session together after training"
+            width="1600" height="1067"
+            cards={[<WeekTssCard key="week" />, <ThresholdTrendCard key="trend" />]}
+          />
+        </div>
+      </section>
+
+      {/* The workspace itself, live. Not screenshots — the real components,
+          with the toggles and filters wired up. */}
+      <section className="lc-sectpad" style={{ paddingTop: 24 }}>
+        <div ref={pushRef} className="lc-reveal" style={{ marginBottom: 30 }}>
+          <Eyebrow>The analysis</Eyebrow>
+          <h2 className="lc-big" style={{ margin: '14px 0 8px' }}>What a session turns into once it lands</h2>
+          <p className="lc-lead">Every card below is the real component out of the app. Click them.</p>
+        </div>
+        <div ref={pushRef} className="lc-reveal" style={{ display: 'flex', flexWrap: 'wrap', gap: 20, justifyContent: 'center' }}>
+          <WorkoutGraphCard />
+          <TrainingHistoryCard />
+          <IntervalTrainingsCard />
+          <LapsTableCard />
+          <PowerRadarCard />
+          <ProgressCard />
+        </div>
+      </section>
+
+      {/* The checklist a coach arrives with from another platform. */}
+      <section className="lc-sectpad" style={{ paddingTop: 24 }}>
+        <div ref={pushRef} className="lc-reveal" style={{ marginBottom: 26 }}>
+          <Eyebrow>Coming from TrainingPeaks?</Eyebrow>
+          <h2 className="lc-big" style={{ margin: '14px 0 8px' }}>Everything you coach with, plus the test underneath it</h2>
+          <p className="lc-lead">
+            The whole coaching platform is here. The difference is what the zones are made of — a
+            measured lactate curve rather than a percentage of an estimate.
+          </p>
+        </div>
+        <div ref={pushRef} className="lc-reveal" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 12 }}>
+          {PARITY.map(([t, d]) => (
+            <div key={t} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+              <Check />
+              <div>
+                <div style={{ fontSize: 14.5, fontWeight: 700, color: LC.ink }}>{t}</div>
+                <div style={{ fontSize: 13.5, color: LC.muted, lineHeight: 1.5 }}>{d}</div>
+              </div>
+            </div>
           ))}
         </div>
       </section>

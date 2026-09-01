@@ -4,8 +4,13 @@
     {
       "name": "client",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["--prefix", "client", "start"],
-      "port": 3000
+      "runtimeArgs": [
+        "--prefix",
+        "client",
+        "start"
+      ],
+      "port": 3000,
+      "autoPort": true
     }
   ]
 }

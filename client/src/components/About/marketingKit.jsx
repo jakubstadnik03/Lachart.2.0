@@ -251,6 +251,36 @@ export const STYLE = `
     transition: transform .15s linear;
   }
 
+  /* ── Scroll snapping — opt-in, About only (.lc-snap on the page root) ──
+     Proximity, never mandatory. Several sections here are taller than the
+     viewport, and mandatory snapping on those traps the user: every attempt to
+     scroll through the middle of a long section gets yanked back to its start.
+     Proximity only engages when a section edge is already close, so a normal
+     read is untouched and a flick between sections lands on one.
+
+     scroll-padding-top clears the sticky nav — without it a snapped section's
+     heading parks underneath the bar. Snapping is turned off entirely for
+     reduced-motion users, for whom the pull is disorienting rather than nice. */
+  html:has(.lc-snap) {
+    scroll-snap-type: y proximity;
+    scroll-padding-top: 76px;
+  }
+  .lc-snap > section {
+    scroll-snap-align: start;
+    scroll-snap-stop: normal;
+  }
+  /* The hero and the first section are deliberately NOT snap targets. With a
+     snap point sitting at y = 0, the first gentle wheel tick gets pulled
+     straight back to the top — which also means the back-to-top button never
+     crosses its threshold. Leaving the top of the page unsnapped lets a small
+     scroll be a small scroll. */
+  .lc-snap > header,
+  .lc-snap > section:first-of-type { scroll-snap-align: none; }
+  @media (prefers-reduced-motion: reduce) {
+    html:has(.lc-snap) { scroll-snap-type: none; scroll-behavior: auto; }
+    .lc-snap > section { scroll-snap-align: none; }
+  }
+
   /* Page entrance — fade the whole page in from 0.96 scale on mount. */
   @keyframes lc-page-in { from { opacity: 0; transform: scale(.985); } to { opacity: 1; transform: none; } }
   .lc-page-in { animation: lc-page-in .6s cubic-bezier(.2,.7,.2,1) both; }
@@ -409,6 +439,30 @@ export const STYLE = `
   .lc-totop > svg { position: relative; z-index: 2; }
   .lc-totop:hover::after { background: ${LC.primary}; }
   .lc-totop.lc-show { opacity: 1; pointer-events: auto; transform: translateY(0); }
+  /* The arrow itself drifts up and settles, on a loop, so the control reads as
+     a direction rather than a dot. Pauses under the cursor — an element that
+     keeps moving while you are aiming at it is a worse target. */
+  @keyframes lc-totop-bob {
+    0%, 62%, 100% { transform: translateY(0); }
+    28%           { transform: translateY(-4px); }
+  }
+  /* Transform only — opacity stays owned by the .lc-show rule and its
+     transition. An animation that also drove opacity left the button stuck
+     invisible whenever animations were frozen (a backgrounded tab), because
+     the held keyframe was the transparent one. */
+  @keyframes lc-totop-pop {
+    from { transform: translateY(10px) scale(.82); }
+    60%  { transform: translateY(-2px) scale(1.06); }
+    to   { transform: translateY(0) scale(1); }
+  }
+  .lc-totop.lc-show { animation: lc-totop-pop .38s cubic-bezier(.2,.7,.2,1); }
+  .lc-totop.lc-show > svg { animation: lc-totop-bob 2.6s ease-in-out infinite; }
+  .lc-totop:hover > svg { animation-play-state: paused; transform: translateY(-2px); }
+  .lc-totop:active > svg { transform: translateY(0); }
+  .lc-totop > svg { transition: transform .18s cubic-bezier(.2,.7,.2,1); }
+  @media (prefers-reduced-motion: reduce) {
+    .lc-totop.lc-show, .lc-totop.lc-show > svg { animation: none; }
+  }
   @media (max-width: 520px) {
     .lc-totop { bottom: 16px; right: 16px; width: 46px; height: 46px; --ring: 2.5px; }
   }

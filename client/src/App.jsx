@@ -63,6 +63,8 @@ const AdminDashboard = lazy(() => import('./pages/AdminDashboard'));
 const WorkoutPlannerPage = lazy(() => import('./pages/WorkoutPlannerPage'));
 const ForTestersPage = lazy(() => import('./pages/ForTesters'));
 const ForAthletesPage = lazy(() => import('./pages/ForAthletes'));
+const FeaturesIndex = lazy(() => import('./pages/features/FeaturesIndex'));
+const FeaturePage = lazy(() => import('./pages/features/FeaturePage'));
 const HealthPage = lazy(() => import('./pages/HealthPage'));
 const AtpPage = lazy(() => import('./pages/AtpPage'));
 const WorkoutExecutionPage = lazy(() => import('./pages/WorkoutExecutionPage'));
@@ -289,6 +291,8 @@ function AppRoutes() {
         <Route path="/for-testers" element={<ForTestersPage />} />
         <Route path="/for-athletes" element={<ForAthletesPage />} />
         <Route path="/for-coaches" element={<ForCoaches />} />
+        <Route path="/features" element={<FeaturesIndex />} />
+        <Route path="/features/:slug" element={<FeaturePage />} />
         <Route path="/how-to-use" element={<Tutorials />} />
         <Route path="/tutorials" element={<Tutorials />} />
         <Route path="/privacy" element={<Privacy />} />
