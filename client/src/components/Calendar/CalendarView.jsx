@@ -7,6 +7,7 @@ import TrainingFormComponent from '../TrainingForm';
 import SessionProgressChart from '../training/SessionProgressChart';
 import TimeInZonesBar from '../training/TimeInZonesBar';
 import PeakValuesChart, { readPower, readHeartRate } from '../training/PeakValuesChart';
+import WorkoutStepsCompliance from '../training/WorkoutStepsCompliance';
 import ActivityPeaksTab from '../training/ActivityPeaksTab';
 import SessionVsTestPanel from '../training/SessionVsTestPanel';
 import RunSplitsTable from '../training/RunSplitsTable';
@@ -33,6 +34,7 @@ import {
 } from '@heroicons/react/24/outline';
 import SportIcon from '../shared/SportIcon';
 import { DurationPickerField, DurationPickerSheet } from '../shared/DurationWheelPicker.jsx';
+import { zoneContextFromProfile } from '../../utils/zoneContext';
 import api, { getSimilarActivities, getRaceEvents, fetchWeeklyReviews, saveWeeklyReview } from '../../services/api';
 import {
   formatDistance,
@@ -3946,6 +3948,8 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
   };
 
   const planSteps = Array.isArray(plannedWorkout?.steps) ? plannedWorkout.steps : [];
+  // "@ 88-93% FTP" is only a number once the athlete's thresholds are known.
+  const zoneContext = useMemo(() => zoneContextFromProfile(tssProfile), [tssProfile]);
 
   // ── Seed completed-metadata form when opening a different activity ──
   useEffect(() => {
@@ -6083,20 +6087,19 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                           </div>
                         );
                       })()}
+                      {/* The steps as chips said only how long each one was,
+                          which the athlete already knew — they wrote it. What
+                          the plan is actually asking is whether the target was
+                          hit, so each step now carries its band and what was
+                          ridden in its window. */}
                       {planSteps.length > 0 && (
                         <div className="flex-1 min-w-[200px]">
-                          <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide mb-2">Intervals</div>
-                          <div className="flex flex-wrap gap-1">
-                            {planSteps.filter(s => !s.isGroupHeader).map((s, i) => {
-                              const stepColor = s.type === 'work' ? color : s.type === 'warmup' ? '#fbbf24' : s.type === 'cooldown' ? '#38bdf8' : '#6ee7b7';
-                              return (
-                                <div key={i} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-gray-50 border-l-2 text-[10px]" style={{ borderLeftColor: stepColor }}>
-                                  <span className="font-semibold text-gray-700 capitalize">{s.type || 'Step'}{s.groupId ? ` ×${s.groupRepeat || 1}` : ''}</span>
-                                  <span className="font-bold text-gray-500">{fmtPlanDuration(s.durationSeconds)}</span>
-                                </div>
-                              );
-                            })}
-                          </div>
+                          <WorkoutStepsCompliance
+                            steps={planSteps}
+                            records={chartTraining?.records}
+                            sport={merged?.sport || sport}
+                            context={zoneContext}
+                          />
                         </div>
                       )}
                     </div>

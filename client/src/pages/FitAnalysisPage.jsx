@@ -14,6 +14,7 @@ import IntervalChart from '../components/FitAnalysis/IntervalChart';
 import { getIntegrationStatus } from '../services/api';
 import { listExternalActivities } from '../services/api';
 import { dedupeMergedCalendarActivities } from '../utils/dedupeMergedCalendarActivities';
+import { buildZoneContext } from '../utils/zoneContext';
 import { mapExternalActivitiesToCalendar } from '../utils/mapExternalActivityToCalendar';
 import { getStravaActivityDetail, updateStravaActivity, getAllTitles, createStravaLap, deleteStravaLap, getTrainingById, addTraining, updateTraining } from '../services/api';
 import api from '../services/api';
@@ -2360,21 +2361,9 @@ const FitAnalysisPage = () => {
   }, [selectedAthleteId, user?.role, user?._id, selectedStrava, loadStravaDetail, pendingAthleteIds]);
 
   /** Load planned workouts + templates + athlete power context for the calendar overlay */
-  // ── Helper: build planContext from profile powerZones ─────────────────────
-  const buildContextFromProfile = useCallback((pz) => {
-    if (!pz) return null;
-    const cyclingZones  = pz.cycling  || null;
-    const runningZones  = pz.running  || null;
-    const swimmingZones = pz.swimming || null;
-    // LT2/LT1 directly from profile fields; fall back to zone4/zone3 boundaries
-    const lt2Power = cyclingZones?.lt2 || cyclingZones?.zone4?.min || null;
-    const lt1Power = cyclingZones?.lt1 || cyclingZones?.zone3?.min || null;
-    const lt2Pace  = runningZones?.lt2  || runningZones?.zone4?.min  || null;
-    const lt1Pace  = runningZones?.lt1  || runningZones?.zone3?.min  || null;
-    const lt2Swim  = swimmingZones?.lt2 || swimmingZones?.zone4?.min || null;
-    const lt1Swim  = swimmingZones?.lt1 || swimmingZones?.zone3?.min || null;
-    return { ftp: lt2Power || 250, lt2Power, lt1Power, lt2Pace, lt1Pace, lt2Swim, lt1Swim, cyclingZones, runningZones, swimmingZones };
-  }, []);
+  // The session detail grades each step against the same thresholds, so this
+  // mapping lives in one place rather than once per screen.
+  const buildContextFromProfile = useCallback((pz) => buildZoneContext(pz), []);
 
   // ── When userProfile loads/changes, push zone data into planContext ────────
   useEffect(() => {
