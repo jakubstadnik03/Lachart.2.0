@@ -11,6 +11,7 @@ import { logUserRegistration } from '../utils/eventLogger';
 import { AnimatePresence, motion as m } from 'framer-motion';
 import EditProfileModal from '../components/Profile/EditProfileModal';
 import StravaConnectModal from '../components/Onboarding/StravaConnectModal';
+import CoachUseCaseModal from '../components/Onboarding/CoachUseCaseModal';
 import api from '../services/api';
 import AuthSideCarousel from '../components/Auth/AuthSideCarousel';
 import { isCapacitorNative } from '../utils/isNativeApp';
@@ -35,6 +36,7 @@ const SignUpPage = () => {
   const [showTermsModal, setShowTermsModal] = useState(false);
   const [showEditProfileModal, setShowEditProfileModal] = useState(false);
   const [showStravaModal, setShowStravaModal] = useState(false);
+  const [showUseCaseModal, setShowUseCaseModal] = useState(false);
   const [newUser, setNewUser] = useState(null);
   const [showGoogleRoleModal, setShowGoogleRoleModal] = useState(false);
   const [pendingGoogleCredential, setPendingGoogleCredential] = useState(null);
@@ -58,6 +60,21 @@ const SignUpPage = () => {
       body.style.overflow = prevBodyOverflow;
     };
   }, []);
+
+  /**
+   * Remember the answer and open the screen that job starts on. A testing coach
+   * is not sent to connect Strava — they have nothing to connect and the ask
+   * reads as a wall on the way in.
+   */
+  const handleCoachUseCase = async (choice) => {
+    setShowUseCaseModal(false);
+    try {
+      await api.put('/user/edit-profile', { onboarding: { coachUseCase: choice } });
+    } catch {
+      // Routing is the point; failing to record the answer is not worth a stop.
+    }
+    navigate(choice === 'testing' ? '/testing' : '/athletes', { replace: true });
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -567,6 +584,12 @@ const SignUpPage = () => {
             </m.div>
           )}
         </AnimatePresence>
+
+        <CoachUseCaseModal
+          isOpen={showUseCaseModal}
+          onChoose={handleCoachUseCase}
+          onSkip={() => { setShowUseCaseModal(false); setShowStravaModal(true); }}
+        />
 
         {/* Strava modal */}
         <StravaConnectModal
@@ -1190,8 +1213,10 @@ const SignUpPage = () => {
           isOpen={showEditProfileModal}
           onClose={() => {
             setShowEditProfileModal(false);
-            // After closing edit profile, show Strava connect modal
-            setShowStravaModal(true);
+            // A coach is asked which of the two products they came for; the
+            // answer picks the first screen. Everyone else carries on to Strava.
+            if ((newUser?.role || formData.role) === 'coach') setShowUseCaseModal(true);
+            else setShowStravaModal(true);
           }}
           onSubmit={async (formData) => {
             try {
@@ -1203,7 +1228,8 @@ const SignUpPage = () => {
                 window.dispatchEvent(new CustomEvent('userUpdated', { detail: response.data }));
                 // Close edit profile modal and show Strava modal
                 setShowEditProfileModal(false);
-                setShowStravaModal(true);
+                if ((response.data?.role || formData.role) === 'coach') setShowUseCaseModal(true);
+                else setShowStravaModal(true);
               }
             } catch (error) {
               console.error('Error updating profile:', error);

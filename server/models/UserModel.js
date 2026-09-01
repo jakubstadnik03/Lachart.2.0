@@ -279,6 +279,12 @@ const userSchema = new mongoose.Schema({
     whatsNewSeenTag: { type: String, default: null },
     featureTourDone: { type: Boolean, default: false },
     welcomePaywallDone: { type: Boolean, default: false },
+    /**
+     * Which of the two coach products this account came for — 'testing'
+     * (step tests for clients, a PDF back) or 'coaching' (a roster on a plan).
+     * Chooses the first screen after signup; null means never asked or skipped.
+     */
+    coachUseCase: { type: String, enum: ['testing', 'coaching', null], default: null },
     iosLaunchDone: { type: Boolean, default: false }
   },
   // User preferences for units
