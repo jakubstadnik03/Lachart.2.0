@@ -3606,7 +3606,6 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
 
   // Planned workout editing state
   const [plannedWorkout, setPlannedWorkout] = useState(initialPlannedWorkout || null);
-  const [editingPlanned, setEditingPlanned] = useState(!initialPlannedWorkout);
 
   // Completed metadata edit state
   const [completedForm, setCompletedForm] = useState({ title: '', description: '', distanceKm: '', durationDisplay: '', tss: '', calories: '', rpe: '', lactate: '', whenDate: '', whenTime: '' });
@@ -3976,7 +3975,6 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
         saved = await createPlannedWorkout(payload, athleteId);
       }
       setPlannedWorkout(saved);
-      setEditingPlanned(false);
       const savedDistDisplay = planDistanceMetresToDisplay(saved.plannedDistance);
       const savedDistMetres = (() => {
         const n = Number(saved.plannedDistance);
@@ -4881,9 +4879,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                 if (mobileView === 'edit') {
                   setDurationPickerField(null);
                   setMobileView('summary');
-                  setEditingPlanned(false);
                 } else {
-                  setEditingPlanned(true);
                   setMobileView('edit');
                 }
               }}
@@ -5243,7 +5239,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                 when there's no plan yet, so Summary doesn't lose discoverability. */}
             {!plannedWorkout && (
               <div className="px-4 py-3 border-t border-gray-100">
-                <button onClick={() => { setEditingPlanned(true); setMobileView('edit'); }}
+                <button onClick={() => setMobileView('edit')}
                   className="w-full text-sm font-semibold px-4 py-2.5 rounded-xl border border-dashed border-gray-300 text-gray-500 active:bg-gray-50">
                   + Add planned workout
                 </button>
@@ -5891,7 +5887,12 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
               the right column rather than the whole body, and the right column
               is exactly the laps table it needs to stay visible for. */}
           <div className="xl:grid xl:grid-cols-[minmax(0,380px)_minmax(0,1fr)] xl:items-start">
-            <div className="min-w-0 xl:border-r xl:border-gray-100">
+            {/* The left column stays put while the trace and the laps scroll
+                past it: the numbers and the prescription are what you read the
+                right-hand side against, and having to scroll back for them
+                defeats the point of putting them side by side. It scrolls
+                inside itself only when it is taller than the modal. */}
+            <div className="min-w-0 xl:border-r xl:border-gray-100 xl:sticky xl:top-0 xl:self-start xl:max-h-[calc(94vh-64px)] xl:overflow-y-auto">
 
               {/* ── Stats row — compact grouped ── */}
               <div className="px-5 pt-3 pb-3 flex flex-wrap gap-1.5 items-start border-b border-gray-50">
@@ -6063,10 +6064,14 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
               {/* ── Planned section (edit / view) ── */}
               <div className="border-t border-gray-100 px-5 py-4">
                 <div className="flex items-center justify-between mb-3">
-                  <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">{plannedWorkout && !editingPlanned && dur > 0 ? 'Planned vs Completed' : 'Planned'}</span>
-                  {plannedWorkout && !editingPlanned && (
+                  <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">{plannedWorkout && dur > 0 ? 'Planned vs Completed' : 'Planned'}</span>
+                  {/* One Edit for the session, not one per side. There used to be
+                      a second form here that could only touch the plan, so
+                      correcting a duration on both sides meant finding two
+                      pencils and saving twice. */}
+                  {plannedWorkout && !editingCompleted && (
                     <button
-                      onClick={() => setEditingPlanned(true)}
+                      onClick={() => setEditingCompleted(true)}
                       className="flex items-center gap-1 text-[10px] font-semibold px-2 py-1 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 transition-colors"
                     >
                       <PencilIcon className="w-3 h-3" /> Edit
@@ -6074,68 +6079,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                   )}
                 </div>
 
-                {editingPlanned ? (
-                  <div className="flex flex-col gap-3">
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Title</label>
-                        <input type="text" value={planForm.title} onChange={e => setPlanForm(p => ({ ...p, title: e.target.value }))} placeholder={title}
-                          className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2" />
-                      </div>
-                      <div>
-                        <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Target TSS</label>
-                        <input type="number" value={planForm.targetTss} onChange={e => setPlanForm(p => ({ ...p, targetTss: e.target.value }))} placeholder={tss > 0 ? String(Math.round(tss)) : ''}
-                          className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2" min="0" />
-                      </div>
-                      <div>
-                        <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">
-                          Duration {planForm.durationMins > 0 && <span className="font-normal normal-case text-gray-400">({formatMinutes(planForm.durationMins)})</span>}
-                        </label>
-                        <input type="text" value={planForm.durationDisplay}
-                          onChange={e => setPlanForm(p => ({ ...p, durationDisplay: e.target.value, durationMins: null }))}
-                          onBlur={() => { const mins = parseDurationToMinutes(planForm.durationDisplay); if (mins != null && mins > 0) setPlanForm(p => ({ ...p, durationMins: mins, durationDisplay: formatMinutes(mins) })); }}
-                          placeholder={dur > 0 ? formatMinutes(Math.round(dur/60)) : '1:30'}
-                          className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2" />
-                      </div>
-                      <div>
-                        <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Distance</label>
-                        <input type="text" value={planForm.distanceDisplay}
-                          onChange={e => setPlanForm(p => ({ ...p, distanceDisplay: e.target.value, distanceKm: null }))}
-                          onBlur={() => {
-                            const metres = parsePlanDistanceToMetres(planForm.distanceDisplay);
-                            if (metres != null && metres > 0) {
-                              setPlanForm(p => ({
-                                ...p,
-                                distanceKm: formatDistanceInputFromMetres(metres, unitSystem, { isSwim: isSwimForm }),
-                                distanceDisplay: formatDistanceFieldDisplay(metres, unitSystem, { isSwim: isSwimForm }),
-                              }));
-                            }
-                          }}
-                          placeholder={dist > 0 ? formatDistance(dist, unitSystem).formatted : distanceInputPlaceholder(unitSystem, isSwimForm)}
-                          className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2" />
-                      </div>
-                    </div>
-                    <div>
-                      <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Planned description</label>
-                      <textarea value={planForm.description} onChange={e => setPlanForm(p => ({ ...p, description: e.target.value }))} placeholder="Workout plan, intervals, coach instructions…" rows={3}
-                        className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 resize-none" />
-                    </div>
-                    <div className="flex gap-2">
-                      {plannedWorkout && (
-                        <button onClick={() => setEditingPlanned(false)} className="flex-1 py-2 rounded-xl border border-gray-200 text-sm font-semibold text-gray-500 hover:bg-gray-50 transition-colors">Cancel</button>
-                      )}
-                      <button onClick={handleSavePlan} disabled={savingPlan} className="flex-1 py-2 rounded-xl text-sm font-bold text-white transition-colors disabled:opacity-50" style={{ backgroundColor: color }}>
-                        {savingPlan ? 'Saving…' : plannedWorkout ? 'Save' : 'Add Planned'}
-                      </button>
-                      {plannedWorkout && onEditPlanned && (
-                        <button onClick={() => onEditPlanned(plannedWorkout)} className="flex-1 py-2 rounded-xl border text-sm font-semibold transition-colors flex items-center justify-center gap-1.5"
-                          style={{ borderColor: color + '60', color, backgroundColor: color + '08' }}>
-                          <PencilIcon className="w-3.5 h-3.5" /> Build Workout
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                ) : (
+                {(
                   plannedWorkout ? (
                     <div className="flex flex-wrap gap-4 items-start">
                       {/* Planned vs Completed comparison — TrainingPeaks-style two
@@ -6197,7 +6141,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                       )}
                     </div>
                   ) : (
-                    <button onClick={() => setEditingPlanned(true)} className="text-sm font-semibold px-4 py-2 rounded-xl border border-dashed border-gray-300 text-gray-400 hover:border-gray-400 hover:text-gray-600 transition-colors">
+                    <button onClick={() => setEditingCompleted(true)} className="text-sm font-semibold px-4 py-2 rounded-xl border border-dashed border-gray-300 text-gray-400 hover:border-gray-400 hover:text-gray-600 transition-colors">
                       + Add planned workout
                     </button>
                   )
