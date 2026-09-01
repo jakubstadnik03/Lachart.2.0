@@ -3724,6 +3724,23 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
   }, [profileProp, athleteId, authUser?._id, authUser?.id]);
 
   const tssProfile = profileProp || loadedProfile || authUser;
+
+  // The editor opens at the top of the left column, and the button that opens
+  // it can be most of a column further down — so from the Planned section it
+  // looked like Edit had done nothing at all.
+  const editorRef = useRef(null);
+  useEffect(() => {
+    if (!editingCompleted) return;
+    // A timeout, because the column needs a beat to take the editor's height
+    // into its own scroll height. And an instant jump rather than a smooth
+    // one: a smooth scroll is animated by the compositor and quietly does
+    // nothing when the tab is not compositing, which is a strange failure to
+    // leave in a control that is supposed to be reliable.
+    const id = setTimeout(() => {
+      editorRef.current?.scrollIntoView({ block: 'start' });
+    }, 60);
+    return () => clearTimeout(id);
+  }, [editingCompleted]);
   const title = merged.titleManual || merged.title || merged.name || merged.originalFileName || 'Activity';
   const displayTitle = (() => {
     const fromPlan = String(plannedWorkout?.title || '').trim();
@@ -5892,7 +5909,14 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                 right-hand side against, and having to scroll back for them
                 defeats the point of putting them side by side. It scrolls
                 inside itself only when it is taller than the modal. */}
-            <div className="min-w-0 xl:border-r xl:border-gray-100 xl:sticky xl:top-0 xl:self-start xl:max-h-[calc(94vh-64px)] xl:overflow-y-auto">
+            <div
+              className="min-w-0 xl:border-r xl:border-gray-100 xl:sticky xl:top-0 xl:self-start xl:max-h-[calc(94vh-64px)] xl:overflow-y-auto"
+              // Scroll anchoring keeps what you are looking at still when
+              // content appears above it — which for the editor means the
+              // column jumps down by exactly the editor's height, and the
+              // scroll that should reveal it gets overridden a frame later.
+              style={{ overflowAnchor: 'none' }}
+            >
 
               {/* ── Stats row — compact grouped ── */}
               <div className="px-5 pt-3 pb-3 flex flex-wrap gap-1.5 items-start border-b border-gray-50">
@@ -5987,10 +6011,14 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
               </div>
 
               {/* ── Inline edit panel (completed activity) ── */}
-              {editingCompleted && renderPlannedVsCompletedEditor({
-                onCancel: () => setEditingCompleted(false),
-                onSaved: () => setEditingCompleted(false),
-              })}
+              {editingCompleted && (
+                <div ref={editorRef}>
+                  {renderPlannedVsCompletedEditor({
+                    onCancel: () => setEditingCompleted(false),
+                    onSaved: () => setEditingCompleted(false),
+                  })}
+                </div>
+              )}
 
               {/* ── Description + notes ── */}
               {(notes || planComment || planDescription) && (
