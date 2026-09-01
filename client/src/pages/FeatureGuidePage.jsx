@@ -20,6 +20,7 @@ import { pinShellDuringKeyboard, scrollIntoViewWithin, scrollToTopWithin } from 
 import { GUIDE_SCROLL_TOP_EVENT } from '../utils/guideEvents';
 import { requestTrainingZonesModal } from '../utils/trainingZonesSetup';
 import { openGuideEntry } from '../utils/guideOpen';
+import WaysToUse from '../components/guide/WaysToUse';
 
 function FeatureCard({ entry, onOpen }) {
   const Icon = entry.icon;
@@ -268,7 +269,11 @@ export default function FeatureGuidePage() {
           </button>
         </header>
 
-        <div className="relative mt-5">
+        {/* Before the search box and the feature list, because someone who does
+            not yet know which of the three products this is cannot search it. */}
+        <WaysToUse className="mt-6" />
+
+        <div className="relative mt-8">
           <MagnifyingGlassIcon className="w-5 h-5 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
           <input
             type="search"
