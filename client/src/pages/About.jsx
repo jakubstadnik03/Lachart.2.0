@@ -33,7 +33,7 @@ import { trackEvent, trackCheckoutStarted } from '../utils/analytics';
 import { createCheckoutSession } from '../services/api';
 import SiteFooter from '../components/About/SiteFooter';
 import { ATHLETE_PLAN_PRICE_LABEL, COACH_PLAN_PRICE_LABEL } from '../constants/planPricing';
-import { LC, STYLE, Eyebrow, BrowserFrame, useReveal } from '../components/About/marketingKit';
+import { LC, STYLE, Eyebrow, BrowserFrame, useReveal, useScrollSettle } from '../components/About/marketingKit';
 
 const AboutGallerySection = React.lazy(() => import('../components/About/AboutGallerySection'));
 const IOSGalleryCarousel = React.lazy(() => import('../components/About/IOSGalleryCarousel'));
@@ -50,6 +50,10 @@ export default function About() {
   const revealRefs = useRef([]);
   const pushRef = (el) => { if (el && !revealRefs.current.includes(el)) revealRefs.current.push(el); };
   useReveal(revealRefs.current);
+
+  // Magnetic sections — see useScrollSettle. The .lc-snap class on the page
+  // root below is what it looks for.
+  useScrollSettle();
 
   // Nav-shadow on scroll + Back-to-top visibility. One scroll listener
   // drives both + a scroll progress ratio (0..1) that the back-to-top
@@ -1751,24 +1755,32 @@ export default function About() {
         {/* ── 23. Footer — shared with /privacy and /terms ─────────────── */}
         <SiteFooter />
 
-        {/* Back-to-top floating button with a scroll-progress ring around
-            the edge. Shows as soon as the user scrolls past ~40 px. The
-            ring fills clockwise as the page is scrolled — `--p` (0..1) is
-            written on every scroll frame and the conic-gradient mask in
-            CSS turns that into the visible progress arc. */}
-        <button
-          ref={toTopRef}
-          type="button"
-          aria-label="Back to top"
-          onClick={scrollToTop}
-          className={`lc-totop${showToTop ? ' lc-show' : ''}`}
-        >
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <path d="M12 19V5" />
-            <path d="M5 12l7-7 7 7" />
-          </svg>
-        </button>
       </div>
+
+      {/* Back-to-top floating button with a scroll-progress ring around the
+          edge. Shows as soon as the user scrolls past ~40 px. The ring fills
+          clockwise as the page is scrolled — `--p` (0..1) is written on every
+          scroll frame and the conic-gradient mask in CSS turns that into the
+          visible progress arc.
+
+          It sits OUTSIDE .lc-page deliberately. .lc-page-in animates a
+          transform on that element, and an ancestor with a transform becomes
+          the containing block for position: fixed — which pinned this button
+          to the bottom of a 19,000 px document instead of the viewport, i.e.
+          down in the footer. Nothing here may live under a transformed
+          ancestor. */}
+      <button
+        ref={toTopRef}
+        type="button"
+        aria-label="Back to top"
+        onClick={scrollToTop}
+        className={`lc-totop${showToTop ? ' lc-show' : ''}`}
+      >
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M12 19V5" />
+          <path d="M5 12l7-7 7 7" />
+        </svg>
+      </button>
     </>
   );
 }

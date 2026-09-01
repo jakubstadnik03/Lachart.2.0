@@ -57,6 +57,127 @@ export function useReveal(refs) {
   }, [refs, reduce]);
 }
 
+/* ─── Scroll settle — magnetic sections, eased by hand ──────────────────
+   CSS `scroll-snap-type: y proximity` was the obvious way to make the page
+   come to rest on a section, and it felt wrong: the browser owns the easing,
+   it fires the moment a gesture ends, and on a page whose sections run to
+   several thousand pixels the pull reads as the page being yanked out of your
+   hands rather than settling.
+
+   So the snap is done here instead. After scrolling stops for 140 ms, if the
+   nearest section start is within about a quarter of the viewport, the page
+   eases the rest of the way on a cubic ease-out. Anything further away is left
+   alone — you are reading, not navigating. Any real input (wheel, touch, key,
+   pointer) kills the animation on the frame it arrives, so it can never fight
+   the user for the scroll position.
+
+   `behavior: 'instant'` on each step matters: .lc-page sets
+   `scroll-behavior: smooth`, and without the override every frame of our own
+   animation would start a second, competing smooth scroll. */
+export function useScrollSettle(enabled = true) {
+  const reduce = useReducedMotion();
+  useEffect(() => {
+    if (!enabled || reduce) return undefined;
+
+    const NAV = 76;          // sticky nav height — a heading must clear it
+    const IDLE = 140;        // ms of quiet before we consider settling
+    const REACH = 0.26;      // settle only within this fraction of the viewport
+
+    let idleTimer = null;
+    let raf = null;
+    let animating = false;
+    let animStart = 0;
+
+    const cancel = () => {
+      if (raf) cancelAnimationFrame(raf);
+      raf = null;
+      animating = false;
+    };
+
+    // rAF stops being delivered in a background tab. An animation started just
+    // before the tab was hidden therefore never finishes, and without this the
+    // `animating` flag would stay true forever and wedge the hook for the rest
+    // of the session. Anything older than a second is dead by definition —
+    // the longest animation we schedule is 620 ms.
+    const clearIfStale = () => {
+      if (animating && performance.now() - animStart > 1000) cancel();
+    };
+
+    const settle = () => {
+      clearIfStale();
+      const root = document.querySelector('.lc-snap');
+      // No point easing a scroll nobody is looking at, and rAF would not run
+      // to deliver it anyway.
+      if (!root || animating || document.hidden) return;
+
+      const y = window.scrollY;
+      const max = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+      // Leave the very top and the very bottom alone — the hero and the footer
+      // are places you land deliberately, not places to be nudged.
+      if (y < 24 || y > max - 24) return;
+
+      // The first section is skipped for the same reason it was never a snap
+      // target: a settle point near y = 0 turns every small scroll into a
+      // trip back to the top.
+      const sections = Array.from(root.children)
+        .filter((el) => el.tagName === 'SECTION')
+        .slice(1);
+
+      let best = null;
+      sections.forEach((el) => {
+        const top = el.getBoundingClientRect().top + y - NAV;
+        const delta = top - y;
+        if (!best || Math.abs(delta) < Math.abs(best.delta)) best = { top, delta };
+      });
+      if (!best) return;
+
+      const reach = window.innerHeight * REACH;
+      if (Math.abs(best.delta) < 2 || Math.abs(best.delta) > reach) return;
+
+      const from = y;
+      const to = Math.max(0, Math.min(max, best.top));
+      const dist = to - from;
+      // Long hops get more time, short ones stay quick — a fixed duration makes
+      // a 20 px correction feel sluggish and a 200 px one feel abrupt.
+      const dur = Math.min(620, Math.max(240, Math.abs(dist) * 2.2));
+      const t0 = performance.now();
+
+      animating = true;
+      animStart = t0;
+      const step = (now) => {
+        const p = Math.min(1, (now - t0) / dur);
+        const eased = 1 - ((1 - p) ** 3);
+        window.scrollTo({ top: from + dist * eased, behavior: 'instant' });
+        if (p < 1) raf = requestAnimationFrame(step);
+        else cancel();
+      };
+      raf = requestAnimationFrame(step);
+    };
+
+    const schedule = () => {
+      clearTimeout(idleTimer);
+      idleTimer = setTimeout(settle, IDLE);
+    };
+    const onScroll = () => { clearIfStale(); if (!animating) schedule(); };
+    const onUser = () => { cancel(); schedule(); };
+
+    window.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('wheel', onUser, { passive: true });
+    window.addEventListener('touchstart', onUser, { passive: true });
+    window.addEventListener('pointerdown', onUser, { passive: true });
+    window.addEventListener('keydown', onUser);
+    return () => {
+      clearTimeout(idleTimer);
+      cancel();
+      window.removeEventListener('scroll', onScroll);
+      window.removeEventListener('wheel', onUser);
+      window.removeEventListener('touchstart', onUser);
+      window.removeEventListener('pointerdown', onUser);
+      window.removeEventListener('keydown', onUser);
+    };
+  }, [enabled, reduce]);
+}
+
 /* ─── Eyebrow pill (with pulsing dot) ─────────────────────────────────── */
 export const Eyebrow = ({ children }) => (
   <span
@@ -249,36 +370,6 @@ export const STYLE = `
     transform-origin: left center;
     transform: scaleX(var(--lc-progress, 0));
     transition: transform .15s linear;
-  }
-
-  /* ── Scroll snapping — opt-in, About only (.lc-snap on the page root) ──
-     Proximity, never mandatory. Several sections here are taller than the
-     viewport, and mandatory snapping on those traps the user: every attempt to
-     scroll through the middle of a long section gets yanked back to its start.
-     Proximity only engages when a section edge is already close, so a normal
-     read is untouched and a flick between sections lands on one.
-
-     scroll-padding-top clears the sticky nav — without it a snapped section's
-     heading parks underneath the bar. Snapping is turned off entirely for
-     reduced-motion users, for whom the pull is disorienting rather than nice. */
-  html:has(.lc-snap) {
-    scroll-snap-type: y proximity;
-    scroll-padding-top: 76px;
-  }
-  .lc-snap > section {
-    scroll-snap-align: start;
-    scroll-snap-stop: normal;
-  }
-  /* The hero and the first section are deliberately NOT snap targets. With a
-     snap point sitting at y = 0, the first gentle wheel tick gets pulled
-     straight back to the top — which also means the back-to-top button never
-     crosses its threshold. Leaving the top of the page unsnapped lets a small
-     scroll be a small scroll. */
-  .lc-snap > header,
-  .lc-snap > section:first-of-type { scroll-snap-align: none; }
-  @media (prefers-reduced-motion: reduce) {
-    html:has(.lc-snap) { scroll-snap-type: none; scroll-behavior: auto; }
-    .lc-snap > section { scroll-snap-align: none; }
   }
 
   /* Page entrance — fade the whole page in from 0.96 scale on mount. */
