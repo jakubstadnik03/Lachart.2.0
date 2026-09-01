@@ -177,7 +177,7 @@ export default function About() {
     <>
       <Helmet>
         <title>Blood Lactate Testing App & Threshold Calculator | LaChart</title>
-        <meta name="description" content="LaChart is a professional blood lactate testing app for athletes and coaches. Calculate LT1 &amp; LT2 thresholds, build training zones, and export PDF reports. Free calculator — no sign-up needed." />
+        <meta name="description" content="Blood lactate testing for athletes and coaches. Calculate LT1 &amp; LT2, build training zones and export PDF reports. Free calculator, no sign-up." />
         <meta name="keywords" content="lactate testing app, lactate threshold calculator, blood lactate test, LT1 LT2, OBLA, IAT, D-max, training zones, endurance training, sports performance" />
         <meta name="theme-color" content="#767EB5" />
         <link rel="canonical" href="https://lachart.net/" />

@@ -92,8 +92,8 @@ const ForAthletes = () => {
   return (
     <div className="lc-page lc-page-in">
       <Helmet>
-        <title>Train by Measured Thresholds, Not Estimates — LaChart for Athletes</title>
-        <meta name="description" content="Connect Strava or Garmin, set your zones from a real lactate test, and see every session read against it — time at LT1 and LT2, heart rate versus your own curve, and a nudge when it is time to retest. 2 weeks free." />
+        <title>Training Analysis on Measured Thresholds | LaChart</title>
+        <meta name="description" content="Calendar, workout builder, load and form, peak curves and laps — with zones from a real lactate test instead of a percentage of an estimated FTP." />
         <meta name="keywords" content="lactate threshold training, LT1 LT2 zones, training zones from lactate test, endurance training app, Strava lactate, Garmin lactate threshold, zone 2 training, threshold heart rate" />
         <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large" />
         <link rel="canonical" href={CANONICAL} />
@@ -208,7 +208,12 @@ const ForAthletes = () => {
         <div ref={pushRef} className="lc-reveal" style={{ marginBottom: 30 }}>
           <Eyebrow>The analysis</Eyebrow>
           <h2 className="lc-big" style={{ margin: '14px 0 8px' }}>What a finished session turns into</h2>
-          <p className="lc-lead">Every one of these is the real component out of the app. Click them.</p>
+          <p className="lc-lead">
+            Every one of these is the real component out of the app. Click them — or read them in detail
+            under <Link to="/features/analytics" style={{ color: LC.primaryDark, fontWeight: 700 }}>workout analysis</Link>,{' '}
+            <Link to="/features/load-and-form" style={{ color: LC.primaryDark, fontWeight: 700 }}>load &amp; form</Link> and{' '}
+            <Link to="/features/planning" style={{ color: LC.primaryDark, fontWeight: 700 }}>planning</Link>.
+          </p>
         </div>
         <div ref={pushRef} className="lc-reveal" style={{ display: 'flex', flexWrap: 'wrap', gap: 20, justifyContent: 'center' }}>
           <WorkoutGraphCard />

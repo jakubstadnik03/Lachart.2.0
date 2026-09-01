@@ -43,7 +43,25 @@ const PORT = 4321;
 const PRERENDER_ROUTES = [
   '/',
   '/about',
+
+  // The three job pages. /for-testers and /for-athletes shipped without being
+  // added here, which meant crawlers got the generic index.html shell — every
+  // title, description and canonical on them was invisible without JS.
   '/for-coaches',
+  '/for-testers',
+  '/for-athletes',
+
+  // Feature pages — one per capability, each with its own meta + JSON-LD.
+  '/features',
+  '/features/analytics',
+  '/features/planning',
+  '/features/lactate-testing',
+  '/features/training-zones',
+  '/features/load-and-form',
+  '/features/health',
+  '/features/integrations',
+  '/features/coaching',
+
   '/how-to-use',
   '/tutorials',
   '/privacy',

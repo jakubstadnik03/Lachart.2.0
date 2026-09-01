@@ -86,8 +86,8 @@ const ForCoaches = () => {
   return (
     <div className="lc-page lc-page-in">
       <Helmet>
-        <title>Coaching Software for Endurance Coaches — Athlete Training, Load &amp; Structured Workouts | LaChart</title>
-        <meta name="description" content="Coaching software for endurance coaches: your athletes connect Strava or Garmin, you read their load, form and every session, build structured workouts that reach their watch, and set their zones from a real lactate test. 2 weeks free." />
+        <title>Coaching Software for Endurance Coaches | LaChart</title>
+        <meta name="description" content="Your athletes connect Strava or Garmin; you read their load and form, build structured workouts that reach their watch, and set zones from a real lactate test." />
         <meta name="keywords" content="endurance coaching software, athlete management software, training plan software, structured workouts Garmin, TSS CTL ATL TSB, coaching platform, training load analysis, coach training calendar, lactate threshold zones" />
         <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large" />
         <link rel="canonical" href={CANONICAL} />
@@ -202,7 +202,12 @@ const ForCoaches = () => {
         <div ref={pushRef} className="lc-reveal" style={{ marginBottom: 30 }}>
           <Eyebrow>The analysis</Eyebrow>
           <h2 className="lc-big" style={{ margin: '14px 0 8px' }}>What a session turns into once it lands</h2>
-          <p className="lc-lead">Every card below is the real component out of the app. Click them.</p>
+          <p className="lc-lead">
+            Every card below is the real component out of the app. Click them — or read them in detail
+            under <Link to="/features/coaching" style={{ color: LC.primaryDark, fontWeight: 700 }}>coaching a roster</Link>,{' '}
+            <Link to="/features/planning" style={{ color: LC.primaryDark, fontWeight: 700 }}>planning &amp; workouts</Link> and{' '}
+            <Link to="/features/analytics" style={{ color: LC.primaryDark, fontWeight: 700 }}>workout analysis</Link>.
+          </p>
         </div>
         <div ref={pushRef} className="lc-reveal" style={{ display: 'flex', flexWrap: 'wrap', gap: 20, justifyContent: 'center' }}>
           <WorkoutGraphCard />

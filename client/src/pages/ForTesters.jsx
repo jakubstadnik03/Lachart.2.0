@@ -63,8 +63,8 @@ const ForTesters = () => {
   return (
     <div className="lc-page lc-page-in">
       <Helmet>
-        <title>Lactate Test Software for Labs &amp; Testing Studios — Branded PDF Reports | LaChart</title>
-        <meta name="description" content="Software for people who test other people. Enter a lactate step test, get LT1 and LT2 by six methods, and hand your client a PDF report with your own logo. No device connection, no training data. 2 weeks free." />
+        <title>Lactate Test Software for Labs &amp; Studios | LaChart</title>
+        <meta name="description" content="Enter a lactate step test, get LT1 and LT2 by six methods, and hand the client a PDF report with your own logo. No device or training data needed." />
         <meta name="keywords" content="lactate test software, lactate testing studio, lactate analyser software, lactate curve software, branded lactate report, LT1 LT2 report, performance testing lab software, step test software, sports diagnostics software" />
         <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large" />
         <link rel="canonical" href={CANONICAL} />
@@ -227,7 +227,11 @@ const ForTesters = () => {
         <div ref={pushRef} className="lc-reveal" style={{ marginBottom: 30 }}>
           <Eyebrow>Try it here</Eyebrow>
           <h2 className="lc-big" style={{ margin: '14px 0 8px' }}>The real thing, not a screenshot</h2>
-          <p className="lc-lead">These are the components out of the app. Click a stage on the curve, switch sport, pick a zone.</p>
+          <p className="lc-lead">
+            These are the components out of the app. Click a stage on the curve, switch sport, pick a zone —
+            or read <Link to="/features/lactate-testing" style={{ color: LC.primaryDark, fontWeight: 700 }}>lactate testing</Link> and{' '}
+            <Link to="/features/training-zones" style={{ color: LC.primaryDark, fontWeight: 700 }}>zones &amp; thresholds</Link> in detail.
+          </p>
         </div>
         <div ref={pushRef} className="lc-reveal" style={{ display: 'flex', flexWrap: 'wrap', gap: 20, justifyContent: 'center' }}>
           <LactateTestCard />

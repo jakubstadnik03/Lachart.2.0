@@ -24,8 +24,8 @@ const FeaturesIndex = () => {
   return (
     <div className="lc-page lc-page-in">
       <Helmet>
-        <title>Features — Training Analysis, Planning, Lactate Testing | LaChart</title>
-        <meta name="description" content="Everything LaChart does: workout and period analysis, a training calendar and structured workout builder, load and form, lactate testing, zones from measured thresholds, health tracking and device integrations." />
+        <title>Features — Analysis, Planning &amp; Lactate | LaChart</title>
+        <meta name="description" content="Workout analysis, a training calendar and workout builder, load and form, lactate testing, measured zones, health tracking and device integrations." />
         <meta name="keywords" content="training software features, workout analysis, training calendar, structured workouts, training load, lactate testing, training zones, Strava Garmin integration" />
         <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large" />
         <link rel="canonical" href={CANONICAL} />
@@ -33,7 +33,9 @@ const FeaturesIndex = () => {
         <meta property="og:description" content="Workout analysis, planning, load and form, lactate testing, zones, health and integrations." />
         <meta property="og:type" content="website" />
         <meta property="og:url" content={CANONICAL} />
+        <meta property="og:image" content="https://lachart.net/images/lachart-og.png" />
         <meta property="og:site_name" content="LaChart" />
+        <meta name="twitter:card" content="summary_large_image" />
         <script type="application/ld+json">{JSON.stringify({
           '@context': 'https://schema.org',
           '@type': 'ItemList',

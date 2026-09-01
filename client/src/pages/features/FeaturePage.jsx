@@ -32,7 +32,7 @@ const FeaturePage = () => {
 
   if (!feature) return <Navigate to="/features" replace />;
 
-  const { eyebrow, title, lead, meta, blocks } = feature;
+  const { eyebrow, title, lead, meta, blocks, audience } = feature;
   const others = FEATURES.filter((f) => f.slug !== slug);
   const canonical = `${SITE}/features/${slug}`;
 
@@ -75,6 +75,7 @@ const FeaturePage = () => {
           <div style={{ display: 'flex', gap: 12, marginTop: 26, flexWrap: 'wrap' }}>
             <Link to="/signup" className="lc-btn-primary">🎁 Start your 2-week free trial</Link>
             <Link to="/features" className="lc-btn-ghost">All features</Link>
+            {audience && <Link to={audience[0]} className="lc-btn-ghost">{audience[1]} →</Link>}
           </div>
         </div>
       </header>

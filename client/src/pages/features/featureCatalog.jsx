@@ -30,13 +30,14 @@ import {
 export const FEATURES = [
   {
     slug: 'analytics',
+    audience: ['/for-athletes', 'LaChart for athletes'],
     nav: 'Workout analysis',
     eyebrow: 'Analytics',
     title: 'See what the numbers actually mean.',
     lead: 'Every session arrives with its streams, its laps and its load already worked out — and sitting next to every previous time you did the same thing.',
     meta: {
       title: 'Training & Workout Analysis — Laps, Streams, Peaks | LaChart',
-      description: 'Full workout analysis: power, heart rate, speed and cadence streams, lap tables, time in zones, peak curves and the same session compared against every previous attempt.',
+      description: 'Power, heart rate, speed and cadence streams, lap tables, time in zones, peak curves, and the same session against every previous attempt.',
       keywords: 'workout analysis, training analysis software, lap analysis, power analysis, peak power curve, time in zones, interval analysis',
     },
     blocks: [
@@ -74,13 +75,14 @@ export const FEATURES = [
   },
   {
     slug: 'planning',
+    audience: ['/for-coaches', 'LaChart for coaches'],
     nav: 'Planning & workouts',
     eyebrow: 'Planning',
     title: 'Build the week. It lands on the watch.',
     lead: 'A calendar with the plan and the outcome on the same grid, a real structured-workout builder behind it, and Garmin at the end of the line.',
     meta: {
-      title: 'Training Plan & Structured Workout Builder — Push to Garmin | LaChart',
-      description: 'Plan the week in a drag-and-drop calendar, build structured intervals with steps, ramps and repeats, save them as templates and push them to a Garmin watch. Planned versus completed on one grid.',
+      title: 'Training Plan & Structured Workout Builder | LaChart',
+      description: 'Plan the week in a calendar, build structured intervals with steps, ramps and repeats, and push them to a Garmin watch. Planned versus completed on one grid.',
       keywords: 'training calendar, structured workout builder, push workout to Garmin, training plan software, planned vs actual, workout templates',
     },
     blocks: [
@@ -114,13 +116,14 @@ export const FEATURES = [
   },
   {
     slug: 'lactate-testing',
+    audience: ['/for-testers', 'LaChart for testing studios'],
     nav: 'Lactate testing',
     eyebrow: 'Lactate testing',
     title: 'The curve, and the number you can defend.',
     lead: 'Type the stages as you run them. LT1 and LT2 come back by six methods at once, with the measured points on top and the lactate and heart rate at each.',
     meta: {
       title: 'Lactate Test Analysis — LT1, LT2 by Six Methods | LaChart',
-      description: 'Enter a lactate step test and get LT1 and LT2 by log-log, IAT, OBLA, baseline offsets, D-max and LTP at once, with zones, test-to-test comparison and a branded PDF report.',
+      description: 'Enter a step test and get LT1 and LT2 by log-log, IAT, OBLA, D-max and LTP at once, with zones, test-to-test comparison and a branded PDF report.',
       keywords: 'lactate test software, LT1 LT2, log-log method, OBLA, D-max, IAT, lactate curve, lactate threshold analysis',
     },
     blocks: [
@@ -155,13 +158,14 @@ export const FEATURES = [
   },
   {
     slug: 'training-zones',
+    audience: ['/for-athletes', 'LaChart for athletes'],
     nav: 'Zones & thresholds',
     eyebrow: 'Zones',
     title: 'Zones out of blood, not a percentage.',
     lead: 'Most platforms take a number you estimated and cut it into fifths. Here the two thresholds are measured, and everything downstream is anchored to them.',
     meta: {
-      title: 'Training Zones from a Lactate Test — Power, Pace & HR | LaChart',
-      description: 'Power, pace and heart-rate zones generated from your measured LT1 and LT2 rather than a percentage of an estimated FTP, with time-in-zone reported against the same thresholds.',
+      title: 'Training Zones from a Lactate Test | LaChart',
+      description: 'Power, pace and heart-rate zones generated from your measured LT1 and LT2 rather than a percentage of an estimated FTP, not from a formula.',
       keywords: 'training zones, lactate threshold zones, power zones, heart rate zones, pace zones, zone 2 training, LT1 LT2 zones',
     },
     blocks: [
@@ -189,13 +193,14 @@ export const FEATURES = [
   },
   {
     slug: 'load-and-form',
+    audience: ['/for-athletes', 'LaChart for athletes'],
     nav: 'Load & form',
     eyebrow: 'Load & form',
     title: 'Fitness, fatigue, and whether today is the day.',
     lead: 'Load per session, chronic and acute load across the season, and the balance between them — so a taper is something you can see arriving rather than something you hope you timed.',
     meta: {
       title: 'Training Load, Fitness & Form — CTL, ATL and TSB | LaChart',
-      description: 'Training load per session and per week, with CTL, ATL and TSB charted across the season, peak curves and a plain-English read on whether you are fresh, productive or digging a hole.',
+      description: 'Load per session and per week, with CTL, ATL and TSB charted across the season, and a plain-English read on whether you are fresh or digging a hole.',
       keywords: 'training load, TSS, CTL ATL TSB, fitness fatigue form, performance management chart, training stress balance, peak power curve',
     },
     blocks: [
@@ -223,13 +228,14 @@ export const FEATURES = [
   },
   {
     slug: 'health',
+    audience: ['/for-athletes', 'LaChart for athletes'],
     nav: 'Health & recovery',
     eyebrow: 'Health',
     title: 'The training, and the body doing it.',
     lead: 'Sleep, HRV and resting heart rate on the same timeline as the sessions, with illness and injury tracked so a bad block has an explanation attached to it.',
     meta: {
-      title: 'Recovery Tracking — Sleep, HRV, Resting HR & Injuries | LaChart',
-      description: 'Apple Health metrics on the same timeline as your training: sleep, HRV, resting and low heart rate, with illness and injury episodes and a return-to-training progression.',
+      title: 'Recovery Tracking — Sleep, HRV & Resting HR | LaChart',
+      description: 'Apple Health metrics on the same timeline as your training: sleep, HRV, resting and low heart rate, plus illness and injury episodes.',
       keywords: 'HRV tracking, sleep tracking athletes, resting heart rate, recovery monitoring, Apple Health training, injury tracking, return to training',
     },
     blocks: [
@@ -253,13 +259,14 @@ export const FEATURES = [
   },
   {
     slug: 'integrations',
+    audience: ['/for-athletes', 'LaChart for athletes'],
     nav: 'Integrations',
     eyebrow: 'Integrations',
     title: 'Connect it once, then stop thinking about it.',
     lead: 'Strava, Garmin and Apple Health sync in the background. Sessions go out to the watch the same way they came in.',
     meta: {
       title: 'Strava, Garmin & Apple Health Integration | LaChart',
-      description: 'Connect Strava, Garmin or Apple Health once and every ride, run and swim arrives with power, pace, heart rate, cadence and laps. Structured workouts go back out to the Garmin calendar.',
+      description: 'Connect Strava, Garmin or Apple Health once and every ride, run and swim arrives complete. Structured workouts go back out to the Garmin calendar.',
       keywords: 'Strava integration, Garmin Connect integration, Apple Health training, FIT file upload, sync training data, structured workout to Garmin',
     },
     blocks: [
@@ -288,13 +295,14 @@ export const FEATURES = [
   },
   {
     slug: 'coaching',
+    audience: ['/for-coaches', 'LaChart for coaches'],
     nav: 'Coaching a roster',
     eyebrow: 'Coaching',
     title: 'A roster, not a folder of spreadsheets.',
     lead: 'Every athlete in one workspace, their training arriving on its own, and the week going back out to their watch.',
     meta: {
-      title: 'Coaching Software — Athlete Roster, Plans & Analysis | LaChart',
-      description: 'Coach an unlimited roster: athletes connect Strava or Garmin, you read their load, form and every session, build structured workouts that reach their watch, and set zones from a real lactate test.',
+      title: 'Coaching Software — Roster, Plans & Analysis | LaChart',
+      description: 'Coach an unlimited roster: their training arrives on its own, you read load, form and every session, and build workouts that reach their watch.',
       keywords: 'endurance coaching software, athlete management, coaching platform, training plan software, coach dashboard, structured workouts Garmin',
     },
     blocks: [
