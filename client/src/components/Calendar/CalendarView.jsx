@@ -5717,8 +5717,13 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
   }
 
   const desktopPortal = ReactDOM.createPortal(
-    <div className="fixed inset-0 z-[10001] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" style={{ pointerEvents: shareOpen ? 'none' : 'auto' }}>
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[92vh] flex flex-col overflow-hidden">
+    <div className="fixed inset-0 z-[10001] flex items-center justify-center p-2 md:p-4 bg-black/50 backdrop-blur-sm" style={{ pointerEvents: shareOpen ? 'none' : 'auto' }}>
+      {/* A session's analysis is a wide thing — a lap table, a chart with an
+          hour on its x-axis, a map. Capping it at 1024px left every one of
+          them squeezed while two thirds of a laptop screen sat empty behind
+          the backdrop. It takes the screen it is given, up to a width where
+          the chart stops gaining anything from more of it. */}
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-[1680px] h-[96vh] md:h-[94vh] flex flex-col overflow-hidden">
         {/* Header */}
         <div className="flex items-center gap-3 px-5 py-4 border-b border-gray-100 flex-shrink-0" style={{ borderLeftWidth: 4, borderLeftColor: color }}>
           <SportIcon sport={a.sport} className="w-6 h-6 flex-shrink-0" />
@@ -5760,11 +5765,12 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
           </button>
         </div>
 
-        {/* Body — single scrollable column.
-            We deliberately keep the body as the direct sticky parent for the
-            LapChart (no extra <div> wrapper) — otherwise the chart unsticks
-            as soon as you scroll past the wrapper's bottom, and the user can
-            no longer see which lap is selected while skimming the laps table.
+        {/* Body — one scroll container, two columns inside it.
+            The LapChart sticks while the laps table under it is scrolled, so
+            the athlete can still see which lap is selected. That means its
+            wrapper has to be the tall one: it sits in the right column, which
+            is the laps table itself, and unsticks only once that table has
+            been scrolled past — which is exactly when it stops being useful.
             WebkitOverflowScrolling/overscrollBehavior enable iOS native
             momentum scroll and prevent the lap-chart horizontal scroller
             from hijacking vertical touch events on mobile. */}
@@ -5776,537 +5782,556 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
             touchAction: 'pan-y',
           }}
         >
+          {/* Two columns once there is room for them: what the session was
+              on the left — its numbers, its instructions, where it went, what
+              was said about it — and what it looked like on the right. The
+              single column this replaces put a 1000px-wide lap table and a
+              320px map in the same 1024px sleeve, so both were cramped and
+              neither was near the other thing you read it against.
 
-          {/* ── Stats row — compact grouped ── */}
-          <div className="px-5 pt-3 pb-3 flex flex-wrap gap-1.5 items-start border-b border-gray-50">
-            {/* Duration */}
-            <div className="rounded-xl bg-gray-50 px-3 py-2 flex flex-col">
-              <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wide leading-none">Duration</span>
-              <span className="text-sm font-bold text-gray-800 tabular-nums mt-0.5">{fmtDur(dur)}</span>
-              </div>
-            {/* Distance */}
-            {dist > 0 && (
-              <div className="rounded-xl bg-gray-50 px-3 py-2 flex flex-col">
-                <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wide leading-none">Distance</span>
-                <span className="text-sm font-bold text-gray-800 tabular-nums mt-0.5">{fmtDist(dist)}</span>
-              </div>
-            )}
-            {/* TSS — tap to switch Power / hr when both are available */}
-            <button
-              type="button"
-              onClick={flipTssMode}
-              disabled={!tssToggleable}
-              className={`rounded-xl bg-gray-50 px-3 py-2 flex flex-col text-left ${tssToggleable ? 'hover:bg-gray-100 active:bg-gray-200' : ''}`}
-              title={tssToggleHint || undefined}
-            >
-              <span className={`text-[9px] font-bold uppercase tracking-wide leading-none ${tssToggleable ? 'text-blue-600' : 'text-gray-400'}`}>
-                {tssLabel}{tssToggleable ? ' ⇄' : ''}
-              </span>
-              <span className="text-sm font-bold text-gray-800 tabular-nums mt-0.5">{tss > 0 ? Math.round(tss) : '—'}</span>
-            </button>
-            {/* Pace/Speed */}
-            {paceStr && (
-              <div className="rounded-xl bg-gray-50 px-3 py-2 flex flex-col">
-                <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wide leading-none">Pace</span>
-                <span className="text-sm font-bold text-gray-800 tabular-nums mt-0.5">{paceStr}</span>
-              </div>
-            )}
-            {isBike && avgSpeed > 0 && (
-              <div className="rounded-xl bg-gray-50 px-3 py-2 flex flex-col">
-                <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wide leading-none">Speed</span>
-                <span className="text-sm font-bold text-gray-800 tabular-nums mt-0.5">{formatSpeed(avgSpeed, unitSystem).formatted}</span>
-              </div>
-            )}
-            {/* Power group — avg + NP + max in one pill */}
-            {isBike && power > 0 && (
-              <div className="rounded-xl bg-gray-50 px-3 py-2 flex flex-col">
-                <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wide leading-none mb-1">Power</span>
-                <div className="flex items-baseline gap-3">
-                  <span className="text-sm font-bold text-gray-800 tabular-nums">{Math.round(power)}<span className="text-[10px] font-semibold text-gray-400 ml-0.5">W avg</span></span>
-                  {np > 0 && np !== power && <span className="text-sm font-bold text-gray-600 tabular-nums">{Math.round(np)}<span className="text-[10px] font-semibold text-gray-400 ml-0.5">NP</span></span>}
-                  {maxPower > 0 && <span className="text-sm font-bold text-gray-600 tabular-nums">{Math.round(maxPower)}<span className="text-[10px] font-semibold text-gray-400 ml-0.5">max</span></span>}
-                </div>
-              </div>
-            )}
-            {/* HR group — avg + max in one pill */}
-            {hr > 0 && (
-              <div className="rounded-xl bg-gray-50 px-3 py-2 flex flex-col">
-                <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wide leading-none mb-1">HR</span>
-                <div className="flex items-baseline gap-3">
-                  <span className="text-sm font-bold text-gray-800 tabular-nums">{Math.round(hr)}<span className="text-[10px] font-semibold text-gray-400 ml-0.5">avg</span></span>
-                  {maxHR > 0 && <span className="text-sm font-bold text-gray-600 tabular-nums">{Math.round(maxHR)}<span className="text-[10px] font-semibold text-gray-400 ml-0.5">max</span></span>}
-                </div>
-              </div>
-            )}
-            {/* Elev / Cad */}
-            {elevation > 0 && (
-              <div className="rounded-xl bg-gray-50 px-3 py-2 flex flex-col">
-                <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wide leading-none">Elev</span>
-                <span className="text-sm font-bold text-gray-800 tabular-nums mt-0.5">{fmtElev(elevation)}</span>
-              </div>
-            )}
-            {cadence > 0 && (
-              <div className="rounded-xl bg-gray-50 px-3 py-2 flex flex-col">
-                <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wide leading-none">{isSwim ? 'SPM' : 'Cad'}</span>
-                <span className="text-sm font-bold text-gray-800 tabular-nums mt-0.5">{Math.round(cadence)}</span>
-              </div>
-            )}
-            {calories > 0 && (
-              <div className="rounded-xl bg-gray-50 px-3 py-2 flex flex-col">
-                <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wide leading-none">Calories</span>
-                <span className="text-sm font-bold text-gray-800 tabular-nums mt-0.5">{Math.round(calories).toLocaleString()}<span className="text-[10px] font-semibold text-gray-400 ml-0.5">kcal</span></span>
-              </div>
-            )}
-            {/* Category picker + Compliance badge */}
-            <div className="ml-auto flex items-center gap-2">
-              <CategoryPicker value={merged.category || null} onChange={handleCategoryChange} />
-              {complianceRow && (
-                <div className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-gray-50">
-                  <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: complianceRow.color }} />
-                  <span className="text-xs font-bold" style={{ color: complianceRow.color }}>{complianceRow.label}</span>
-                </div>
-              )}
-            </div>
-          </div>
+              The lap chart keeps its sticky behaviour: it is now sticky within
+              the right column rather than the whole body, and the right column
+              is exactly the laps table it needs to stay visible for. */}
+          <div className="xl:grid xl:grid-cols-[minmax(0,380px)_minmax(0,1fr)] xl:items-start">
+            <div className="min-w-0 xl:border-r xl:border-gray-100">
 
-          {/* ── Inline edit panel (completed activity) ── */}
-          {editingCompleted && renderPlannedVsCompletedEditor({
-            onCancel: () => setEditingCompleted(false),
-            onSaved: () => setEditingCompleted(false),
-          })}
-
-          {/* ── Description + notes ── */}
-          {(notes || planComment || planDescription) && (
-            <div className="px-5 py-3 border-b border-gray-50 flex flex-wrap gap-4">
-              {planComment && (
-                <div className="flex-1 min-w-[200px]">
-                  <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide mb-1">Comment</div>
-                  <p className="text-sm text-gray-700 whitespace-pre-line">{planComment}</p>
-                </div>
-              )}
-              {planDescription && (
-                <div className="flex-1 min-w-[200px]">
-                  <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide mb-1">Planned description</div>
-                  <p className="text-sm text-gray-600 whitespace-pre-line">{planDescription}</p>
-                </div>
-              )}
-              {notes && (
-                <div className="flex-1 min-w-[200px]">
-                  <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide mb-1">Completed notes</div>
-                  <p className="text-sm text-gray-700 whitespace-pre-line">{notes}</p>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* ── Comments ── */}
-          {commentsTarget.trainingId && (
-          <div className="px-5 py-4 border-b border-gray-100">
-            <TrainingComments
-              trainingId={commentsTarget.trainingId}
-              trainingType={commentsTarget.trainingType}
-            />
-          </div>
-          )}
-
-          {/* Conditions — context for everything above, so it sits last. */}
-          {activityWeatherKey && (
-            <div className="px-5 py-4 border-b border-gray-100">
-              <ActivityWeather activityKey={activityWeatherKey} />
-            </div>
-          )}
-
-          {/* ── Route Map ── */}
-          {gpsData.length > 0 && (
-            <div className="border-b border-gray-50">
-              <div className="relative overflow-hidden" style={{ height: 320 }}>
-                <MapContainer
-                  key={`modal-map-desktop-${gpsData[0]?.[0]}-${gpsData[0]?.[1]}`}
-                  center={gpsData[Math.floor(gpsData.length / 2)]}
-                  zoom={12}
-                  style={{ height: '100%', width: '100%', zIndex: 0 }}
-                  scrollWheelZoom={false}
-                  zoomControl={true}
-                  attributionControl={false}
-                >
-                  <MapInvalidator />
-                  <FitBoundsToRoute positions={gpsData} />
-                  <TileLayer url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png" />
-                  <Polyline positions={gpsData} pathOptions={{ color, weight: 4, opacity: 0.9, lineCap: 'round', lineJoin: 'round' }} />
-                  <CircleMarker center={gpsData[0]} radius={6} pathOptions={{ color: '#fff', weight: 2, fillColor: '#22c55e', fillOpacity: 1 }}>
-                    <LeafletTooltip permanent direction="top" offset={[0, -10]}>Start</LeafletTooltip>
-                  </CircleMarker>
-                  <CircleMarker center={gpsData[gpsData.length - 1]} radius={6} pathOptions={{ color: '#fff', weight: 2, fillColor: '#ef4444', fillOpacity: 1 }}>
-                    <LeafletTooltip permanent direction="top" offset={[0, -10]}>Finish</LeafletTooltip>
-                  </CircleMarker>
-                </MapContainer>
-              </div>
-            </div>
-          )}
-
-          {/* ── Training Overview (desktop) ── */}
-          {detailLoading ? (
-            <div className="px-5 py-3 border-b border-gray-50">
-              <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide mb-2">Training Overview</div>
-              <div className="rounded-xl bg-gray-100 animate-pulse" style={{ height: 120 }} />
-            </div>
-          ) : chartTraining?.records?.length > 0 ? (
-            <div className="px-5 py-3 border-b border-gray-50">
-              <div className="flex items-center justify-between mb-2">
-                <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide">Training Overview</div>
-                {isSyntheticData && (
-                  streamsRefreshing ? (
-                    <span className="flex items-center gap-1.5 text-xs text-gray-400">
-                      <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>
-                      Loading Strava data…
-                    </span>
-                  ) : (
-                    <button
-                      onClick={refreshStreams}
-                      className="flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-amber-50 border border-amber-200 text-amber-700 hover:bg-amber-100 transition-colors"
-                    >
-                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
-                      Load detailed Strava data
-                    </button>
-                  )
+              {/* ── Stats row — compact grouped ── */}
+              <div className="px-5 pt-3 pb-3 flex flex-wrap gap-1.5 items-start border-b border-gray-50">
+                {/* Duration */}
+                <div className="rounded-xl bg-gray-50 px-3 py-2 flex flex-col">
+                  <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wide leading-none">Duration</span>
+                  <span className="text-sm font-bold text-gray-800 tabular-nums mt-0.5">{fmtDur(dur)}</span>
+                  </div>
+                {/* Distance */}
+                {dist > 0 && (
+                  <div className="rounded-xl bg-gray-50 px-3 py-2 flex flex-col">
+                    <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wide leading-none">Distance</span>
+                    <span className="text-sm font-bold text-gray-800 tabular-nums mt-0.5">{fmtDist(dist)}</span>
+                  </div>
                 )}
-              </div>
-              <TrainingChart
-                training={chartTraining}
-                user={null}
-                userProfile={null}
-                onHover={() => {}}
-                onLeave={() => {}}
-                focusTimeSec={peaksFocus?.focusTimeSec ?? null}
-                focusWindowSec={peaksFocus?.focusWindowSec ?? null}
-                focusLabel={peaksFocus?.label ?? null}
-                focusMetric={peaksFocus?.metric ?? null}
-                onFocusDismiss={() => setPeaksFocus(null)}
-              />
-            </div>
-          ) : null}
-
-          {isRun && (
-            <RunSplitsTable
-              laps={laps}
-              records={chartTraining?.records || []}
-              lapTimeSource={isStravaActivity ? 'strava' : 'fit'}
-              unitSystem={unitSystem}
-              className="px-5"
-            />
-          )}
-
-          {/* ── Lap chart — sticky on desktop so the bars stay visible
-              while the user scrolls through the laps table below. Mobile
-              keeps natural flow (sticky steals too much height). ── */}
-          {laps.length > 1 && (
-            <div className="border-b border-gray-50 md:sticky md:top-0 md:z-10 bg-white">
-              <LapChart
-                laps={laps} color={color} isBike={isBike} isRun={isRun} isSwim={isSwim} unitSystem={unitSystem}
-                selectedLap={selectedLap}
-                chartScrollRef={lapChartScrollRef}
-                records={chartTraining?.records}
-                onSelectLap={(i) => {
-                  setSelectedLap(i);
-                  lapRowRefs.current[i]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                }}
-                // Horizontal chart scroll only highlights — does NOT pull the
-                // laps table. Auto-scrolling the table while the user is
-                // scrolling it themselves caused the jittery "fights me back"
-                // behaviour.
-                onScrollCenter={(i) => setSelectedLap(i)}
-              />
-            </div>
-          )}
-
-          {/* ── Laps table — full width ── */}
-          {laps.length > 0 && (
-            <div className="px-5 py-3">
-              {(() => {
-                const hasLactate = laps.some(l => (l.lactate ?? l.lactateValue) != null);
-                const showLactate = hasLactate || !!onAddLactate;
-                const showPace = isBike || isRun || isSwim;
-                const cols = ['1.5rem', '1fr', '1fr', ...(showPace ? ['1fr'] : []), '1fr', ...(showLactate ? ['1fr'] : [])].join(' ');
-                const paceHeader = isBike ? 'Pwr' : paceUnitShort(unitSystem, isSwim ? 'swim' : 'run');
-                return (
-                  <div className="rounded-xl overflow-hidden border border-gray-100">
-                    <div className="grid text-[9px] font-bold text-gray-400 uppercase tracking-wide bg-gray-50 px-3 py-1.5 border-b border-gray-100"
-                      style={{ gridTemplateColumns: cols }}>
-                      <span>#</span>
-                      <span className="text-right">Dist</span>
-                      <span className="text-right">Time</span>
-                      {showPace && <span className="text-right">{paceHeader}</span>}
-                      <span className="text-right">HR</span>
-                      {showLactate && <span className="text-right">La</span>}
-                    </div>
-                    <div className="divide-y divide-gray-50">
-                      {laps.map((lap, i) => {
-                        // Mirror the mobile block: accept both Strava
-                        // (snake_case) and FIT (camelCase, e.g. totalDistance,
-                        // avgHeartRate) field names so FIT uploads don't
-                        // render every column blank.
-                        const lapDur   = lapMovingSecs(lap);
-                        const lapDist  = Number(lap.distance || lap.totalDistance || 0);
-                        const lapSpeed = lap.average_speed || lap.avgSpeed || lap.avg_speed || null;
-                        const lapPower = Number(lap.average_watts || lap.avgPower || 0);
-                        const lapHr    = Number(lap.average_heartrate || lap.avgHeartRate || lap.averageHeartRate || lap.avgHR || 0);
-                        const lapLa    = lap.lactate ?? lap.lactateValue;
-                        const lapNum   = lap.lapNumber ?? (i + 1);
-                        // Detect lap type for color-coding (intensity-based)
-                        const lapType  = classifyLaps(laps, /run/i.test(sport) ? 'run' : /swim/i.test(sport) ? 'swim' : 'bike')[i];
-                        const isRestLap = lapType === 'recovery' || lapType === 'rest';
-
-                        let lapPaceStr = '—';
-                        let paceIsNormal = true;
-                        if (isSwim) {
-                          const spd = lapSpeed || (lapDist > 0 && lapDur > 0 ? lapDist / lapDur : 0);
-                          if (spd > 0) lapPaceStr = formatPaceFromSpeedMps(spd, unitSystem, 'swim');
-                        } else if (isRun) {
-                          if (lapDist > 0 && lapDur > 0) {
-                            lapPaceStr = formatPaceFromDistanceAndDuration(lapDist, lapDur, unitSystem, 'run');
-                            const secPerKm = lapDur / (lapDist / 1000);
-                            if (isRestLap && secPerKm > 480) paceIsNormal = false;
-                          }
-                        } else if (isBike) {
-                          lapPaceStr = lapPower > 0 ? `${Math.round(lapPower)}W` : '—';
-                        }
-
-                        const isSelected = selectedLap === i;
-                        const typeDot  = COMPARE_STEP_COLORS[lapType] || '#9ca3af';
-                        const typeRowBg = isSelected ? '#EFF6FF'
-                          : lapType === 'warmup'   ? '#fffbeb'
-                          : lapType === 'cooldown' ? '#f0f9ff'
-                          : lapType === 'recovery' || lapType === 'rest' ? '#f9fafb'
-                          : undefined;
-                        const paceColor = isSelected ? '#2563EB'
-                          : !paceIsNormal ? '#9ca3af'
-                          : isRestLap ? '#9ca3af'
-                          : lapType === 'warmup' ? '#d97706'
-                          : lapType === 'cooldown' ? '#0284c7'
-                          : '#2563EB';
-                        return (
-                          <div
-                            key={i}
-                            ref={el => lapRowRefs.current[i] = el}
-                            onClick={() => setSelectedLap(isSelected ? null : i)}
-                            className="grid items-center px-3 py-2.5 text-[11px] cursor-pointer transition-colors"
-                            style={{
-                              gridTemplateColumns: cols,
-                              backgroundColor: typeRowBg,
-                              borderLeft: `3px solid ${isSelected ? '#2563EB' : typeDot}`,
-                            }}
-                          >
-                            <span className="font-bold" style={{ color: isSelected ? '#2563EB' : typeDot }}>{lapNum}</span>
-                            <span className="text-gray-500 text-right tabular-nums">{lapDist > 0 ? formatDistance(lapDist, unitSystem).formatted : '—'}</span>
-                            <span className="font-semibold text-gray-700 text-right tabular-nums">{fmtLapDur(lapDur)}</span>
-                            {showPace && <span className="text-right tabular-nums font-semibold" style={{ color: paceColor }}>{lapPaceStr}</span>}
-                            <span className="text-gray-500 text-right tabular-nums">{lapHr > 0 ? Math.round(lapHr) : '—'}</span>
-                            {showLactate && (
-                              lapLa != null ? (
-                                <span className="text-right font-semibold tabular-nums" style={{ color: '#7c3aed' }}>{Number(lapLa).toFixed(1)}</span>
-                              ) : onAddLactate ? (
-                                <div className="flex justify-end">
-                                  <button onClick={e => { e.stopPropagation(); onAddLactate(merged, i); onClose(); }}
-                                    className="flex items-center justify-center w-5 h-5 rounded-full hover:opacity-80 transition-opacity"
-                                    style={{ backgroundColor: '#f5f3ff', color: '#7c3aed' }}
-                                    title={`Add lactate for lap ${lapNum}`}>
-                                    <span className="text-xs font-bold leading-none">+</span>
-                                  </button>
-                                </div>
-                              ) : (
-                                <span className="text-right tabular-nums text-gray-400">—</span>
-                              )
-                            )}
-                          </div>
-                        );
-                      })}
+                {/* TSS — tap to switch Power / hr when both are available */}
+                <button
+                  type="button"
+                  onClick={flipTssMode}
+                  disabled={!tssToggleable}
+                  className={`rounded-xl bg-gray-50 px-3 py-2 flex flex-col text-left ${tssToggleable ? 'hover:bg-gray-100 active:bg-gray-200' : ''}`}
+                  title={tssToggleHint || undefined}
+                >
+                  <span className={`text-[9px] font-bold uppercase tracking-wide leading-none ${tssToggleable ? 'text-blue-600' : 'text-gray-400'}`}>
+                    {tssLabel}{tssToggleable ? ' ⇄' : ''}
+                  </span>
+                  <span className="text-sm font-bold text-gray-800 tabular-nums mt-0.5">{tss > 0 ? Math.round(tss) : '—'}</span>
+                </button>
+                {/* Pace/Speed */}
+                {paceStr && (
+                  <div className="rounded-xl bg-gray-50 px-3 py-2 flex flex-col">
+                    <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wide leading-none">Pace</span>
+                    <span className="text-sm font-bold text-gray-800 tabular-nums mt-0.5">{paceStr}</span>
+                  </div>
+                )}
+                {isBike && avgSpeed > 0 && (
+                  <div className="rounded-xl bg-gray-50 px-3 py-2 flex flex-col">
+                    <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wide leading-none">Speed</span>
+                    <span className="text-sm font-bold text-gray-800 tabular-nums mt-0.5">{formatSpeed(avgSpeed, unitSystem).formatted}</span>
+                  </div>
+                )}
+                {/* Power group — avg + NP + max in one pill */}
+                {isBike && power > 0 && (
+                  <div className="rounded-xl bg-gray-50 px-3 py-2 flex flex-col">
+                    <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wide leading-none mb-1">Power</span>
+                    <div className="flex items-baseline gap-3">
+                      <span className="text-sm font-bold text-gray-800 tabular-nums">{Math.round(power)}<span className="text-[10px] font-semibold text-gray-400 ml-0.5">W avg</span></span>
+                      {np > 0 && np !== power && <span className="text-sm font-bold text-gray-600 tabular-nums">{Math.round(np)}<span className="text-[10px] font-semibold text-gray-400 ml-0.5">NP</span></span>}
+                      {maxPower > 0 && <span className="text-sm font-bold text-gray-600 tabular-nums">{Math.round(maxPower)}<span className="text-[10px] font-semibold text-gray-400 ml-0.5">max</span></span>}
                     </div>
                   </div>
-                );
-              })()}
-            </div>
-          )}
+                )}
+                {/* HR group — avg + max in one pill */}
+                {hr > 0 && (
+                  <div className="rounded-xl bg-gray-50 px-3 py-2 flex flex-col">
+                    <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wide leading-none mb-1">HR</span>
+                    <div className="flex items-baseline gap-3">
+                      <span className="text-sm font-bold text-gray-800 tabular-nums">{Math.round(hr)}<span className="text-[10px] font-semibold text-gray-400 ml-0.5">avg</span></span>
+                      {maxHR > 0 && <span className="text-sm font-bold text-gray-600 tabular-nums">{Math.round(maxHR)}<span className="text-[10px] font-semibold text-gray-400 ml-0.5">max</span></span>}
+                    </div>
+                  </div>
+                )}
+                {/* Elev / Cad */}
+                {elevation > 0 && (
+                  <div className="rounded-xl bg-gray-50 px-3 py-2 flex flex-col">
+                    <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wide leading-none">Elev</span>
+                    <span className="text-sm font-bold text-gray-800 tabular-nums mt-0.5">{fmtElev(elevation)}</span>
+                  </div>
+                )}
+                {cadence > 0 && (
+                  <div className="rounded-xl bg-gray-50 px-3 py-2 flex flex-col">
+                    <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wide leading-none">{isSwim ? 'SPM' : 'Cad'}</span>
+                    <span className="text-sm font-bold text-gray-800 tabular-nums mt-0.5">{Math.round(cadence)}</span>
+                  </div>
+                )}
+                {calories > 0 && (
+                  <div className="rounded-xl bg-gray-50 px-3 py-2 flex flex-col">
+                    <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wide leading-none">Calories</span>
+                    <span className="text-sm font-bold text-gray-800 tabular-nums mt-0.5">{Math.round(calories).toLocaleString()}<span className="text-[10px] font-semibold text-gray-400 ml-0.5">kcal</span></span>
+                  </div>
+                )}
+                {/* Category picker + Compliance badge */}
+                <div className="ml-auto flex items-center gap-2">
+                  <CategoryPicker value={merged.category || null} onChange={handleCategoryChange} />
+                  {complianceRow && (
+                    <div className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-gray-50">
+                      <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: complianceRow.color }} />
+                      <span className="text-xs font-bold" style={{ color: complianceRow.color }}>{complianceRow.label}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
 
-          {/* ── Against the lactate test (desktop) ──
-              The modal renders twice: a mobile layout of tabbed views and this
-              desktop one. Mounting a section in only one of them makes it
-              invisible to half the users and, worse, invisible in a way that
-              looks like it was never built. */}
-          {chartTraining?.records?.length > 60 && (
-            <div className="px-5 py-4 border-t border-gray-100">
-              <SessionVsTestPanel
-                records={chartTraining.records}
-                laps={laps}
-                sport={merged?.sport || sport}
-                athleteId={athleteId}
-                activityKey={activityWeatherKey}
-                activityDate={merged?.start_date || merged?.startDate || merged?.date}
-                sessionTitle={merged?.titleManual || merged?.name || merged?.title || ''}
-                plannedTarget={plannedWorkout?.category || plannedWorkout?.title || null}
-              />
-            </div>
-          )}
+              {/* ── Inline edit panel (completed activity) ── */}
+              {editingCompleted && renderPlannedVsCompletedEditor({
+                onCancel: () => setEditingCompleted(false),
+                onSaved: () => setEditingCompleted(false),
+              })}
 
-          {/* ── Compare with past sessions (desktop collapsible) ── */}
-          {showCompare && (
-            <div className="px-5 py-3 border-t border-gray-100">
-              <button
-                onClick={() => setShowCompareDesktop(v => !v)}
-                className="flex items-center gap-2 text-xs font-bold text-gray-500 uppercase tracking-wide w-full text-left mb-3"
-              >
-                <span>Compare with past sessions</span>
-                <ChevronDownIcon className={`w-4 h-4 transition-transform ${showCompareDesktop ? 'rotate-180' : ''}`} />
-              </button>
-              {showCompareDesktop && <CompareContent merged={merged} athleteId={athleteId} onOpen={act => setNestedActivity(act)} />}
-            </div>
-          )}
+              {/* ── Description + notes ── */}
+              {(notes || planComment || planDescription) && (
+                <div className="px-5 py-3 border-b border-gray-50 flex flex-wrap gap-4">
+                  {planComment && (
+                    <div className="flex-1 min-w-[200px]">
+                      <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide mb-1">Comment</div>
+                      <p className="text-sm text-gray-700 whitespace-pre-line">{planComment}</p>
+                    </div>
+                  )}
+                  {planDescription && (
+                    <div className="flex-1 min-w-[200px]">
+                      <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide mb-1">Planned description</div>
+                      <p className="text-sm text-gray-600 whitespace-pre-line">{planDescription}</p>
+                    </div>
+                  )}
+                  {notes && (
+                    <div className="flex-1 min-w-[200px]">
+                      <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide mb-1">Completed notes</div>
+                      <p className="text-sm text-gray-700 whitespace-pre-line">{notes}</p>
+                    </div>
+                  )}
+                </div>
+              )}
 
-          {/* ── Planned section (edit / view) ── */}
-          <div className="border-t border-gray-100 px-5 py-4">
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">{plannedWorkout && !editingPlanned && dur > 0 ? 'Planned vs Completed' : 'Planned'}</span>
-              {plannedWorkout && !editingPlanned && (
-                <button
-                  onClick={() => setEditingPlanned(true)}
-                  className="flex items-center gap-1 text-[10px] font-semibold px-2 py-1 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 transition-colors"
-                >
-                  <PencilIcon className="w-3 h-3" /> Edit
-                </button>
+              {/* Conditions — context for everything above, so it sits last. */}
+              {activityWeatherKey && (
+                <div className="px-5 py-4 border-b border-gray-100">
+                  <ActivityWeather activityKey={activityWeatherKey} />
+                </div>
+              )}
+
+              {/* ── Route Map ── */}
+              {gpsData.length > 0 && (
+                <div className="border-b border-gray-50">
+                  <div className="relative overflow-hidden" style={{ height: 320 }}>
+                    <MapContainer
+                      key={`modal-map-desktop-${gpsData[0]?.[0]}-${gpsData[0]?.[1]}`}
+                      center={gpsData[Math.floor(gpsData.length / 2)]}
+                      zoom={12}
+                      style={{ height: '100%', width: '100%', zIndex: 0 }}
+                      scrollWheelZoom={false}
+                      zoomControl={true}
+                      attributionControl={false}
+                    >
+                      <MapInvalidator />
+                      <FitBoundsToRoute positions={gpsData} />
+                      <TileLayer url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png" />
+                      <Polyline positions={gpsData} pathOptions={{ color, weight: 4, opacity: 0.9, lineCap: 'round', lineJoin: 'round' }} />
+                      <CircleMarker center={gpsData[0]} radius={6} pathOptions={{ color: '#fff', weight: 2, fillColor: '#22c55e', fillOpacity: 1 }}>
+                        <LeafletTooltip permanent direction="top" offset={[0, -10]}>Start</LeafletTooltip>
+                      </CircleMarker>
+                      <CircleMarker center={gpsData[gpsData.length - 1]} radius={6} pathOptions={{ color: '#fff', weight: 2, fillColor: '#ef4444', fillOpacity: 1 }}>
+                        <LeafletTooltip permanent direction="top" offset={[0, -10]}>Finish</LeafletTooltip>
+                      </CircleMarker>
+                    </MapContainer>
+                  </div>
+                </div>
+              )}
+
+              {/* ── Comments ── */}
+              {commentsTarget.trainingId && (
+              <div className="px-5 py-4 border-b border-gray-100">
+                <TrainingComments
+                  trainingId={commentsTarget.trainingId}
+                  trainingType={commentsTarget.trainingType}
+                />
+              </div>
               )}
             </div>
 
-            {editingPlanned ? (
-              <div className="flex flex-col gap-3">
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Title</label>
-                    <input type="text" value={planForm.title} onChange={e => setPlanForm(p => ({ ...p, title: e.target.value }))} placeholder={title}
-                      className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2" />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Target TSS</label>
-                    <input type="number" value={planForm.targetTss} onChange={e => setPlanForm(p => ({ ...p, targetTss: e.target.value }))} placeholder={tss > 0 ? String(Math.round(tss)) : ''}
-                      className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2" min="0" />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">
-                      Duration {planForm.durationMins > 0 && <span className="font-normal normal-case text-gray-400">({formatMinutes(planForm.durationMins)})</span>}
-                    </label>
-                    <input type="text" value={planForm.durationDisplay}
-                      onChange={e => setPlanForm(p => ({ ...p, durationDisplay: e.target.value, durationMins: null }))}
-                      onBlur={() => { const mins = parseDurationToMinutes(planForm.durationDisplay); if (mins != null && mins > 0) setPlanForm(p => ({ ...p, durationMins: mins, durationDisplay: formatMinutes(mins) })); }}
-                      placeholder={dur > 0 ? formatMinutes(Math.round(dur/60)) : '1:30'}
-                      className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2" />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Distance</label>
-                    <input type="text" value={planForm.distanceDisplay}
-                      onChange={e => setPlanForm(p => ({ ...p, distanceDisplay: e.target.value, distanceKm: null }))}
-                      onBlur={() => {
-                        const metres = parsePlanDistanceToMetres(planForm.distanceDisplay);
-                        if (metres != null && metres > 0) {
-                          setPlanForm(p => ({
-                            ...p,
-                            distanceKm: formatDistanceInputFromMetres(metres, unitSystem, { isSwim: isSwimForm }),
-                            distanceDisplay: formatDistanceFieldDisplay(metres, unitSystem, { isSwim: isSwimForm }),
-                          }));
-                        }
-                      }}
-                      placeholder={dist > 0 ? formatDistance(dist, unitSystem).formatted : distanceInputPlaceholder(unitSystem, isSwimForm)}
-                      className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2" />
-                  </div>
+            <div className="min-w-0">
+              {/* ── Training Overview (desktop) ── */}
+              {detailLoading ? (
+                <div className="px-5 py-3 border-b border-gray-50">
+                  <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide mb-2">Training Overview</div>
+                  <div className="rounded-xl bg-gray-100 animate-pulse" style={{ height: 120 }} />
                 </div>
-                <div>
-                  <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Planned description</label>
-                  <textarea value={planForm.description} onChange={e => setPlanForm(p => ({ ...p, description: e.target.value }))} placeholder="Workout plan, intervals, coach instructions…" rows={3}
-                    className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 resize-none" />
+              ) : chartTraining?.records?.length > 0 ? (
+                <div className="px-5 py-3 border-b border-gray-50">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide">Training Overview</div>
+                    {isSyntheticData && (
+                      streamsRefreshing ? (
+                        <span className="flex items-center gap-1.5 text-xs text-gray-400">
+                          <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>
+                          Loading Strava data…
+                        </span>
+                      ) : (
+                        <button
+                          onClick={refreshStreams}
+                          className="flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-amber-50 border border-amber-200 text-amber-700 hover:bg-amber-100 transition-colors"
+                        >
+                          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                          Load detailed Strava data
+                        </button>
+                      )
+                    )}
+                  </div>
+                  <TrainingChart
+                    training={chartTraining}
+                    user={null}
+                    userProfile={null}
+                    onHover={() => {}}
+                    onLeave={() => {}}
+                    focusTimeSec={peaksFocus?.focusTimeSec ?? null}
+                    focusWindowSec={peaksFocus?.focusWindowSec ?? null}
+                    focusLabel={peaksFocus?.label ?? null}
+                    focusMetric={peaksFocus?.metric ?? null}
+                    onFocusDismiss={() => setPeaksFocus(null)}
+                  />
                 </div>
-                <div className="flex gap-2">
-                  {plannedWorkout && (
-                    <button onClick={() => setEditingPlanned(false)} className="flex-1 py-2 rounded-xl border border-gray-200 text-sm font-semibold text-gray-500 hover:bg-gray-50 transition-colors">Cancel</button>
-                  )}
-                  <button onClick={handleSavePlan} disabled={savingPlan} className="flex-1 py-2 rounded-xl text-sm font-bold text-white transition-colors disabled:opacity-50" style={{ backgroundColor: color }}>
-                    {savingPlan ? 'Saving…' : plannedWorkout ? 'Save' : 'Add Planned'}
-                  </button>
-                  {plannedWorkout && onEditPlanned && (
-                    <button onClick={() => onEditPlanned(plannedWorkout)} className="flex-1 py-2 rounded-xl border text-sm font-semibold transition-colors flex items-center justify-center gap-1.5"
-                      style={{ borderColor: color + '60', color, backgroundColor: color + '08' }}>
-                      <PencilIcon className="w-3.5 h-3.5" /> Build Workout
-                    </button>
-                  )}
+              ) : null}
+
+              {isRun && (
+                <RunSplitsTable
+                  laps={laps}
+                  records={chartTraining?.records || []}
+                  lapTimeSource={isStravaActivity ? 'strava' : 'fit'}
+                  unitSystem={unitSystem}
+                  className="px-5"
+                />
+              )}
+
+              {/* ── Lap chart — sticky on desktop so the bars stay visible
+                  while the user scrolls through the laps table below. Mobile
+                  keeps natural flow (sticky steals too much height). ── */}
+              {laps.length > 1 && (
+                <div className="border-b border-gray-50 md:sticky md:top-0 md:z-10 bg-white">
+                  <LapChart
+                    laps={laps} color={color} isBike={isBike} isRun={isRun} isSwim={isSwim} unitSystem={unitSystem}
+                    selectedLap={selectedLap}
+                    chartScrollRef={lapChartScrollRef}
+                    records={chartTraining?.records}
+                    onSelectLap={(i) => {
+                      setSelectedLap(i);
+                      lapRowRefs.current[i]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }}
+                    // Horizontal chart scroll only highlights — does NOT pull the
+                    // laps table. Auto-scrolling the table while the user is
+                    // scrolling it themselves caused the jittery "fights me back"
+                    // behaviour.
+                    onScrollCenter={(i) => setSelectedLap(i)}
+                  />
                 </div>
-              </div>
-            ) : (
-              plannedWorkout ? (
-                <div className="flex flex-wrap gap-4 items-start">
-                  {/* Planned vs Completed comparison — TrainingPeaks-style two
-                      columns so the athlete/coach sees target vs actual at a glance. */}
+              )}
+
+              {/* ── Laps table — full width ── */}
+              {laps.length > 0 && (
+                <div className="px-5 py-3">
                   {(() => {
-                    const fmtPaceDD = (distM, durS) => {
-                      if (!(distM > 0 && durS > 0)) return '—';
-                      const full = formatPaceFromDistanceAndDuration(distM, durS, unitSystem, isSwim ? 'swim' : 'run');
-                      return full ? full.replace(/\s*\/\s*\S+$/, '').trim() : '—';
-                    };
-                    const stripUnit = (s) => (s ? s.replace(/\s*\/\s*\S+$/, '').trim() : '—');
-                    const rows = [];
-                    rows.push(['Duration', plannedDur > 0 ? fmtDur(plannedDur) : '—', dur > 0 ? fmtDur(dur) : '—']);
-                    if (plannedDist > 0 || dist > 0) {
-                      rows.push(['Distance', plannedDist > 0 ? fmtDist(plannedDist) : '—', dist > 0 ? fmtDist(dist) : '—']);
-                    }
-                    if (isBike) {
-                      if (power > 0) rows.push(['Avg Power', '—', `${Math.round(power)} W`]);
-                    } else if (isRun || isSwim) {
-                      rows.push([`Pace ${paceUnitShort(unitSystem, isSwim ? 'swim' : 'run')}`, fmtPaceDD(plannedDist, plannedDur), stripUnit(paceStr)]);
-                    }
-                    if (plannedTss > 0 || tss > 0) {
-                      rows.push(['TSS', plannedTss > 0 ? String(Math.round(plannedTss)) : '—', tss > 0 ? String(Math.round(tss)) : '—']);
-                    }
-                    if (hr > 0) rows.push(['Avg HR', '—', `${Math.round(hr)} bpm`]);
+                    const hasLactate = laps.some(l => (l.lactate ?? l.lactateValue) != null);
+                    const showLactate = hasLactate || !!onAddLactate;
+                    const showPace = isBike || isRun || isSwim;
+                    const cols = ['1.5rem', '1fr', '1fr', ...(showPace ? ['1fr'] : []), '1fr', ...(showLactate ? ['1fr'] : [])].join(' ');
+                    const paceHeader = isBike ? 'Pwr' : paceUnitShort(unitSystem, isSwim ? 'swim' : 'run');
                     return (
-                      <div className="w-full sm:w-auto sm:min-w-[280px] rounded-xl border border-gray-100 overflow-hidden">
-                        <div className="grid grid-cols-[1fr_5.5rem_5.5rem] bg-gray-50 border-b border-gray-100 text-[9px] font-bold uppercase tracking-wide text-gray-400">
-                          <span className="px-3 py-1.5">&nbsp;</span>
-                          <span className="px-3 py-1.5 text-right">Planned</span>
-                          <span className="px-3 py-1.5 text-right text-emerald-600">Completed</span>
+                      <div className="rounded-xl overflow-hidden border border-gray-100">
+                        <div className="grid text-[9px] font-bold text-gray-400 uppercase tracking-wide bg-gray-50 px-3 py-1.5 border-b border-gray-100"
+                          style={{ gridTemplateColumns: cols }}>
+                          <span>#</span>
+                          <span className="text-right">Dist</span>
+                          <span className="text-right">Time</span>
+                          {showPace && <span className="text-right">{paceHeader}</span>}
+                          <span className="text-right">HR</span>
+                          {showLactate && <span className="text-right">La</span>}
                         </div>
                         <div className="divide-y divide-gray-50">
-                          {rows.map(([label, p, c]) => (
-                            <div key={label} className="grid grid-cols-[1fr_5.5rem_5.5rem] items-center text-[11px]">
-                              <span className="px-3 py-2 text-gray-500 font-medium">{label}</span>
-                              <span className="px-3 py-2 text-right tabular-nums text-gray-500">{p}</span>
-                              <span className="px-3 py-2 text-right tabular-nums font-bold text-gray-800">{c}</span>
-                            </div>
-                          ))}
+                          {laps.map((lap, i) => {
+                            // Mirror the mobile block: accept both Strava
+                            // (snake_case) and FIT (camelCase, e.g. totalDistance,
+                            // avgHeartRate) field names so FIT uploads don't
+                            // render every column blank.
+                            const lapDur   = lapMovingSecs(lap);
+                            const lapDist  = Number(lap.distance || lap.totalDistance || 0);
+                            const lapSpeed = lap.average_speed || lap.avgSpeed || lap.avg_speed || null;
+                            const lapPower = Number(lap.average_watts || lap.avgPower || 0);
+                            const lapHr    = Number(lap.average_heartrate || lap.avgHeartRate || lap.averageHeartRate || lap.avgHR || 0);
+                            const lapLa    = lap.lactate ?? lap.lactateValue;
+                            const lapNum   = lap.lapNumber ?? (i + 1);
+                            // Detect lap type for color-coding (intensity-based)
+                            const lapType  = classifyLaps(laps, /run/i.test(sport) ? 'run' : /swim/i.test(sport) ? 'swim' : 'bike')[i];
+                            const isRestLap = lapType === 'recovery' || lapType === 'rest';
+
+                            let lapPaceStr = '—';
+                            let paceIsNormal = true;
+                            if (isSwim) {
+                              const spd = lapSpeed || (lapDist > 0 && lapDur > 0 ? lapDist / lapDur : 0);
+                              if (spd > 0) lapPaceStr = formatPaceFromSpeedMps(spd, unitSystem, 'swim');
+                            } else if (isRun) {
+                              if (lapDist > 0 && lapDur > 0) {
+                                lapPaceStr = formatPaceFromDistanceAndDuration(lapDist, lapDur, unitSystem, 'run');
+                                const secPerKm = lapDur / (lapDist / 1000);
+                                if (isRestLap && secPerKm > 480) paceIsNormal = false;
+                              }
+                            } else if (isBike) {
+                              lapPaceStr = lapPower > 0 ? `${Math.round(lapPower)}W` : '—';
+                            }
+
+                            const isSelected = selectedLap === i;
+                            const typeDot  = COMPARE_STEP_COLORS[lapType] || '#9ca3af';
+                            const typeRowBg = isSelected ? '#EFF6FF'
+                              : lapType === 'warmup'   ? '#fffbeb'
+                              : lapType === 'cooldown' ? '#f0f9ff'
+                              : lapType === 'recovery' || lapType === 'rest' ? '#f9fafb'
+                              : undefined;
+                            const paceColor = isSelected ? '#2563EB'
+                              : !paceIsNormal ? '#9ca3af'
+                              : isRestLap ? '#9ca3af'
+                              : lapType === 'warmup' ? '#d97706'
+                              : lapType === 'cooldown' ? '#0284c7'
+                              : '#2563EB';
+                            return (
+                              <div
+                                key={i}
+                                ref={el => lapRowRefs.current[i] = el}
+                                onClick={() => setSelectedLap(isSelected ? null : i)}
+                                className="grid items-center px-3 py-2.5 text-[11px] cursor-pointer transition-colors"
+                                style={{
+                                  gridTemplateColumns: cols,
+                                  backgroundColor: typeRowBg,
+                                  borderLeft: `3px solid ${isSelected ? '#2563EB' : typeDot}`,
+                                }}
+                              >
+                                <span className="font-bold" style={{ color: isSelected ? '#2563EB' : typeDot }}>{lapNum}</span>
+                                <span className="text-gray-500 text-right tabular-nums">{lapDist > 0 ? formatDistance(lapDist, unitSystem).formatted : '—'}</span>
+                                <span className="font-semibold text-gray-700 text-right tabular-nums">{fmtLapDur(lapDur)}</span>
+                                {showPace && <span className="text-right tabular-nums font-semibold" style={{ color: paceColor }}>{lapPaceStr}</span>}
+                                <span className="text-gray-500 text-right tabular-nums">{lapHr > 0 ? Math.round(lapHr) : '—'}</span>
+                                {showLactate && (
+                                  lapLa != null ? (
+                                    <span className="text-right font-semibold tabular-nums" style={{ color: '#7c3aed' }}>{Number(lapLa).toFixed(1)}</span>
+                                  ) : onAddLactate ? (
+                                    <div className="flex justify-end">
+                                      <button onClick={e => { e.stopPropagation(); onAddLactate(merged, i); onClose(); }}
+                                        className="flex items-center justify-center w-5 h-5 rounded-full hover:opacity-80 transition-opacity"
+                                        style={{ backgroundColor: '#f5f3ff', color: '#7c3aed' }}
+                                        title={`Add lactate for lap ${lapNum}`}>
+                                        <span className="text-xs font-bold leading-none">+</span>
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <span className="text-right tabular-nums text-gray-400">—</span>
+                                  )
+                                )}
+                              </div>
+                            );
+                          })}
                         </div>
                       </div>
                     );
                   })()}
-                  {planSteps.length > 0 && (
-                    <div className="flex-1 min-w-[200px]">
-                      <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide mb-2">Intervals</div>
-                      <div className="flex flex-wrap gap-1">
-                        {planSteps.filter(s => !s.isGroupHeader).map((s, i) => {
-                          const stepColor = s.type === 'work' ? color : s.type === 'warmup' ? '#fbbf24' : s.type === 'cooldown' ? '#38bdf8' : '#6ee7b7';
-                          return (
-                            <div key={i} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-gray-50 border-l-2 text-[10px]" style={{ borderLeftColor: stepColor }}>
-                              <span className="font-semibold text-gray-700 capitalize">{s.type || 'Step'}{s.groupId ? ` ×${s.groupRepeat || 1}` : ''}</span>
-                              <span className="font-bold text-gray-500">{fmtPlanDuration(s.durationSeconds)}</span>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
+                </div>
+              )}
+
+              {/* ── Against the lactate test (desktop) ──
+                  The modal renders twice: a mobile layout of tabbed views and this
+                  desktop one. Mounting a section in only one of them makes it
+                  invisible to half the users and, worse, invisible in a way that
+                  looks like it was never built. */}
+              {chartTraining?.records?.length > 60 && (
+                <div className="px-5 py-4 border-t border-gray-100">
+                  <SessionVsTestPanel
+                    records={chartTraining.records}
+                    laps={laps}
+                    sport={merged?.sport || sport}
+                    athleteId={athleteId}
+                    activityKey={activityWeatherKey}
+                    activityDate={merged?.start_date || merged?.startDate || merged?.date}
+                    sessionTitle={merged?.titleManual || merged?.name || merged?.title || ''}
+                    plannedTarget={plannedWorkout?.category || plannedWorkout?.title || null}
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* Full width: both of these are two-column tables of their own. */}
+            <div className="min-w-0 xl:col-span-2">
+              {/* ── Compare with past sessions (desktop collapsible) ── */}
+              {showCompare && (
+                <div className="px-5 py-3 border-t border-gray-100">
+                  <button
+                    onClick={() => setShowCompareDesktop(v => !v)}
+                    className="flex items-center gap-2 text-xs font-bold text-gray-500 uppercase tracking-wide w-full text-left mb-3"
+                  >
+                    <span>Compare with past sessions</span>
+                    <ChevronDownIcon className={`w-4 h-4 transition-transform ${showCompareDesktop ? 'rotate-180' : ''}`} />
+                  </button>
+                  {showCompareDesktop && <CompareContent merged={merged} athleteId={athleteId} onOpen={act => setNestedActivity(act)} />}
+                </div>
+              )}
+
+              {/* ── Planned section (edit / view) ── */}
+              <div className="border-t border-gray-100 px-5 py-4">
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">{plannedWorkout && !editingPlanned && dur > 0 ? 'Planned vs Completed' : 'Planned'}</span>
+                  {plannedWorkout && !editingPlanned && (
+                    <button
+                      onClick={() => setEditingPlanned(true)}
+                      className="flex items-center gap-1 text-[10px] font-semibold px-2 py-1 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 transition-colors"
+                    >
+                      <PencilIcon className="w-3 h-3" /> Edit
+                    </button>
                   )}
                 </div>
-              ) : (
-                <button onClick={() => setEditingPlanned(true)} className="text-sm font-semibold px-4 py-2 rounded-xl border border-dashed border-gray-300 text-gray-400 hover:border-gray-400 hover:text-gray-600 transition-colors">
-                  + Add planned workout
-                </button>
-              )
-            )}
+
+                {editingPlanned ? (
+                  <div className="flex flex-col gap-3">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Title</label>
+                        <input type="text" value={planForm.title} onChange={e => setPlanForm(p => ({ ...p, title: e.target.value }))} placeholder={title}
+                          className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2" />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Target TSS</label>
+                        <input type="number" value={planForm.targetTss} onChange={e => setPlanForm(p => ({ ...p, targetTss: e.target.value }))} placeholder={tss > 0 ? String(Math.round(tss)) : ''}
+                          className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2" min="0" />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">
+                          Duration {planForm.durationMins > 0 && <span className="font-normal normal-case text-gray-400">({formatMinutes(planForm.durationMins)})</span>}
+                        </label>
+                        <input type="text" value={planForm.durationDisplay}
+                          onChange={e => setPlanForm(p => ({ ...p, durationDisplay: e.target.value, durationMins: null }))}
+                          onBlur={() => { const mins = parseDurationToMinutes(planForm.durationDisplay); if (mins != null && mins > 0) setPlanForm(p => ({ ...p, durationMins: mins, durationDisplay: formatMinutes(mins) })); }}
+                          placeholder={dur > 0 ? formatMinutes(Math.round(dur/60)) : '1:30'}
+                          className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2" />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Distance</label>
+                        <input type="text" value={planForm.distanceDisplay}
+                          onChange={e => setPlanForm(p => ({ ...p, distanceDisplay: e.target.value, distanceKm: null }))}
+                          onBlur={() => {
+                            const metres = parsePlanDistanceToMetres(planForm.distanceDisplay);
+                            if (metres != null && metres > 0) {
+                              setPlanForm(p => ({
+                                ...p,
+                                distanceKm: formatDistanceInputFromMetres(metres, unitSystem, { isSwim: isSwimForm }),
+                                distanceDisplay: formatDistanceFieldDisplay(metres, unitSystem, { isSwim: isSwimForm }),
+                              }));
+                            }
+                          }}
+                          placeholder={dist > 0 ? formatDistance(dist, unitSystem).formatted : distanceInputPlaceholder(unitSystem, isSwimForm)}
+                          className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2" />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Planned description</label>
+                      <textarea value={planForm.description} onChange={e => setPlanForm(p => ({ ...p, description: e.target.value }))} placeholder="Workout plan, intervals, coach instructions…" rows={3}
+                        className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 resize-none" />
+                    </div>
+                    <div className="flex gap-2">
+                      {plannedWorkout && (
+                        <button onClick={() => setEditingPlanned(false)} className="flex-1 py-2 rounded-xl border border-gray-200 text-sm font-semibold text-gray-500 hover:bg-gray-50 transition-colors">Cancel</button>
+                      )}
+                      <button onClick={handleSavePlan} disabled={savingPlan} className="flex-1 py-2 rounded-xl text-sm font-bold text-white transition-colors disabled:opacity-50" style={{ backgroundColor: color }}>
+                        {savingPlan ? 'Saving…' : plannedWorkout ? 'Save' : 'Add Planned'}
+                      </button>
+                      {plannedWorkout && onEditPlanned && (
+                        <button onClick={() => onEditPlanned(plannedWorkout)} className="flex-1 py-2 rounded-xl border text-sm font-semibold transition-colors flex items-center justify-center gap-1.5"
+                          style={{ borderColor: color + '60', color, backgroundColor: color + '08' }}>
+                          <PencilIcon className="w-3.5 h-3.5" /> Build Workout
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  plannedWorkout ? (
+                    <div className="flex flex-wrap gap-4 items-start">
+                      {/* Planned vs Completed comparison — TrainingPeaks-style two
+                          columns so the athlete/coach sees target vs actual at a glance. */}
+                      {(() => {
+                        const fmtPaceDD = (distM, durS) => {
+                          if (!(distM > 0 && durS > 0)) return '—';
+                          const full = formatPaceFromDistanceAndDuration(distM, durS, unitSystem, isSwim ? 'swim' : 'run');
+                          return full ? full.replace(/\s*\/\s*\S+$/, '').trim() : '—';
+                        };
+                        const stripUnit = (s) => (s ? s.replace(/\s*\/\s*\S+$/, '').trim() : '—');
+                        const rows = [];
+                        rows.push(['Duration', plannedDur > 0 ? fmtDur(plannedDur) : '—', dur > 0 ? fmtDur(dur) : '—']);
+                        if (plannedDist > 0 || dist > 0) {
+                          rows.push(['Distance', plannedDist > 0 ? fmtDist(plannedDist) : '—', dist > 0 ? fmtDist(dist) : '—']);
+                        }
+                        if (isBike) {
+                          if (power > 0) rows.push(['Avg Power', '—', `${Math.round(power)} W`]);
+                        } else if (isRun || isSwim) {
+                          rows.push([`Pace ${paceUnitShort(unitSystem, isSwim ? 'swim' : 'run')}`, fmtPaceDD(plannedDist, plannedDur), stripUnit(paceStr)]);
+                        }
+                        if (plannedTss > 0 || tss > 0) {
+                          rows.push(['TSS', plannedTss > 0 ? String(Math.round(plannedTss)) : '—', tss > 0 ? String(Math.round(tss)) : '—']);
+                        }
+                        if (hr > 0) rows.push(['Avg HR', '—', `${Math.round(hr)} bpm`]);
+                        return (
+                          <div className="w-full sm:w-auto sm:min-w-[280px] rounded-xl border border-gray-100 overflow-hidden">
+                            <div className="grid grid-cols-[1fr_5.5rem_5.5rem] bg-gray-50 border-b border-gray-100 text-[9px] font-bold uppercase tracking-wide text-gray-400">
+                              <span className="px-3 py-1.5">&nbsp;</span>
+                              <span className="px-3 py-1.5 text-right">Planned</span>
+                              <span className="px-3 py-1.5 text-right text-emerald-600">Completed</span>
+                            </div>
+                            <div className="divide-y divide-gray-50">
+                              {rows.map(([label, p, c]) => (
+                                <div key={label} className="grid grid-cols-[1fr_5.5rem_5.5rem] items-center text-[11px]">
+                                  <span className="px-3 py-2 text-gray-500 font-medium">{label}</span>
+                                  <span className="px-3 py-2 text-right tabular-nums text-gray-500">{p}</span>
+                                  <span className="px-3 py-2 text-right tabular-nums font-bold text-gray-800">{c}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })()}
+                      {planSteps.length > 0 && (
+                        <div className="flex-1 min-w-[200px]">
+                          <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide mb-2">Intervals</div>
+                          <div className="flex flex-wrap gap-1">
+                            {planSteps.filter(s => !s.isGroupHeader).map((s, i) => {
+                              const stepColor = s.type === 'work' ? color : s.type === 'warmup' ? '#fbbf24' : s.type === 'cooldown' ? '#38bdf8' : '#6ee7b7';
+                              return (
+                                <div key={i} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-gray-50 border-l-2 text-[10px]" style={{ borderLeftColor: stepColor }}>
+                                  <span className="font-semibold text-gray-700 capitalize">{s.type || 'Step'}{s.groupId ? ` ×${s.groupRepeat || 1}` : ''}</span>
+                                  <span className="font-bold text-gray-500">{fmtPlanDuration(s.durationSeconds)}</span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <button onClick={() => setEditingPlanned(true)} className="text-sm font-semibold px-4 py-2 rounded-xl border border-dashed border-gray-300 text-gray-400 hover:border-gray-400 hover:text-gray-600 transition-colors">
+                      + Add planned workout
+                    </button>
+                  )
+                )}
+              </div>
+            </div>
           </div>
 
-        </div>{/* end single scrollable column */}
+        </div>{/* end scrollable body */}
       </div>
     </div>,
     document.getElementById('app-modal-root') || document.body
