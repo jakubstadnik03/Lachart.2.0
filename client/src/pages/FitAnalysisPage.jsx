@@ -3594,6 +3594,11 @@ const FitAnalysisPage = () => {
         avgPower: t.avgPower || t.averagePower || null,
         avgSpeed: t.avgSpeed || t.averageSpeed || null,
         avgHeartRate: hrFrom(t),
+        description: t.description || null,
+        // Laps ride along by reference — they are already in memory as part of
+        // `trainings`, and the calendar card draws the session's shape from
+        // them. Smart-detect laps win when the athlete has saved a split.
+        laps: (Array.isArray(t.savedAutoLaps) && t.savedAutoLaps.length ? t.savedAutoLaps : t.laps) || null,
       })),
       ...regularTrainings
         .filter((t) => !t?.sourceStravaActivityId)
@@ -3618,6 +3623,9 @@ const FitAnalysisPage = () => {
           avgPower: t.avgPower || t.averagePower || null,
           avgSpeed: t.avgSpeed || t.averageSpeed || null,
           avgHeartRate: hrFrom(t),
+          description: t.description || null,
+          // A manually logged session keeps its intervals in `results`.
+          laps: Array.isArray(t.results) && t.results.length ? t.results : null,
         })),
       // One mapper, shared with the dashboard. Two copies of this mapping is
       // how the same week came to read 24:27 here and 24:08 there: they

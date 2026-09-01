@@ -385,6 +385,115 @@ function PlanMiniChart({ steps, color, width = 60, height = 16, fluid = false })
   );
 }
 
+/**
+ * The shape of a session that was actually done, read off its laps.
+ *
+ * A planned workout draws its profile from steps; a completed one has no
+ * steps, only what the device recorded. Laps are the closest thing to a
+ * profile that the calendar already has in memory — the list endpoint sends
+ * them, so this costs a pass over an array rather than a request.
+ *
+ * One metric for the whole activity, not the best available per lap: mixing
+ * power into some bars and heart rate into others draws a shape the session
+ * never had. Power first, then speed, then heart rate, whichever most laps
+ * agree on.
+ *
+ * @returns {number[]|null} relative heights in 0..1, oldest first
+ */
+function activityProfileBars(a, maxBars = 44) {
+  const laps = Array.isArray(a?.laps) && a.laps.length >= 3 ? a.laps : null;
+  if (!laps) return null;
+
+  const durOf = (l) => Number(
+    l.totalTimerTime ?? l.totalElapsedTime ?? l.moving_time ?? l.elapsed_time
+    ?? l.durationSeconds ?? l.duration ?? 0
+  ) || 0;
+
+  const READERS = [
+    (l) => Number(l.avgPower ?? l.average_watts ?? l.averagePower ?? l.power ?? 0) || 0,
+    (l) => {
+      const speed = Number(l.avgSpeed ?? l.average_speed ?? l.averageSpeed ?? 0) || 0;
+      if (speed > 0) return speed;
+      const dist = Number(l.totalDistance ?? l.distance ?? l.distanceMeters ?? 0) || 0;
+      const dur = durOf(l);
+      return dist > 0 && dur > 0 ? dist / dur : 0;
+    },
+    (l) => Number(l.avgHeartRate ?? l.average_heartrate ?? l.averageHeartRate ?? l.heartRate ?? 0) || 0,
+  ];
+
+  // Whichever channel the device actually recorded for most of the session.
+  const read = READERS.find(r => laps.filter(l => r(l) > 0).length >= laps.length * 0.6);
+  if (!read) return null;
+
+  const total = laps.reduce((s, l) => s + durOf(l), 0);
+  if (!(total > 0)) return null;
+  const peak = Math.max(...laps.map(read));
+  if (!(peak > 0)) return null;
+
+  // Sample the session at even points in time rather than drawing one bar per
+  // lap: a ride with 90 auto-laps would otherwise draw 90 hairlines, and one
+  // with 4 would draw four blocks whose widths say nothing about their length.
+  // Always sample at full resolution: with one bar per lap a six-by-three
+  // session aliased into a single wide hump, because 14 samples cannot
+  // resolve 180-second reps. Extra bars cost nothing and a four-lap ride
+  // still draws as four blocks, sized by how long each one lasted.
+  const bars = [];
+  const n = maxBars;
+  let cursor = 0, acc = durOf(laps[0]);
+  for (let i = 0; i < n; i++) {
+    const t = ((i + 0.5) / n) * total;
+    while (t > acc && cursor < laps.length - 1) acc += durOf(laps[++cursor]);
+    bars.push(Math.max(0.08, Math.min(1, read(laps[cursor]) / peak)));
+  }
+  return bars;
+}
+
+/** The bars from activityProfileBars, drawn to fill whatever box they are given. */
+function ActivityMiniChart({ bars, color, height = 18 }) {
+  if (!bars?.length) return null;
+  const W = 140;
+  const step = W / bars.length;
+  return (
+    <svg
+      width="100%"
+      height={height}
+      viewBox={`0 0 ${W} ${height}`}
+      preserveAspectRatio="none"
+      style={{ display: 'block' }}
+      aria-hidden="true"
+    >
+      {bars.map((v, i) => (
+        <rect
+          key={i}
+          x={i * step}
+          y={height - v * height}
+          width={Math.max(0.8, step - 0.4)}
+          height={v * height}
+          fill={color}
+          // The hard efforts read darker than the rest without a second colour.
+          opacity={0.3 + 0.55 * v}
+        />
+      ))}
+    </svg>
+  );
+}
+
+/**
+ * The footer band a card's profile chart sits in.
+ *
+ * `bleed` is the card's own padding, negated — the band runs to the card's
+ * edges so the profile reads as the card's floor rather than another line of
+ * content. Cards that pad differently pass their own.
+ */
+function CardProfileBand({ children, bleed = '-mx-2 -mb-1.5' }) {
+  return (
+    <div className={`${bleed} mt-0.5 px-2 pt-1 pb-1 border-t border-black/5 bg-black/[0.015]`}>
+      {children}
+    </div>
+  );
+}
+
+
 // Coerce any input to a *valid* Date. A bad activity/plan date (null, '',
 // malformed string) otherwise yields an Invalid Date whose .toISOString()
 // throws "RangeError: Invalid time value" and takes down the whole calendar.
@@ -560,6 +669,9 @@ function PlannedWorkoutCard({ pw, onSelect, onStart, compact = false, showDescri
   const effectiveCategory = linkedActivity?.category || pw.category || null;
   const completedStats = linkedActivity ? activityCompletedStats(linkedActivity) : null;
   const plannedStats = !linkedActivity ? plannedWorkoutPreviewStats(pw, sport) : null;
+  // Once a plan has a ride against it, the card should show the shape that
+  // was ridden, not the one that was asked for.
+  const actualBars = linkedActivity ? activityProfileBars(linkedActivity) : null;
 
   if (compact) {
     const isCompletedPair = pairingState === 'completed' || isCompleted;
@@ -661,14 +773,12 @@ function PlannedWorkoutCard({ pw, onSelect, onStart, compact = false, showDescri
           {/* Interval profile — drawn for a session that was done as well as
               one still ahead. The shape identifies the workout faster than
               its title does, and it is just as worth having afterwards. */}
-          {pw.steps?.length > 0 && !isSkipped && (
-            <PlanMiniChart
-              steps={pw.steps}
-              color={color}
-              width={140}
-              height={showDescription ? 20 : 14}
-              fluid
-            />
+          {!isSkipped && (actualBars || pw.steps?.length > 0) && (
+            <CardProfileBand>
+              {actualBars
+                ? <ActivityMiniChart bars={actualBars} color={color} height={showDescription ? 20 : 14} />
+                : <PlanMiniChart steps={pw.steps} color={color} width={140} height={showDescription ? 20 : 14} fluid />}
+            </CardProfileBand>
           )}
         </button>
         {/* Three-dot menu */}
@@ -867,6 +977,8 @@ function WeekActivityCard({ a, isSelected, onSelect, onActivityClick, onAddLacta
   // strip uses. Colouring by sport alone here is why a red "heat" session read
   // blue on this page and red on that one.
   const color = activityAccentColor(a, getCategory);
+  const bars = React.useMemo(() => activityProfileBars(a), [a]);
+  const description = a.description || null;
 
   const handleClick = (e) => {
     if (onActivityClick) {
@@ -904,10 +1016,24 @@ function WeekActivityCard({ a, isSelected, onSelect, onActivityClick, onAddLacta
             </span>
           )}
         </div>
+        {description && (
+          <div
+            className={`text-[10px] leading-snug ${isSelected ? 'text-white/75' : 'text-gray-500'}`}
+            style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}
+          >
+            {description}
+          </div>
+        )}
         {statsLine && (
           <div className={`text-[10px] leading-tight truncate tabular-nums ${isSelected ? 'text-white/80' : 'text-gray-500'}`}>
             {statsLine}
           </div>
+        )}
+        {/* What the session actually looked like, from its laps. */}
+        {bars && (
+          <CardProfileBand>
+            <ActivityMiniChart bars={bars} color={isSelected ? '#ffffff' : color} height={18} />
+          </CardProfileBand>
         )}
       </button>
       {onAddLactate && a.type === 'strava' && (
@@ -920,7 +1046,11 @@ function WeekActivityCard({ a, isSelected, onSelect, onActivityClick, onAddLacta
         </button>
       )}
       {commentCount > 0 && (
-        <span className="absolute bottom-1 right-1.5 pointer-events-none">
+        <span
+          className="absolute right-1.5 pointer-events-none"
+          // Clear the profile band when there is one, rather than sitting on it.
+          style={{ bottom: bars ? 26 : 4 }}
+        >
           <CommentBadge count={commentCount} isSelected={isSelected} />
         </span>
       )}
@@ -9662,6 +9792,7 @@ export default function CalendarView({
                                   const color = activityAccentColor(a, getCategory);
                                   const title = a.title || a.name || a.originalFileName || 'Activity';
                                   const statsLine = activityCompletedStats(a, userProfile);
+                                  const actBars = activityProfileBars(a);
                                   return (
                                     <button key={`act-${pi}`}
                                       onClick={e => { e.stopPropagation(); const r = e.currentTarget?.getBoundingClientRect() || null; handleActivityClick(a, r); }}
@@ -9685,10 +9816,23 @@ export default function CalendarView({
                                           </span>
                                         )}
                                       </div>
+                                      {a.description && (
+                                        <div
+                                          className="text-[12px] leading-snug text-gray-500 pl-7"
+                                          style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}
+                                        >
+                                          {a.description}
+                                        </div>
+                                      )}
                                       {statsLine && (
                                         <div className="text-[12px] text-gray-600 font-semibold pl-7 truncate tabular-nums">
                                           {statsLine}
                                         </div>
+                                      )}
+                                      {actBars && (
+                                        <CardProfileBand bleed="-mx-3 -mb-2.5">
+                                          <ActivityMiniChart bars={actBars} color={color} height={22} />
+                                        </CardProfileBand>
                                       )}
                                     </button>
                                   );
@@ -9704,6 +9848,7 @@ export default function CalendarView({
 
                                 if (act) {
                                   const actStats = activityCompletedStats(act, userProfile);
+                                  const pairBars = activityProfileBars(act);
                                   const cc = compliance || { color: '#22c55e', bg: '#f0fdf4', label: 'Done' };
                                   return (
                                     <button key={`pw-${pi}`}
@@ -9719,6 +9864,14 @@ export default function CalendarView({
                                         <span className="text-sm font-bold flex-1 truncate" style={{ color: planColor }}>{pw.title || 'Planned workout'}</span>
                                         <span className="text-[11px] font-bold flex-shrink-0" style={{ color: cc.color }}>{cc.label}</span>
                                       </div>
+                                      {pw.description && (
+                                        <div
+                                          className="text-[12px] leading-snug text-gray-500"
+                                          style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}
+                                        >
+                                          {pw.description}
+                                        </div>
+                                      )}
                                       <div className="flex items-center gap-2 pl-0.5">
                                         <SportIcon sport={act.sport || pwSport} className="w-4 h-4 flex-shrink-0" />
                                         {actStats && (
@@ -9728,6 +9881,12 @@ export default function CalendarView({
                                         )}
                                         {renderCategoryBadge(pwCategory)}
                                       </div>
+                                      {/* What was ridden, not what was asked for. */}
+                                      {pairBars && (
+                                        <CardProfileBand bleed="-mx-3 -mb-2.5">
+                                          <ActivityMiniChart bars={pairBars} color={cc.color} height={22} />
+                                        </CardProfileBand>
+                                      )}
                                     </button>
                                   );
                                 }
@@ -9755,7 +9914,6 @@ export default function CalendarView({
                                       {isMissed && (
                                         <span className="text-[11px] font-bold flex-shrink-0" style={{ color: '#ef4444' }}>Missed</span>
                                       )}
-                                      {!isMissed && pw.steps?.length > 0 && <PlanMiniChart steps={pw.steps} color={planColor} width={42} height={14} />}
                                     </div>
                                     {pw.description && (
                                       <div
@@ -9769,6 +9927,11 @@ export default function CalendarView({
                                       <div className="text-[12px] font-semibold pl-0.5 truncate tabular-nums" style={{ color: isMissed ? '#ef444488' : planColor + 'bb' }}>
                                         {plannedPreview}
                                       </div>
+                                    )}
+                                    {pw.steps?.length > 0 && !isSkipped && (
+                                      <CardProfileBand bleed="-mx-3 -mb-2.5">
+                                        <PlanMiniChart steps={pw.steps} color={isMissed ? '#ef4444' : planColor} width={140} height={22} fluid />
+                                      </CardProfileBand>
                                     )}
                                   </button>
                                 );
@@ -10323,6 +10486,7 @@ export default function CalendarView({
                         const dist = a.distance || a.totalDistance || 0;
                         const distStr = dist > 0 ? formatDistanceForUser(dist, user) : null;
                         const tssVal = Number(a.tss || a.trainingLoad || 0);
+                        const monthBars = activityProfileBars(a);
 
                         return (
                           <div key={pi} className="relative group/act w-full max-w-full" style={{ minWidth: 0 }}>
@@ -10376,6 +10540,16 @@ export default function CalendarView({
                                   )}
                                 </div>
                               )}
+                              {/* The session's shape, from its laps. */}
+                              {monthBars && (
+                                <CardProfileBand bleed="-mx-2 md:-mx-2.5 -mb-2">
+                                  <ActivityMiniChart
+                                    bars={monthBars}
+                                    color={isSelected ? '#ffffff' : (a.category ? (catBorderColor(a.category) || sportColor(a.sport)) : sportColor(a.sport))}
+                                    height={14}
+                                  />
+                                </CardProfileBand>
+                              )}
                             </button>
                             {onAddLactate && a.type === 'strava' && (
                               <button
@@ -10387,7 +10561,10 @@ export default function CalendarView({
                               </button>
                             )}
                             {activityCommentCount(a, commentCounts) > 0 && (
-                              <span className="absolute bottom-1 right-1.5 pointer-events-none">
+                              <span
+                                className="absolute right-1.5 pointer-events-none"
+                                style={{ bottom: monthBars ? 24 : 4 }}
+                              >
                                 <CommentBadge count={activityCommentCount(a, commentCounts)} isSelected={isSelected} />
                               </span>
                             )}
@@ -10676,3 +10853,4 @@ export default function CalendarView({
     </>
   );
 }
+
