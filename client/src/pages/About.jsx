@@ -315,7 +315,6 @@ export default function About() {
                 ['/for-athletes', 'For athletes'],
                 ['features',    'Features'],
                 ['download',    'App'],           // iOS launch hero section
-                ['/how-to-use', 'Tutorials'],
                 ['pricing',     'Pricing'],
               ].map(([id, label]) => (
                 id.startsWith('/')
@@ -389,7 +388,6 @@ export default function About() {
                 ['/for-athletes', 'For athletes'],
                 ['features',    'Features'],
                 ['download',    'App'],
-                ['/how-to-use', 'Tutorials'],
                 ['pricing',     'Pricing'],
               ].map(([id, label]) => {
                 const isRoute = id.startsWith('/');
