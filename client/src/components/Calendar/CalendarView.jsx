@@ -401,34 +401,59 @@ function PlanMiniChart({ steps, color, width = 60, height = 16, fluid = false })
  * @returns {number[]|null} relative heights in 0..1, oldest first
  */
 function activityProfileBars(a, maxBars = 44) {
-  const laps = Array.isArray(a?.laps) && a.laps.length >= 3 ? a.laps : null;
+  // Three vocabularies for the same session. A FIT upload and a manually
+  // logged training carry their laps in full, because those lists ship the
+  // whole document; a Strava or Garmin ride carries `lapProfile`, the
+  // four-key shape the activities endpoint projects in Mongo so the list can
+  // stay small. Whichever arrived, the rule below is the only one.
+  const laps = [a?.lapProfile, a?.laps, a?.results]
+    .find(l => Array.isArray(l) && l.length >= 3) || null;
   if (!laps) return null;
 
   const durOf = (l) => Number(
-    l.totalTimerTime ?? l.totalElapsedTime ?? l.moving_time ?? l.elapsed_time
+    l.d ?? l.totalTimerTime ?? l.totalElapsedTime ?? l.moving_time ?? l.elapsed_time
     ?? l.durationSeconds ?? l.duration ?? 0
   ) || 0;
 
+  // `floor` is where the bar's zero sits. Power really can be nothing, so a
+  // coast should draw as nothing. Nobody runs at zero and nobody's heart
+  // stops between reps: scaled from zero those two channels draw every
+  // session as one near-full slab, so they measure from just under the
+  // session's own easiest lap and the shape comes back.
   const READERS = [
-    (l) => Number(l.avgPower ?? l.average_watts ?? l.averagePower ?? l.power ?? 0) || 0,
-    (l) => {
-      const speed = Number(l.avgSpeed ?? l.average_speed ?? l.averageSpeed ?? 0) || 0;
-      if (speed > 0) return speed;
-      const dist = Number(l.totalDistance ?? l.distance ?? l.distanceMeters ?? 0) || 0;
-      const dur = durOf(l);
-      return dist > 0 && dur > 0 ? dist / dur : 0;
+    {
+      floor: 'zero',
+      read: (l) => Number(l.w ?? l.avgPower ?? l.average_watts ?? l.averagePower ?? l.power ?? 0) || 0,
     },
-    (l) => Number(l.avgHeartRate ?? l.average_heartrate ?? l.averageHeartRate ?? l.heartRate ?? 0) || 0,
+    {
+      floor: 'min',
+      read: (l) => {
+        const speed = Number(l.s ?? l.avgSpeed ?? l.average_speed ?? l.averageSpeed ?? 0) || 0;
+        if (speed > 0) return speed;
+        const dist = Number(l.totalDistance ?? l.distance ?? l.distanceMeters ?? 0) || 0;
+        const dur = durOf(l);
+        return dist > 0 && dur > 0 ? dist / dur : 0;
+      },
+    },
+    {
+      floor: 'min',
+      read: (l) => Number(l.h ?? l.avgHeartRate ?? l.average_heartrate ?? l.averageHeartRate ?? l.heartRate ?? 0) || 0,
+    },
   ];
 
   // Whichever channel the device actually recorded for most of the session.
-  const read = READERS.find(r => laps.filter(l => r(l) > 0).length >= laps.length * 0.6);
-  if (!read) return null;
+  const channel = READERS.find(r => laps.filter(l => r.read(l) > 0).length >= laps.length * 0.6);
+  if (!channel) return null;
+  const read = channel.read;
 
   const total = laps.reduce((s, l) => s + durOf(l), 0);
   if (!(total > 0)) return null;
-  const peak = Math.max(...laps.map(read));
+  const values = laps.map(read).filter(v => v > 0);
+  const peak = Math.max(...values);
   if (!(peak > 0)) return null;
+  const base = channel.floor === 'min' ? Math.min(...values) * 0.9 : 0;
+  const span = peak - base;
+  if (!(span > 0)) return null;
 
   // Sample the session at even points in time rather than drawing one bar per
   // lap: a ride with 90 auto-laps would otherwise draw 90 hairlines, and one
@@ -443,7 +468,7 @@ function activityProfileBars(a, maxBars = 44) {
   for (let i = 0; i < n; i++) {
     const t = ((i + 0.5) / n) * total;
     while (t > acc && cursor < laps.length - 1) acc += durOf(laps[++cursor]);
-    bars.push(Math.max(0.08, Math.min(1, read(laps[cursor]) / peak)));
+    bars.push(Math.max(0.08, Math.min(1, (read(laps[cursor]) - base) / span)));
   }
   return bars;
 }

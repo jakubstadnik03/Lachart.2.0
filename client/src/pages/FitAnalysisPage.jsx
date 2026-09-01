@@ -2316,7 +2316,11 @@ const FitAnalysisPage = () => {
         return;
       }
 
-      const params = athleteId ? { athleteId, summaryOnly: true, limit: 2000 } : { summaryOnly: true, limit: 2000 };
+      // withLapProfiles: the calendar draws the shape of every completed
+      // session, and a summary-only row has no laps to draw it from.
+      const params = athleteId
+        ? { athleteId, summaryOnly: true, withLapProfiles: true, limit: 2000 }
+        : { summaryOnly: true, withLapProfiles: true, limit: 2000 };
       const acts = normalizeApiList(await listExternalActivities(params));
       setExternalActivities(acts);
       
@@ -3625,7 +3629,7 @@ const FitAnalysisPage = () => {
           avgHeartRate: hrFrom(t),
           description: t.description || null,
           // A manually logged session keeps its intervals in `results`.
-          laps: Array.isArray(t.results) && t.results.length ? t.results : null,
+          results: Array.isArray(t.results) && t.results.length ? t.results : null,
         })),
       // One mapper, shared with the dashboard. Two copies of this mapping is
       // how the same week came to read 24:27 here and 24:08 there: they

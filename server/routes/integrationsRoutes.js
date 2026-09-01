@@ -563,6 +563,76 @@ async function lapSignalsById(Model, match, limit) {
 }
 
 /**
+ * Per-activity lap shape, small enough to travel with a list.
+ *
+ * The calendar draws the profile of a session that was done — the bars that
+ * say "six by three" at a glance — and it can only do that from laps. The
+ * list has always refused to ship `laps[]`, and rightly: the full array is
+ * most of the document. But the card needs three numbers per lap, not twenty,
+ * so the projection happens in Mongo and only `{d,w,s,h}` travels:
+ * duration, and whichever of watts / speed / heart rate the device recorded.
+ *
+ * Activities with fewer than three laps are dropped here rather than sent and
+ * discarded — a two-lap ride has no shape to draw. Laps past `maxLaps` are cut
+ * for the same reason a 300-lap swim tells the eye nothing extra; the cut is
+ * plain truncation, so the bars stay honest about the part they show.
+ *
+ * Returned as a Map keyed by `_id` string, like lapSignalsById.
+ */
+async function lapProfilesById(Model, match, limit, maxLaps = 120) {
+  const rows = await Model.aggregate([
+    { $match: match },
+    { $sort: { startDate: -1 } },
+    { $limit: limit },
+    {
+      $project: {
+        // A saved smart-detect split is the athlete's own reading of the
+        // session and beats whatever the device happened to lap.
+        src: {
+          $cond: [
+            { $gt: [{ $size: { $ifNull: ['$savedAutoLaps', []] } }, 0] },
+            '$savedAutoLaps',
+            { $ifNull: ['$laps', []] },
+          ],
+        },
+      },
+    },
+    { $match: { $expr: { $gte: [{ $size: '$src' }, 3] } } },
+    {
+      $project: {
+        laps: {
+          $map: {
+            input: { $slice: ['$src', maxLaps] },
+            as: 'l',
+            in: {
+              d: { $ifNull: ['$$l.moving_time', { $ifNull: ['$$l.elapsed_time', 0] }] },
+              w: { $ifNull: ['$$l.average_watts', null] },
+              s: { $ifNull: ['$$l.average_speed', null] },
+              h: { $ifNull: ['$$l.average_heartrate', null] },
+            },
+          },
+        },
+      },
+    },
+  ]).allowDiskUse(true);
+
+  const out = new Map();
+  for (const row of rows) {
+    // A null channel is a key the client will never read — drop it rather
+    // than send "w":null on every lap of every run in the list.
+    const laps = (row.laps || []).map((l) => {
+      const lap = { d: Number(l.d) || 0 };
+      if (l.w > 0) lap.w = l.w;
+      if (l.s > 0) lap.s = l.s;
+      if (l.h > 0) lap.h = l.h;
+      return lap;
+    });
+    if (laps.length >= 3) out.set(String(row._id), laps);
+  }
+  return out;
+}
+
+/**
  * Backfill asks Garmin to re-deliver a window of history to our webhook, and
  * the summaries and the traces are two separate requests:
  *
@@ -5093,6 +5163,24 @@ router.get('/activities', verifyToken, activitiesCacheMiddleware, async (req, re
       attach(garminActs, garminSignals);
     }
 
+    // Same opt-in shape as withLapSignals: the calendar asks for lap profiles
+    // because it draws them on the cards; every other caller pays nothing.
+    if (req.query.withLapProfiles === 'true') {
+      const profileMatch = { userId: userIdMatch(targetUserId), startDate: dateFilter };
+      const [stravaProfiles, garminProfiles] = await Promise.all([
+        lapProfilesById(StravaActivity, profileMatch, activityLimit).catch(() => new Map()),
+        lapProfilesById(GarminActivity, profileMatch, activityLimit).catch(() => new Map()),
+      ]);
+      const attachProfiles = (list, profiles) => {
+        for (const a of list) {
+          const laps = profiles.get(String(a._id));
+          if (laps) a.lapProfile = laps;
+        }
+      };
+      attachProfiles(stravaActs, stravaProfiles);
+      attachProfiles(garminActs, garminProfiles);
+    }
+
     // Deduplicate activities from Strava and Garmin
     // Activities are considered duplicates if they have:
     // - Same start date/time (within 5 minutes tolerance)
@@ -5164,6 +5252,9 @@ router.get('/activities', verifyToken, activitiesCacheMiddleware, async (req, re
       merged.distance = pick(preferred.distance, secondary.distance);
       merged.manualTss = pick(preferred.manualTss, secondary.manualTss);
       merged.tssDisplayMode = pick(preferred.tssDisplayMode, secondary.tssDisplayMode);
+      // Garmin laps a ride the athlete also synced from Strava, or the other
+      // way round — whichever provider has the shape, keep it.
+      merged.lapProfile = pick(preferred.lapProfile, secondary.lapProfile);
       return merged;
     };
 
