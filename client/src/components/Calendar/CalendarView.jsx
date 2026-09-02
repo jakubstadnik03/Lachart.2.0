@@ -490,6 +490,41 @@ function SessionHoverContent({ planned, activity, profile, getCategory }) {
   );
 }
 
+/** A race's own line: what it is, when, and how far off it still is. */
+function RaceHoverContent({ race, color }) {
+  if (!race) return null;
+  const day = String(race.date || '').slice(0, 10);
+  const [y, m, d] = day.split('-').map(Number);
+  const when = y ? new Date(y, m - 1, d) : null;
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const days = when ? Math.round((when - today) / 86400000) : null;
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="flex items-center gap-1.5">
+        <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ background: color }} />
+        <span className="text-[13px] font-bold text-gray-900 flex-1 truncate">{race.name}</span>
+        {race.priority && (
+          <span className="text-[9px] font-bold uppercase tracking-wide text-white px-1.5 py-0.5 rounded"
+            style={{ background: color }}>{race.priority}</span>
+        )}
+      </div>
+      {when && (
+        <div className="text-[11px] text-gray-500">
+          {when.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+          {days != null && (
+            <span className="text-gray-400">
+              {days > 0 ? ` · in ${days} day${days === 1 ? '' : 's'}` : days === 0 ? ' · today' : ` · ${-days} day${days === -1 ? '' : 's'} ago`}
+            </span>
+          )}
+        </div>
+      )}
+      {race.sport && <div className="text-[11px] text-gray-500 capitalize">{race.sport}</div>}
+      {race.notes && <p className="text-[11px] text-gray-600 whitespace-pre-line">{race.notes}</p>}
+      <div className="text-[10px] text-gray-400 pt-0.5">Click for the form chart around it</div>
+    </div>
+  );
+}
+
 /** A period band's own line: what it is, and how long it runs. */
 function PeriodHoverContent({ periods }) {
   if (!periods?.length) return null;
@@ -513,6 +548,9 @@ function PeriodHoverContent({ periods }) {
             {fmt(p.startDate)} – {fmt(p.endDate)}
           </div>
           {p.notes && <p className="text-[11px] text-gray-600 pl-4 whitespace-pre-line">{p.notes}</p>}
+          {p.source === 'atp' && (
+            <div className="text-[10px] text-gray-400 pl-4 pt-0.5">Click to open the annual plan</div>
+          )}
         </div>
       ))}
     </div>
@@ -7609,6 +7647,8 @@ export default function CalendarView({
   periods = [],
   /** weekStart → { period, periodWeek, targetTss } from the season plan. */
   atpWeeks = {},
+  /** Called with the band when a season-plan period is clicked. */
+  onOpenSeasonPlan = null,
   /** Called with a payload { _id?, startDate, endDate, type, color, notes } to upsert a period. */
   onPeriodSave = null,
   /** Called with periodId to remove a period. */
@@ -7894,9 +7934,17 @@ export default function CalendarView({
   const renderPeriodBand = (key, { height = 4, showLabel = false } = {}) => {
     const ps = periodsByDate.get(key);
     if (!ps || !ps.length) return null;
-    // A band derived from the season plan has no document behind it to edit —
-    // the plan is where its period is decided, so it is display-only here.
-    const editable = (p) => onPeriodSave && p?.source !== 'atp';
+    // A band from the season plan has no document behind it to edit; clicking
+    // it goes to the plan, which is where its period is decided. A band the
+    // athlete made here opens its own editor.
+    const isAtp = (p) => p?.source === 'atp';
+    const editable = (p) => onPeriodSave && !isAtp(p);
+    const clickable = (p) => editable(p) || (isAtp(p) && onOpenSeasonPlan);
+    const activate = (p) => (e) => {
+      e.stopPropagation();
+      if (isAtp(p)) onOpenSeasonPlan?.(p);
+      else setPeriodEdit({ period: p });
+    };
     // Label only on the day a period STARTS, so the name reads once at the
     // left edge of the band (notes/destination if set, else the type).
     const starting = showLabel ? ps.filter(p => p.startDate === key) : [];
@@ -7910,17 +7958,17 @@ export default function CalendarView({
           {ps.slice(0, 3).map((p, i) => (
             <div
               key={p._id || i}
-              onClick={editable(p) ? (e) => { e.stopPropagation(); setPeriodEdit({ period: p }); } : undefined}
-              style={{ flex: 1, background: periodColor(p), borderRadius: 2, cursor: editable(p) ? 'pointer' : 'default' }}
+              onClick={clickable(p) ? activate(p) : undefined}
+              style={{ flex: 1, background: periodColor(p), borderRadius: 2, cursor: clickable(p) ? 'pointer' : 'default' }}
             />
           ))}
         </div>
         {starting.map(p => (
           <div
             key={`lbl-${p._id}`}
-            onClick={editable(p) ? (e) => { e.stopPropagation(); setPeriodEdit({ period: p }); } : undefined}
+            onClick={clickable(p) ? activate(p) : undefined}
             className="mt-0.5 text-[10px] font-bold uppercase tracking-wide leading-none truncate pl-3"
-            style={{ color: periodColor(p), cursor: editable(p) ? 'pointer' : 'default' }}
+            style={{ color: periodColor(p), cursor: clickable(p) ? 'pointer' : 'default' }}
             title={`${p.type}${p.notes ? ` — ${p.notes}` : ''}`}
           >
             {(p.notes && p.notes.trim()) || p.type}
@@ -7994,10 +8042,9 @@ export default function CalendarView({
         {rs.map((r, i) => {
           const color = RACE_PRIORITY_COLOR[r.priority] || '#dc2626';
           return (
+            <HoverCard key={r._id || i} content={<RaceHoverContent race={r} color={color} />}>
             <button
-              key={r._id || i}
               type="button"
-              title={`${r.name}${r.priority ? ` (${r.priority} race)` : ''} — tap for Form chart`}
               onClick={(e) => { e.stopPropagation(); setSelectedRace(r); }}
               className={`inline-flex items-center gap-1 rounded-md font-extrabold uppercase tracking-wide leading-none text-white truncate max-w-full cursor-pointer hover:brightness-110 active:scale-[0.98] transition-all text-left ${big ? 'px-2 py-1 text-[13px]' : 'px-1.5 py-0.5 text-[11px]'}`}
               style={{ background: color }}
@@ -8005,6 +8052,7 @@ export default function CalendarView({
               <FlagIcon className={`shrink-0 ${big ? 'w-3.5 h-3.5' : 'w-3 h-3'}`} aria-hidden />
               <span className="truncate">{r.name}</span>
             </button>
+            </HoverCard>
           );
         })}
       </div>
@@ -10613,4 +10661,5 @@ export default function CalendarView({
     </>
   );
 }
+
 

@@ -4678,6 +4678,10 @@ const FitAnalysisPage = () => {
           onDayPlanDelete={handleDayPlanDelete}
           periods={calendarPeriods}
           atpWeeks={atpWeeks}
+          // The plan is where a season period is decided, so its band on the
+          // calendar goes there rather than opening an editor it has no
+          // document for.
+          onOpenSeasonPlan={() => navigate('/annual-training-plan')}
           onPeriodSave={handlePeriodSave}
           onPeriodDelete={handlePeriodDelete}
           onActivityUpdate={(updated) => {
