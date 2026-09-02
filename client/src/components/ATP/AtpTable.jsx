@@ -117,6 +117,20 @@ function TestsCell({ tests, onOpenTest, onPlanTest, canPlan }) {
           {t.result && (
             <span className="block text-[10px] font-bold tabular-nums opacity-80">{t.result}</span>
           )}
+          {/* Whether the plan below is written in this test's zones. The
+              second case is the one worth flagging: a test was done and
+              nobody set the zones from it, so every target under it is still
+              being measured against the older one. */}
+          {t.zones === 'in-use' && (
+            <span className="block text-[9px] font-bold uppercase tracking-wide text-emerald-600">
+              zones in use
+            </span>
+          )}
+          {t.zones === 'not-applied' && (
+            <span className="block text-[9px] font-bold uppercase tracking-wide text-amber-600">
+              zones not applied
+            </span>
+          )}
         </button>
       ))}
     </span>

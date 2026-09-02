@@ -158,24 +158,52 @@ export default function AtpPage() {
     [activities, plannedWorkouts],
   );
 
+  /**
+   * Which test the athlete's zones actually came from, per sport.
+   *
+   * Setting a test's zones stamps `zoneOverrides` on that test, so the newest
+   * test carrying one is the test the plan is currently written in. A later
+   * test without it is one nobody has acted on yet — which is the single most
+   * useful thing this column can say, because every target in the plan below
+   * it is still being measured against the older test.
+   */
+  const zoneStatusByTest = useMemo(() => {
+    const applied = new Map();   // sport → newest test whose zones were set
+    const newest = new Map();    // sport → newest test full stop
+    const time = (t) => new Date(t?.date || 0).getTime() || 0;
+    for (const t of tests || []) {
+      const sport = normLactateSport(t?.sport);
+      if (!newest.has(sport) || time(t) > time(newest.get(sport))) newest.set(sport, t);
+      if (t?.zoneOverrides && (!applied.has(sport) || time(t) > time(applied.get(sport)))) {
+        applied.set(sport, t);
+      }
+    }
+    const out = new Map();
+    for (const t of applied.values()) out.set(String(t._id), 'in-use');
+    for (const [sport, t] of newest) {
+      const inForce = applied.get(sport);
+      if (!inForce || String(inForce._id) !== String(t._id)) out.set(String(t._id), 'not-applied');
+    }
+    return out;
+  }, [tests]);
+
   const testsByWeek = useMemo(
     () => buildWeeklyTests({
       tests,
       plannedWorkouts,
-      // What the test found, through the same pipeline the testing page and
-      // the zone tables use — so the number in the season plan is the number
-      // the athlete's zones were actually built from.
-      describe: (t) => {
+      // The threshold comes through the same pipeline the testing page and the
+      // zone tables use, so the number in the season plan is the number the
+      // athlete's zones were actually built from.
+      annotate: (t) => {
+        let result = null;
         try {
           const th = extractLactateThresholds(t);
-          if (!th || th.lt2 == null) return null;
-          return `LT2 ${formatThresholdIntensity(th.lt2, t, normLactateSport(t?.sport))}`;
-        } catch {
-          return null;
-        }
+          if (th?.lt2 != null) result = `LT2 ${formatThresholdIntensity(th.lt2, t, normLactateSport(t?.sport))}`;
+        } catch { /* a test the curve cannot read still belongs in the row */ }
+        return { result, zones: zoneStatusByTest.get(String(t?._id)) || null };
       },
     }),
-    [tests, plannedWorkouts],
+    [tests, plannedWorkouts, zoneStatusByTest],
   );
 
   const { rows, totals } = useMemo(() => projectAtpSeason({
