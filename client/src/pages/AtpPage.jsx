@@ -36,6 +36,7 @@ import {
 } from '../utils/atpProjection';
 import AtpChart from '../components/ATP/AtpChart';
 import AtpTable from '../components/ATP/AtpTable';
+import AtpWeekList from '../components/ATP/AtpWeekList';
 import AtpSetupModal from '../components/ATP/AtpSetupModal';
 import { PERIOD_META, suggestedWeekTss } from '../components/ATP/atpPeriods';
 
@@ -83,6 +84,17 @@ export default function AtpPage() {
   const [saving, setSaving] = useState(false);
   const [showSetup, setShowSetup] = useState(false);
   const [editSettings, setEditSettings] = useState(false);
+
+  // The season table is nineteen columns. Below the calendar's own breakpoint
+  // it becomes a list of week cards instead — same rows, same edits.
+  const [isMobile, setIsMobile] = useState(() => (
+    typeof window !== 'undefined' ? window.innerWidth < 768 : false
+  ));
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
 
   // ── Season list, and the one being shown ─────────────────────────────────
   const loadPlans = useCallback(async () => {
@@ -442,7 +454,10 @@ export default function AtpPage() {
           </select>
         )}
 
-        <div className="flex items-center gap-1 ml-auto">
+        {/* On a phone the four actions do not fit beside the season name, so
+            they take their own line and scroll rather than stacking into a
+            four-row block above the plan. */}
+        <div className="flex items-center gap-1 w-full sm:w-auto sm:ml-auto overflow-x-auto -mx-1 px-1 [&>*]:flex-shrink-0">
           <button
             type="button" onClick={handleAutoPeriodize} disabled={saving}
             title="Rebuild the blocks around your A races"
@@ -481,7 +496,9 @@ export default function AtpPage() {
           {completionPct}% of the season's target load logged
         </span>
 
-        <div className="flex flex-wrap items-center gap-3 ml-auto text-[10px] text-slate-500">
+        {/* Eight legend entries are half a phone screen of chrome above the
+            plan itself; the chart's own readout says the same on touch. */}
+        <div className="hidden md:flex flex-wrap items-center gap-3 ml-auto text-[10px] text-slate-500">
           <span className="flex items-center gap-1">
             <span className="w-3 h-2.5 rounded-sm bg-slate-200" /> Plan TSS
           </span>
@@ -563,14 +580,25 @@ export default function AtpPage() {
             ))}
           </div>
         </div>
-        <AtpTable
-          rows={rows}
-          peakWeeklyTss={plan.peakWeeklyTss}
-          onWeekChange={handleWeekChange}
-          onOpenTest={handleOpenTest}
-          onPlanTest={handlePlanTest}
-          unit={tableUnit}
-        />
+        {isMobile ? (
+          <AtpWeekList
+            rows={rows}
+            peakWeeklyTss={plan.peakWeeklyTss}
+            onWeekChange={handleWeekChange}
+            onOpenTest={handleOpenTest}
+            onPlanTest={handlePlanTest}
+            unit={tableUnit}
+          />
+        ) : (
+          <AtpTable
+            rows={rows}
+            peakWeeklyTss={plan.peakWeeklyTss}
+            onWeekChange={handleWeekChange}
+            onOpenTest={handleOpenTest}
+            onPlanTest={handlePlanTest}
+            unit={tableUnit}
+          />
+        )}
       </div>
 
       <p className="mt-2 text-[11px] text-slate-400 flex items-center gap-1.5">

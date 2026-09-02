@@ -151,14 +151,25 @@ export default function AtpChart({ rows = [], totals = {}, onWeekClick, mode = '
     };
   }, [rows, width]);
 
-  const handleMove = useCallback((e) => {
+  const pointAt = useCallback((clientX, clientY, box) => {
     if (!geo) return;
-    const box = e.currentTarget.getBoundingClientRect();
-    const x = e.clientX - box.left - M.left;
+    const x = clientX - box.left - M.left;
     const i = Math.floor(x / geo.colW);
     if (i < 0 || i >= geo.n) { setHover(null); return; }
-    setHover({ i, x: e.clientX - box.left, y: e.clientY - box.top });
+    setHover({ i, x: clientX - box.left, y: clientY - box.top });
   }, [geo]);
+
+  const handleMove = useCallback((e) => {
+    pointAt(e.clientX, e.clientY, e.currentTarget.getBoundingClientRect());
+  }, [pointAt]);
+
+  // On a phone there is no hover, and the week readout is the only way to find
+  // out what a 13px column says. A finger held on the chart stands in for it.
+  const handleTouch = useCallback((e) => {
+    const t = e.touches?.[0];
+    if (!t) return;
+    pointAt(t.clientX, t.clientY, e.currentTarget.getBoundingClientRect());
+  }, [pointAt]);
 
   if (!geo || !rows.length) {
     return (
@@ -183,6 +194,9 @@ export default function AtpChart({ rows = [], totals = {}, onWeekClick, mode = '
         className="block select-none"
         onMouseMove={handleMove}
         onMouseLeave={() => setHover(null)}
+        onTouchStart={handleTouch}
+        onTouchMove={handleTouch}
+        onTouchEnd={() => setHover(null)}
         onClick={() => { if (hoverRow && onWeekClick) onWeekClick(hoverRow); }}
       >
         {/* Alternating month bands, so a week can be placed in the year at a glance */}
