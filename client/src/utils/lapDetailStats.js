@@ -40,12 +40,12 @@ export function lapDetailStats(lap, {
 } = {}) {
   if (!lap) return [];
   const out = [];
-  const dist = pick(lap, 'distance', 'totalDistance');
+  const dist = pick(lap, 'distance', 'totalDistance', 'distanceMeters');
 
   // Speed carries a ride; a run or a swim is already read as pace in the
   // headline, and printing the same thing as km/h next to it only adds noise.
   if (!isRun && !isSwim) {
-    const spd = pick(lap, 'average_speed', 'avgSpeed', 'avg_speed')
+    const spd = pick(lap, 'average_speed', 'avgSpeed', 'avg_speed', 'speed', 'speed_ms')
       || (dist > 0 && movingSecs > 0 ? dist / movingSecs : 0);
     if (spd > 0) out.push(['speed', formatSpeed(spd, unitSystem).formatted]);
   }
@@ -53,16 +53,16 @@ export function lapDetailStats(lap, {
   const np = pick(lap, 'normalizedPower', 'normalized_power', 'weightedAveragePower', 'weighted_average_watts');
   if (np > 0) out.push(['NP', `${Math.round(np)} W`]);
 
-  const maxW = pick(lap, 'max_watts', 'maxPower', 'max_power');
+  const maxW = pick(lap, 'max_watts', 'maxPower', 'max_power', 'maxWatts');
   if (maxW > 0) out.push(['max', `${Math.round(maxW)} W`]);
 
-  const hr = pick(lap, 'average_heartrate', 'avgHeartRate', 'averageHeartRate', 'avgHR');
+  const hr = pick(lap, 'average_heartrate', 'avgHeartRate', 'averageHeartRate', 'avgHR', 'heartRate');
   const hrMax = pick(lap, 'max_heartrate', 'maxHeartRate', 'max_heart_rate');
   if (hr > 0) {
     out.push(['HR', hrMax > 0 ? `${Math.round(hr)} / ${Math.round(hrMax)} bpm` : `${Math.round(hr)} bpm`]);
   }
 
-  const cadRaw = pick(lap, 'average_cadence', 'avgCadence', 'avg_cadence');
+  const cadRaw = pick(lap, 'average_cadence', 'avgCadence', 'avg_cadence', 'cadence');
   if (cadRaw > 0) {
     // Strava reports run cadence per leg. The laps table doubles it, and the
     // header sits directly above that table — the two have to agree.

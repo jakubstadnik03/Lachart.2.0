@@ -71,3 +71,20 @@ describe('lapDetailStats', () => {
     expect(lapDetailStats({}, { isRun: true })).toEqual([]);
   });
 });
+
+describe('lapDetailStats — the shapes the native page hands it', () => {
+  it('reads the result/interval field names', () => {
+    const s = Object.fromEntries(lapDetailStats({
+      distanceMeters: 5000, speed: 9.5, cadence: 88, heartRate: 148, maxWatts: 640,
+    }, { movingSecs: 526, sport: 'bike' }));
+    expect(s.speed).toBe('34.2 km/h');
+    expect(s.cad).toBe('88 rpm');
+    expect(s.HR).toBe('148 bpm');
+    expect(s.max).toBe('640 W');
+  });
+
+  it('derives speed from distanceMeters when the interval has no speed field', () => {
+    const s = Object.fromEntries(lapDetailStats({ distanceMeters: 10000 }, { movingSecs: 1000, sport: 'bike' }));
+    expect(s.speed).toBe('36.0 km/h');
+  });
+});

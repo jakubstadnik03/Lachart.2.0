@@ -35,6 +35,7 @@ import {
   paceSecondsToDisplaySeconds,
   resolveDistanceUnitSystem,
 } from '../utils/unitsConverter';
+import { lapDetailStats } from '../utils/lapDetailStats';
 import RecordLactateModal from '../components/training/RecordLactateModal';
 import { SearchableSelect } from '../components/SearchableSelect';
 import NativeComparisonVerdict from '../components/native/NativeComparisonVerdict';
@@ -741,6 +742,14 @@ function SessionBarChart({ sessions, metric, sport, user = null, unitSystem = 'm
           intervalType: iv?.intervalType || null,
           durationSec: durSec,
           hr, dist, pace, power, rpe,
+          // The interval as it arrived, so the info strip can read cadence,
+          // normalized power and the rest without every field being lifted
+          // onto this object one at a time.
+          raw: iv,
+          sport,
+          // Strava halves run cadence; the source is a property of the
+          // activity, not of the lap, so it has to be carried down here.
+          isStrava: String(activityKey(s) || '').startsWith('strava-'),
         };
       }).filter(l => l.value != null && l.value > 0);
       return {
@@ -948,6 +957,8 @@ function SessionBarChart({ sessions, metric, sport, user = null, unitSystem = 'm
                     pace: l.pace,
                     power: l.power,
                     rpe: l.rpe,
+                    raw: l.raw,
+                    isStrava: l.isStrava,
                     sport,
                     isPace,
                     metric,
@@ -1026,6 +1037,11 @@ function SessionBarChart({ sessions, metric, sport, user = null, unitSystem = 'm
   );
 }
 
+// Which of the lap's own numbers the strip adds. DIST, TIME, PACE, PWR, HR,
+// LAC and RPE are already chips above, lifted off the interval by this page —
+// listing them again would print each one twice.
+const STRIP_EXTRA_LABELS = ['speed', 'NP', 'max', 'cad', 'elev'];
+
 // ─── Metric — tiny LABEL · VALUE pair used inside SelectedLapInfo ──────────
 
 function Metric({ label, value, color }) {
@@ -1100,6 +1116,23 @@ function SelectedLapInfo({ selected, onOpen, onEditLactate, onClear, formatValue
             {selected.rpe > 0 && selected.metric !== 'RPE' && (
               <Metric label="RPE" value={String(Math.round(selected.rpe))} />
             )}
+            {/* The rest of what the lap recorded — speed, normalized power,
+                peak power, cadence, climbing. The chips above cover what this
+                page already lifted off the interval; these come straight off
+                the lap, so a tapped interval reads the same here as it does in
+                the calendar's detail view. */}
+            {lapDetailStats(selected.raw, {
+              movingSecs: selected.durationSec,
+              unitSystem,
+              sport: selected.sport,
+              isStravaActivity: !!selected.isStrava,
+              isRun: selected.sport === 'run',
+              isSwim: selected.sport === 'swim',
+            })
+              .filter(([label]) => STRIP_EXTRA_LABELS.includes(label))
+              .map(([label, value]) => (
+                <Metric key={label} label={label} value={value} />
+              ))}
           </div>
           {/* Lactate quick-edit — opens the TrainingForm for this session so
               the user can add/edit the lactate value for this specific lap
@@ -1378,6 +1411,8 @@ function MultiLineChart({ sessions, metric, sport = 'bike', user = null, unitSys
             : null,
           rpe: Number(iv.RPE ?? iv.rpe) || null,
           sport: sportKey,
+          raw: iv,
+          isStrava: String(activityKey(s) || '').startsWith('strava-'),
         };
       }).filter(Boolean);
       return {
@@ -1560,7 +1595,10 @@ function MultiLineChart({ sessions, metric, sport = 'bike', user = null, unitSys
                       pace: p.pace,
                       power: p.power,
                       rpe: p.rpe,
+                      raw: p.raw,
+                      isStrava: p.isStrava,
                       sport: p.sport,
+                      metric,
                     });
                   }}
                   style={{
