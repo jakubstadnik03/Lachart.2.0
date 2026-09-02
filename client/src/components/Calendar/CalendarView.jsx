@@ -78,6 +78,7 @@ import { DAY_THEME_PRESETS, dayThemePresetColor, PERIOD_TYPES, periodColor, buil
 import { computePowerTss, computeHrTss, canToggleTss, resolveActivityTss, getAvailableTssModes, getActivityTssDisplayMode, cycleTssMode, tssModeLabel, tssToggleDisabledReason } from '../../utils/computeTss';
 import { compareActivitiesChronologically, buildChronologicalDayItems, sortPlannedWorkoutsForDay, reorderPlannedWorkoutIds, pairPlannedWithActivities, planSportMatchesActivity, dedupeCalendarActivities } from '../../utils/calendarDayOrdering';
 import { stravaHalfCadenceToSpm, cadenceDisplayUnit } from '../../utils/cadenceDisplay';
+import { lapDetailStats } from '../../utils/lapDetailStats';
 import { completedSecs } from '../../utils/completedSessionStats';
 import { notifyTssDisplayModeChanged, clearFormFitnessCache } from '../../utils/uiPrefs';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -997,7 +998,7 @@ function WeekActivityCard({ a, isSelected, onSelect, onActivityClick, onAddLacta
 }
 
 // ─── Lap Chart ────────────────────────────────────────────────────────────────
-function LapChart({ laps, color, isBike, isRun, isSwim, unitSystem = 'metric', selectedLap, onSelectLap, chartScrollRef, onScrollCenter, scaleOverride = null, records = null }) {
+function LapChart({ laps, color, isBike, isRun, isSwim, unitSystem = 'metric', selectedLap, onSelectLap, chartScrollRef, onScrollCenter, scaleOverride = null, records = null, sport = '', isStravaActivity = false }) {
   const CHART_H   = 200;
   const Y_AXIS_W  = 38;
   const X_LABEL_H = 16;
@@ -1374,13 +1375,22 @@ function LapChart({ laps, color, isBike, isRun, isSwim, unitSystem = 'metric', s
     return d > 0 && d < 60 ? `${Math.round(d)}s` : fmtLapClock(d);
   })() : null;
 
+  // Everything else the lap recorded — speed, NP, max power, HR, cadence,
+  // elevation, IF, lap TSS, lactate — whichever of them the file actually has.
+  const selStats = sel
+    ? lapDetailStats(sel, {
+      movingSecs: lapMovingSecs(sel),
+      unitSystem, sport, isStravaActivity, isRun, isSwim,
+    })
+    : [];
+
   const handleChartScroll = () => {};
 
   return (
     <div className="px-4 pb-2">
       {/* Header row */}
       <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 rounded-lg flex-1 mr-2 min-h-[30px]">
+        <div className="flex items-center flex-wrap gap-x-2 gap-y-1 px-3 py-2 bg-gray-50 rounded-lg flex-1 mr-2 min-h-[30px]">
           {sel != null ? (
             <>
               <span className="text-xs font-bold text-gray-900">Lap {selLapNum}</span>
@@ -1388,6 +1398,14 @@ function LapChart({ laps, color, isBike, isRun, isSwim, unitSystem = 'metric', s
               <span className="text-xs font-semibold text-gray-600">{selDurStr}</span>
               {selDistStr && <><span className="text-gray-300 text-xs">·</span><span className="text-xs text-gray-500">{selDistStr}</span></>}
               {selPace && <><span className="text-gray-300 text-xs">·</span><span className="text-xs font-semibold" style={{ color }}>{selPace}</span></>}
+              {/* Everything else the lap knows. Labelled, because "355 W · 39.7
+                  km/h · 80 rpm · 142 bpm" read as a run-on line of numbers. */}
+              {selStats.map(([label, value]) => (
+                <span key={label} className="inline-flex items-baseline gap-1 text-[11px] leading-none">
+                  <span className="text-gray-400 uppercase tracking-wide font-semibold">{label}</span>
+                  <span className="text-gray-700 font-semibold tabular-nums">{value}</span>
+                </span>
+              ))}
             </>
           ) : (
             <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">
@@ -5410,7 +5428,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
             )}
             {/* LapChart — sticky at top */}
             <div className="flex-shrink-0 border-b border-gray-100">
-              <LapChart laps={autoLaps ?? laps} color={color} isBike={isBike} isRun={isRun} isSwim={isSwim} unitSystem={unitSystem}
+              <LapChart sport={sport} isStravaActivity={isStravaActivity} laps={autoLaps ?? laps} color={color} isBike={isBike} isRun={isRun} isSwim={isSwim} unitSystem={unitSystem}
                 selectedLap={selectedLap}
                 chartScrollRef={lapChartScrollRef}
                 records={chartTraining?.records}
@@ -6098,6 +6116,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
               {laps.length > 1 && (
                 <div className="border-b border-gray-50 md:sticky md:top-0 md:z-10 bg-white">
                   <LapChart
+                    sport={sport} isStravaActivity={isStravaActivity}
                     laps={laps} color={color} isBike={isBike} isRun={isRun} isSwim={isSwim} unitSystem={unitSystem}
                     selectedLap={selectedLap}
                     chartScrollRef={lapChartScrollRef}
