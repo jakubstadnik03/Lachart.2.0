@@ -200,7 +200,11 @@ function WeekSummaryColumn({ summary, user, prevWeekTss, compact, weekPlannedWor
         formatKm={formatKm}
         user={user}
         weekPlannedWorkouts={weekPlannedWorkouts}
-        large={!compact}
+        // Never the large type here. `large` sizes the cell for the phone's
+        // full-width Calendar tab; every column on this dashboard is around
+        // 190px whichever layout is rendering it, and mobile-sized numbers in
+        // a 190px column is exactly what made this read differently from the
+        // calendar next door.
       />
     </div>
   );
@@ -1501,7 +1505,7 @@ const WeeklyCalendar = ({
     // The calendar gives this column minmax(155px, 195px); at 138 the same
     // cell had to wrap "4 done · 4 planned" over three lines and truncate the
     // TSS pair. Same component, same room.
-    <div className={compact ? 'w-[190px] flex-shrink-0 self-stretch' : 'min-h-0 min-w-0 h-full self-stretch'}>
+    <div className={compact ? 'w-[190px] flex-shrink-0 self-stretch' : 'min-w-[170px] h-full self-stretch'}>
       <WeekSummaryColumn
         summary={weekSummary}
         user={user}
