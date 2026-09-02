@@ -119,6 +119,38 @@ function SportCell({ totals, target, unit, color, editable, onCommit }) {
 }
 
 /**
+ * The week's sports added up: what was done, over what was asked for.
+ *
+ * The per-sport columns answer "is the bike volume right"; this answers "is
+ * the week the right size", which is the question the row is read for and
+ * which nobody wants to do in their head across four columns.
+ */
+function SportTotalCell({ sports, targets, unit }) {
+  let doneRaw = 0;
+  let target = 0;
+  let hasTarget = false;
+  for (const c of SPORT_COLS) {
+    const t = sports?.[c.key];
+    doneRaw += unit === 'km' ? (t?.dist || 0) / 1000 : (t?.sec || 0);
+    const tg = targets?.[c.key];
+    if (tg != null) { target += Number(tg) || 0; hasTarget = true; }
+  }
+  const done = unit === 'km'
+    ? (doneRaw > 0 ? doneRaw.toFixed(doneRaw >= 100 ? 0 : 1) : null)
+    : fmtHours(doneRaw);
+  if (!done && !hasTarget) return <span className="text-slate-300">—</span>;
+  const pct = hasTarget && target > 0 ? Math.round((doneRaw / target) * 100) : null;
+  return (
+    <span className="tabular-nums whitespace-nowrap" title={pct != null ? `${pct}% of the week's target` : undefined}>
+      <span className="font-bold text-slate-700">{done || '—'}</span>
+      {hasTarget && (
+        <span className="text-slate-400"> / {unit === 'km' ? Math.round(target) : fmtHours(target * 3600)}</span>
+      )}
+    </span>
+  );
+}
+
+/**
  * The tests that fall in this week: done ones from the test list, and ones
  * still ahead, which live on the calendar as a planned session with the sport
  * "lactate". A pencilled-in retest is a planning decision, so it belongs in
@@ -302,6 +334,13 @@ function WeekRow({ row, peakWeeklyTss, onChange, editable, isEven, onOpenTest, o
           />
         </td>
       ))}
+      <td className={`${TD} text-right`}>
+        <SportTotalCell
+          sports={row.sports}
+          targets={unit === 'km' ? row.sportKm : row.sportHours}
+          unit={unit}
+        />
+      </td>
       <td className="px-2 py-1">
         <TestsCell
           tests={row.tests}
@@ -358,6 +397,9 @@ export default function AtpTable({ rows = [], peakWeeklyTss = 700, onWeekChange,
                 {c.label}<br />{unit === 'km' ? 'km done/target' : 'h done/target'}
               </th>
             ))}
+            <th className={`${TH} text-right text-slate-600`}>
+              Total<br />{unit === 'km' ? 'km done/target' : 'h done/target'}
+            </th>
             <th className={`${TH} text-left`}>Tests</th>
             <th className={`${TH} text-center`}>Ramp<br />Rate</th>
             <th className={`${TH} text-left`}>Details</th>
@@ -371,7 +413,7 @@ export default function AtpTable({ rows = [], peakWeeklyTss = 700, onWeekChange,
           {months.map((m) => (
             <React.Fragment key={m.key}>
               <tr className="bg-slate-200/70">
-                <td colSpan={18} className="px-2 py-1 text-[11px] font-bold text-slate-600 sticky left-0">
+                <td colSpan={19} className="px-2 py-1 text-[11px] font-bold text-slate-600 sticky left-0">
                   {m.label}
                 </td>
               </tr>

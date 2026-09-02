@@ -15,6 +15,7 @@
 'use strict';
 
 const express = require('express');
+const { sanitizeSportMap } = require('../utils/atpSportTargets');
 const mongoose = require('mongoose');
 const router = express.Router();
 const verifyToken = require('../middleware/verifyToken');
@@ -85,26 +86,6 @@ async function racesInSeason(athleteId, startDate, endDate) {
     date: { $gte: from, $lte: to },
   }).select('name date priority sport').sort({ date: 1 }).lean();
   return races;
-}
-
-/** The sports a week target may be set for — anything else is dropped. */
-const TARGET_SPORTS = ['bike', 'run', 'swim', 'strength'];
-
-/**
- * A per-sport target map, cleaned. A cleared box arrives as '' or null and
- * means "no target for this sport", which is not the same as a target of zero
- * — zero is a deliberate "nothing this week" and both have to survive.
- */
-function sanitizeSportMap(raw) {
-  if (!raw || typeof raw !== 'object') return undefined;
-  const out = {};
-  for (const sport of TARGET_SPORTS) {
-    const v = raw[sport];
-    if (v == null || v === '') continue;
-    const n = Number(v);
-    if (Number.isFinite(n) && n >= 0) out[sport] = n;
-  }
-  return Object.keys(out).length ? out : undefined;
 }
 
 /** Keep only the fields a client is allowed to set on a week row. */
