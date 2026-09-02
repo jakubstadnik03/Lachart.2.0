@@ -23,8 +23,9 @@ import {
   getAtpPlans, getAtpPlan, createAtpPlan, updateAtpPlan,
   updateAtpWeeks, autoPeriodizeAtp, deleteAtpPlan,
 } from '../services/atpApi';
-import { getPlannedWorkouts } from '../services/workoutPlannerApi';
+import { getPlannedWorkouts, createPlannedWorkout } from '../services/workoutPlannerApi';
 import { getTestingsByAthleteId } from '../services/api';
+import { extractLactateThresholds, formatThresholdIntensity, normLactateSport } from '../utils/extractLactateThresholds';
 import {
   fetchCalendarActivitiesForPmc, readCalendarActivitiesCache,
 } from '../utils/calendarActivitiesForPmc';
@@ -158,7 +159,22 @@ export default function AtpPage() {
   );
 
   const testsByWeek = useMemo(
-    () => buildWeeklyTests({ tests, plannedWorkouts }),
+    () => buildWeeklyTests({
+      tests,
+      plannedWorkouts,
+      // What the test found, through the same pipeline the testing page and
+      // the zone tables use — so the number in the season plan is the number
+      // the athlete's zones were actually built from.
+      describe: (t) => {
+        try {
+          const th = extractLactateThresholds(t);
+          if (!th || th.lt2 == null) return null;
+          return `LT2 ${formatThresholdIntensity(th.lt2, t, normLactateSport(t?.sport))}`;
+        } catch {
+          return null;
+        }
+      },
+    }),
     [tests, plannedWorkouts],
   );
 
@@ -188,6 +204,30 @@ export default function AtpPage() {
    * testing page, a pencilled-in one on the calendar week it sits in — which
    * is where it would be moved or filled in.
    */
+  /**
+   * Put a lactate test in a week of the plan.
+   *
+   * It lands as a planned session with the sport "lactate", which is the shape
+   * the calendar already understands — so it shows up there to be moved to the
+   * right day, and comes back to this table as a pencilled-in test. Monday,
+   * because a week has to start somewhere and dragging it is one gesture.
+   */
+  const handlePlanTest = useCallback(async (row) => {
+    if (!row?.weekStart) return;
+    try {
+      const saved = await createPlannedWorkout({
+        sport: 'lactate',
+        title: 'Lactate test',
+        date: row.weekStart,
+        plannedDuration: 3600,
+      }, coachAthleteId);
+      setPlannedWorkouts((prev) => [...prev, saved]);
+      addNotification('Test added to the plan', 'success');
+    } catch (e) {
+      addNotification(e?.response?.data?.error || 'Could not add the test', 'error');
+    }
+  }, [coachAthleteId, addNotification]);
+
   const handleOpenTest = useCallback((t) => {
     if (!t) return;
     if (t.done && t.id) navigate(`/testing?testId=${encodeURIComponent(t.id)}`);
@@ -465,6 +505,7 @@ export default function AtpPage() {
           peakWeeklyTss={plan.peakWeeklyTss}
           onWeekChange={handleWeekChange}
           onOpenTest={handleOpenTest}
+          onPlanTest={handlePlanTest}
         />
       </div>
 

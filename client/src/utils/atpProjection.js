@@ -309,9 +309,9 @@ export function buildWeeklySportTotals({ activities = [], plannedWorkouts = [] }
  * in March and the one pencilled in for June, which the calendar already
  * carries as a planned session with the sport "lactate".
  *
- * @returns {Object} weekStartKey → [{ done, id, sport, title, date }]
+ * @returns {Object} weekStartKey → [{ done, id, sport, title, date, result }]
  */
-export function buildWeeklyTests({ tests = [], plannedWorkouts = [] } = {}) {
+export function buildWeeklyTests({ tests = [], plannedWorkouts = [], describe = null } = {}) {
   const out = {};
   const push = (day, entry) => {
     const wk = day ? mondayKeyOf(day) : null;
@@ -327,6 +327,10 @@ export function buildWeeklyTests({ tests = [], plannedWorkouts = [] } = {}) {
       sport: t?.sport || null,
       title: t?.title || 'Test',
       date: day,
+      // What the test found, when the caller can work it out. The threshold
+      // is the reason the test is on the plan at all — a row saying only
+      // "Field test" tells a coach a test happened, not what it changed.
+      result: describe ? describe(t) : null,
     });
   }
 

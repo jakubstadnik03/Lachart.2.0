@@ -48,6 +48,7 @@ const SPORT_COLS = [
   { key: 'bike', label: 'Bike', color: '#767EB5' },
   { key: 'run', label: 'Run', color: '#f97316' },
   { key: 'swim', label: 'Swim', color: '#599FD0' },
+  { key: 'strength', label: 'Strength', color: '#8b5cf6' },
 ];
 
 /**
@@ -61,8 +62,15 @@ function SportCell({ totals, color }) {
   const done = fmtHours(totals?.sec);
   const planned = fmtHours(totals?.plannedSec);
   if (!done && !planned) return <span className="text-slate-300">—</span>;
+  // Sessions live in the title rather than a column of their own: four more
+  // columns of counts would double the table's width to say something a coach
+  // only asks about the odd week.
+  const counts = [
+    totals?.count ? `${totals.count} done` : null,
+    totals?.plannedCount ? `${totals.plannedCount} planned` : null,
+  ].filter(Boolean).join(' · ');
   return (
-    <span className="tabular-nums whitespace-nowrap">
+    <span className="tabular-nums whitespace-nowrap" title={counts || undefined}>
       <span className="font-semibold" style={{ color: done ? color : '#cbd5e1' }}>{done || '—'}</span>
       {planned && <span className="text-slate-400"> / {planned}</span>}
     </span>
@@ -75,8 +83,21 @@ function SportCell({ totals, color }) {
  * "lactate". A pencilled-in retest is a planning decision, so it belongs in
  * the plan next to the block it is going to re-zone.
  */
-function TestsCell({ tests, onOpenTest }) {
-  if (!tests?.length) return <span className="text-slate-300">—</span>;
+function TestsCell({ tests, onOpenTest, onPlanTest, canPlan }) {
+  if (!tests?.length) {
+    return canPlan
+      ? (
+        <button
+          type="button"
+          onClick={onPlanTest}
+          className="text-[11px] font-semibold text-slate-300 hover:text-primary transition-colors"
+          title="Put a lactate test in this week"
+        >
+          + test
+        </button>
+      )
+      : <span className="text-slate-300">—</span>;
+  }
   return (
     <span className="flex flex-col gap-0.5">
       {tests.map((t) => (
@@ -84,7 +105,7 @@ function TestsCell({ tests, onOpenTest }) {
           key={`${t.done ? 'd' : 'p'}-${t.id}`}
           type="button"
           onClick={onOpenTest ? () => onOpenTest(t) : undefined}
-          className={`text-left text-[11px] font-semibold rounded px-1.5 py-0.5 leading-tight truncate max-w-[150px] ${
+          className={`text-left text-[11px] font-semibold rounded px-1.5 py-0.5 leading-tight max-w-[190px] ${
             onOpenTest ? 'hover:underline' : 'cursor-default'
           }`}
           style={t.done
@@ -92,14 +113,17 @@ function TestsCell({ tests, onOpenTest }) {
             : { backgroundColor: '#f1f5f9', color: '#64748b', border: '1px dashed #cbd5e1' }}
           title={`${t.title}${t.sport ? ` · ${t.sport}` : ''} · ${t.date}${t.done ? '' : ' (planned)'}`}
         >
-          {t.title}
+          <span className="block truncate">{t.title}</span>
+          {t.result && (
+            <span className="block text-[10px] font-bold tabular-nums opacity-80">{t.result}</span>
+          )}
         </button>
       ))}
     </span>
   );
 }
 
-function WeekRow({ row, peakWeeklyTss, onChange, editable, isEven, onOpenTest }) {
+function WeekRow({ row, peakWeeklyTss, onChange, editable, isEven, onOpenTest, onPlanTest }) {
   const [tssDraft, setTssDraft] = useState(null);
   const [notesDraft, setNotesDraft] = useState(null);
 
@@ -211,7 +235,14 @@ function WeekRow({ row, peakWeeklyTss, onChange, editable, isEven, onOpenTest })
           <SportCell totals={row.sports?.[c.key]} color={c.color} />
         </td>
       ))}
-      <td className="px-2 py-1"><TestsCell tests={row.tests} onOpenTest={onOpenTest} /></td>
+      <td className="px-2 py-1">
+        <TestsCell
+          tests={row.tests}
+          onOpenTest={onOpenTest}
+          onPlanTest={onPlanTest ? () => onPlanTest(row) : undefined}
+          canPlan={!!onPlanTest && !row.isPast}
+        />
+      </td>
       <td className={`${TD} text-center`}><RampCell value={row.atpRamp} /></td>
       <td className="px-1 py-1 min-w-[150px]">
         {editable ? (
@@ -236,7 +267,7 @@ function WeekRow({ row, peakWeeklyTss, onChange, editable, isEven, onOpenTest })
   );
 }
 
-export default function AtpTable({ rows = [], peakWeeklyTss = 700, onWeekChange, editable = true, onOpenTest = null }) {
+export default function AtpTable({ rows = [], peakWeeklyTss = 700, onWeekChange, editable = true, onOpenTest = null, onPlanTest = null }) {
   const months = useMemo(() => groupRowsByMonth(rows), [rows]);
 
   if (!rows.length) {
@@ -273,7 +304,7 @@ export default function AtpTable({ rows = [], peakWeeklyTss = 700, onWeekChange,
           {months.map((m) => (
             <React.Fragment key={m.key}>
               <tr className="bg-slate-200/70">
-                <td colSpan={17} className="px-2 py-1 text-[11px] font-bold text-slate-600 sticky left-0">
+                <td colSpan={18} className="px-2 py-1 text-[11px] font-bold text-slate-600 sticky left-0">
                   {m.label}
                 </td>
               </tr>
@@ -286,6 +317,7 @@ export default function AtpTable({ rows = [], peakWeeklyTss = 700, onWeekChange,
                   editable={editable}
                   isEven={i % 2 === 0}
                   onOpenTest={onOpenTest}
+                  onPlanTest={onPlanTest}
                 />
               ))}
             </React.Fragment>
