@@ -15,7 +15,7 @@ import { getIntegrationStatus } from '../services/api';
 import { listExternalActivities } from '../services/api';
 import { dedupeMergedCalendarActivities } from '../utils/dedupeMergedCalendarActivities';
 import { buildZoneContext } from '../utils/zoneContext';
-import { atpPeriodBands } from '../utils/atpProjection';
+import { atpPeriodBands, atpWeekTargets } from '../utils/atpProjection';
 import { getAtpPlans, getAtpPlan } from '../services/atpApi';
 import { periodColor as atpPeriodColor } from '../components/ATP/atpPeriods';
 import { mapExternalActivitiesToCalendar } from '../utils/mapExternalActivityToCalendar';
@@ -1659,6 +1659,9 @@ const FitAnalysisPage = () => {
   // Derived from the plan rather than copied into calendar-period documents:
   // one record of the decision, so the two can never disagree.
   const [atpBands, setAtpBands] = useState([]);
+  // weekStart → { period, periodWeek, targetTss } so the week totals column can
+  // say what the season asks of the week it is summing.
+  const [atpWeeks, setAtpWeeks] = useState({});
   const [planModal, setPlanModal] = useState(null); // { date: Date, workout: obj|null }
   // Quick day-theme / period editors opened from the "Add a workout" modal tiles.
   const [quickTheme, setQuickTheme] = useState(null);   // { date: 'YYYY-MM-DD', preset }
@@ -3518,12 +3521,12 @@ const FitAnalysisPage = () => {
   // is two requests once per athlete rather than anything per-view.
   useEffect(() => {
     const athlete = selectedAthleteId || user?._id;
-    if (!athlete) { setAtpBands([]); return; }
+    if (!athlete) { setAtpBands([]); setAtpWeeks({}); return; }
     let cancelled = false;
     (async () => {
       try {
         const plans = await getAtpPlans(selectedAthleteId || null);
-        if (cancelled || !plans?.length) { if (!cancelled) setAtpBands([]); return; }
+        if (cancelled || !plans?.length) { if (!cancelled) { setAtpBands([]); setAtpWeeks({}); } return; }
         // The season the athlete is in, else the most recent one.
         const todayKey = new Date().toISOString().slice(0, 10);
         const current = plans.find((p) => p.startDate <= todayKey && todayKey <= p.endDate)
@@ -3531,9 +3534,10 @@ const FitAnalysisPage = () => {
         const full = await getAtpPlan(current._id, selectedAthleteId || null);
         if (cancelled) return;
         setAtpBands(atpPeriodBands(full, atpPeriodColor));
+        setAtpWeeks(atpWeekTargets(full));
       } catch {
         // A season that will not load is not a reason for the calendar to fail.
-        if (!cancelled) setAtpBands([]);
+        if (!cancelled) { setAtpBands([]); setAtpWeeks({}); }
       }
     })();
     return () => { cancelled = true; };
@@ -4673,6 +4677,7 @@ const FitAnalysisPage = () => {
           onDayPlanSave={handleDayPlanSave}
           onDayPlanDelete={handleDayPlanDelete}
           periods={calendarPeriods}
+          atpWeeks={atpWeeks}
           onPeriodSave={handlePeriodSave}
           onPeriodDelete={handlePeriodDelete}
           onActivityUpdate={(updated) => {

@@ -58,21 +58,62 @@ const SPORT_COLS = [
  * a season table is mostly empty cells and printing zeros in every one of them
  * buries the weeks that say something.
  */
-function SportCell({ totals, color }) {
-  const done = fmtHours(totals?.sec);
-  const planned = fmtHours(totals?.plannedSec);
-  if (!done && !planned) return <span className="text-slate-300">—</span>;
-  // Sessions live in the title rather than a column of their own: four more
+/**
+ * One sport's week: what has been done, over what the coach asked for.
+ *
+ * The target is the editable half — this is a planning table, and "eight hours
+ * on the bike" is the sentence a coach writes a week in. What the calendar
+ * happens to have scheduled is a different number and lives in the tooltip;
+ * confusing the two is how a week reads as met when nothing has been ridden.
+ */
+function SportCell({ totals, target, unit, color, editable, onCommit }) {
+  const [draft, setDraft] = useState(null);
+
+  const doneRaw = unit === 'km' ? (totals?.dist || 0) / 1000 : (totals?.sec || 0);
+  const done = unit === 'km'
+    ? (doneRaw > 0 ? doneRaw.toFixed(doneRaw >= 100 ? 0 : 1) : null)
+    : fmtHours(doneRaw);
+
+  const commit = () => {
+    if (draft === null) return;
+    const trimmed = String(draft).trim();
+    setDraft(null);
+    if (trimmed === '') { if (target != null) onCommit?.(null); return; }
+    const n = Number(trimmed.replace(',', '.'));
+    if (!Number.isFinite(n) || n < 0 || n === target) return;
+    onCommit?.(n);
+  };
+
+  const scheduled = unit === 'km'
+    ? (totals?.plannedDist ? `${((totals.plannedDist) / 1000).toFixed(1)} km scheduled` : null)
+    : (totals?.plannedSec ? `${fmtHours(totals.plannedSec)} scheduled` : null);
+  // Sessions live in the title rather than columns of their own: four more
   // columns of counts would double the table's width to say something a coach
   // only asks about the odd week.
-  const counts = [
+  const title = [
     totals?.count ? `${totals.count} done` : null,
     totals?.plannedCount ? `${totals.plannedCount} planned` : null,
+    scheduled,
   ].filter(Boolean).join(' · ');
+
   return (
-    <span className="tabular-nums whitespace-nowrap" title={counts || undefined}>
+    <span className="tabular-nums whitespace-nowrap inline-flex items-baseline justify-end gap-1" title={title || undefined}>
       <span className="font-semibold" style={{ color: done ? color : '#cbd5e1' }}>{done || '—'}</span>
-      {planned && <span className="text-slate-400"> / {planned}</span>}
+      <span className="text-slate-300">/</span>
+      {editable ? (
+        <input
+          type="text"
+          inputMode="decimal"
+          value={draft ?? (target ?? '')}
+          placeholder="—"
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+          className="w-[42px] text-right tabular-nums text-[12px] rounded border border-transparent hover:border-slate-300 focus:border-primary focus:ring-1 focus:ring-primary/30 px-1 py-0.5 bg-transparent placeholder:text-slate-300"
+        />
+      ) : (
+        <span className="text-slate-400 w-[42px] inline-block text-right">{target ?? '—'}</span>
+      )}
     </span>
   );
 }
@@ -137,7 +178,7 @@ function TestsCell({ tests, onOpenTest, onPlanTest, canPlan }) {
   );
 }
 
-function WeekRow({ row, peakWeeklyTss, onChange, editable, isEven, onOpenTest, onPlanTest }) {
+function WeekRow({ row, peakWeeklyTss, onChange, editable, isEven, onOpenTest, onPlanTest, unit }) {
   const [tssDraft, setTssDraft] = useState(null);
   const [notesDraft, setNotesDraft] = useState(null);
 
@@ -246,7 +287,19 @@ function WeekRow({ row, peakWeeklyTss, onChange, editable, isEven, onOpenTest, o
       </td>
       {SPORT_COLS.map((c) => (
         <td key={c.key} className={`${TD} text-right`}>
-          <SportCell totals={row.sports?.[c.key]} color={c.color} />
+          <SportCell
+            totals={row.sports?.[c.key]}
+            target={(unit === 'km' ? row.sportKm : row.sportHours)?.[c.key] ?? null}
+            unit={unit}
+            color={c.color}
+            editable={editable}
+            onCommit={(v) => onChange(row.weekStart, {
+              [unit === 'km' ? 'sportKm' : 'sportHours']: {
+                ...(unit === 'km' ? row.sportKm : row.sportHours),
+                [c.key]: v,
+              },
+            })}
+          />
         </td>
       ))}
       <td className="px-2 py-1">
@@ -281,7 +334,7 @@ function WeekRow({ row, peakWeeklyTss, onChange, editable, isEven, onOpenTest, o
   );
 }
 
-export default function AtpTable({ rows = [], peakWeeklyTss = 700, onWeekChange, editable = true, onOpenTest = null, onPlanTest = null }) {
+export default function AtpTable({ rows = [], peakWeeklyTss = 700, onWeekChange, editable = true, onOpenTest = null, onPlanTest = null, unit = 'hours' }) {
   const months = useMemo(() => groupRowsByMonth(rows), [rows]);
 
   if (!rows.length) {
@@ -302,7 +355,7 @@ export default function AtpTable({ rows = [], peakWeeklyTss = 700, onWeekChange,
             <th className={`${TH} text-right`}>Completed</th>
             {SPORT_COLS.map((c) => (
               <th key={c.key} className={`${TH} text-right`} style={{ color: c.color }}>
-                {c.label}<br />h done/plan
+                {c.label}<br />{unit === 'km' ? 'km done/target' : 'h done/target'}
               </th>
             ))}
             <th className={`${TH} text-left`}>Tests</th>
@@ -332,6 +385,7 @@ export default function AtpTable({ rows = [], peakWeeklyTss = 700, onWeekChange,
                   isEven={i % 2 === 0}
                   onOpenTest={onOpenTest}
                   onPlanTest={onPlanTest}
+                  unit={unit}
                 />
               ))}
             </React.Fragment>

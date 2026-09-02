@@ -7498,6 +7498,8 @@ export default function CalendarView({
   /** Array of CalendarPeriod objects: { _id, startDate, endDate, type, color, notes }
    *  Multi-day spans (Vacation, Training camp, …) rendered as colored bands. */
   periods = [],
+  /** weekStart → { period, periodWeek, targetTss } from the season plan. */
+  atpWeeks = {},
   /** Called with a payload { _id?, startDate, endDate, type, color, notes } to upsert a period. */
   onPeriodSave = null,
   /** Called with periodId to remove a period. */
@@ -7759,6 +7761,24 @@ export default function CalendarView({
   const [periodEdit, setPeriodEdit] = useState(null);
   // Lookup: dateStr → array of periods covering that day (for the band).
   const periodsByDate = useMemo(() => buildPeriodsByDate(periods), [periods]);
+
+  /**
+   * The season's weeks, re-keyed the way this calendar keys weeks.
+   *
+   * The plan stores a local Monday ('2026-08-03'); the calendar's weekKey is
+   * that Monday put through toISOString(), which east of Greenwich is the
+   * Sunday before it. Converting once here beats making every lookup guess,
+   * and beats changing weekKey, which a dozen other maps already agree on.
+   */
+  const atpWeeksByKey = useMemo(() => {
+    const out = {};
+    Object.entries(atpWeeks || {}).forEach(([localMonday, v]) => {
+      const [y, m, d] = String(localMonday).split('-').map(Number);
+      if (!y || !m || !d) return;
+      out[new Date(y, m - 1, d).toISOString().slice(0, 10)] = v;
+    });
+    return out;
+  }, [atpWeeks]);
 
   // Thin colored band(s) for any periods covering `key` (YYYY-MM-DD). Clicking
   // a segment opens the period editor. Returns null when no period applies.
@@ -9586,6 +9606,7 @@ export default function CalendarView({
                         weekSummary={wkSummary}
                         formatHours={formatHours}
                         formatKm={formatKm}
+                        atpWeek={atpWeeksByKey[weekKey] || null}
                         user={user}
                         large
                         weekPlannedWorkouts={filteredPlannedWorkouts.filter(pw => {
@@ -9920,6 +9941,7 @@ export default function CalendarView({
                       weekSummary={wkSummary}
                       formatHours={formatHours}
                       formatKm={formatKm}
+                      atpWeek={atpWeeksByKey[weekKey] || null}
                       user={user}
                       weekPlannedWorkouts={filteredPlannedWorkouts.filter(pw => {
                         if (!pw.date) return false;
@@ -10224,6 +10246,7 @@ export default function CalendarView({
                   weekSummary={weekSummary}
                   formatHours={formatHours}
                   formatKm={formatKm}
+                  atpWeek={atpWeeksByKey[weekKey] || null}
                   user={user}
                   weekPlannedWorkouts={filteredPlannedWorkouts.filter(pw => {
                     if (!pw.date) return false;

@@ -87,6 +87,26 @@ async function racesInSeason(athleteId, startDate, endDate) {
   return races;
 }
 
+/** The sports a week target may be set for — anything else is dropped. */
+const TARGET_SPORTS = ['bike', 'run', 'swim', 'strength'];
+
+/**
+ * A per-sport target map, cleaned. A cleared box arrives as '' or null and
+ * means "no target for this sport", which is not the same as a target of zero
+ * — zero is a deliberate "nothing this week" and both have to survive.
+ */
+function sanitizeSportMap(raw) {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const out = {};
+  for (const sport of TARGET_SPORTS) {
+    const v = raw[sport];
+    if (v == null || v === '') continue;
+    const n = Number(v);
+    if (Number.isFinite(n) && n >= 0) out[sport] = n;
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
 /** Keep only the fields a client is allowed to set on a week row. */
 function sanitizeWeek(raw) {
   if (!raw || !DATE_RE.test(String(raw.weekStart || ''))) return null;
@@ -99,6 +119,8 @@ function sanitizeWeek(raw) {
     periodWeek: null, // recomputed below — never trusted from the client
     targetTss: Number.isFinite(tss) && tss >= 0 ? Math.round(tss) : 0,
     targetHours: Number.isFinite(hours) && hours >= 0 ? hours : null,
+    sportHours: sanitizeSportMap(raw.sportHours),
+    sportKm: sanitizeSportMap(raw.sportKm),
     notes: typeof raw.notes === 'string' ? raw.notes.slice(0, 500) : '',
     // Marker, stripped before saving: no targetTss sent means "use the pattern".
     _autoTss: raw.targetTss == null || raw.targetTss === '',
@@ -271,6 +293,8 @@ router.put('/:id/weeks', verifyToken, requirePlanWorkouts, async (req, res) => {
         periodWeek: null,
         targetTss: patch.targetTss,
         targetHours: patch.targetHours,
+        sportHours: patch.sportHours,
+        sportKm: patch.sportKm,
         notes: patch.notes,
         _autoTss: patch._autoTss,
       };

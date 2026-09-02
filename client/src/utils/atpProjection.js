@@ -217,6 +217,11 @@ export function projectAtpSeason({
       periodWeek: w.periodWeek || null,
       targetTss: Math.round(Number(w.targetTss) || 0),
       targetHours: w.targetHours ?? null,
+      // What the coach asked of each sport this week, as opposed to what the
+      // calendar happens to have scheduled. A Map from Mongoose, a plain
+      // object from an optimistic local edit — both read the same way.
+      sportHours: mapToObject(w.sportHours),
+      sportKm: mapToObject(w.sportKm),
       notes: w.notes || '',
       completedTss: Math.round(completedTss),
       plannedTss: Math.round(plannedTss),
@@ -249,6 +254,13 @@ export function projectAtpSeason({
   return { rows, totals };
 }
 
+/** Mongoose hands Maps back as Maps; an optimistic local edit is a plain object. */
+function mapToObject(v) {
+  if (!v) return null;
+  if (typeof v.entries === 'function' && !(v instanceof Array)) return Object.fromEntries(v.entries());
+  return typeof v === 'object' ? { ...v } : null;
+}
+
 /** Which of the four columns a sport belongs in. */
 function atpSportBucket(sport) {
   const v = String(sport || '').toLowerCase();
@@ -273,7 +285,7 @@ export function buildWeeklySportTotals({ activities = [], plannedWorkouts = [] }
   const out = {};
   const slot = (wk, bucket) => {
     const week = out[wk] || (out[wk] = {});
-    return week[bucket] || (week[bucket] = { sec: 0, count: 0, plannedSec: 0, plannedCount: 0 });
+    return week[bucket] || (week[bucket] = { sec: 0, dist: 0, count: 0, plannedSec: 0, plannedDist: 0, plannedCount: 0 });
   };
 
   for (const a of activities || []) {
@@ -282,6 +294,7 @@ export function buildWeeklySportTotals({ activities = [], plannedWorkouts = [] }
     if (!wk) continue;
     const s = slot(wk, atpSportBucket(a?.sport || a?.type));
     s.sec += completedSecs(a);
+    s.dist += Number(a?.distance || a?.totalDistance || 0) || 0;
     s.count += 1;
   }
 
@@ -295,6 +308,7 @@ export function buildWeeklySportTotals({ activities = [], plannedWorkouts = [] }
     if (!wk) continue;
     const s = slot(wk, atpSportBucket(pw?.sport));
     s.plannedSec += plannedWorkoutDurationSecs(pw);
+    s.plannedDist += Number(pw?.plannedDistance || 0) || 0;
     s.plannedCount += 1;
   }
   return out;
@@ -393,6 +407,30 @@ export function atpPeriodBands(plan, colorOf) {
     });
   }
   return bands;
+}
+
+/**
+ * The season's weeks as a lookup for the calendar: what period a week is in
+ * and what the plan asks of it.
+ *
+ * The week totals column says what was done against what is scheduled. It
+ * could not say the thing that decides both — that this is week two of Base 3
+ * and the plan wants 640 TSS out of it.
+ *
+ * @returns {Object} weekStartKey → { period, periodWeek, targetTss, targetHours }
+ */
+export function atpWeekTargets(plan) {
+  const out = {};
+  for (const w of plan?.weeks || []) {
+    if (!w?.weekStart) continue;
+    out[w.weekStart] = {
+      period: w.period || null,
+      periodWeek: w.periodWeek || null,
+      targetTss: Number(w.targetTss) || 0,
+      targetHours: w.targetHours ?? null,
+    };
+  }
+  return out;
 }
 
 /**

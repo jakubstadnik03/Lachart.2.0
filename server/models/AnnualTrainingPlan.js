@@ -39,8 +39,16 @@ const atpWeekSchema = new mongoose.Schema({
   targetHours: { type: Number, default: null, min: 0 },
   /** Free-text focus for the week ("Big climbing block", "Openers Thu"). */
   notes: { type: String, default: '' },
-  /** Per-sport hour targets, e.g. { bike: 8, run: 3, swim: 2 }. */
+  /**
+   * Per-sport targets for the week, e.g. { bike: 8, run: 3, swim: 2 }.
+   *
+   * The TSS target says how hard the week is; these say what it is made of,
+   * which is how a coach actually writes one — "eight on the bike, two runs".
+   * Both units are kept because both get planned: a cyclist plans hours, a
+   * runner plans kilometres, and a triathlete plans each sport in its own.
+   */
   sportHours: { type: Map, of: Number, default: undefined },
+  sportKm: { type: Map, of: Number, default: undefined },
 }, { _id: false });
 
 const annualTrainingPlanSchema = new mongoose.Schema({

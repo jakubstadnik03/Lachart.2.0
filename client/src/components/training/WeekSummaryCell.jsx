@@ -18,7 +18,7 @@ export const SPORT_COLORS_CELL = { bike: '#767EB5', run: '#f97316', swim: '#599F
  * A week with no plan still shows the same rows, just without the second half:
  * the bar and the percentage disappear rather than dividing by zero.
  */
-export default function WeekSummaryCell({ weekSummary, formatHours, formatKm, user, weekPlannedWorkouts = [], large = false }) {
+export default function WeekSummaryCell({ weekSummary, formatHours, formatKm, user, weekPlannedWorkouts = [], large = false, atpWeek = null }) {
   if (!weekSummary) return <div className="bg-gray-50 p-2.5 min-h-[145px] min-w-[150px]" />;
 
   const { totalSeconds, totalTSS, runSeconds, bikeSeconds, swimSeconds, strengthSeconds,
@@ -162,6 +162,25 @@ export default function WeekSummaryCell({ weekSummary, formatHours, formatKm, us
               backgroundColor: weekPct >= 110 ? '#f59e0b' : weekPct >= 85 ? '#22c55e' : '#767EB5',
             }}
           />
+        </div>
+      )}
+
+      {/* What the season plan asks of this week. The rows above compare what
+          was done with what is on the calendar; this is the number both of
+          them are supposed to be serving, and without it the column could not
+          say whether a full week was the right week. */}
+      {atpWeek && (atpWeek.period || atpWeek.targetTss > 0) && (
+        <div className={`flex items-center justify-between gap-1 ${cls.micro} pt-0.5 border-t border-gray-200/70`}>
+          {atpWeek.period ? (
+            <span className="font-bold uppercase tracking-wide truncate text-gray-500">
+              {atpWeek.period}{atpWeek.periodWeek ? ` · w${atpWeek.periodWeek}` : ''}
+            </span>
+          ) : <span />}
+          {atpWeek.targetTss > 0 && (
+            <span className="text-gray-400 tabular-nums flex-shrink-0">
+              plan {Math.round(atpWeek.targetTss)}
+            </span>
+          )}
         </div>
       )}
 

@@ -41,6 +41,13 @@ import { PERIOD_META, suggestedWeekTss } from '../components/ATP/atpPeriods';
 
 const COACH_ROLES = ['coach', 'tester', 'testing', 'admin'];
 
+/** A per-sport target map as a plain object, whatever shape it arrived in. */
+function plainSportMap(v) {
+  if (!v) return undefined;
+  if (typeof v.entries === 'function' && !Array.isArray(v)) return Object.fromEntries(v.entries());
+  return typeof v === 'object' ? { ...v } : undefined;
+}
+
 function StatBlock({ label, value, suffix = 'TSS', tone = 'text-slate-800' }) {
   return (
     <div className="flex items-baseline gap-1.5">
@@ -70,6 +77,7 @@ export default function AtpPage() {
   const [plannedWorkouts, setPlannedWorkouts] = useState([]);
   const [tests, setTests] = useState([]);
   const [chartMode, setChartMode] = useState('load');
+  const [tableUnit, setTableUnit] = useState('hours');
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -321,6 +329,10 @@ export default function AtpPage() {
         weekStart,
         period: week.period,
         targetHours: week.targetHours,
+        // A Map on a week loaded from the server, a plain object on one the
+        // table just edited — the request wants an object either way.
+        sportHours: plainSportMap(week.sportHours),
+        sportKm: plainSportMap(week.sportKm),
         notes: week.notes,
         // Omitting targetTss asks the server to re-derive it from the period.
         ...(resetTss ? {} : { targetTss: week.targetTss }),
@@ -532,12 +544,32 @@ export default function AtpPage() {
 
       {/* Table */}
       <div className="rounded-xl ring-1 ring-slate-200 bg-white overflow-hidden">
+        <div className="flex justify-end px-2 py-1.5 border-b border-slate-100">
+          {/* The sport columns plan in one unit at a time — a cyclist writes
+              hours, a runner writes kilometres, and one editable number per
+              cell keeps the row readable either way. */}
+          <div className="inline-flex rounded-lg bg-slate-100 p-0.5">
+            {[['hours', 'Hours'], ['km', 'Km']].map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setTableUnit(id)}
+                className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors ${
+                  tableUnit === id ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
         <AtpTable
           rows={rows}
           peakWeeklyTss={plan.peakWeeklyTss}
           onWeekChange={handleWeekChange}
           onOpenTest={handleOpenTest}
           onPlanTest={handlePlanTest}
+          unit={tableUnit}
         />
       </div>
 
