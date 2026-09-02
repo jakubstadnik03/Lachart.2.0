@@ -353,6 +353,49 @@ export function buildWeeklyTests({ tests = [], plannedWorkouts = [], annotate = 
 }
 
 /**
+ * The season's periods as calendar bands.
+ *
+ * The plan decides that weeks 5 to 8 are Base 3; the calendar is where the
+ * athlete actually trains those weeks, and it had no idea. Rather than copy
+ * the periods into calendar-period documents — two records of the same
+ * decision, free to drift the moment one is edited — the bands are derived
+ * from the plan each time it is read. They are display-only for that reason:
+ * the place to change a period is the plan.
+ *
+ * Consecutive weeks sharing a period become one band, so a four-week Base 3
+ * block reads as one span rather than four.
+ *
+ * @param {{ weeks?: Array }} plan
+ * @param {(period: string) => string} colorOf
+ * @returns {Array<{ _id, startDate, endDate, type, color, source }>}
+ */
+export function atpPeriodBands(plan, colorOf) {
+  const weeks = (plan?.weeks || [])
+    .filter((w) => w?.weekStart && w?.period)
+    .sort((a, b) => a.weekStart.localeCompare(b.weekStart));
+  const bands = [];
+  for (const w of weeks) {
+    const last = bands[bands.length - 1];
+    const weekEnd = addDaysKey(w.weekStart, 6);
+    // Same period AND actually adjacent — a gap of unassigned weeks between
+    // two Base 3 blocks is two blocks, not one long one.
+    if (last && last.type === w.period && addDaysKey(last.endDate, 1) === w.weekStart) {
+      last.endDate = weekEnd;
+      continue;
+    }
+    bands.push({
+      _id: `atp-${w.weekStart}`,
+      startDate: w.weekStart,
+      endDate: weekEnd,
+      type: w.period,
+      color: colorOf ? colorOf(w.period) : null,
+      source: 'atp',
+    });
+  }
+  return bands;
+}
+
+/**
  * Group rows under the month their week starts in, the way the table reads.
  * A week straddling a month boundary belongs to the month it began in.
  */

@@ -411,7 +411,11 @@ export default function AtpPage() {
     ? Math.round((totals.completedTss / totals.atpTss) * 100) : 0;
 
   return (
-    <div className="px-3 sm:px-5 py-4 max-w-[1700px] mx-auto">
+    // min-w-0 so the season table cannot push the page wider than the window.
+    // It is eighteen columns; without this the widest child sets the width and
+    // the header, the chart and the app's own chrome all get carried off the
+    // right edge with it instead of the table simply scrolling.
+    <div className="px-3 sm:px-5 py-4 max-w-[1700px] mx-auto w-full min-w-0 overflow-x-hidden">
       {/* Header */}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mb-3">
         <h1 className="text-lg font-bold text-slate-800">{plan.name}</h1>

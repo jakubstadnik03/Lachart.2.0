@@ -15,6 +15,9 @@ import { getIntegrationStatus } from '../services/api';
 import { listExternalActivities } from '../services/api';
 import { dedupeMergedCalendarActivities } from '../utils/dedupeMergedCalendarActivities';
 import { buildZoneContext } from '../utils/zoneContext';
+import { atpPeriodBands } from '../utils/atpProjection';
+import { getAtpPlans, getAtpPlan } from '../services/atpApi';
+import { periodColor as atpPeriodColor } from '../components/ATP/atpPeriods';
 import { mapExternalActivitiesToCalendar } from '../utils/mapExternalActivityToCalendar';
 import { getStravaActivityDetail, updateStravaActivity, getAllTitles, createStravaLap, deleteStravaLap, getTrainingById, addTraining, updateTraining } from '../services/api';
 import api from '../services/api';
@@ -1652,6 +1655,10 @@ const FitAnalysisPage = () => {
   // can render the theme badge / mini-grid dot for each day in one pass.
   const [dayPlans, setDayPlans] = useState([]);
   const [periods, setPeriods] = useState([]);
+  // The season's own periods (Base 3, Peak, Race …) shown as calendar bands.
+  // Derived from the plan rather than copied into calendar-period documents:
+  // one record of the decision, so the two can never disagree.
+  const [atpBands, setAtpBands] = useState([]);
   const [planModal, setPlanModal] = useState(null); // { date: Date, workout: obj|null }
   // Quick day-theme / period editors opened from the "Add a workout" modal tiles.
   const [quickTheme, setQuickTheme] = useState(null);   // { date: 'YYYY-MM-DD', preset }
@@ -3507,6 +3514,35 @@ const FitAnalysisPage = () => {
   }, [user, loadExternalActivities, loadRegularTrainings, loadTrainings]);
 
 
+  // Season periods → calendar bands. The whole plan is one document, so this
+  // is two requests once per athlete rather than anything per-view.
+  useEffect(() => {
+    const athlete = selectedAthleteId || user?._id;
+    if (!athlete) { setAtpBands([]); return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const plans = await getAtpPlans(selectedAthleteId || null);
+        if (cancelled || !plans?.length) { if (!cancelled) setAtpBands([]); return; }
+        // The season the athlete is in, else the most recent one.
+        const todayKey = new Date().toISOString().slice(0, 10);
+        const current = plans.find((p) => p.startDate <= todayKey && todayKey <= p.endDate)
+          || plans[0];
+        const full = await getAtpPlan(current._id, selectedAthleteId || null);
+        if (cancelled) return;
+        setAtpBands(atpPeriodBands(full, atpPeriodColor));
+      } catch {
+        // A season that will not load is not a reason for the calendar to fail.
+        if (!cancelled) setAtpBands([]);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [selectedAthleteId, user?._id]);
+
+  // The bands the calendar draws: the athlete's own periods, plus the season's,
+  // which are read-only there because the plan is where they are decided.
+  const calendarPeriods = React.useMemo(() => [...periods, ...atpBands], [periods, atpBands]);
+
   const [calendarPeriod, setCalendarPeriod] = useState(null);
   const handleCalendarPeriodChange = useCallback((info) => {
     setCalendarPeriod(info);
@@ -4636,7 +4672,7 @@ const FitAnalysisPage = () => {
           dayPlans={dayPlans}
           onDayPlanSave={handleDayPlanSave}
           onDayPlanDelete={handleDayPlanDelete}
-          periods={periods}
+          periods={calendarPeriods}
           onPeriodSave={handlePeriodSave}
           onPeriodDelete={handlePeriodDelete}
           onActivityUpdate={(updated) => {

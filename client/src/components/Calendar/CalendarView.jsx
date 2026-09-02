@@ -7765,6 +7765,9 @@ export default function CalendarView({
   const renderPeriodBand = (key, { height = 4, showLabel = false } = {}) => {
     const ps = periodsByDate.get(key);
     if (!ps || !ps.length) return null;
+    // A band derived from the season plan has no document behind it to edit —
+    // the plan is where its period is decided, so it is display-only here.
+    const editable = (p) => onPeriodSave && p?.source !== 'atp';
     // Label only on the day a period STARTS, so the name reads once at the
     // left edge of the band (notes/destination if set, else the type).
     const starting = showLabel ? ps.filter(p => p.startDate === key) : [];
@@ -7778,17 +7781,17 @@ export default function CalendarView({
           {ps.slice(0, 3).map((p, i) => (
             <div
               key={p._id || i}
-              onClick={onPeriodSave ? (e) => { e.stopPropagation(); setPeriodEdit({ period: p }); } : undefined}
-              style={{ flex: 1, background: periodColor(p), borderRadius: 2, cursor: onPeriodSave ? 'pointer' : 'default' }}
+              onClick={editable(p) ? (e) => { e.stopPropagation(); setPeriodEdit({ period: p }); } : undefined}
+              style={{ flex: 1, background: periodColor(p), borderRadius: 2, cursor: editable(p) ? 'pointer' : 'default' }}
             />
           ))}
         </div>
         {starting.map(p => (
           <div
             key={`lbl-${p._id}`}
-            onClick={onPeriodSave ? (e) => { e.stopPropagation(); setPeriodEdit({ period: p }); } : undefined}
+            onClick={editable(p) ? (e) => { e.stopPropagation(); setPeriodEdit({ period: p }); } : undefined}
             className="mt-0.5 text-[10px] font-bold uppercase tracking-wide leading-none truncate pl-3"
-            style={{ color: periodColor(p), cursor: onPeriodSave ? 'pointer' : 'default' }}
+            style={{ color: periodColor(p), cursor: editable(p) ? 'pointer' : 'default' }}
             title={`${p.type}${p.notes ? ` — ${p.notes}` : ''}`}
           >
             {(p.notes && p.notes.trim()) || p.type}
