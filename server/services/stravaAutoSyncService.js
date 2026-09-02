@@ -19,6 +19,29 @@ const {
 // Helper function to delay execution
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
+const isBlank = (v) => v === null || v === undefined;
+
+/**
+ * Would writing `next` over `stored` actually change the document?
+ *
+ * Mongo already treats a $set to an identical value as a no-op, but only on an
+ * exact match — a Date against a Date, a double against a double. Deciding it
+ * here means an unchanged activity costs no write, no oplog entry and no
+ * replication traffic at all, rather than a command that turns out to be a
+ * no-op once it arrives.
+ */
+function sameStoredValue(stored, next) {
+  if (isBlank(stored) && isBlank(next)) return true;
+  if (isBlank(stored) || isBlank(next)) return false;
+  if (stored instanceof Date || next instanceof Date) {
+    const a = stored instanceof Date ? stored.getTime() : new Date(stored).getTime();
+    const b = next instanceof Date ? next.getTime() : new Date(next).getTime();
+    return (Number.isNaN(a) && Number.isNaN(b)) || a === b;
+  }
+  if (typeof stored === 'number' && typeof next === 'number') return stored === next;
+  return String(stored) === String(next);
+}
+
 /**
  * Sync Strava activities for a single user
  * @param {Object} user - User document with strava credentials
@@ -150,15 +173,36 @@ async function syncStravaForUser(user, opts = {}) {
           break;
         }
         
+        // ── Merge the page into Mongo ───────────────────────────────────────
+        // Two round trips per page, not two per activity. The scheduler ticks
+        // 288 times a day over 10 users at up to 100 activities a page, so the
+        // findOne+updateOne pair this replaces was issuing on the order of
+        // 375k command pairs a day at a 0.5 vCPU instance.
+        const pageIds = arr.map((a) => a.id).filter((id) => id != null);
+        let existingById = new Map();
+        try {
+          const rows = await StravaActivity.find(
+            { userId: user._id, stravaId: { $in: pageIds } },
+            {
+              stravaId: 1, name: 1, sport: 1, startDate: 1, elapsedTime: 1, movingTime: 1,
+              distance: 1, averageSpeed: 1, averageHeartRate: 1, averagePower: 1,
+              weightedAveragePower: 1, manualTss: 1, tssDisplayMode: 1, metricsManualized: 1,
+            },
+          ).lean();
+          existingById = new Map(rows.map((r) => [Number(r.stravaId), r]));
+        } catch (dbErr) {
+          console.error(`[StravaAutoSync] Error reading page ${page} for user ${user._id}:`, dbErr.message);
+          cleanRun = false;
+        }
+
+        const ops = [];
+        const insertedIds = [];
+        let unchanged = 0;
+
         for (const a of arr) {
           try {
-            const existing = await StravaActivity.findOne(
-              { userId: user._id, stravaId: a.id },
-              { movingTime: 1, elapsedTime: 1, distance: 1, manualTss: 1, metricsManualized: 1 },
-            ).lean();
-            const doc = {
-              userId: user._id.toString(),
-              stravaId: a.id,
+            const existing = existingById.get(Number(a.id)) || null;
+            const fields = {
               name: a.name || 'Untitled Activity',
               sport: a.sport_type || a.type || 'Ride',
               startDate: new Date(a.start_date_local || a.start_date),
@@ -172,41 +216,98 @@ async function syncStravaForUser(user, opts = {}) {
                 a.weighted_average_watts != null && Number.isFinite(Number(a.weighted_average_watts))
                   ? Number(a.weighted_average_watts)
                   : null,
-              raw: a
             };
             if (existing?.metricsManualized) {
-              if (existing.movingTime != null) doc.movingTime = existing.movingTime;
-              if (existing.elapsedTime != null) doc.elapsedTime = existing.elapsedTime;
-              if (existing.distance != null) doc.distance = existing.distance;
-              if (existing.manualTss != null) doc.manualTss = existing.manualTss;
-              if (existing.tssDisplayMode != null) doc.tssDisplayMode = existing.tssDisplayMode;
+              if (existing.movingTime != null) fields.movingTime = existing.movingTime;
+              if (existing.elapsedTime != null) fields.elapsedTime = existing.elapsedTime;
+              if (existing.distance != null) fields.distance = existing.distance;
+              if (existing.manualTss != null) fields.manualTss = existing.manualTss;
+              if (existing.tssDisplayMode != null) fields.tssDisplayMode = existing.tssDisplayMode;
             }
-            
-            const resUp = await StravaActivity.updateOne(
-              { userId: user._id, stravaId: a.id },
-              { $set: doc },
-              { upsert: true }
-            );
-            
-            if (resUp.upsertedCount > 0) {
-              imported += 1;
-              importedActivityIds.push(a.id);
-              if (!latestImportedDoc || doc.startDate > latestImportedDoc.startDate) {
-                latestImportedDoc = doc;
-              }
-            } else if (resUp.modifiedCount > 0) updated += 1;
 
             // Track the newest start_date we saw so lastSyncDate can be
             // advanced to it (not to wall-clock now()).
-            const startMs = doc.startDate?.getTime?.();
+            const startMs = fields.startDate?.getTime?.();
             if (startMs && (!newestStartDate || startMs > newestStartDate)) {
               newestStartDate = startMs;
             }
-          } catch (dbErr) {
-            console.error(`[StravaAutoSync] Error saving activity ${a.id}:`, dbErr.message);
+
+            if (!existing) {
+              // raw is written once, when the activity first arrives.
+              //
+              // It used to be re-$set every tick, and that one line was the
+              // most expensive thing in the system. Strava re-serves the same
+              // summary payload on every list call, but with social counters
+              // (kudos_count, comment_count, achievement_count) that differ
+              // between calls — so Mongo saw a real change and rewrote the
+              // whole ~3 KB document, ~375k times a day. That is ~34 GB of
+              // oplog a month on a database that grows by 2, replicated to
+              // both secondaries and billed a second time by Continuous Cloud
+              // Backup.
+              //
+              // Nothing needed the refresh. The server reads exactly four
+              // things out of raw — map.summary_polyline, max_watts,
+              // max_heartrate, weighted_average_watts — and all four are fixed
+              // when the activity is recorded. Everything an athlete can
+              // change lives in its own column. Worse, this summary payload
+              // (resource_state 2) overwrote the richer detail payload
+              // (resource_state 3, carrying segment_efforts, laps and splits)
+              // that the activity-detail route caches, so each tick discarded
+              // work that route had spent a rate-limited Strava call to fetch.
+              ops.push({
+                updateOne: {
+                  filter: { userId: user._id, stravaId: a.id },
+                  update: { $set: { userId: user._id.toString(), stravaId: a.id, ...fields, raw: a } },
+                  upsert: true,
+                },
+              });
+              insertedIds.push(a.id);
+              const candidate = { stravaId: a.id, ...fields };
+              if (!latestImportedDoc || candidate.startDate > latestImportedDoc.startDate) {
+                latestImportedDoc = candidate;
+              }
+              continue;
+            }
+
+            const changed = {};
+            for (const [key, value] of Object.entries(fields)) {
+              if (!sameStoredValue(existing[key], value)) changed[key] = value;
+            }
+            if (!Object.keys(changed).length) {
+              unchanged += 1;
+              continue;
+            }
+            ops.push({
+              updateOne: {
+                filter: { userId: user._id, stravaId: a.id },
+                update: { $set: changed },
+              },
+            });
+          } catch (mapErr) {
+            console.error(`[StravaAutoSync] Error preparing activity ${a.id}:`, mapErr.message);
             cleanRun = false;
           }
         }
+
+        if (ops.length) {
+          try {
+            const res = await StravaActivity.bulkWrite(ops, { ordered: false });
+            imported += res.upsertedCount || 0;
+            updated += res.modifiedCount || 0;
+            importedActivityIds.push(...insertedIds);
+          } catch (dbErr) {
+            // ordered:false means the rest of the batch still applied — take
+            // the counts off the error so one bad document does not make the
+            // whole page look unwritten.
+            imported += dbErr?.result?.upsertedCount || 0;
+            updated += dbErr?.result?.modifiedCount || 0;
+            console.error(`[StravaAutoSync] Error writing page ${page} for user ${user._id}:`, dbErr.message);
+            cleanRun = false;
+          }
+        }
+        console.log(
+          `[StravaAutoSync] page ${page}: ${arr.length} fetched, ${ops.length} written, ${unchanged} unchanged`,
+        );
         
         if (arr.length < per_page) {
           break;
