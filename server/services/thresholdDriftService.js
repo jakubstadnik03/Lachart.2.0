@@ -184,11 +184,11 @@ async function recordsWithHeartRate(session, userId) {
 /** Pull the per-second trace for one session, whichever source it came from. */
 async function recordsFor(session, userId) {
   if (session.source === 'strava') {
-    const doc = await StravaStream.findOne({ userId, stravaId: session.id }).select('streams').lean();
+    const doc = await StravaStream.findOne({ userId, stravaId: session.id }).select('streams packed').lean();
     return doc ? recordsFromStreams(doc.streams, session.date) : [];
   }
   if (session.source === 'garmin') {
-    const doc = await GarminStream.findOne({ userId, garminId: String(session.id) }).select('streams').lean();
+    const doc = await GarminStream.findOne({ userId, garminId: String(session.id) }).select('streams packed').lean();
     return doc ? recordsFromStreams(doc.streams, session.date) : [];
   }
   const doc = await FitTraining.findById(session.id).select('records').lean();

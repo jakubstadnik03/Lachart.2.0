@@ -169,7 +169,7 @@ async function locateActivity(userId, activityKey) {
     const act = await StravaActivity.findOne({ userId, stravaId }).select('startDate').lean();
     if (!act) return null;
 
-    const stream = await StravaStream.findOne({ userId, stravaId }).select('streams.latlng').lean();
+    const stream = await StravaStream.findOne({ userId, stravaId }).select('streams.latlng packed.v packed.n packed.c.latlng').lean();
     const first = channel(stream?.streams, 'latlng').find(
       (p) => Array.isArray(p) && Number.isFinite(p[0]) && !(p[0] === 0 && p[1] === 0),
     );

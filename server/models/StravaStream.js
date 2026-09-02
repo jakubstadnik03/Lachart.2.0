@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const streamStorage = require('./streamStoragePlugin');
 
 /**
  * Stored Strava activity streams (time / hr / power / speed / altitude / latlng).
@@ -10,10 +11,16 @@ const stravaStreamSchema = new mongoose.Schema({
   userId:    { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
   stravaId:  { type: Number, required: true, index: true },
   // Streams object — keys: time, velocity_smooth, heartrate, watts, altitude, latlng, distance, cadence
-  streams:   { type: mongoose.Schema.Types.Mixed, default: {} },
+  // No default: setDefaultsOnInsert would emit $setOnInsert for this path
+  // and collide with the storage plugin's $unset of it.
+  streams:   { type: mongoose.Schema.Types.Mixed },
   fetchedAt: { type: Date, default: Date.now },
 }, { timestamps: true });
 
 stravaStreamSchema.index({ userId: 1, stravaId: 1 }, { unique: true });
+
+// Stored packed (see utils/streamCodec) — the plugin keeps `streams` working
+// for every reader and writer regardless of which form is on disk.
+stravaStreamSchema.plugin(streamStorage);
 
 module.exports = mongoose.model('StravaStream', stravaStreamSchema);
