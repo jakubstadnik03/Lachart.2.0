@@ -32,6 +32,7 @@ import {
   MoonIcon,
 } from '@heroicons/react/24/outline';
 import SportIcon from '../shared/SportIcon';
+import HoverCard from '../shared/HoverCard';
 import { DurationPickerField, DurationPickerSheet } from '../shared/DurationWheelPicker.jsx';
 import { zoneContextFromProfile } from '../../utils/zoneContext';
 import api, { getSimilarActivities, getRaceEvents, fetchWeeklyReviews, saveWeeklyReview } from '../../services/api';
@@ -420,6 +421,104 @@ function MonthYearPicker({ date, onPick, label }) {
   );
 }
 
+/**
+ * What a session says when there is room to say it.
+ *
+ * The card in the grid has space for a name and two numbers; this is the rest
+ * of what the calendar already knows about that day — the instruction, how it
+ * went against the plan, the shape of it.
+ */
+function SessionHoverContent({ planned, activity, profile, getCategory }) {
+  const source = activity || planned;
+  if (!source) return null;
+  const sport = String(activity?.sport || planned?.sport || '');
+  const title = planned?.title || activity?.title || activity?.name || 'Session';
+  const when = activity?.date || activity?.timestamp || planned?.date;
+  const dateStr = when
+    ? new Date(when).toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })
+    : null;
+
+  const category = activity?.category || planned?.category || null;
+  const catLabel = category && getCategory ? getCategory(category)?.label : null;
+
+  const done = activity ? activityCompletedStats(activity, profile) : null;
+  const plannedLine = planned ? plannedWorkoutPreviewStats(planned, sport || planned.sport) : null;
+  const bars = activity ? activityProfileBars(activity) : null;
+  const color = SPORT_PLAN_COLORS[(sport || 'bike').toLowerCase()] || '#767EB5';
+  const description = planned?.description || activity?.description || null;
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className="flex items-center gap-1.5 min-w-0">
+        <SportIcon sport={sport} className="w-4 h-4 flex-shrink-0" />
+        <span className="text-[13px] font-bold text-gray-900 truncate flex-1">{title}</span>
+        {catLabel && (
+          <span className="text-[9px] font-bold uppercase tracking-wide text-gray-400 flex-shrink-0">{catLabel}</span>
+        )}
+      </div>
+      {dateStr && <div className="text-[11px] text-gray-400 -mt-1">{dateStr}</div>}
+
+      {description && (
+        <p className="text-[11px] leading-snug text-gray-600 whitespace-pre-line">{description}</p>
+      )}
+
+      {(plannedLine || done) && (
+        <div className="flex flex-col gap-0.5 pt-1 border-t border-gray-100">
+          {plannedLine && (
+            <div className="flex items-baseline gap-1.5 text-[11px]">
+              <span className="text-gray-400 w-[54px] flex-shrink-0">Planned</span>
+              <span className="tabular-nums text-gray-600">{plannedLine}</span>
+            </div>
+          )}
+          {done && (
+            <div className="flex items-baseline gap-1.5 text-[11px]">
+              <span className="text-gray-400 w-[54px] flex-shrink-0">Done</span>
+              <span className="tabular-nums font-semibold text-gray-800">{done}</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {(bars || planned?.steps?.length > 0) && (
+        <div className="pt-1 border-t border-gray-100">
+          {bars
+            ? <ActivityMiniChart bars={bars} color={color} height={26} />
+            : <PlanMiniChart steps={planned.steps} color={color} width={140} height={26} fluid />}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** A period band's own line: what it is, and how long it runs. */
+function PeriodHoverContent({ periods }) {
+  if (!periods?.length) return null;
+  const fmt = (key) => {
+    const [y, m, d] = String(key).split('-').map(Number);
+    if (!y) return key;
+    return new Date(y, m - 1, d).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+  };
+  return (
+    <div className="flex flex-col gap-2">
+      {periods.map((p, i) => (
+        <div key={p._id || i} className="flex flex-col gap-0.5">
+          <div className="flex items-center gap-1.5">
+            <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ background: periodColor(p) }} />
+            <span className="text-[13px] font-bold text-gray-900">{p.type}</span>
+            {p.source === 'atp' && (
+              <span className="text-[9px] font-bold uppercase tracking-wide text-gray-400">season plan</span>
+            )}
+          </div>
+          <div className="text-[11px] text-gray-500 tabular-nums pl-4">
+            {fmt(p.startDate)} – {fmt(p.endDate)}
+          </div>
+          {p.notes && <p className="text-[11px] text-gray-600 pl-4 whitespace-pre-line">{p.notes}</p>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ─── Planned workout card (desktop) ──────────────────────────────────────────
 function PlannedWorkoutCard({ pw, onSelect, onStart, compact = false, showDescription = false, onDragStart, onDragEnd, isDragging = false, compliance = null, pairingState = null, linkedActivity = null, onSelectLinked = null, onDuplicate = null, onDelete = null, onRepeat = null, onReorderDragOver = null, onReorderDrop = null, reorderHint = null }) {
   const [menuOpen, setMenuOpen] = React.useState(false);
@@ -495,6 +594,13 @@ function PlannedWorkoutCard({ pw, onSelect, onStart, compact = false, showDescri
     }
 
     return (
+      <HoverCard content={
+        <SessionHoverContent
+          planned={pw}
+          activity={linkedActivity}
+          getCategory={getCategory}
+        />
+      }>
       <div
         className="relative group/plan w-full max-w-full"
         style={{ minWidth: 0, opacity: isDragging ? 0.4 : isSkipped ? 0.45 : 1, transition: 'opacity 0.15s' }}
@@ -653,6 +759,7 @@ function PlannedWorkoutCard({ pw, onSelect, onStart, compact = false, showDescri
           document.body
         )}
       </div>
+      </HoverCard>
     );
   }
 
@@ -782,6 +889,7 @@ function WeekActivityCard({ a, isSelected, onSelect, onActivityClick, onAddLacta
   };
 
   return (
+    <HoverCard content={<SessionHoverContent activity={a} profile={userProfile} getCategory={getCategory} />}>
     <div className="relative group/act w-full">
       <button
         onClick={handleClick}
@@ -846,6 +954,7 @@ function WeekActivityCard({ a, isSelected, onSelect, onActivityClick, onAddLacta
         </span>
       )}
     </div>
+    </HoverCard>
   );
 }
 
@@ -7792,11 +7901,11 @@ export default function CalendarView({
     // left edge of the band (notes/destination if set, else the type).
     const starting = showLabel ? ps.filter(p => p.startDate === key) : [];
     return (
+      <HoverCard content={<PeriodHoverContent periods={ps} />}>
       <div className="mb-1">
         <div
           className="flex gap-px"
           style={{ height }}
-          title={ps.map(p => `${p.type}${p.notes ? ` — ${p.notes}` : ''}`).join(', ')}
         >
           {ps.slice(0, 3).map((p, i) => (
             <div
@@ -7818,6 +7927,7 @@ export default function CalendarView({
           </div>
         ))}
       </div>
+      </HoverCard>
     );
   };
   // Compact period indicator for the mini month grid — a short colored
@@ -10136,7 +10246,8 @@ export default function CalendarView({
                         const monthBars = activityProfileBars(a);
 
                         return (
-                          <div key={pi} className="relative group/act w-full max-w-full" style={{ minWidth: 0 }}>
+                          <HoverCard key={pi} content={<SessionHoverContent activity={a} profile={userProfile} getCategory={getCategory} />}>
+                          <div className="relative group/act w-full max-w-full" style={{ minWidth: 0 }}>
                             <button
                               onClick={(e) => { const r = e.currentTarget?.getBoundingClientRect() || null; handleActivityClick(a, r); }}
                               className={`w-full max-w-full text-left text-[11px] md:text-xs px-2 md:px-2.5 py-2 rounded-lg transition-all flex flex-col gap-1 ${
@@ -10216,6 +10327,7 @@ export default function CalendarView({
                               </span>
                             )}
                           </div>
+                          </HoverCard>
                         );
                       })}
                       {hasOverflow && (
