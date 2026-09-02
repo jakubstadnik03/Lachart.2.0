@@ -711,7 +711,13 @@ export default function CalendarPeriodStats({
    * The panels themselves ask this rather than being wrapped in a switch,
    * because several of them are conditional on their own data as well.
    */
-  const showPanel = (id) => activeTab === 'overview' || activeTab === id;
+  const showPanel = (id) => {
+    // Unchecking a panel means "I do not want to see this", not "hide the
+    // button and keep the chart" — so Overview drops it too. Picking it
+    // explicitly is still possible while it is in the row.
+    if (activeTab === 'overview') return !hiddenPanels.includes(id);
+    return activeTab === id;
+  };
 
   // Hiding the panel you are looking at would otherwise leave the card blank
   // with no tab selected to explain why.
