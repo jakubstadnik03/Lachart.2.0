@@ -10,17 +10,22 @@
  *   node server/scripts/packStoredStreams.js --apply      # do it
  *   node server/scripts/packStoredStreams.js --apply --batch=50 --pause=500
  *
+ * Run it from anywhere in the repo; it reads server/.env regardless.
+ *
  * RUN THIS AFTER TURNING OFF CONTINUOUS CLOUD BACKUP. Rewriting every stream is
  * on the order of a gigabyte of oplog, and point-in-time recovery bills for the
  * oplog it retains — leaving PITR on means paying for the privilege of shrinking
  * the database.
  *
- * Requires MONGODB_URI in the environment / .env, same as the server.
+ * Requires MONGODB_URI in server/.env, same as the server itself.
  */
 
 'use strict';
 
-require('dotenv').config();
+const path = require('path');
+// Anchored to server/.env rather than the working directory, so this runs the
+// same from the repo root, from server/, or from anywhere else.
+require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 const mongoose = require('mongoose');
 const { packStreams } = require('../utils/streamCodec');
 
