@@ -14,10 +14,19 @@ import {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
+/**
+ * `months` buckets by calendar month; `week`/`days` ask for an exact range.
+ *
+ * "1m" is a rolling 30 days, not the calendar month so far. As a month bucket
+ * it was the current month ONLY — so on the 4th of September it showed four
+ * days of training and, on the 1st of any month, guaranteed nothing at all.
+ * The longer periods keep calendar buckets: with two or more whole months
+ * behind the partial one, the ragged edge does not show.
+ */
 const PERIODS = [
   { label: 'Wk',      week: 0  },   // this week (Mon–Sun)
   { label: 'Last wk', week: -1 },   // previous week
-  { label: '1m',      months: 1  },
+  { label: '1m',      days: 30 },
   { label: '3m',      months: 3  },
   { label: '6m',      months: 6  },
   { label: '12m',     months: 12 },
@@ -34,6 +43,25 @@ function weekBounds(offset = 0) {
   sunday.setDate(monday.getDate() + 6);
   sunday.setHours(23, 59, 59, 999);
   return { startDate: monday, endDate: sunday };
+}
+
+/** Returns { startDate, endDate } for the last `n` days, ending today. */
+function dayBounds(n) {
+  const end = new Date();
+  end.setHours(23, 59, 59, 999);
+  const start = new Date(end);
+  start.setDate(end.getDate() - (n - 1));
+  start.setHours(0, 0, 0, 0);
+  return { startDate: start, endDate: end };
+}
+
+/** The exact range a period asks for, or null when it buckets by month. */
+function rangeBounds(period) {
+  const def = PERIODS.find((p) => p.label === period);
+  if (!def) return null;
+  if (def.week != null) return weekBounds(def.week);
+  if (def.days != null) return dayBounds(def.days);
+  return null;
 }
 
 const ZONES = [
@@ -185,7 +213,7 @@ export default function ZoneDistributionChart({ selectedAthleteId = null }) {
   const loadedRef  = useRef(new Map());
   const weekLoaded = useRef(new Set()); // tracks fetched week keys
 
-  const isWeekPeriod = PERIODS.find(p => p.label === period)?.week != null;
+  const isRangePeriod = rangeBounds(period) != null;
 
   // ── Athlete ID ─────────────────────────────────────────────────────────────
   const athleteId = user?.role === 'athlete'
@@ -249,19 +277,18 @@ export default function ZoneDistributionChart({ selectedAthleteId = null }) {
 
   // Load all months needed for the current period
   useEffect(() => {
-    if (isWeekPeriod) return; // weeks handled separately below
+    if (isRangePeriod) return; // exact ranges are fetched below
     const missing = monthKeys.filter(k => !loadedRef.current.has(k));
     if (!missing.length) return;
     setLoading(true);
     Promise.all(missing.map(k => loadMonth(k))).finally(() => setLoading(false));
-  }, [monthKeys, loadMonth, isWeekPeriod]);
+  }, [monthKeys, loadMonth, isRangePeriod]);
 
-  // ── Load week data when a week period is selected ─────────────────────────
+  // ── Load an exact date range (this week, last week, last 30 days) ─────────
   useEffect(() => {
-    if (!isWeekPeriod) return;
+    if (!isRangePeriod) return;
     if (weekLoaded.current.has(period)) return;
-    const periodDef = PERIODS.find(p => p.label === period);
-    const { startDate, endDate } = weekBounds(periodDef.week);
+    const { startDate, endDate } = rangeBounds(period);
     setLoading(true);
     getMonthlyPowerAnalysis(athleteId, null, { startDate, endDate })
       .then(raw => {
@@ -273,7 +300,7 @@ export default function ZoneDistributionChart({ selectedAthleteId = null }) {
         setWeekData(prev => ({ ...prev, [period]: [] }));
       })
       .finally(() => setLoading(false));
-  }, [period, isWeekPeriod, athleteId]);
+  }, [period, isRangePeriod, athleteId]);
 
   // ── Invalidate current month on training events ───────────────────────────
   useEffect(() => {
@@ -296,10 +323,10 @@ export default function ZoneDistributionChart({ selectedAthleteId = null }) {
 
   // ── Derived data ──────────────────────────────────────────────────────────
   const periodMonths = useMemo(
-    () => isWeekPeriod
+    () => isRangePeriod
       ? (weekData[period] || [])
       : monthKeys.map(k => loadedMonths.get(k)).filter(Boolean),
-    [isWeekPeriod, weekData, period, monthKeys, loadedMonths]
+    [isRangePeriod, weekData, period, monthKeys, loadedMonths]
   );
 
   const availableSports = useMemo(
@@ -444,7 +471,7 @@ export default function ZoneDistributionChart({ selectedAthleteId = null }) {
   const aerobicPct = (zonePcts[1] || 0) + (zonePcts[2] || 0);
   const highIntPct = (zonePcts[4] || 0) + (zonePcts[5] || 0);
   const distLabel  = hasData ? getDistLabel(zonePcts) : null;
-  const allLoaded  = isWeekPeriod
+  const allLoaded  = isRangePeriod
     ? weekLoaded.current.has(period)
     : monthKeys.every(k => loadedRef.current.get(k) === 'done');
 
