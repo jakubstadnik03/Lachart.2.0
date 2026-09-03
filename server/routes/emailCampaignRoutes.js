@@ -468,6 +468,43 @@ router.post('/winback/test', verifyToken, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+const predictedCurve = require('../services/predictedCurveCampaignService');
+
+// GET /api/email/predicted-curve/status — how many already sent + ready, by sport.
+router.get('/predicted-curve/status', verifyToken, async (req, res) => {
+  try {
+    if (!(await requireAdmin(req, res))) return;
+    const stats = await predictedCurve.getCampaignStats();
+    res.json({
+      enabled: process.env.ENABLE_PREDICTED_CURVE_SCHEDULER === 'true',
+      dailyCap: Number(process.env.PREDICTED_CURVE_DAILY_CAP || 20),
+      ...stats,
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/email/predicted-curve/preview — rendered HTML, no send, no tracking.
+router.get('/predicted-curve/preview', verifyToken, async (req, res) => {
+  try {
+    const me = await requireAdmin(req, res);
+    if (!me) return;
+    res.set('Content-Type', 'text/html').send(await predictedCurve.renderPreview(me));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/email/predicted-curve/test — one real send to the admin's own inbox.
+router.post('/predicted-curve/test', verifyToken, async (req, res) => {
+  try {
+    const me = await requireAdmin(req, res);
+    if (!me) return;
+    const result = await predictedCurve.sendPredictedCurve(
+      { _id: me._id, email: me.email, name: me.name },
+      { preview: true, track: false, notify: false },
+    );
+    res.json({ ...result, to: me.email });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ─── Public unsubscribe — no auth, only the signed token. ────────────────────
 //
 // Both GET (clickable link in the email body) and POST (Gmail / Apple Mail

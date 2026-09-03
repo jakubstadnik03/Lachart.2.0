@@ -302,6 +302,7 @@ const { startAppReengagementScheduler } = require('./services/appReengagementSch
 const { startGarminTokenRefreshScheduler } = require('./services/garminTokenRefreshScheduler');
 const { startStreamBackfillScheduler } = require('./services/streamBackfillScheduler');
 const { startWinBackScheduler } = require('./services/winBackScheduler');
+const { startPredictedCurveScheduler } = require('./services/predictedCurveScheduler');
 const { startRaceReminderScheduler } = require('./services/raceReminderScheduler');
 const { startTrainingAlertScheduler } = require('./services/trainingAlertScheduler');
 const { startWeeklyDigestScheduler } = require('./services/weeklyDigestScheduler');
@@ -396,6 +397,11 @@ startStreamBackfillScheduler();
 // One-time win-back to lapsed free accounts. OFF unless ENABLE_WINBACK_SCHEDULER=true
 // — a 435-person campaign is a deliberate decision, not a deploy side effect.
 startWinBackScheduler();
+
+// "Here is the curve your training implies" — athletes who have never tested.
+// Off by default: it writes to most of the base, so it is switched on by hand
+// after previewing the email (ENABLE_PREDICTED_CURVE_SCHEDULER=true).
+startPredictedCurveScheduler();
 
 // Apply cache middleware to routes that can be cached (reduced cache time for better data freshness)
 app.use('/api/training', cacheMiddleware(60), trainingRoute);

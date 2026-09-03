@@ -72,7 +72,8 @@ async function sendNotification(recipientIds, opts = {}) {
       ) {
         if (prefs.pushCoachUpdates === false) continue;
       }
-      if (type === 'lactate_test_complete' || type === 'lactate_test_followup') {
+      if (type === 'lactate_test_complete' || type === 'lactate_test_followup'
+          || type === 'predicted_curve') {
         if (prefs.pushLactateTest === false) continue;
       }
       if (
