@@ -392,14 +392,7 @@ function AppRoutes() {
             element={<LactateStatisticsPage />}
           />
           <Route path="/workout-planner" element={<WorkoutPlannerPage />} />
-          <Route
-            path="/annual-training-plan"
-            element={(
-              <ProtectedRoute allowedRoles={['admin']}>
-                <AtpPage />
-              </ProtectedRoute>
-            )}
-          />
+          <Route path="/annual-training-plan" element={<AtpPage />} />
           <Route path="/workout-execution/:plannedWorkoutId" element={<WorkoutExecutionPage />} />
           <Route path="/health" element={<HealthPage />} />
           <Route path="/athletes" element={<Athletes />} />

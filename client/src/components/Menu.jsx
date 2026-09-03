@@ -246,9 +246,7 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
       path: "/annual-training-plan",
       icon: "/icon/calendar.svg",
       iconWhite: "/icon/calendar-white.svg",
-      // Admin-only while the ATP is still being shaped — same soft launch the
-      // Lactate Testing page got. Widen `showFor` to open it up.
-      showFor: ["admin"]
+      showFor: ["athlete", "coach", "tester", "testing", "admin"]
     },
     // {
     //   name: "Lactate Statistics",

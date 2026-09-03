@@ -14,6 +14,7 @@
  * behind.
  */
 import React, { useMemo, useRef, useState, useEffect, useCallback } from 'react';
+import ReactDOM from 'react-dom';
 import { periodColor, PERIOD_META, periodLabel, PRIORITY_COLOR } from './atpPeriods';
 import { formatWeekRange, parseDayKey } from '../../utils/atpProjection';
 
@@ -57,6 +58,8 @@ const MONTH_H = 20;
 const BAND_H = 22;
 const LABEL_H = 46;
 const MIN_COL = 13;
+const TIP_W = 178;
+const TIP_H = 200;
 
 /** Build an SVG path along the tops of the week columns. */
 function linePath(rows, valueFor, xFor, yFor) {
@@ -78,7 +81,14 @@ function areaPath(rows, valueFor, xFor, yFor, baseY) {
   return `${top}L${last.toFixed(1)},${baseY.toFixed(1)}L${first.toFixed(1)},${baseY.toFixed(1)}Z`;
 }
 
-export default function AtpChart({ rows = [], totals = {}, onWeekClick, mode = 'load' }) {
+/**
+ * Which series the legend can switch off. The keys are the legend's, so the
+ * two cannot drift apart without the chart losing a series outright.
+ */
+export const ATP_SERIES = ['planTss', 'completed', 'ctlAtp', 'ctlActual', 'tsbAtp', 'tsbActual'];
+
+export default function AtpChart({ rows = [], totals = {}, onWeekClick, mode = 'load', hidden = [] }) {
+  const off = (key) => hidden.includes(key);
   const wrapRef = useRef(null);
   const [width, setWidth] = useState(1100);
   const [hover, setHover] = useState(null);
@@ -156,7 +166,10 @@ export default function AtpChart({ rows = [], totals = {}, onWeekClick, mode = '
     const x = clientX - box.left - M.left;
     const i = Math.floor(x / geo.colW);
     if (i < 0 || i >= geo.n) { setHover(null); return; }
-    setHover({ i, x: clientX - box.left, y: clientY - box.top });
+    // Client coordinates too: the readout is portalled out of this box, which
+    // scrolls horizontally and is clipped by the card around it — drawn inside,
+    // it was cut off at the card's edge exactly when it had most to say.
+    setHover({ i, x: clientX - box.left, y: clientY - box.top, cx: clientX, cy: clientY });
   }, [geo]);
 
   const handleMove = useCallback((e) => {
@@ -253,8 +266,8 @@ export default function AtpChart({ rows = [], totals = {}, onWeekClick, mode = '
 
         {/* The plan's projected fitness and form sit behind the bars — they are
             context for the weekly load, not the subject of the chart. */}
-        <path d={areaPath(rows, (r) => r.atpCtl, xFor, yMetric, plotBottom)} fill={COLORS.atpCtlFill} />
-        <path d={areaPath(rows, (r) => r.atpTsb, xFor, yMetric, zeroY)} fill={COLORS.atpTsbFill} />
+        {!off('ctlAtp') && <path d={areaPath(rows, (r) => r.atpCtl, xFor, yMetric, plotBottom)} fill={COLORS.atpCtlFill} />}
+        {!off('tsbAtp') && <path d={areaPath(rows, (r) => r.atpTsb, xFor, yMetric, zeroY)} fill={COLORS.atpTsbFill} />}
 
         {/* The bars, read one of two ways. Load is the season's own currency —
             one number per week, coloured by the period it belongs to. Volume
@@ -301,20 +314,20 @@ export default function AtpChart({ rows = [], totals = {}, onWeekClick, mode = '
           const planY = yTss((r.completedTss || 0) + (r.plannedTss || 0));
           return (
             <g key={r.weekStart}>
-              {r.targetTss > 0 && (
+              {r.targetTss > 0 && !off('planTss') && (
                 <rect
                   x={bx} y={tgtY} width={bw} height={Math.max(0, plotBottom - tgtY)}
                   fill={COLORS.targetBar} rx="1"
                 />
               )}
               {/* Scheduled-but-not-yet-done sits on top of done, lightly tinted */}
-              {r.plannedTss > 0 && (
+              {r.plannedTss > 0 && !off('completed') && (
                 <rect
                   x={bx} y={planY} width={bw} height={Math.max(0, doneY - planY)}
                   fill={periodColor(r.period)} opacity="0.35" rx="1"
                 />
               )}
-              {r.completedTss > 0 && (
+              {r.completedTss > 0 && !off('completed') && (
                 <rect
                   x={bx} y={doneY} width={bw} height={Math.max(0, plotBottom - doneY)}
                   fill={periodColor(r.period)} rx="1"
@@ -325,17 +338,21 @@ export default function AtpChart({ rows = [], totals = {}, onWeekClick, mode = '
         })}
 
         {/* Lines last, so neither fill can mute them */}
-        <path d={linePath(rows, (r) => r.atpCtl, xFor, yMetric)} fill="none" stroke={COLORS.atpCtlStroke} strokeWidth="1.5" />
+        {!off('ctlAtp') && <path d={linePath(rows, (r) => r.atpCtl, xFor, yMetric)} fill="none" stroke={COLORS.atpCtlStroke} strokeWidth="1.5" />}
 
         {/* What is really happening */}
-        <path
-          d={linePath(rows, (r) => r.actualTsb, xFor, yMetric)}
-          fill="none" stroke={COLORS.actualTsb} strokeWidth="1.6"
-        />
-        <path
-          d={linePath(rows, (r) => r.actualCtl, xFor, yMetric)}
-          fill="none" stroke={COLORS.actualCtl} strokeWidth="2"
-        />
+        {!off('tsbActual') && (
+          <path
+            d={linePath(rows, (r) => r.actualTsb, xFor, yMetric)}
+            fill="none" stroke={COLORS.actualTsb} strokeWidth="1.6"
+          />
+        )}
+        {!off('ctlActual') && (
+          <path
+            d={linePath(rows, (r) => r.actualCtl, xFor, yMetric)}
+            fill="none" stroke={COLORS.actualCtl} strokeWidth="2"
+          />
+        )}
 
         {/* Today */}
         {(() => {
@@ -417,13 +434,17 @@ export default function AtpChart({ rows = [], totals = {}, onWeekClick, mode = '
         )}
       </svg>
 
-      {hoverRow && (
+      {hoverRow && ReactDOM.createPortal(
         <div
-          className="pointer-events-none absolute z-20 rounded-lg bg-white shadow-lg ring-1 ring-slate-200 px-2.5 py-2 text-[11px] leading-tight"
+          className="pointer-events-none fixed z-[10050] rounded-lg bg-white shadow-xl ring-1 ring-slate-200 px-2.5 py-2 text-[11px] leading-tight"
           style={{
-            left: Math.min(Math.max(hover.x + 12, 4), Math.max(4, width - 190)),
-            top: Math.max(4, hover.y - 90),
-            width: 178,
+            // Right of the cursor when there is room, otherwise left of it, and
+            // never off the bottom.
+            left: hover.cx + 14 + TIP_W <= window.innerWidth
+              ? hover.cx + 14
+              : Math.max(8, hover.cx - 14 - TIP_W),
+            top: Math.max(8, Math.min(hover.cy - 90, window.innerHeight - TIP_H - 8)),
+            width: TIP_W,
           }}
         >
           <div className="font-bold text-slate-800">
@@ -474,7 +495,8 @@ export default function AtpChart({ rows = [], totals = {}, onWeekClick, mode = '
               🏁 {r.name}
             </div>
           ))}
-        </div>
+        </div>,
+        document.getElementById('app-modal-root') || document.body,
       )}
     </div>
   );

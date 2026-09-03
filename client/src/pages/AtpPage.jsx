@@ -78,6 +78,8 @@ export default function AtpPage() {
   const [plannedWorkouts, setPlannedWorkouts] = useState([]);
   const [tests, setTests] = useState([]);
   const [chartMode, setChartMode] = useState('load');
+  /** Series switched off from the legend. Their row, their chart. */
+  const [hiddenSeries, setHiddenSeries] = useState([]);
   const [tableUnit, setTableUnit] = useState('hours');
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -496,29 +498,49 @@ export default function AtpPage() {
           {completionPct}% of the season's target load logged
         </span>
 
-        {/* Eight legend entries are half a phone screen of chrome above the
-            plan itself; the chart's own readout says the same on touch. */}
-        <div className="hidden md:flex flex-wrap items-center gap-3 ml-auto text-[10px] text-slate-500">
-          <span className="flex items-center gap-1">
-            <span className="w-3 h-2.5 rounded-sm bg-slate-200" /> Plan TSS
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="w-3 h-2.5 rounded-sm bg-blue-800" /> Completed
-          </span>
-          <span className="font-semibold text-blue-600 ml-1">Fitness (CTL)</span>
-          <span className="flex items-center gap-1">
-            <span className="w-3 h-2.5 rounded-sm" style={{ background: 'rgba(147,197,253,.75)' }} /> ATP
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="w-4 h-0.5 bg-blue-700" /> Actual
-          </span>
-          <span className="font-semibold text-amber-600 ml-1">Form (TSB)</span>
-          <span className="flex items-center gap-1">
-            <span className="w-3 h-2.5 rounded-sm" style={{ background: 'rgba(234,179,8,.45)' }} /> ATP
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="w-4 h-0.5 bg-orange-500" /> Actual
-          </span>
+        {/* The legend is also the chart's controls: six overlapping series on
+            one pair of axes is a lot to read at once, and the question is
+            usually about two of them. Clicking an entry takes it out.
+            Eight entries are half a phone screen of chrome above the plan
+            itself, so on a phone the chart's own readout does this job. */}
+        <div className="hidden md:flex flex-wrap items-center gap-1.5 ml-auto text-[10px] text-slate-500">
+          {[
+            { key: 'planTss', label: 'Plan TSS', swatch: <span className="w-3 h-2.5 rounded-sm bg-slate-200" /> },
+            { key: 'completed', label: 'Completed', swatch: <span className="w-3 h-2.5 rounded-sm bg-blue-800" /> },
+            { group: 'Fitness (CTL)', tone: 'text-blue-600' },
+            { key: 'ctlAtp', label: 'ATP', swatch: <span className="w-3 h-2.5 rounded-sm" style={{ background: 'rgba(147,197,253,.75)' }} /> },
+            { key: 'ctlActual', label: 'Actual', swatch: <span className="w-4 h-0.5 bg-blue-700" /> },
+            { group: 'Form (TSB)', tone: 'text-amber-600' },
+            { key: 'tsbAtp', label: 'ATP', swatch: <span className="w-3 h-2.5 rounded-sm" style={{ background: 'rgba(234,179,8,.45)' }} /> },
+            { key: 'tsbActual', label: 'Actual', swatch: <span className="w-4 h-0.5 bg-orange-500" /> },
+          ].map((item, i) => (
+            item.group ? (
+              <span key={item.group} className={`font-semibold ${item.tone} ml-1`}>{item.group}</span>
+            ) : (
+              <button
+                key={item.key}
+                type="button"
+                onClick={() => setHiddenSeries((prev) => (
+                  prev.includes(item.key) ? prev.filter((k) => k !== item.key) : [...prev, item.key]
+                ))}
+                title={hiddenSeries.includes(item.key) ? 'Show on the chart' : 'Hide from the chart'}
+                className={`flex items-center gap-1 px-1.5 py-0.5 rounded transition-colors hover:bg-slate-100 ${
+                  hiddenSeries.includes(item.key) ? 'opacity-35 line-through' : ''
+                }`}
+              >
+                {item.swatch} {item.label}
+              </button>
+            )
+          ))}
+          {hiddenSeries.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setHiddenSeries([])}
+              className="ml-1 px-1.5 py-0.5 rounded text-primary font-semibold hover:bg-primary/10"
+            >
+              Show all
+            </button>
+          )}
         </div>
       </div>
 
@@ -543,7 +565,7 @@ export default function AtpPage() {
             ))}
           </div>
         </div>
-        <AtpChart rows={rows} totals={totals} mode={chartMode} />
+        <AtpChart rows={rows} totals={totals} mode={chartMode} hidden={hiddenSeries} />
       </div>
 
       {/* Period key */}

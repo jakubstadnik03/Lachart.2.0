@@ -188,10 +188,6 @@ const EXTRA_ENTRIES = [
     cta: 'Open annual plan',
     href: '/annual-training-plan',
     accent: '#0ea5e9',
-    // The route is behind ProtectedRoute allowedRoles={['admin']} while the ATP
-    // is still being shaped. Advertising it to everyone would send athletes
-    // into a wall. Drop this flag the day the route opens up.
-    adminOnly: true,
   },
   {
     id: 'more-tests',

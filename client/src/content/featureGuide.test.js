@@ -120,10 +120,12 @@ describe('buildFeatureGuide', () => {
     expect(coach.some((e) => e.coachOnly)).toBe(true);
   });
 
-  it('does not send an athlete at a route only admins can open', () => {
-    // /annual-training-plan is behind ProtectedRoute allowedRoles={['admin']}.
-    const athlete = buildFeatureGuide({ isCoach: true }).flatMap((s) => s.items);
-    expect(athlete.some((e) => e.href === '/annual-training-plan')).toBe(false);
+  it('offers the annual plan to everyone, now that the route is open', () => {
+    // It was behind allowedRoles={['admin']} during the soft launch, and this
+    // test guarded athletes against being sent at a wall. The route is open,
+    // so the guard is the wrong way round now.
+    const athlete = buildFeatureGuide({}).flatMap((s) => s.items);
+    expect(athlete.some((e) => e.href === '/annual-training-plan')).toBe(true);
 
     const admin = buildFeatureGuide({ isAdmin: true }).flatMap((s) => s.items);
     expect(admin.some((e) => e.href === '/annual-training-plan')).toBe(true);
