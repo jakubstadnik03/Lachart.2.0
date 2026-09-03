@@ -100,6 +100,13 @@ export default function WeekSummaryCell({ weekSummary, formatHours, formatKm, us
         // The unit only moves to the planned half when there is one to move to.
         doneLabel: planned > 0 ? stripUnit(formatKm(done)) : formatKm(done),
         plannedLabel: formatKm(planned),
+        // Distance answers how far, not how long, and the two come apart in
+        // the cases a coach most wants to see: 209% of a bike week can be an
+        // easy hundred kilometres more or a hard three hours more. The
+        // percentage is still the distance's — the row's headline sets that —
+        // and this sits under it as the second half of the same fact.
+        subDone: seconds > 0 ? formatHours(seconds) : null,
+        subPlanned: plannedSecs(sport) > 0 ? formatHours(plannedSecs(sport)) : null,
         color: SPORT_COLORS_CELL[sport],
       };
     }),
@@ -200,6 +207,12 @@ export default function WeekSummaryCell({ weekSummary, formatHours, formatKm, us
                   <span className={`${cls.micro} text-gray-400 tabular-nums flex-shrink-0`}>{pct}%</span>
                 )}
               </div>
+              {(r.subDone || r.subPlanned) && (
+                <div className={`${cls.micro} text-gray-400 tabular-nums pl-[22px] leading-tight`}>
+                  {r.subDone || '—'}
+                  {r.subPlanned && <span className="text-gray-300"> / {r.subPlanned}</span>}
+                </div>
+              )}
               {r.planned > 0 && (
                 <div className={`${cls.bar} bg-gray-200 rounded-full overflow-hidden mt-1`}>
                   <div
