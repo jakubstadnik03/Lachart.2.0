@@ -505,6 +505,59 @@ router.post('/predicted-curve/test', verifyToken, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── Admin picker: who would get one, what theirs would say, and send it ──────
+
+// GET /api/email/predicted-curve/candidates — the choosable list, with each
+// person's own estimate on the row.
+router.get('/predicted-curve/candidates', verifyToken, async (req, res) => {
+  try {
+    if (!(await requireAdmin(req, res))) return;
+    const limit = Math.min(200, Math.max(10, Number(req.query.limit) || 60));
+    const data = await predictedCurve.listCandidates({ limit });
+    res.json(data);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/email/predicted-curve/preview/:userId — that person's actual email.
+router.get('/predicted-curve/preview/:userId', verifyToken, async (req, res) => {
+  try {
+    if (!(await requireAdmin(req, res))) return;
+    const data = await predictedCurve.previewForUser(req.params.userId);
+    if (!data) return res.status(404).json({ error: 'User not found' });
+    res.json(data);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/email/predicted-curve/send/:userId — one real send, admin-chosen.
+// { force } lifts the confidence bar and the never-tested rule; never opt-out.
+router.post('/predicted-curve/send/:userId', verifyToken, async (req, res) => {
+  try {
+    if (!(await requireAdmin(req, res))) return;
+    const result = await predictedCurve.sendToUser(req.params.userId, { force: req.body?.force !== false });
+    res.status(result.sent ? 200 : 400).json(result);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/email/predicted-curve/send-test/:userId — their numbers, my inbox.
+router.post('/predicted-curve/send-test/:userId', verifyToken, async (req, res) => {
+  try {
+    const me = await requireAdmin(req, res);
+    if (!me) return;
+    const result = await predictedCurve.sendToUser(req.params.userId, { force: true, testTo: me.email });
+    res.status(result.sent ? 200 : 400).json(result);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/email/predicted-curve/send-batch — { userIds: [...] }, max 25.
+router.post('/predicted-curve/send-batch', verifyToken, async (req, res) => {
+  try {
+    if (!(await requireAdmin(req, res))) return;
+    const ids = Array.isArray(req.body?.userIds) ? req.body.userIds : [];
+    if (!ids.length) return res.status(400).json({ error: 'No recipients selected' });
+    res.json(await predictedCurve.sendToMany(ids, { force: req.body?.force !== false }));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ─── Public unsubscribe — no auth, only the signed token. ────────────────────
 //
 // Both GET (clickable link in the email body) and POST (Gmail / Apple Mail

@@ -182,13 +182,16 @@ function isEligibleBase(user) {
  *
  * @returns {Promise<null | {kind:string, anchor:object, activityCount:number}>}
  */
-async function estimateFor(user, { skipEligibility = false } = {}) {
+async function estimateFor(user, {
+  skipEligibility = false, allowTested = false, allowWeak = false,
+} = {}) {
   if (!skipEligibility && !isEligibleBase(user)) return null;
 
   // Anyone with a test already has the real thing; this email would be an
-  // insult to it.
+  // insult to it. The admin screen passes allowTested so it can still render
+  // what the estimate WOULD have said.
   const testCount = await Test.countDocuments({ athleteId: String(user._id) });
-  if (testCount > 0) return null;
+  if (testCount > 0 && !allowTested) return null;
 
   const activities = await gatherActivities(user._id);
   if (activities.length < MIN_ACTIVITIES) return null;
@@ -202,10 +205,227 @@ async function estimateFor(user, { skipEligibility = false } = {}) {
       sport: kind, profile: user, powerMetrics, activities,
     });
     if (!anchor) continue;
-    if (!SENDABLE_CONFIDENCE.has(anchor.confidence)) continue;
-    return { kind, anchor, activityCount: countSport(activities, kind) };
+    if (!allowWeak && !SENDABLE_CONFIDENCE.has(anchor.confidence)) continue;
+    return { kind, anchor, activityCount: countSport(activities, kind), testCount };
   }
   return null;
+}
+
+/* ─── the admin list ──────────────────────────────────────────────────── */
+
+/** The fields estimateFor and isEligibleBase actually read. */
+const CANDIDATE_FIELDS = '_id email name surname isActive notifications retentionEmails createdAt '
+  + 'lastLogin lastSeenAt powerZones heartRateZones ftp thresholdPace runningZones maxHr maxHeartRate';
+
+/**
+ * One row for the admin screen: who they are, what the estimate says, and
+ * whether they can be written to.
+ *
+ * Weak estimates are listed rather than hidden. The scheduler skips them, but
+ * an admin looking at the list should be able to see that someone has a
+ * threshold the app is not confident enough to put in an email — that absence
+ * is a fact about the athlete, and hiding it makes the list lie about its size.
+ */
+async function describeCandidate(user) {
+  const found = await estimateFor(user, {
+    skipEligibility: true, allowTested: true, allowWeak: true,
+  }).catch(() => null);
+  if (!found) return null;
+  const { kind, anchor, activityCount, testCount } = found;
+  const lt2Source = (anchor.sources || []).find((s) => s.threshold === 'LT2');
+
+  const optedOut = user.notifications?.emailNotifications === false
+    || user.notifications?.marketingEmails === false
+    || user.isActive === false
+    || !user.email;
+
+  return {
+    userId: String(user._id),
+    name: [user.name, user.surname].filter(Boolean).join(' ') || null,
+    email: user.email || null,
+    sport: kind,
+    lt1: anchor.lt1,
+    lt2: anchor.lt2,
+    lt1Hr: anchor.lt1Hr,
+    lt2Hr: anchor.lt2Hr,
+    lt1Display: fmtThreshold(anchor.lt1, kind),
+    lt2Display: fmtThreshold(anchor.lt2, kind),
+    confidence: anchor.confidence,
+    lt1Derived: !!anchor.lt1Derived,
+    hrIsPopulation: !!anchor.hrIsPopulation,
+    source: lt2Source?.label || null,
+    activityCount,
+    testCount,
+    lastLogin: user.lastSeenAt || user.lastLogin || null,
+    alreadySentAt: user.retentionEmails?.[SENT_KEY] || null,
+    optedOut,
+    /** Why the scheduler would pass this person over, if it would. */
+    blockedReason: testCount > 0 ? 'has_test'
+      : optedOut ? 'opted_out'
+        : !SENDABLE_CONFIDENCE.has(anchor.confidence) ? 'estimate_too_weak'
+          : daysSince(user.createdAt) < MIN_ACCOUNT_AGE_DAYS ? 'account_too_new'
+            : null,
+  };
+}
+
+/**
+ * Everyone the admin screen should be able to choose between.
+ *
+ * Deliberately not the scheduler's pool: that one stops at the first N that
+ * qualify, which is right for draining a campaign and useless for deciding who
+ * to write to. This walks a wider set and reports the state of each.
+ */
+async function listCandidates({ limit = 60, poolSize = 400 } = {}) {
+  const pool = await User.find({
+    email: { $exists: true, $ne: null, $ne: '' },
+    isActive: { $ne: false },
+  })
+    .select(CANDIDATE_FIELDS)
+    .sort({ lastSeenAt: -1, createdAt: -1 })
+    .limit(poolSize)
+    .lean();
+
+  const people = [];
+  for (const user of pool) {
+    if (people.length >= limit) break;
+    const row = await describeCandidate(user);
+    if (row) people.push(row);
+  }
+
+  // Sendable first — that is the list the admin is here to act on — then by
+  // how recently they were around.
+  people.sort((a, b) => {
+    const sendable = (r) => (!r.blockedReason && !r.alreadySentAt ? 0 : 1);
+    if (sendable(a) !== sendable(b)) return sendable(a) - sendable(b);
+    return new Date(b.lastLogin || 0) - new Date(a.lastLogin || 0);
+  });
+
+  const stats = {
+    scanned: pool.length,
+    withEstimate: people.length,
+    sendable: people.filter((p) => !p.blockedReason && !p.alreadySentAt).length,
+    alreadySent: people.filter((p) => p.alreadySentAt).length,
+    tooWeak: people.filter((p) => p.blockedReason === 'estimate_too_weak').length,
+    hasTest: people.filter((p) => p.blockedReason === 'has_test').length,
+  };
+  return { stats, people };
+}
+
+/**
+ * The exact email one named person would receive, with their own numbers.
+ *
+ * allowTested/allowWeak so an admin can inspect anybody — including
+ * themselves, who certainly has tests. What comes back is what would be sent
+ * if the guards were lifted, which is the honest thing to show next to a
+ * button that lifts them.
+ */
+async function previewForUser(userId) {
+  const user = await User.findById(userId).select(CANDIDATE_FIELDS).lean();
+  if (!user) return null;
+  const found = await estimateFor(user, {
+    skipEligibility: true, allowTested: true, allowWeak: true,
+  });
+  if (!found) return { subject: null, html: null, reason: 'no_estimate' };
+  const html = await renderHtml({
+    ...found,
+    firstName: user.name || null,
+    unsubscribeUrl: unsubscribeUrlFor(user._id),
+  });
+  return {
+    subject: subjectFor(found.kind, found.anchor),
+    html,
+    sport: found.kind,
+    confidence: found.anchor.confidence,
+    to: user.email,
+  };
+}
+
+/**
+ * Send to one named person, chosen by an admin.
+ *
+ * `force` is what the admin's button means: they looked at the preview and
+ * decided. It lifts the confidence bar and the never-tested rule, but never
+ * the opt-out — nobody gets to click past someone unsubscribing.
+ */
+async function sendToUser(userId, { force = false, notify = true, testTo = null } = {}) {
+  const user = await User.findById(userId).select(`${CANDIDATE_FIELDS} subscriptionId`).lean();
+  if (!user) return { sent: false, reason: 'user_not_found' };
+
+  const optedOut = user.notifications?.emailNotifications === false
+    || user.notifications?.marketingEmails === false;
+  if (optedOut) return { sent: false, reason: 'opted_out' };
+
+  const found = await estimateFor(user, {
+    skipEligibility: force, allowTested: force, allowWeak: force,
+  });
+  if (!found) return { sent: false, reason: 'not_eligible' };
+
+  const recipient = testTo || user.email;
+  if (!recipient) return { sent: false, reason: 'no_email' };
+
+  const subject = subjectFor(found.kind, found.anchor);
+  const html = await renderHtml({
+    ...found,
+    firstName: user.name || null,
+    unsubscribeUrl: unsubscribeUrlFor(user._id),
+  });
+
+  const transporter = createEmailTransporter();
+  if (!transporter) return { sent: false, reason: 'transporter_unavailable' };
+
+  try {
+    const info = await transporter.sendMail({
+      from: { name: 'LaChart', address: process.env.EMAIL_USER },
+      to: recipient,
+      subject: testTo ? `[TEST] ${subject}` : subject,
+      html,
+      headers: {
+        'List-Unsubscribe': `<${unsubscribeUrlFor(user._id)}>`,
+        'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+      },
+    });
+    const accepted = Array.isArray(info?.accepted) ? info.accepted : [];
+    if (!accepted.some((a) => String(a).toLowerCase() === String(recipient).toLowerCase())) {
+      return { sent: false, reason: 'relay_rejected' };
+    }
+
+    // A test send to the admin's own inbox is not a send to the athlete: it
+    // must not stamp them, and it must not notify them.
+    if (!testTo) {
+      await User.updateOne({ _id: user._id }, {
+        $set: {
+          [`retentionEmails.${SENT_KEY}`]: new Date(),
+          'retentionEmails.predictedCurveSport': found.kind,
+        },
+      });
+      if (notify) {
+        await notifyPredictedCurve(user._id, found.kind, found.anchor)
+          .catch((e) => console.warn('[predictedCurve] notify failed:', e?.message || e));
+      }
+    }
+    return { sent: true, to: recipient, sport: found.kind, subject };
+  } catch (e) {
+    console.error('[predictedCurve] admin send failed:', e?.message || e);
+    return { sent: false, reason: 'send_failed', message: e?.message };
+  }
+}
+
+/** Admin-chosen batch. Capped, spaced, and reported per recipient. */
+async function sendToMany(userIds, { force = false, gapMs = 1500 } = {}) {
+  const ids = (Array.isArray(userIds) ? userIds : []).slice(0, 25);
+  const results = [];
+  for (let i = 0; i < ids.length; i += 1) {
+    // eslint-disable-next-line no-await-in-loop
+    const r = await sendToUser(ids[i], { force });
+    results.push({ userId: String(ids[i]), ...r });
+    // eslint-disable-next-line no-await-in-loop
+    if (i < ids.length - 1) await new Promise((res) => { setTimeout(res, gapMs); });
+  }
+  return {
+    attempted: results.length,
+    sent: results.filter((r) => r.sent).length,
+    results,
+  };
 }
 
 /* ─── the email ───────────────────────────────────────────────────────── */
@@ -488,6 +708,11 @@ async function renderPreview(user = {}) {
 
 module.exports = {
   sendPredictedCurve,
+  listCandidates,
+  describeCandidate,
+  previewForUser,
+  sendToUser,
+  sendToMany,
   notifyPredictedCurve,
   estimateFor,
   findReadyCandidates,
