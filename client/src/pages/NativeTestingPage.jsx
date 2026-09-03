@@ -18,6 +18,8 @@ import { calculateZonesFromTest } from '../components/Testing-page/zoneCalculato
 import { calculateThresholds as desktopCalculateThresholds } from '../components/Testing-page/DataTable';
 import NewTestSheet from '../components/NativeDashboard/NewTestSheet';
 import NativeBenchmarkCard from '../components/native/NativeBenchmarkCard';
+import NativeSinceTestCard from '../components/native/NativeSinceTestCard';
+import NativePredictedCurveCard from '../components/native/NativePredictedCurveCard';
 import LT2TrendSparkline from '../components/DashboardPage/LT2TrendSparkline';
 import { usePremium } from '../hooks/usePremium';
 import UpgradeModal from '../components/UpgradeModal';
@@ -532,6 +534,27 @@ export default function NativeTestingPage({ user, athleteId: externalAthleteId }
             );
           })()}
 
+          {/* ─── No test for this sport yet — the curve their training implies,
+              so the page has something to say before they have tested. ─── */}
+          {!tests.some((t) => normSport(t.sport) === selectedSport)
+            && ['bike', 'run'].includes(selectedSport) && (
+            <div style={{ ...cardEntry(2), ...snap }}>
+              <NativePredictedCurveCard
+                sport={selectedSport}
+                profile={user}
+                athleteId={athleteId}
+                onAddTest={() => {
+                  if (!isPremium && tests.length >= 1) {
+                    gate('Unlimited tests — upgrade to add more', 'pro');
+                    return;
+                  }
+                  setNewSheetOpen(true);
+                }}
+                onOpenFull={() => navigate('/testing?full=1')}
+              />
+            </div>
+          )}
+
           {/* ─── Selected test (top) — shows curve + KPIs when one is picked ─── */}
           {selected && selectedTh && (
             <div style={{ ...cardEntry(1), ...snap }}>
@@ -782,6 +805,50 @@ export default function NativeTestingPage({ user, athleteId: externalAthleteId }
                   </button>
                 </div>
               </GlassCard>
+            </div>
+          )}
+
+          {/* ─── What the training since this test has done to it. Sits under
+              the test it is measured against; the full read — curve overlay,
+              season chart — is on the web testing page. ─── */}
+          {selected && selectedTh && (
+            <div style={{ ...cardEntry(2), ...snap }}>
+              {isPremium ? (
+                <NativeSinceTestCard
+                  test={selected}
+                  tests={tests}
+                  athleteId={athleteId}
+                  onOpenFull={() => navigate(`/testing?testId=${encodeURIComponent(selected._id || selected.id)}&full=1`)}
+                />
+              ) : (
+                <GlassCard>
+                  <SectionTitle>Since your test</SectionTitle>
+                  <div style={{ position: 'relative', marginTop: 8 }}>
+                    <div style={{ filter: 'blur(5px)', opacity: 0.45, pointerEvents: 'none' }} aria-hidden="true">
+                      <div style={{ height: 10, width: '55%', borderRadius: 999, background: '#E5E7EB', marginBottom: 8 }} />
+                      <div style={{ height: 40, borderRadius: 10, background: 'linear-gradient(90deg,#EEF0F7,#DDE1EF,#EEF0F7)', marginBottom: 8 }} />
+                      <div style={{ height: 40, borderRadius: 10, background: 'linear-gradient(90deg,#EEF0F7,#DDE1EF,#EEF0F7)' }} />
+                    </div>
+                    <div style={{
+                      position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column',
+                      alignItems: 'center', justifyContent: 'center', gap: 6,
+                    }}>
+                      <div style={{ fontSize: 11, fontWeight: 600, color: '#6B7280', textAlign: 'center', padding: '0 16px' }}>
+                        See where your thresholds have moved since test day
+                      </div>
+                      <button
+                        onClick={() => gate('Training Since Test')}
+                        style={{
+                          padding: '7px 14px', borderRadius: 999, border: 'none',
+                          background: '#767EB5', color: '#fff', fontSize: 11.5, fontWeight: 700,
+                        }}
+                      >
+                        Unlock with Premium
+                      </button>
+                    </div>
+                  </div>
+                </GlassCard>
+              )}
             </div>
           )}
 

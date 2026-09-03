@@ -26,6 +26,7 @@ import PopulationInsights from '../components/Testing-page/PopulationInsights';
 import PremiumLock from '../components/PremiumLock';
 import ThresholdHistory from '../components/Testing-page/ThresholdHistory';
 import TestRecommendationCard from '../components/Testing-page/TestRecommendationCard';
+import PredictedCurveCard from '../components/Testing-page/PredictedCurveCard';
 
 /** Map saved test sport to run | bike | swim for UI + advisor */
 function normalizeTestSportKey(sport) {
@@ -1036,6 +1037,34 @@ const TestingPage = () => {
   }, [tests]);
 
   const recommendationsEligible = sportsWithPastTests.length > 0;
+
+  /**
+   * The sport to draw an estimated curve for, and whether to draw one.
+   *
+   * Only when there is no test of that sport: once a real curve exists it is
+   * the answer, and a modelled one beside it would be noise. With "all"
+   * selected the choice falls to whichever sport the athlete actually trains,
+   * because an estimate for a bike they do not own helps nobody.
+   */
+  const predictedSport = useMemo(() => {
+    if (selectedSport === 'bike' || selectedSport === 'run') return selectedSport;
+    if (selectedSport === 'swim') return null;
+    const count = (kind) => (externalActivities || []).filter((a) => {
+      const s = String(a?.sport || a?.type || '').toLowerCase();
+      return kind === 'bike'
+        ? (s.includes('ride') || s.includes('bike') || s.includes('cycl'))
+        : s.includes('run');
+    }).length;
+    const bike = count('bike');
+    const run = count('run');
+    if (!bike && !run) return null;
+    return bike >= run ? 'bike' : 'run';
+  }, [selectedSport, externalActivities]);
+
+  const showPredictedCurve = useMemo(() => {
+    if (!predictedSport) return false;
+    return !(tests || []).some((t) => normalizeTestSportKey(t.sport) === predictedSport);
+  }, [predictedSport, tests]);
   const runRecentPerf = useMemo(() => {
     // Estimate threshold pace from fastest recent longish run avg speed
     const runs = (externalActivities || []).filter(a => (a?.sport || '').toLowerCase().includes('run'));
@@ -1456,6 +1485,27 @@ const TestingPage = () => {
               transition={{ duration: 0.15 }}
               className="space-y-4"
             >
+              {/* No test for this sport yet — draw the curve their training
+                  implies, so the page has something to say before they have
+                  had a needle anywhere near them. Hidden while the new-test
+                  form is open: at that point they are already entering one. */}
+              {showPredictedCurve && !showNewTesting && (
+                <div style={sectionSnap}>
+                  <PredictedCurveCard
+                    sport={predictedSport}
+                    hrTestPlan={hrTestPlan?.[predictedSport] || null}
+                    profile={athleteProfile}
+                    powerMetrics={bikePowerMetrics}
+                    activities={externalActivities}
+                    loading={advisorLoading || hrTestPlanLoading}
+                    onAddTest={() => {
+                      setSelectedSport(predictedSport);
+                      setShowNewTesting(true);
+                    }}
+                  />
+                </div>
+              )}
+
               {/* New test form — height auto-animation removed because it
                   was janky on mobile (the form is ~1500px tall and
                   animating height to/from 0 caused layout thrash plus a

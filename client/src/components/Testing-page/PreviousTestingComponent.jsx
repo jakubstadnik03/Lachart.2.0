@@ -6,7 +6,9 @@ import LactateCurveCalculator from "./LactateCurveCalculator";
 import TrainingZonesGenerator from "./TrainingZonesGenerator";
 import TestComparison from "./TestComparison";
 import TestSelector from "./TestSelector";
+import TrainingSinceTestPanel from "./TrainingSinceTestPanel";
 import { resolveLtAnchorsFromTest } from "./resolveLtAnchorsFromTest";
+import { sportKind } from "../../utils/hrPowerProfile";
 import { updateTest, deleteTest } from '../../services/api';
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from '../../context/AuthProvider';
@@ -536,6 +538,40 @@ const PreviousTestingComponent = ({
             transition={{ duration: 0.3 }}
           >
         <LactateCurveCalculator mockData={currentTest} athleteId={athleteId} isPremium={isPremium} />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* What the training since this test has done to it. Sits under the
+          calculator because it is measured against the thresholds the
+          calculator just drew — an athlete reads the curve, then reads what
+          has happened to it.
+
+          Bike and run only: the read is heart rate against power or pace, and
+          a pool swim carries neither in a form the curve can be placed on. */}
+      <AnimatePresence>
+      {currentTest && currentTest.results && Array.isArray(currentTest.results) && currentTest.results.length > 0
+        && ['bike', 'run'].includes(sportKind(currentTest.sport)) && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            transition={{ duration: 0.3 }}
+          >
+        {isPremium ? (
+          <TrainingSinceTestPanel
+            test={currentTest}
+            tests={filteredTests}
+            athleteId={athleteId}
+            onOpenTest={handleDateSelectorTestSelect}
+          />
+        ) : (
+          <PremiumLockedCard
+            title="Since your test"
+            description="See where your thresholds have moved since test day, read from every session you have trained — and what your next test would show."
+            onUpgrade={() => gate('Training Since Test', 'pro')}
+          />
+        )}
           </motion.div>
         )}
       </AnimatePresence>
