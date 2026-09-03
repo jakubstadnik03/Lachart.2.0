@@ -221,16 +221,19 @@ async function calculateFormFitnessData(athleteId, days = 60, sportFilter = 'all
     // window; with under 60 days of warmup the series was only ~76% converged
     // and the values drifted between views.
     //
-    // Note that the warmup is 252 days *before the requested window*, not a
-    // fixed absolute date: the loop starts at the earliest activity inside the
-    // query, so a caller asking for 7 days and one asking for 90 warm up over
-    // different spans and do not agree on today's Form. Anything reading
-    // today's number therefore passes PMC_WINDOW_DAYS.
+    // The warmup runs from a point that does not depend on `days`. It used to
+    // start 252 days before the *requested* window, so a caller asking for 7
+    // days and one asking for 90 warmed up over different spans and came back
+    // with different values for the same day — the dashboard's headline and
+    // the chart under it read one engine at two window widths and disagreed by
+    // seventeen points of Form. Every window now warms up over the same span,
+    // which costs the widest query's worth of history on every call and buys
+    // one answer for today.
     const WARMUP_DAYS = 252;
     const today = new Date();
     today.setHours(23, 59, 59, 999);
     const queryStartDate = new Date(today);
-    queryStartDate.setDate(queryStartDate.getDate() - (effectiveDays + WARMUP_DAYS));
+    queryStartDate.setDate(queryStartDate.getDate() - (maxDays + WARMUP_DAYS));
     queryStartDate.setHours(0, 0, 0, 0);
     
     // Get user profile for TSS calculation
@@ -332,8 +335,13 @@ async function calculateFormFitnessData(athleteId, days = 60, sportFilter = 'all
     
     // Start from earliest activity to ensure accurate calculation
     // But only show data from requestedStartDate onwards
-    const calculationStartDate = earliestActivityDate < requestedStartDate 
-      ? earliestActivityDate 
+    // The loop starts at the earliest activity the query returned — and the
+    // query now reaches a fixed span back rather than one that moves with
+    // `days`, which is what makes today's value the same whatever window asked
+    // for it. It still starts earlier when the display window does, so a new
+    // athlete's chart is not cut short.
+    const calculationStartDate = earliestActivityDate < requestedStartDate
+      ? earliestActivityDate
       : requestedStartDate;
     
     const displayStartDate = requestedStartDate;

@@ -205,6 +205,16 @@ const FormFitnessChart = ({ athleteId, activities = null, userProfile = null, ac
           setChartData(series.length ? series : []);
           if (tm) setTodayMetrics(tm);
           setLoading(false);
+          // Painted from what the page already holds, so the chart is there
+          // immediately and works offline. Then ask the server, because the
+          // headline above the chart is the server's and a line that ends
+          // somewhere else than the number over it is its own kind of wrong.
+          getFormFitnessData(athleteId, days, sportFilter)
+            .then((res) => {
+              const data = Array.isArray(res?.data) ? res.data : res?.data?.data;
+              if (!cancelled && Array.isArray(data) && data.length) setChartData(data);
+            })
+            .catch(() => { /* offline — the local series stands */ });
           return;
         }
         if (!cancelled) {
@@ -415,14 +425,16 @@ const FormFitnessChart = ({ athleteId, activities = null, userProfile = null, ac
     return `${days} days`;
   }, [timeRange]);
 
-  // Headline CTL/ATL/TSB — always all sports, same source as native Performance Insights.
+  // Headline CTL/ATL/TSB — always all sports, one number with the rest of the app.
   const headlinePmc = useMemo(() => {
-    // Calendar-driven: always derive KPIs locally with the user's zones (matches mobile app).
-    if (calendarDriven && Array.isArray(activities) && activities.length && profile) {
-      const { todayMetrics: tm } = computePmcFromActivities(activities, profile, { sportFilter: 'all', tssUser: user });
-      if (tm) return tm;
-    }
-    if (!calendarDriven && headlineMetrics && (
+    // `headlineMetrics` is what every other surface on the page is showing: the
+    // server's answer, overlaid on the page's own local paint. This card used
+    // to skip it whenever it was calendar-driven and compute its own instead,
+    // which is how the same screen came to read Fitness 170 / Form -47 in the
+    // coach card and the race panel and 168 / -30 in the chart beside them.
+    // The local computation is still the fallback, for offline and for the
+    // moment before the page has an answer.
+    if (headlineMetrics && (
       headlineMetrics.fitness != null
       || headlineMetrics.form != null
       || headlineMetrics.fatigue != null
@@ -434,7 +446,7 @@ const FormFitnessChart = ({ athleteId, activities = null, userProfile = null, ac
       if (tm) return tm;
     }
     return todayMetrics;
-  }, [calendarDriven, headlineMetrics, activities, profile, todayMetrics, user]);
+  }, [headlineMetrics, activities, profile, todayMetrics, user]);
 
   const insights = useMemo(() => {
     const fitness = Math.round(Number(headlinePmc?.fitness ?? 0));
