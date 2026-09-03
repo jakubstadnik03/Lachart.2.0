@@ -606,6 +606,10 @@ async function lapProfilesById(Model, match, limit, maxLaps = 120) {
             as: 'l',
             in: {
               d: { $ifNull: ['$$l.moving_time', { $ifNull: ['$$l.elapsed_time', 0] }] },
+              // Metres. A run's set is written in distance and its lap chart
+              // is drawn that way, so the card's thumbnail needs it too or the
+              // two draw the same session with different proportions.
+              m: { $ifNull: ['$$l.distance', 0] },
               w: { $ifNull: ['$$l.average_watts', null] },
               s: { $ifNull: ['$$l.average_speed', null] },
               h: { $ifNull: ['$$l.average_heartrate', null] },
@@ -622,6 +626,7 @@ async function lapProfilesById(Model, match, limit, maxLaps = 120) {
     // than send "w":null on every lap of every run in the list.
     const laps = (row.laps || []).map((l) => {
       const lap = { d: Number(l.d) || 0 };
+      if (l.m > 0) lap.m = Math.round(l.m);
       if (l.w > 0) lap.w = l.w;
       if (l.s > 0) lap.s = l.s;
       if (l.h > 0) lap.h = l.h;

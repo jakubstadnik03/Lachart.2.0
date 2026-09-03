@@ -9,6 +9,11 @@
  */
 import React from 'react';
 
+/** Runs, walks and swims are read in distance; rides in time. */
+export function isRunLikeSport(sport) {
+  return /run|walk|hike|trail|swim/i.test(String(sport || ''));
+}
+
 /**
  * The interval profile of a structured workout, as a thumbnail.
  *
@@ -143,6 +148,10 @@ export function activityProfileBars(a, maxBars = 44) {
     ?? l.durationSeconds ?? l.duration ?? 0
   ) || 0;
 
+  const distOf = (l) => Number(
+    l.m ?? l.totalDistance ?? l.distance ?? l.distanceMeters ?? 0
+  ) || 0;
+
   // `floor` is where the bar's zero sits. Power really can be nothing, so a
   // coast should draw as nothing. Nobody runs at zero and nobody's heart
   // stops between reps: scaled from zero those two channels draw every
@@ -174,8 +183,6 @@ export function activityProfileBars(a, maxBars = 44) {
   if (!channel) return null;
   const read = channel.read;
 
-  const total = laps.reduce((s, l) => s + durOf(l), 0);
-  if (!(total > 0)) return null;
   const values = laps.map(read).filter(v => v > 0);
   const peak = Math.max(...values);
   if (!(peak > 0)) return null;
@@ -183,19 +190,33 @@ export function activityProfileBars(a, maxBars = 44) {
   const span = peak - base;
   if (!(span > 0)) return null;
 
-  // Sample the session at even points in time rather than drawing one bar per
-  // lap: a ride with 90 auto-laps would otherwise draw 90 hairlines, and one
-  // with 4 would draw four blocks whose widths say nothing about their length.
-  // Always sample at full resolution: with one bar per lap a six-by-three
-  // session aliased into a single wide hump, because 14 samples cannot
-  // resolve 180-second reps. Extra bars cost nothing and a four-lap ride
-  // still draws as four blocks, sized by how long each one lasted.
+  // What a lap's width measures — the same rule the opened workout's lap chart
+  // uses, or the thumbnail draws a different session from the one it is a
+  // thumbnail of. A ride is read in time; a run and a swim are read in
+  // distance, because that is how their sets are written and how the chart
+  // below them is drawn.
+  //
+  // On a 4x1km with floats the two disagree sharply: the 189m float that took
+  // 2:02 is a fiftieth of the session by distance and a twentieth by time, and
+  // every recovery swelled the same way — which is what made the card and the
+  // chart look like different workouts.
+  const weightOf = isRunLikeSport(a?.sport) && laps.every(l => distOf(l) > 0) ? distOf : durOf;
+
+  const total = laps.reduce((s, l) => s + weightOf(l), 0);
+  if (!(total > 0)) return null;
+
+  // Sample the session at even points along that axis rather than drawing one
+  // bar per lap: a ride with 90 auto-laps would otherwise draw 90 hairlines,
+  // and one with 4 would draw four blocks whose widths say nothing. Always
+  // sample at full resolution: with one bar per lap a six-by-three session
+  // aliased into a single wide hump, because 14 samples cannot resolve
+  // 180-second reps.
   const bars = [];
   const n = maxBars;
-  let cursor = 0, acc = durOf(laps[0]);
+  let cursor = 0, acc = weightOf(laps[0]);
   for (let i = 0; i < n; i++) {
     const t = ((i + 0.5) / n) * total;
-    while (t > acc && cursor < laps.length - 1) acc += durOf(laps[++cursor]);
+    while (t > acc && cursor < laps.length - 1) acc += weightOf(laps[++cursor]);
     bars.push(Math.max(0.08, Math.min(1, (read(laps[cursor]) - base) / span)));
   }
   return bars;
