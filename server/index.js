@@ -303,6 +303,7 @@ const { startGarminTokenRefreshScheduler } = require('./services/garminTokenRefr
 const { startStreamBackfillScheduler } = require('./services/streamBackfillScheduler');
 const { startWinBackScheduler } = require('./services/winBackScheduler');
 const { startPredictedCurveScheduler } = require('./services/predictedCurveScheduler');
+const { startThresholdShiftScheduler } = require('./services/thresholdShiftScheduler');
 const { startRaceReminderScheduler } = require('./services/raceReminderScheduler');
 const { startTrainingAlertScheduler } = require('./services/trainingAlertScheduler');
 const { startWeeklyDigestScheduler } = require('./services/weeklyDigestScheduler');
@@ -402,6 +403,11 @@ startWinBackScheduler();
 // Off by default: it writes to most of the base, so it is switched on by hand
 // after previewing the email (ENABLE_PREDICTED_CURVE_SCHEDULER=true).
 startPredictedCurveScheduler();
+
+// "Your threshold has moved" — a push to an athlete about their own curve,
+// so on in production like the other notification schedulers. The service is
+// conservative enough that most ticks tell nobody anything.
+startThresholdShiftScheduler();
 
 // Apply cache middleware to routes that can be cached (reduced cache time for better data freshness)
 app.use('/api/training', cacheMiddleware(60), trainingRoute);
