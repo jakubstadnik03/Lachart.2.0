@@ -244,6 +244,11 @@ export default function Tutorials() {
       <Helmet>
         <title>LaChart Tutorials · Video walkthroughs for lactate testing</title>
         <meta name="description" content="Step-by-step video walkthroughs: enter a lactate test, compare previous tests, training log, calendar, dashboard form/fitness, coach + athlete." />
+        {/* This component answers to two URLs — /how-to-use and /tutorials —
+            and without a canonical they were two identical pages competing
+            with each other in the index. /how-to-use wins because it is what
+            the site footer links to. */}
+        <link rel="canonical" href="https://lachart.net/how-to-use" />
       </Helmet>
 
       <div style={pageStyle}>

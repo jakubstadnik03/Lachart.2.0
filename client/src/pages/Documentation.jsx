@@ -1,9 +1,21 @@
 import React from 'react';
+import { Helmet } from 'react-helmet';
 import { motion } from 'framer-motion';
 
+/**
+ * Internal frontend documentation — component diagrams, provider tree, route
+ * table. This was in the sitemap and the pre-render allow-list, which meant
+ * Google was being handed LaChart's architecture notes as a public page. It is
+ * not marketing and nobody searches for it, so it is now noindex and off both
+ * lists; the page itself still works for anyone with the URL.
+ */
 const Documentation = () => {
   return (
     <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+      <Helmet>
+        <title>Frontend Documentation | LaChart</title>
+        <meta name="robots" content="noindex, nofollow" />
+      </Helmet>
       <div className="max-w-7xl mx-auto">
         <motion.div
           initial={{ opacity: 0, y: 20 }}

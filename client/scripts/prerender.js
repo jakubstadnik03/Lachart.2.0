@@ -32,6 +32,7 @@ const fs   = require('fs');
 const path = require('path');
 const http = require('http');
 const handler = require('serve-handler');
+const { execSync } = require('child_process');
 const puppeteer = require('puppeteer');
 
 const BUILD_DIR = path.resolve(__dirname, '..', 'build');
@@ -62,11 +63,19 @@ const PRERENDER_ROUTES = [
   '/features/integrations',
   '/features/coaching',
 
+  // Comparison pages. These are the highest-intent public URLs on the site —
+  // a reader who typed "trainingpeaks alternative" is mid-decision — so they
+  // matter more than most here, not less. Each carries FAQPage JSON-LD that
+  // only exists once the page has rendered.
+  '/trainingpeaks-alternative',
+  '/coachbox-alternative',
+  '/lachart-vs-trainingpeaks',
+
   '/how-to-use',
   '/tutorials',
   '/privacy',
   '/terms',
-  '/documentation',
+  // '/documentation' deliberately absent: internal frontend docs, now noindex.
 
   // Calculators — the SEO-critical bunch
   '/lactate-curve-calculator',
@@ -166,37 +175,101 @@ async function prerenderRoute(browser, route) {
   return outDir;
 }
 
+/* A skipped or half-working prerender is invisible: the build goes green, the
+   SPA ships, and every route quietly serves the same <title> until someone
+   thinks to curl the site as Googlebot. That is exactly how lachart.net spent
+   an extended stretch with no per-page meta in production at all. Every exit
+   path that leaves the site un-prerendered now says so in a banner you cannot
+   scroll past, and a real regression fails the build rather than shipping. */
+function banner(lines) {
+  const width = Math.max(...lines.map((l) => l.length)) + 4;
+  const bar = '─'.repeat(width);
+  console.warn(`\n┌${bar}┐`);
+  for (const l of lines) console.warn(`│  ${l.padEnd(width - 4)}  │`);
+  console.warn(`└${bar}┘\n`);
+}
+
 (async () => {
-  // Allow CI environments to skip prerender entirely. Vercel's build image
-  // periodically loses Chromium runtime deps (e.g. libnspr4.so), which used
-  // to hard-fail the whole deploy. SKIP_PRERENDER=true exits successfully
-  // so the SPA still ships — SEO falls back to runtime React.
+  // Escape hatch for an environment that genuinely cannot run a browser.
+  // It should almost never be needed: the usual failure was "Could not find
+  // Chrome" on Vercel cache-hit builds, and prerenderRoute now downloads the
+  // browser on demand instead of giving up. Setting this ships the SPA with
+  // no per-page meta at all, so treat it as a last resort, not a workaround.
   if (process.env.SKIP_PRERENDER === 'true' || process.env.SKIP_PRERENDER === '1') {
-    console.log('[prerender] SKIP_PRERENDER set — skipping prerender, exiting 0.');
+    banner([
+      'SKIP_PRERENDER is set — SHIPPING WITHOUT PRE-RENDERED HTML.',
+      '',
+      'Every route will serve the same <title>, no canonical and no',
+      'per-page description. Crawlers that do not execute JS see one',
+      'page. Unset SKIP_PRERENDER once the build image can run Chromium.',
+    ]);
     process.exit(0);
   }
+
+  // The shell <title>, read from the source template rather than from
+  // build/index.html — prerender overwrites the latter with the "/" snapshot,
+  // so on any rebuild over a warm build/ directory it already holds the
+  // homepage title and would make the check below compare against itself.
+  // A route still carrying this title after prerender never got its Helmet.
+  const baseTitle = (() => {
+    try {
+      const m = fs
+        .readFileSync(path.resolve(__dirname, '..', 'public', 'index.html'), 'utf8')
+        .match(/<title[^>]*>(.*?)<\/title>/is);
+      return m ? m[1].trim() : null;
+    } catch {
+      return null;
+    }
+  })();
 
   console.log(`[prerender] Starting static server on :${PORT}…`);
   const server = await startServer();
 
   console.log('[prerender] Launching headless Chromium…');
+  const LAUNCH_OPTS = {
+    headless: 'new',
+    args: ['--no-sandbox', '--disable-setuid-sandbox'],
+  };
+
   let browser;
   try {
-    browser = await puppeteer.launch({
-      headless: 'new',
-      args: ['--no-sandbox', '--disable-setuid-sandbox'],
-    });
+    try {
+      browser = await puppeteer.launch(LAUNCH_OPTS);
+    } catch (first) {
+      // "Could not find Chrome" is not a broken environment, it is a missing
+      // download — and on Vercel it is the normal state of every cache-hit
+      // build, because npm skips puppeteer's postinstall when node_modules
+      // comes back from cache. Fetch the browser and carry on rather than
+      // shipping a site with no meta on it.
+      if (!/Could not find Chrome|Could not find browser/i.test(first?.message || '')) throw first;
+
+      console.log('[prerender] No browser found — downloading Chrome for Puppeteer…');
+      execSync('npx --no-install puppeteer browsers install chrome', {
+        stdio: 'inherit',
+        cwd: path.resolve(__dirname, '..'),
+      });
+      browser = await puppeteer.launch(LAUNCH_OPTS);
+    }
   } catch (e) {
-    // Chromium failed to launch (missing libnspr4.so on Vercel, /tmp full,
-    // sandbox disabled, …). Treat as non-fatal: log and exit 0 so the build
-    // ships. Pre-rendered HTML is purely an SEO layer — without it the SPA
-    // still works, Google just falls back to executing JS. To re-enable
-    // prerender on Vercel, install @sparticuz/chromium and rewrite this
-    // launch call to use its executablePath().
-    console.warn(
-      '[prerender] ⚠ Chromium failed to launch — shipping SPA without pre-rendered HTML.\n' +
-      '            Underlying error:', e?.message || e
-    );
+    // Chromium could not be started even after trying to fetch it — /tmp full,
+    // sandbox disabled, a genuinely missing system library. Non-fatal by
+    // design: log loudly and exit 0 so the build still ships, because
+    // pre-rendered HTML is an SEO layer and the SPA works without it.
+    //
+    // The one cause this is NOT any more is a missing download. That was the
+    // real story behind months of un-prerendered production: Vercel restores
+    // node_modules from cache, npm therefore skips puppeteer's postinstall,
+    // and the browser was never fetched. Handled above, plus .puppeteerrc.cjs
+    // now parks the download inside node_modules so it survives the cache.
+    banner([
+      'CHROMIUM FAILED TO LAUNCH — SHIPPING WITHOUT PRE-RENDERED HTML.',
+      '',
+      `Underlying error: ${(e?.message || String(e)).slice(0, 120)}`,
+      '',
+      'The site will serve one <title> for every route to any crawler that',
+      'does not execute JS. A missing browser is downloaded automatically, so',
+      'this means the build machine cannot run Chrome at all — check the error.',
+    ]);
     try { server.close(); } catch {}
     process.exit(0);
   }
@@ -221,5 +294,56 @@ async function prerenderRoute(browser, route) {
     await browser.close();
     server.close();
   }
+
+  /* Writing the files is not the same as writing the meta. react-helmet only
+     flushes to <head> once an instance has mounted outside a lazy boundary
+     (see <HeadDefaults> in src/App.jsx); when that broke, prerender still
+     reported ✓ on every route while emitting the CRA shell title on all of
+     them. Serialising HTML is cheap to verify, so verify it. */
+  const offenders = [];
+  for (const route of PRERENDER_ROUTES.filter((r) => r !== '/')) {
+    const file = path.join(BUILD_DIR, route.replace(/^\//, ''), 'index.html');
+    let html;
+    try {
+      html = fs.readFileSync(file, 'utf8');
+    } catch {
+      offenders.push(`${route} — not written`);
+      continue;
+    }
+    const title = (html.match(/<title[^>]*>(.*?)<\/title>/is) || [, ''])[1].trim();
+    // Duplicates matter as much as absences: react-helmet appends rather than
+    // replaces anything it did not create, so a stray static tag in
+    // public/index.html sits in front of the page's own and wins with every
+    // crawler that reads the first match.
+    const dupes = ['name="description"', 'property="og:title"', 'property="og:description"']
+      .filter((attr) => (html.match(new RegExp(`<meta[^>]*${attr}`, 'gi')) || []).length > 1);
+
+    if (!title || (baseTitle && title === baseTitle)) {
+      offenders.push(`${route} — still the shell <title>`);
+    } else if (!/rel="canonical"/i.test(html)) {
+      offenders.push(`${route} — no canonical`);
+    } else if (dupes.length) {
+      offenders.push(`${route} — duplicate ${dupes.join(', ')}`);
+    }
+  }
+
+  if (offenders.length) {
+    banner([
+      `PRE-RENDER PRODUCED ${offenders.length} PAGE(S) WITH NO PER-ROUTE META.`,
+      '',
+      ...offenders.slice(0, 8),
+      ...(offenders.length > 8 ? [`…and ${offenders.length - 8} more`] : []),
+      '',
+      'The files exist but carry the shell <title>, so every one of them is',
+      'the same page to a crawler. Usual cause: a <Helmet> that only mounts',
+      'inside React.lazy. Check <HeadDefaults> is still rendered in App.jsx.',
+    ]);
+    process.exitCode = 1;
+  } else {
+    console.log(
+      `[prerender] Verified per-route <title> + canonical on ${PRERENDER_ROUTES.length - 1} pages.`
+    );
+  }
+
   console.log('[prerender] Done.');
 })();
