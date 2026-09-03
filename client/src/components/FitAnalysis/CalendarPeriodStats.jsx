@@ -12,7 +12,7 @@ import {
   localWeekStartKey,
 } from '../../utils/formFitnessFromActivities';
 import { mergeProfileZones, enrichProfileForTss } from '../../utils/inferThresholdsFromActivities';
-import { getMonthlyPowerAnalysis } from '../../services/api';
+import { getTimelineZones } from '../../services/api';
 import { useCategories } from '../../context/CategoryContext';
 import PmcCombinedChart from '../shared/PmcCombinedChart';
 import {
@@ -27,6 +27,7 @@ const ReactECharts = EChartsModule?.default ?? EChartsModule;
 
 const ZONE_KEYS = ['zone1', 'zone2', 'zone3', 'zone4', 'zone5'];
 const PROFILE_SPORTS = ['cycling', 'running', 'swimming'];
+const SPORT_WORD = { cycling: 'the bike', running: 'running', swimming: 'swimming' };
 const SPORT_LABEL = { cycling: 'Bike', running: 'Run', swimming: 'Swim' };
 
 // Total time in zones → "Xh Ym" / "Ym".
@@ -577,93 +578,93 @@ export default function CalendarPeriodStats({
   const periodView = period?.view === 'week' ? 'week' : 'month';
 
   // ── Server zone data ─────────────────────────────────────────────────────────
-  // The client-side fallback assigns the WHOLE activity to a single zone based
-  // on its average power/pace which is wrong (shows 100% Z1 for easy rides).
-  // Instead, fetch the server's second-by-second zone distribution — the same
-  // source the Home "TIME IN ZONES" card uses.
-  // We fetch the FULL period (start→end) with startDate/endDate so multi-month
-  // periods are covered. The API returns an array of month objects; we aggregate.
-  const [monthlyZones, setMonthlyZones] = useState(null);
-  useEffect(() => {
-    if (!effectiveAthleteId || !period?.periodStart || !period?.periodEnd) { setMonthlyZones(null); return; }
-    let cancelled = false;
-    const startDate = new Date(period.periodStart);
-    const endDate = new Date(period.periodEnd);
-    if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) { setMonthlyZones(null); return; }
+  /**
+   * Time in zones read second by second, for whichever sport and metric is on
+   * screen.
+   *
+   * This used to ask /fit/trainings/monthly-analysis, which reads FitTraining
+   * records and nothing else — a Strava or Garmin activity is invisible to it.
+   * For an athlete who rides with Strava that endpoint returned nothing, the
+   * card fell back to counting each session at its average, and a 4x25min came
+   * out as one solid block of Z2.
+   *
+   * /api/timeline/zones is the same computation the Training Timeline uses: FIT
+   * records, then stored Strava traces, then the session average as a last
+   * resort — and it reports which of those it had to use, so the note above the
+   * bars can stop guessing.
+   *
+   * One request per selection rather than eight up front: the streams are the
+   * expensive part, and a coach flipping through sports should not pay for the
+   * ones they never open. Responses are cached, by the selection and by the
+   * api layer's own five-minute window.
+   */
+  const [serverZones, setServerZones] = useState({});
+  const serverZonesRef = useRef({});
+  const [zonesLoading, setZonesLoading] = useState(false);
 
-    // Convert API shape { 1: { time: N }, 2: ... } → { zone1: N, zone2: ... }
-    const toZoneSec = (src) => {
-      if (!src) return null;
-      const out = {};
-      for (let z = 1; z <= 5; z++) {
-        const v = src[z] ?? src[String(z)];
-        out[`zone${z}`] = Number(v?.time) || 0;
-      }
-      return Object.values(out).some(v => v > 0) ? out : null;
-    };
+  const zoneRequestKey = useCallback((sport, metric) => {
+    const from = period?.periodStart ? new Date(period.periodStart).toISOString().slice(0, 10) : '';
+    const to = period?.periodEnd ? new Date(period.periodEnd).toISOString().slice(0, 10) : '';
+    return `${from}|${to}|${sport}|${metric}`;
+  }, [period?.periodStart, period?.periodEnd]);
 
-    // Aggregate zone data across multiple month objects (API returns array)
-    const aggregateZones = (months, getter) => {
-      const out = Object.fromEntries(['zone1','zone2','zone3','zone4','zone5'].map(k => [k, 0]));
-      months.forEach(m => {
-        const src = getter(m);
-        if (!src) return;
-        ['zone1','zone2','zone3','zone4','zone5'].forEach(k => { out[k] += src[k] || 0; });
-      });
-      return Object.values(out).some(v => v > 0) ? out : null;
-    };
+  // The panel names sports the way the profile does; the endpoint names them
+  // the way the calendar's filters do.
+  const TIMELINE_SPORT = { all: 'all', cycling: 'bike', running: 'run', swimming: 'swim' };
 
-    getMonthlyPowerAnalysis(effectiveAthleteId, null, { startDate, endDate })
-      .then(res => {
-        if (cancelled) return;
-        // API always returns an array of month objects
-        const months = Array.isArray(res) ? res : (res ? [res] : []);
-        if (!months.length) { setMonthlyZones(null); return; }
-
-        // Build per-month zone-sec objects first, then aggregate
-        const monthZoneSecs = months.map(m => ({
-          power: {
-            cycling: toZoneSec(m.zones),
-            running: toZoneSec(m.runningZoneTimes),
-            swimming: toZoneSec(m.swimmingZoneTimes),
-          },
-          hr: {
-            cycling: toZoneSec(m.bikeHrZones ?? m.hrZones),
-            running: toZoneSec(m.runningHrZones),
-            swimming: toZoneSec(m.swimmingHrZones),
-          },
-        }));
-
-        setMonthlyZones({
-          power: {
-            cycling: aggregateZones(monthZoneSecs, m => m.power.cycling),
-            running: aggregateZones(monthZoneSecs, m => m.power.running),
-            swimming: aggregateZones(monthZoneSecs, m => m.power.swimming),
-          },
-          hr: {
-            cycling: aggregateZones(monthZoneSecs, m => m.hr.cycling),
-            running: aggregateZones(monthZoneSecs, m => m.hr.running),
-            swimming: aggregateZones(monthZoneSecs, m => m.hr.swimming),
-          },
+  const fetchServerZones = useCallback((sport, metric) => {
+    if (!effectiveAthleteId || !period?.periodStart || !period?.periodEnd) return;
+    const key = zoneRequestKey(sport, metric);
+    if (serverZonesRef.current[key] !== undefined) return;
+    serverZonesRef.current[key] = null; // in flight — do not ask twice
+    setZonesLoading(true);
+    const start = new Date(period.periodStart);
+    const end = new Date(period.periodEnd);
+    getTimelineZones(
+      effectiveAthleteId,
+      start.toISOString().slice(0, 10),
+      end.toISOString().slice(0, 10),
+      TIMELINE_SPORT[sport] || 'all',
+      metric,
+    )
+      .then((res) => {
+        const days = Array.isArray(res?.days) ? res.days : [];
+        const sec = Object.fromEntries(ZONE_KEYS.map((k) => [k, 0]));
+        days.forEach((d) => {
+          for (let z = 1; z <= 5; z += 1) sec[`zone${z}`] += Number(d?.zones?.[`z${z}`]) || 0;
         });
+        const any = ZONE_KEYS.some((k) => sec[k] > 0);
+        const entry = {
+          sec: any ? sec : null,
+          // A period placed entirely from session averages is not a
+          // second-by-second reading, whatever endpoint produced it.
+          estimatedPct: Number(res?.coverage?.estimatedPct) || 0,
+          hasZones: res?.hasZones !== false,
+          reason: res?.reason || null,
+        };
+        serverZonesRef.current[key] = entry;
+        setServerZones((prev) => ({ ...prev, [key]: entry }));
       })
-      .catch(() => setMonthlyZones(null));
-    return () => { cancelled = true; };
-  }, [effectiveAthleteId, period?.periodStart, period?.periodEnd]); // eslint-disable-line react-hooks/exhaustive-deps
+      .catch(() => {
+        // Offline, refused, or a range the server declines — the lap-level
+        // aggregate below is a real answer, just a coarser one.
+        const entry = { sec: null, estimatedPct: 0, hasZones: true, reason: null, failed: true };
+        serverZonesRef.current[key] = entry;
+        setServerZones((prev) => ({ ...prev, [key]: entry }));
+      })
+      .finally(() => setZonesLoading(false));
+  }, [effectiveAthleteId, period?.periodStart, period?.periodEnd, zoneRequestKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Combine monthly server zones across sports for the "All" tab
-  const serverZoneSecAll = useMemo(() => {
-    if (!monthlyZones) return { power: null, hr: null };
-    const combine = (byPs) => {
-      const out = Object.fromEntries(ZONE_KEYS.map(k => [k, 0]));
-      PROFILE_SPORTS.forEach(ps => {
-        const src = byPs[ps];
-        if (src) ZONE_KEYS.forEach(k => { out[k] += src[k] || 0; });
-      });
-      return Object.values(out).some(v => v > 0) ? out : null;
-    };
-    return { power: combine(monthlyZones.power), hr: combine(monthlyZones.hr) };
-  }, [monthlyZones]);
+  // A new period invalidates every answer held for the old one.
+  useEffect(() => {
+    serverZonesRef.current = {};
+    setServerZones({});
+  }, [period?.periodStart, period?.periodEnd, effectiveAthleteId]);
+
+  const serverZoneEntry = useCallback(
+    (sport, metric) => serverZones[zoneRequestKey(sport, metric)] || null,
+    [serverZones, zoneRequestKey],
+  );
 
   // The panels that live inside the Overview stack, as opposed to the tabs
   // that have always had a section of their own.
@@ -1332,34 +1333,37 @@ export default function CalendarPeriodStats({
    * @param {string} metric 'power' | 'hr'  ('power' is pace for run and swim)
    */
   const zoneSecFor = useCallback((sport, metric) => {
-    // Week view always uses the period-reactive client aggregates; month can
-    // use the server's second-by-second totals, which are month-keyed.
-    const useServer = periodView === 'month';
-    const serverAll = metric === 'power' ? serverZoneSecAll.power : serverZoneSecAll.hr;
+    // The server's per-second answer when it has one; the lap-level aggregate
+    // until then and when it does not. Both cover the whole period, so unlike
+    // the month-keyed endpoint this replaced, the two agree about *which*
+    // days they describe and week view can use the server too.
+    const server = serverZoneEntry(sport, metric);
+    if (server?.sec) return server.sec;
     const clientAll = metric === 'power' ? aggregates.powerZoneSecAll : aggregates.hrZoneSecAll;
-    const serverBySport = metric === 'power' ? monthlyZones?.power : monthlyZones?.hr;
     const clientBySport = metric === 'power' ? aggregates.powerZoneSec : aggregates.hrZoneSec;
-    if (sport === 'all') return (useServer && serverAll) || clientAll || {};
-    return (useServer && serverBySport?.[sport]) || clientBySport?.[sport] || {};
-  }, [periodView, serverZoneSecAll, monthlyZones, aggregates]);
+    if (sport === 'all') return clientAll || {};
+    return clientBySport?.[sport] || {};
+  }, [serverZoneEntry, aggregates]);
 
   /**
    * Where the numbers behind one sport+metric actually came from.
    *
-   * The source note used to read off `monthlyZones` alone, so as soon as any
+   * The source note used to read off the server payload alone, so as soon as any
    * one sport had server data the card announced second-by-second precision
    * for all of them — including a Strava ride the server endpoint never sees,
    * whose whole duration had been charged to one zone from its average.
    */
   const zoneSourceFor = useCallback((sport, metric) => {
-    const useServer = periodView === 'month';
-    const serverAll = metric === 'power' ? serverZoneSecAll.power : serverZoneSecAll.hr;
-    const serverBySport = metric === 'power' ? monthlyZones?.power : monthlyZones?.hr;
-    if (useServer && (sport === 'all' ? serverAll : serverBySport?.[sport])) return 'records';
+    const server = serverZoneEntry(sport, metric);
+    if (server?.sec) {
+      // The server places a session from its average too when it has no trace
+      // for it, and says how much of the total that was.
+      return server.estimatedPct >= 50 ? 'average' : server.estimatedPct > 0 ? 'mixed' : 'records';
+    }
     const est = aggregates.zoneSecEstimated || {};
     const sports = sport === 'all' ? PROFILE_SPORTS : [sport];
     return sports.some((ps) => est[ps]?.[metric]) ? 'average' : 'laps';
-  }, [periodView, serverZoneSecAll, monthlyZones, aggregates]);
+  }, [serverZoneEntry, aggregates]);
 
   const zoneSecTotal = (secMap) => ZONE_KEYS.reduce((s, k) => s + (secMap?.[k] || 0), 0);
 
@@ -1453,6 +1457,36 @@ export default function CalendarPeriodStats({
       ],
     };
   }, [zoneSecFor, donutSport, donutMetric, effectiveProfile]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Ask for exactly what is being looked at, in both panels.
+  useEffect(() => {
+    fetchServerZones(donutSport, donutMetric);
+  }, [fetchServerZones, donutSport, donutMetric]);
+  useEffect(() => {
+    if (activeTab !== 'zones') return;
+    fetchServerZones(zoneSport, 'power');
+    fetchServerZones(zoneSport, 'hr');
+  }, [fetchServerZones, zoneSport, activeTab]);
+
+  /**
+   * Why a metric cannot be shown for a sport — the button was simply dead
+   * before, and "Pace is greyed out" has no answer on the screen. The usual
+   * cause is a profile with no pace zones for that sport, which is a lactate
+   * test away rather than a bug.
+   */
+  const metricUnavailableReason = useCallback((sport, metric) => {
+    if (donutAvailable[sport]?.[metric]) return null;
+    const sports = sport === 'all' ? PROFILE_SPORTS : [sport];
+    const zoneRoot = metric === 'power' ? effectiveProfile?.powerZones : effectiveProfile?.heartRateZones;
+    const hasAnyZones = sports.some((ps) => hasZoneDefinitions(zoneRoot?.[ps]));
+    const label = metric === 'power'
+      ? (sport === 'cycling' ? 'power' : sport === 'all' ? 'power or pace' : 'pace')
+      : 'heart rate';
+    if (!hasAnyZones) {
+      return `No ${label} zones set for ${sport === 'all' ? 'any sport' : SPORT_WORD[sport]} — a lactate test sets them.`;
+    }
+    return `Nothing recorded ${label === 'heart rate' ? 'with heart rate' : `with ${label}`} in this period.`;
+  }, [donutAvailable, effectiveProfile]);
 
   const intensityDonutTotalSec = useMemo(
     () => zoneSecTotal(zoneSecFor(donutSport, donutMetric)),
@@ -2244,11 +2278,13 @@ export default function CalendarPeriodStats({
                     ].map((opt) => {
                       const hasData = !!donutAvailable[donutSport]?.[opt.id];
                       const isActive = donutMetric === opt.id;
+                      const why = hasData ? null : metricUnavailableReason(donutSport, opt.id);
                       return (
                         <button
                           key={opt.id}
                           type="button"
                           disabled={!hasData}
+                          title={why || undefined}
                           onClick={() => setDonutMetric(opt.id)}
                           className={`px-2 py-1 rounded-lg text-[11px] font-semibold transition-colors ${
                             isActive ? 'bg-primary text-white' : 'bg-white text-gray-500 hover:bg-gray-100'
@@ -2259,6 +2295,13 @@ export default function CalendarPeriodStats({
                       );
                     })}
                   </div>
+                  {/* A greyed-out button with no explanation reads as a bug.
+                      Say what is missing, in the open. */}
+                  {metricUnavailableReason(donutSport, donutMetric === 'power' ? 'hr' : 'power') && (
+                    <p className="text-[10px] text-gray-400 leading-snug mb-1">
+                      {metricUnavailableReason(donutSport, donutMetric === 'power' ? 'hr' : 'power')}
+                    </p>
+                  )}
                   <Chart
                     option={intensityDonutOption}
                     style={{ height: isMobile ? 130 : 160, width: '100%' }}
@@ -2335,14 +2378,22 @@ export default function CalendarPeriodStats({
                 // Whatever is weakest about what is on screen is what this
                 // says. Two bars from two different sources must not be
                 // introduced by the better one's description.
+                // The numbers move when the traces land, so say so rather than
+                // letting them change under the reader without explanation.
+                if (zonesLoading) {
+                  return <>Reading your per-second traces — the numbers below are counted lap by lap until that lands.</>;
+                }
                 const sources = [zoneSourceFor(zoneSport, 'power'), zoneSourceFor(zoneSport, 'hr')];
                 if (sources.includes('average')) {
-                  return <>Some of this is <span className="font-semibold text-gray-500">estimated</span>: sessions whose laps do not carry the channel are counted whole, at their average, against your profile zones.</>;
+                  return <>Mostly <span className="font-semibold text-gray-500">estimated</span>: these sessions have no per-second trace stored, so each is counted whole at its average against your zones.</>;
                 }
                 if (sources.includes('laps')) {
-                  return <>Zone times are counted <span className="font-semibold text-gray-500">lap by lap</span> against your profile zones — each rep in the zone it was done at, not the session at its average.</>;
+                  return <>Counted <span className="font-semibold text-gray-500">lap by lap</span> against your profile zones — each rep in the zone it was done at, rather than the session at its average.</>;
                 }
-                return <>Zone times are computed <span className="font-semibold text-gray-500">second-by-second</span> from your activity records — same data as the Home "Time in Zones" card.</>;
+                if (sources.includes('mixed')) {
+                  return <>Computed <span className="font-semibold text-gray-500">second-by-second</span> from your activity records, with a few sessions that have no trace counted at their average.</>;
+                }
+                return <>Computed <span className="font-semibold text-gray-500">second-by-second</span> from your activity records — same data as the Home "Time in Zones" card.</>;
               })()}
             </p>
 
@@ -2371,6 +2422,9 @@ export default function CalendarPeriodStats({
                             ? 'bg-primary text-white'
                             : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
                         } ${!hasData && !isActive ? 'opacity-50' : ''}`}
+                        title={hasData ? undefined : (
+                          metricUnavailableReason(opt.id, 'power') || metricUnavailableReason(opt.id, 'hr') || undefined
+                        )}
                       >
                         {opt.bucket ? (
                           <img
