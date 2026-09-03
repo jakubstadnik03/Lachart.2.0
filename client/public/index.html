@@ -19,23 +19,14 @@
     <link rel="icon" type="image/png" sizes="192x192" href="%PUBLIC_URL%/logo192.png" />
     <link rel="icon" type="image/png" sizes="512x512" href="%PUBLIC_URL%/logo512.png" />
     
-    <!-- Open Graph Meta Tags for Social Media and Google -->
-    <meta property="og:type" content="website" />
-    <meta property="og:site_name" content="LaChart" />
-    <meta property="og:title" content="LaChart – Lactate Curve Calculator & Testing App" />
-    <meta property="og:description" content="Professional lactate testing and analysis for athletes and coaches. Calculate lactate thresholds (LT1, LT2, OBLA, IAT) and discover optimal training zones." />
-    <meta property="og:image" content="%PUBLIC_URL%/images/lachart-og.png" />
-    <meta property="og:image:width" content="1200" />
-    <meta property="og:image:height" content="630" />
-    <meta property="og:image:alt" content="LaChart - Lactate Curve Calculator Interface" />
-    <meta property="og:url" content="https://lachart.net" />
+    <!-- Open Graph / Twitter card tags are NOT static here.
+         react-helmet APPENDS rather than replaces tags it did not create, so a
+         static og:title sat in front of every page's own and social crawlers,
+         which take the first match, showed the homepage title for every URL
+         shared. The site-wide defaults now live in <HeadDefaults> in
+         src/App.jsx, where react-helmet dedupes them by property and a page's
+         own og:* wins. Same reason <meta name="description"> is absent below. -->
     
-    <!-- Twitter Card Meta Tags -->
-    <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="LaChart – Lactate Curve Calculator & Testing App" />
-    <meta name="twitter:description" content="Professional lactate testing and analysis for athletes and coaches. Calculate lactate thresholds and discover optimal training zones." />
-    <meta name="twitter:image" content="%PUBLIC_URL%/images/lachart-og.png" />
-    <meta name="twitter:image:alt" content="LaChart - Lactate Curve Calculator Interface" />
     
     <!-- Additional SEO Meta Tags -->
     <meta name="robots" content="index, follow" />

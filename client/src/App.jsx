@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect, Suspense, lazy } from 'react';
+import { Helmet } from 'react-helmet';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { GoogleOAuthProvider } from '@react-oauth/google';
 import { AuthProvider, useAuth } from './context/AuthProvider';
@@ -65,6 +66,7 @@ const ForTestersPage = lazy(() => import('./pages/ForTesters'));
 const ForAthletesPage = lazy(() => import('./pages/ForAthletes'));
 const FeaturesIndex = lazy(() => import('./pages/features/FeaturesIndex'));
 const FeaturePage = lazy(() => import('./pages/features/FeaturePage'));
+const ComparisonPage = lazy(() => import('./pages/compare/ComparisonPage'));
 const HealthPage = lazy(() => import('./pages/HealthPage'));
 const AtpPage = lazy(() => import('./pages/AtpPage'));
 const WorkoutExecutionPage = lazy(() => import('./pages/WorkoutExecutionPage'));
@@ -293,6 +295,12 @@ function AppRoutes() {
         <Route path="/for-coaches" element={<ForCoaches />} />
         <Route path="/features" element={<FeaturesIndex />} />
         <Route path="/features/:slug" element={<FeaturePage />} />
+        {/* Comparison pages own a top-level URL each, so the search term the
+            reader typed is the path they land on. Add new ones to
+            comparisonCatalog, then to PRERENDER_ROUTES and sitemap-main.xml. */}
+        <Route path="/trainingpeaks-alternative" element={<ComparisonPage slug="trainingpeaks-alternative" />} />
+        <Route path="/coachbox-alternative" element={<ComparisonPage slug="coachbox-alternative" />} />
+        <Route path="/lachart-vs-trainingpeaks" element={<ComparisonPage slug="lachart-vs-trainingpeaks" />} />
         <Route path="/how-to-use" element={<Tutorials />} />
         <Route path="/tutorials" element={<Tutorials />} />
         <Route path="/privacy" element={<Privacy />} />
@@ -443,6 +451,58 @@ function AppRoutes() {
   );
 }
 
+/**
+ * Site-wide <head> defaults, and the thing that makes react-helmet work at all.
+ *
+ * Every page-level <Helmet> in this app lives inside a React.lazy route
+ * component. react-helmet (via react-side-effect) does not flush to the DOM
+ * when its first-ever instance mounts inside a Suspense boundary during
+ * hydration — so the very first Helmet on a cold page load was silently
+ * dropped. On a normal SPA visit nobody noticed, because the *next* navigation
+ * flushed fine. On a pre-render, though, there is only ever that first mount:
+ * every file scripts/prerender.js wrote shipped the static index.html <title>,
+ * no canonical and no per-route description — exactly the failure that script
+ * exists to prevent.
+ *
+ * This instance mounts eagerly, outside the lazy boundary, and primes the side
+ * effect. Page-level Helmets still win by depth, so nothing here overrides a
+ * route that sets its own; routes that set none inherit these values instead of
+ * whatever the previously-visited route left behind.
+ *
+ * Keep the values in step with public/index.html's og:* tags. Do not remove
+ * without re-checking a pre-rendered file for a per-route <title>.
+ */
+function HeadDefaults() {
+  return (
+    <Helmet>
+      <title>LaChart – Lactate Curve Calculator &amp; Testing App</title>
+      <meta
+        name="description"
+        content="Professional lactate testing and analysis for athletes and coaches. Calculate lactate thresholds (LT1, LT2, OBLA, IAT) and discover optimal training zones."
+      />
+      {/* These used to sit statically in public/index.html, where react-helmet
+          could not replace them — it appends, so every page that set its own
+          og:title ended up with two, the generic one first. Social crawlers
+          take the first match, so every LaChart URL shared to Facebook,
+          LinkedIn, Slack or X previewed as the homepage. Managed here, helmet
+          dedupes by property and a page's own tags win. */}
+      <meta property="og:type" content="website" />
+      <meta property="og:site_name" content="LaChart" />
+      <meta property="og:title" content="LaChart – Lactate Curve Calculator &amp; Testing App" />
+      <meta property="og:description" content="Professional lactate testing and analysis for athletes and coaches. Calculate lactate thresholds (LT1, LT2, OBLA, IAT) and discover optimal training zones." />
+      <meta property="og:image" content="https://lachart.net/images/lachart-og.png" />
+      <meta property="og:image:width" content="1200" />
+      <meta property="og:image:height" content="630" />
+      <meta property="og:image:alt" content="LaChart — lactate curve and training platform" />
+      <meta property="og:url" content="https://lachart.net/" />
+      <meta name="twitter:card" content="summary_large_image" />
+      <meta name="twitter:title" content="LaChart – Lactate Curve Calculator &amp; Testing App" />
+      <meta name="twitter:description" content="Professional lactate testing and analysis for athletes and coaches. Calculate lactate thresholds and discover optimal training zones." />
+      <meta name="twitter:image" content="https://lachart.net/images/lachart-og.png" />
+    </Helmet>
+  );
+}
+
 function App() {
   const isProd = process.env.NODE_ENV === 'production';
 
@@ -474,6 +534,7 @@ function App() {
 
   const coreApp = (
     <CategoryProvider>
+      <HeadDefaults />
       <NotificationProvider>
         <AuthProvider>
           <NativeSplashGate />

@@ -176,22 +176,31 @@ export default function About() {
   return (
     <>
       <Helmet>
-        <title>Blood Lactate Testing App & Threshold Calculator | LaChart</title>
-        <meta name="description" content="Blood lactate testing for athletes and coaches. Calculate LT1 &amp; LT2, build training zones and export PDF reports. Free calculator, no sign-up." />
-        <meta name="keywords" content="lactate testing app, lactate threshold calculator, blood lactate test, LT1 LT2, OBLA, IAT, D-max, training zones, endurance training, sports performance" />
+        {/* The homepage sells both halves, in that order. It used to lead on
+            "Lactate Threshold Calculator & Testing App", which undersold
+            everything below the fold — calendar, Garmin push, load and form,
+            lap analysis — and read as a single-purpose tool. Dropping lactate
+            would be the opposite mistake: it is the only term this site can
+            realistically win, and all thirteen blog posts point at it, while
+            "training platform" alone puts us against TrainingPeaks on their
+            own keyword. So: testing app AND training platform, testing named
+            first. Pure-calculator intent still has /lactate-curve-calculator. */}
+        <title>Lactate Testing App &amp; Training Platform for Coaches and Athletes | LaChart</title>
+        <meta name="description" content="Lactate testing and endurance coaching in one place: LT1/LT2 by six methods, training zones and PDF reports — plus a calendar, structured workouts pushed to Garmin, load and form, and lap analysis." />
+        <meta name="keywords" content="lactate testing app, lactate threshold calculator, LT1 LT2, training zones, endurance training platform, coaching software, training calendar, structured workouts Garmin, CTL ATL TSB, athlete management" />
         <meta name="theme-color" content="#767EB5" />
         <link rel="canonical" href="https://lachart.net/" />
         <meta property="og:type" content="website" />
         <meta property="og:url" content="https://lachart.net/" />
-        <meta property="og:title" content="Blood Lactate Testing App & Threshold Calculator | LaChart" />
-        <meta property="og:description" content="Professional lactate testing for athletes and coaches. Calculate LT1/LT2, build training zones, and export PDF reports. Free online calculator included." />
+        <meta property="og:title" content="Lactate Testing App & Training Platform for Coaches and Athletes | LaChart" />
+        <meta property="og:description" content="Lactate testing and endurance coaching in one place: LT1/LT2 by six methods, zones and PDF reports — plus calendar, structured workouts to Garmin, load and form." />
         <meta property="og:image" content="https://lachart.net/images/lachart-og.png" />
         <meta property="og:image:width" content="1200" />
         <meta property="og:image:height" content="630" />
         <meta property="og:site_name" content="LaChart" />
         <meta name="twitter:card" content="summary_large_image" />
-        <meta name="twitter:title" content="Blood Lactate Testing App & Threshold Calculator | LaChart" />
-        <meta name="twitter:description" content="Professional lactate testing for athletes and coaches. Calculate LT1/LT2, build training zones, and export PDF reports." />
+        <meta name="twitter:title" content="Lactate Testing App & Training Platform for Coaches and Athletes | LaChart" />
+        <meta name="twitter:description" content="LT1/LT2 by six methods, zones and PDF reports — plus calendar, structured workouts to Garmin, load and form. For coaches and athletes." />
         <meta name="twitter:image" content="https://lachart.net/images/lachart-og.png" />
         <script type="application/ld+json">{`
           {
@@ -199,8 +208,8 @@ export default function About() {
             "@type": "WebPage",
             "@id": "https://lachart.net/#webpage",
             "url": "https://lachart.net/",
-            "name": "Blood Lactate Testing App & Threshold Calculator | LaChart",
-            "description": "Professional blood lactate testing app for athletes and coaches. Calculate LT1 & LT2 thresholds, build training zones, and export PDF reports.",
+            "name": "Lactate Testing App & Training Platform for Coaches and Athletes | LaChart",
+            "description": "Lactate testing app and endurance training platform for coaches and athletes: LT1/LT2 by six methods, training zones and PDF reports, plus calendar, structured workouts pushed to Garmin, load and form, and lap analysis.",
             "isPartOf": { "@id": "https://lachart.net/#website" },
             "about": { "@id": "https://lachart.net/#webapp" },
             "inLanguage": "en",
@@ -452,15 +461,23 @@ export default function About() {
             <div className="lc-hero-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 60, alignItems: 'center' }}>
               {/* Left column */}
               <div ref={pushRef} className="lc-reveal">
-                <Eyebrow>Blood lactate testing · Made simple</Eyebrow>
+                <Eyebrow>For coaches &amp; athletes</Eyebrow>
                 <h1 className="lc-huge" style={{ margin: '18px 0 18px' }}>
-                  Lactate Threshold<br /><em>Calculator & Testing App</em>
+                  Lactate testing app<br /><em>and training platform</em>
                 </h1>
                 <p className="lc-lead hero-description" style={{ margin: '0 0 24px' }}>
-                  LaChart calculates LT1 &amp; LT2 thresholds from blood lactate test data, builds training zones, and tracks performance over time — one platform for athletes and coaches.
+                  Run the test, get LT1 and LT2 by six methods, and turn them straight into zones.
+                  Then use them: rides, runs and swims arrive on their own from Strava, Garmin or
+                  Apple Health, you read load and form, laps and peaks, and next week goes back out
+                  to the watch — all of it anchored to numbers you
+                  {' '}<strong style={{ color: LC.text }}>measured</strong>, not a percentage of a guess.
                 </p>
+                {/* Two chips per half of the headline, testing first. The hero
+                    has to say "and" convincingly — a run of four training chips
+                    would read as a platform that also does lactate, which is
+                    the wrong way round for the audience arriving here. */}
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 24 }}>
-                  {[['LT1 / LT2', LC.primary], ['Zones', LC.secondary], ['PDF Report', LC.accent], ['Progress', LC.green]].map(([label, color]) => (
+                  {[['LT1 / LT2', LC.primary], ['Zones & PDF report', LC.secondary], ['Calendar & planner', LC.accent], ['Load & form', LC.green]].map(([label, color]) => (
                     <span key={label} style={{
                       padding: '5px 12px', borderRadius: 9999,
                       background: color + '22', color: color + 'EE',
@@ -474,14 +491,20 @@ export default function About() {
                     Start free
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14M13 5l7 7-7 7" /></svg>
                   </Link>
-                  <Link to="/lactate-curve-calculator" onClick={() => track('hero_try_calc')} className="lc-btn-ghost">See the curve</Link>
+                  {/* Still the calculator: it is the only door that opens
+                      without an account, and it is where the blog sends people. */}
+                  <Link to="/lactate-curve-calculator" onClick={() => track('hero_try_calc')} className="lc-btn-ghost">Try the free calculator</Link>
                 </div>
               </div>
 
               {/* Right column — product screenshot + floating badges */}
               <div ref={pushRef} className="lc-reveal right" style={{ position: 'relative' }}>
+                {/* The curve stays in the hero. It is the one thing on this
+                    page no competitor's homepage shows, and the headline now
+                    claims the platform in words rather than needing a
+                    screenshot to do it — the badges carry the training half. */}
                 <BrowserFrame label="lachart.net — Lactate Curve">
-                  <img src="/about-design/hero-lactate-curve.jpg" alt="Lactate curve calculator — LaChart" style={{ display: 'block', width: '100%', height: 'auto' }} />
+                  <img src="/about-design/hero-lactate-curve.jpg" alt="Lactate curve with LT1 and LT2 — LaChart" width="1536" height="1024" style={{ display: 'block', width: '100%', height: 'auto' }} />
                 </BrowserFrame>
                 {/* Floating badges */}
                 <FloatingBadge cls="lc-float lc-hero-badge" style={{ top: -14, left: -22 }} icon={
@@ -490,9 +513,12 @@ export default function About() {
                 <FloatingBadge cls="lc-float lc-hero-badge d2" style={{ bottom: -16, right: -18 }} icon={
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 12l2 2 4-4" /><circle cx="12" cy="12" r="9" /></svg>
                 } label="Zone 2 Power" value="187–255 W" tint={LC.primary} />
+                {/* Was "La baseline 1.2 mmol/L" — a third lactate number on a
+                    hero that now claims a whole platform. Form is the other
+                    half of the story and the thing a coach checks daily. */}
                 <FloatingBadge cls="lc-float lc-hero-badge d3" style={{ top: '40%', right: -34 }} icon={
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 2v7l-5 9a4 4 0 0 0 4 6h6a4 4 0 0 0 4-6l-5-9V2" /><path d="M8 2h8" /></svg>
-                } label="La baseline" value="1.2 mmol/L" tint={LC.secondary} />
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18h18M7 15l4-5 3 3 5-7" /></svg>
+                } label="Form (TSB)" value="+12 · Fresh" tint={LC.secondary} />
               </div>
             </div>
           </div>
