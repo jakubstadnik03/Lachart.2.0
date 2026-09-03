@@ -1,4 +1,8 @@
 import React, { useMemo, useState, useEffect, useRef, useCallback } from 'react';
+import {
+  parseZoneNumber, findZoneKeyForValue,
+  zoneSpansForActivity, lapPowerOrPaceMetric, lapHeartRate,
+} from '../../utils/lapZoneSpans';
 import { Cog6ToothIcon, ChevronLeftIcon, ChevronRightIcon } from '@heroicons/react/24/outline';
 import EChartsModule from 'echarts-for-react';
 import { formatDuration, formatDistance } from '../../utils/fitAnalysisUtils';
@@ -97,17 +101,6 @@ function profileSportFromActivity(sport) {
   return null;
 }
 
-function parseZoneNumber(v) {
-  if (v === null || v === undefined) return null;
-  if (typeof v === 'number') return Number.isFinite(v) ? v : null;
-  if (typeof v !== 'string') return null;
-  const cleaned = v.trim().toLowerCase();
-  if (!cleaned) return null;
-  if (cleaned === '∞' || cleaned.includes('inf')) return Infinity;
-  const n = Number(cleaned.replace(',', '.'));
-  return Number.isFinite(n) ? n : null;
-}
-
 function formatZoneRangeLabel(defs, zk, unit) {
   if (!defs || !defs[zk]) return '';
   const mn = parseZoneNumber(defs[zk]?.min);
@@ -117,21 +110,6 @@ function formatZoneRangeLabel(defs, zk, unit) {
   if (mn != null && mx != null) return `${Math.round(mn)}–${Math.round(mx)} ${unit}`;
   if (mn != null) return `${Math.round(mn)}+ ${unit}`;
   return `≤${Math.round(mx)} ${unit}`;
-}
-
-function findZoneKeyForValue(value, zonesObj) {
-  const val = Number(value);
-  if (!Number.isFinite(val)) return null;
-  for (const zKey of ZONE_KEYS) {
-    const def = zonesObj?.[zKey];
-    if (!def) continue;
-    const min = parseZoneNumber(def?.min);
-    const max = def?.max === undefined ? null : parseZoneNumber(def?.max);
-    if (min === null) continue;
-    const maxSafe = max === null ? Infinity : max;
-    if (val >= min && val <= maxSafe) return zKey;
-  }
-  return null;
 }
 
 function hasZoneDefinitions(zonesObj) {
@@ -789,6 +767,13 @@ export default function CalendarPeriodStats({
     const byDaySportTss = new Map();
 
     // Intensity totals across all zone data
+    // Which sport+metric pairs had any of their time placed from an activity
+    // average rather than from its laps — the card says so rather than
+    // presenting an estimate as a measurement.
+    const zoneSecEstimated = {};
+    const markEstimated = (ps, metric) => {
+      (zoneSecEstimated[ps] || (zoneSecEstimated[ps] = {}))[metric] = true;
+    };
     let intensityEasySec = 0;
     let intensityModSec = 0;
     let intensityHardSec = 0;
@@ -837,27 +822,51 @@ export default function CalendarPeriodStats({
       if (effectiveProfile && ps) {
         const powerZones = effectiveProfile?.powerZones?.[ps] || {};
         const hrZones = effectiveProfile?.heartRateZones?.[ps] || {};
-        const metric = getPowerOrPaceMetric(act, ps);
-        if (metric != null && hasZoneDefinitions(powerZones)) {
-          const zk = findZoneKeyForValue(metric, powerZones);
-          if (zk) {
-            powerZoneSec[ps][zk] += sec;
-            // Accumulate intensity from power zones
-            if (zk === 'zone1' || zk === 'zone2') intensityEasySec += sec;
-            else if (zk === 'zone3') intensityModSec += sec;
-            else if (zk === 'zone4' || zk === 'zone5') intensityHardSec += sec;
+
+        // Lap by lap where the laps allow it, and only then the activity's
+        // average — see zoneSpansForActivity. `estimated` tracks whether any
+        // of the period's time was placed by average, so the card can say so
+        // instead of claiming a precision it does not have.
+        const addSpans = (spans, bucket) => {
+          spans.forEach(({ zoneKey, sec: s }) => { bucket[ps][zoneKey] += s; });
+        };
+        const intensityOf = (zoneKey, s) => {
+          if (zoneKey === 'zone1' || zoneKey === 'zone2') intensityEasySec += s;
+          else if (zoneKey === 'zone3') intensityModSec += s;
+          else if (zoneKey === 'zone4' || zoneKey === 'zone5') intensityHardSec += s;
+        };
+
+        let powerPlaced = false;
+        if (hasZoneDefinitions(powerZones)) {
+          const spans = zoneSpansForActivity(act, ps, powerZones, lapPowerOrPaceMetric);
+          if (spans?.length) {
+            addSpans(spans, powerZoneSec);
+            spans.forEach(({ zoneKey, sec: s }) => intensityOf(zoneKey, s));
+            powerPlaced = true;
+          } else {
+            const metric = getPowerOrPaceMetric(act, ps);
+            const zk = metric != null ? findZoneKeyForValue(metric, powerZones) : null;
+            if (zk) {
+              powerZoneSec[ps][zk] += sec;
+              intensityOf(zk, sec);
+              powerPlaced = true;
+              markEstimated(ps, 'power');
+            }
           }
         }
-        const hr = getHeartRate(act);
-        if (hr != null && hasZoneDefinitions(hrZones)) {
-          const zk = findZoneKeyForValue(hr, hrZones);
-          if (zk) {
-            hrZoneSec[ps][zk] += sec;
-            // If no power zone data was found, accumulate from HR zones
-            if (!(metric != null && hasZoneDefinitions(powerZones))) {
-              if (zk === 'zone1' || zk === 'zone2') intensityEasySec += sec;
-              else if (zk === 'zone3') intensityModSec += sec;
-              else if (zk === 'zone4' || zk === 'zone5') intensityHardSec += sec;
+
+        if (hasZoneDefinitions(hrZones)) {
+          const spans = zoneSpansForActivity(act, ps, hrZones, lapHeartRate);
+          if (spans?.length) {
+            addSpans(spans, hrZoneSec);
+            if (!powerPlaced) spans.forEach(({ zoneKey, sec: s }) => intensityOf(zoneKey, s));
+          } else {
+            const hr = getHeartRate(act);
+            const zk = hr != null ? findZoneKeyForValue(hr, hrZones) : null;
+            if (zk) {
+              hrZoneSec[ps][zk] += sec;
+              if (!powerPlaced) intensityOf(zk, sec);
+              markEstimated(ps, 'hr');
             }
           }
         }
@@ -941,6 +950,7 @@ export default function CalendarPeriodStats({
       intensityEasySec,
       intensityModSec,
       intensityHardSec,
+      zoneSecEstimated,
     };
   }, [filtered, period?.periodStart, period?.periodEnd, tssProfile, user, effectiveProfile]);
 
@@ -1331,6 +1341,24 @@ export default function CalendarPeriodStats({
     const clientBySport = metric === 'power' ? aggregates.powerZoneSec : aggregates.hrZoneSec;
     if (sport === 'all') return (useServer && serverAll) || clientAll || {};
     return (useServer && serverBySport?.[sport]) || clientBySport?.[sport] || {};
+  }, [periodView, serverZoneSecAll, monthlyZones, aggregates]);
+
+  /**
+   * Where the numbers behind one sport+metric actually came from.
+   *
+   * The source note used to read off `monthlyZones` alone, so as soon as any
+   * one sport had server data the card announced second-by-second precision
+   * for all of them — including a Strava ride the server endpoint never sees,
+   * whose whole duration had been charged to one zone from its average.
+   */
+  const zoneSourceFor = useCallback((sport, metric) => {
+    const useServer = periodView === 'month';
+    const serverAll = metric === 'power' ? serverZoneSecAll.power : serverZoneSecAll.hr;
+    const serverBySport = metric === 'power' ? monthlyZones?.power : monthlyZones?.hr;
+    if (useServer && (sport === 'all' ? serverAll : serverBySport?.[sport])) return 'records';
+    const est = aggregates.zoneSecEstimated || {};
+    const sports = sport === 'all' ? PROFILE_SPORTS : [sport];
+    return sports.some((ps) => est[ps]?.[metric]) ? 'average' : 'laps';
   }, [periodView, serverZoneSecAll, monthlyZones, aggregates]);
 
   const zoneSecTotal = (secMap) => ZONE_KEYS.reduce((s, k) => s + (secMap?.[k] || 0), 0);
@@ -2303,10 +2331,19 @@ export default function CalendarPeriodStats({
           <div className="space-y-4">
             {/* Source note */}
             <p className="text-xs text-gray-400 leading-relaxed border border-gray-100 rounded-lg px-3 py-2 bg-gray-50">
-              {monthlyZones
-                ? <>Zone times are computed <span className="font-semibold text-gray-500">second-by-second</span> from your activity records — same data as the Home "Time in Zones" card.</>
-                : <>Zone times are <span className="font-semibold text-gray-500">estimates</span>: each activity is counted using its average power, pace, or HR against your profile zones (not second-by-second files).</>
-              }
+              {(() => {
+                // Whatever is weakest about what is on screen is what this
+                // says. Two bars from two different sources must not be
+                // introduced by the better one's description.
+                const sources = [zoneSourceFor(zoneSport, 'power'), zoneSourceFor(zoneSport, 'hr')];
+                if (sources.includes('average')) {
+                  return <>Some of this is <span className="font-semibold text-gray-500">estimated</span>: sessions whose laps do not carry the channel are counted whole, at their average, against your profile zones.</>;
+                }
+                if (sources.includes('laps')) {
+                  return <>Zone times are counted <span className="font-semibold text-gray-500">lap by lap</span> against your profile zones — each rep in the zone it was done at, not the session at its average.</>;
+                }
+                return <>Zone times are computed <span className="font-semibold text-gray-500">second-by-second</span> from your activity records — same data as the Home "Time in Zones" card.</>;
+              })()}
             </p>
 
             {/* Sport toggle — always show All + all 3 sports */}
