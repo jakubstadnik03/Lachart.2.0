@@ -1488,6 +1488,13 @@ export default function CalendarPeriodStats({
     return `Nothing recorded ${label === 'heart rate' ? 'with heart rate' : `with ${label}`} in this period.`;
   }, [donutAvailable, effectiveProfile]);
 
+  /** How long the chosen sport was actually trained for in this period. */
+  const donutSportSec = useMemo(() => {
+    if (donutSport === 'all') return aggregates.totalSec || 0;
+    const bucket = { cycling: 'bike', running: 'run', swimming: 'swim' }[donutSport];
+    return aggregates.bySportSec?.[bucket] || 0;
+  }, [donutSport, aggregates]);
+
   const intensityDonutTotalSec = useMemo(
     () => zoneSecTotal(zoneSecFor(donutSport, donutMetric)),
     [zoneSecFor, donutSport, donutMetric],
@@ -2236,8 +2243,15 @@ export default function CalendarPeriodStats({
                     <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
                       Intensity distribution
                     </span>
+                    {/* Placed time against the sport's actual time. They part
+                        company when a session has no power meter or no strap,
+                        and a bare total read as though it covered the period —
+                        which is how a third of a month's riding went unnoticed. */}
                     <span className="text-[11px] font-medium text-gray-400 tabular-nums flex-shrink-0">
                       {fmtZoneTotal(intensityDonutTotalSec)}
+                      {donutSportSec > 0 && Math.abs(donutSportSec - intensityDonutTotalSec) > 120 && (
+                        <span className="text-gray-300"> of {fmtZoneTotal(donutSportSec)}</span>
+                      )}
                     </span>
                   </div>
                   <div className="flex flex-wrap items-center gap-1 mb-2">

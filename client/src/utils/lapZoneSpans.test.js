@@ -1,5 +1,5 @@
 import {
-  zoneSpansForActivity, lapPowerOrPaceMetric, lapHeartRate,
+  zoneSpansForActivity, lapPowerOrPaceMetric, lapHeartRate, findZoneKeyForValue,
 } from './lapZoneSpans';
 
 // A real 4x25min: warm-up, an opener, then four blocks with easy spinning
@@ -98,5 +98,56 @@ describe('zoneSpansForActivity', () => {
     };
     expect(zoneSpansForActivity(sparse, 'cycling', ZONES, lapPowerOrPaceMetric)).toBeNull();
     expect(zoneSpansForActivity({ sport: 'Ride' }, 'cycling', ZONES, lapPowerOrPaceMetric)).toBeNull();
+  });
+});
+
+describe('findZoneKeyForValue', () => {
+  // A real cycling table: it opens at 200 W, so everything softer than that —
+  // coasting, freewheeling down a descent, spinning between reps — used to
+  // fall off the bottom and be discarded.
+  const BIKE = {
+    zone1: { min: 200, max: 270 },
+    zone2: { min: 271, max: 330 },
+    zone3: { min: 331, max: 355 },
+    zone4: { min: 356, max: 400 },
+    zone5: { min: 401, max: 500 },
+  };
+
+  it('keeps time below the table in the easiest zone', () => {
+    expect(findZoneKeyForValue(133, BIKE)).toBe('zone1');
+    expect(findZoneKeyForValue(0.5, BIKE)).toBe('zone1');
+    expect(findZoneKeyForValue(199, BIKE)).toBe('zone1');
+  });
+
+  it('keeps time above the table in the hardest zone', () => {
+    expect(findZoneKeyForValue(776, BIKE)).toBe('zone5');
+  });
+
+  it('still places a value inside its own band', () => {
+    expect(findZoneKeyForValue(205, BIKE)).toBe('zone1');
+    expect(findZoneKeyForValue(355, BIKE)).toBe('zone3');
+    expect(findZoneKeyForValue(372, BIKE)).toBe('zone4');
+  });
+
+  it('reads a pace table the right way round', () => {
+    // Seconds per km: Z1 is the slowest band and holds the largest numbers.
+    const RUN = {
+      zone1: { min: 330, max: 420 },
+      zone2: { min: 285, max: 329 },
+      zone3: { min: 255, max: 284 },
+      zone4: { min: 225, max: 254 },
+      zone5: { min: 170, max: 224 },
+    };
+    expect(findZoneKeyForValue(300, RUN)).toBe('zone2');
+    // 3:05/km is faster than the table's fastest band — still Z5, not thrown out.
+    expect(findZoneKeyForValue(185, RUN)).toBe('zone5');
+    // 11:23/km walking back is slower than Z1 — still Z1.
+    expect(findZoneKeyForValue(683, RUN)).toBe('zone1');
+  });
+
+  it('has nothing to say without a table', () => {
+    expect(findZoneKeyForValue(300, null)).toBeNull();
+    expect(findZoneKeyForValue(300, {})).toBeNull();
+    expect(findZoneKeyForValue(NaN, BIKE)).toBeNull();
   });
 });

@@ -18,20 +18,57 @@ export function parseZoneNumber(v) {
   return Number.isFinite(n) ? n : null;
 }
 
-/** Which of the five zones a value falls in, or null when none claims it. */
+/**
+ * Which of the five zones a value falls in.
+ *
+ * Zone tables have gaps and ends. A coach's cycling table might open at 200 W,
+ * and every second spent coasting, soft-pedalling or rolling downhill is below
+ * it; the same table closes somewhere, and a sprint is above that. Returning
+ * null for those threw the time away — which is why a month of riding could
+ * report no Z1 at all, and why the totals here came out at a third of what the
+ * sport split said had been ridden. Nobody's easy spinning stops counting as
+ * easy because it fell off the bottom of a table.
+ *
+ * So a value under the lowest band belongs to it, and one over the highest
+ * belongs to that. Pace tables run the other way — smaller seconds are faster,
+ * Z1 holds the largest numbers — so the direction is read off the table rather
+ * than assumed.
+ */
 export function findZoneKeyForValue(value, zonesObj) {
   const val = Number(value);
   if (!Number.isFinite(val)) return null;
+
+  const bands = [];
   for (const zKey of ZONE_KEYS) {
     const def = zonesObj?.[zKey];
     if (!def) continue;
     const min = parseZoneNumber(def?.min);
-    const max = def?.max === undefined ? null : parseZoneNumber(def?.max);
-    if (min === null) continue;
-    const maxSafe = max === null ? Infinity : max;
-    if (val >= min && val <= maxSafe) return zKey;
+    const max = def?.max === undefined || def?.max === null || def?.max === ''
+      ? null
+      : parseZoneNumber(def?.max);
+    if (min === null && max === null) continue;
+    bands.push({ zKey, min, max });
   }
-  return null;
+  if (!bands.length) return null;
+
+  // Exact hit first — inside a band as the table defines it.
+  for (const { zKey, min, max } of bands) {
+    const lo = min === null ? -Infinity : min;
+    const hi = max === null ? Infinity : max;
+    if (val >= lo && val <= hi) return zKey;
+  }
+
+  // Otherwise the nearest band, which for a value off either end is the end
+  // itself. Distance to a band is zero inside it and the gap outside.
+  let best = null;
+  let bestGap = Infinity;
+  for (const band of bands) {
+    const lo = band.min === null ? -Infinity : band.min;
+    const hi = band.max === null ? Infinity : band.max;
+    const gap = val < lo ? lo - val : val > hi ? val - hi : 0;
+    if (gap < bestGap) { bestGap = gap; best = band.zKey; }
+  }
+  return best;
 }
 
 /** A lap's duration, whichever vocabulary it arrived in. */

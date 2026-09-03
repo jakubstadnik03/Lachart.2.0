@@ -137,7 +137,11 @@ function zoneForHr(hr, mins) {
   if (!Number.isFinite(v) || v <= 0) return null;
   let zone = null;
   for (let i = 0; i < mins.length; i += 1) if (v >= mins[i]) zone = i + 1;
-  return zone;
+  // Below Z1's opening is still Z1. A table that starts at 120 bpm does not
+  // mean the warm-up did not happen, and dropping it made an easy hour look
+  // like a short one — the totals here then disagreed with the sport split by
+  // however long the athlete had spent under their own first boundary.
+  return zone === null ? 1 : zone;
 }
 
 /**

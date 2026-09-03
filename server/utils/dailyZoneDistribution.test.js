@@ -121,7 +121,11 @@ console.log('\nbucketing a heart rate');
 
 test('places a reading in the right zone', () => {
   const mins = [100, 130, 150, 165, 175];
-  assert.strictEqual(zoneForHr(95, mins), null);
+  // Below Z1's opening is Z1, not nothing. This used to return null, and the
+  // time went missing: an athlete whose table starts at 100 bpm spends every
+  // warm-up and every stop under it, so the totals came out short of the hours
+  // the same period reported everywhere else.
+  assert.strictEqual(zoneForHr(95, mins), 1);
   assert.strictEqual(zoneForHr(100, mins), 1);
   assert.strictEqual(zoneForHr(149, mins), 2);
   assert.strictEqual(zoneForHr(150, mins), 3);
