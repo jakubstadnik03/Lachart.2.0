@@ -34,6 +34,7 @@ import {
 } from '../../utils/hrPowerProfile';
 import { extractLactateThresholds } from '../../utils/extractLactateThresholds';
 import { ltZoneBounds, ltZones, measuredMaxHr } from '../../utils/trainingZoneBounds';
+import { axisTick, fmtDemand, fmtDemandDelta } from '../../utils/thresholdFormat';
 
 const TEST_COLOR = '#94a3b8';
 const NOW_COLOR = '#7c3aed';
@@ -76,40 +77,6 @@ const DRIFT_REASONS = {
   'implausible-drift': 'Heart rate climbed far faster than a steady session allows, so the fit is '
     + 'reading something other than effort.',
 };
-
-// ── Formatting ─────────────────────────────────────────────────────────────
-
-function fmtPaceSec(sec) {
-  if (!Number.isFinite(sec) || sec <= 0) return '—';
-  const m = Math.floor(sec / 60);
-  const s = Math.round(sec % 60);
-  return `${m}:${String(s).padStart(2, '0')}`;
-}
-
-function fmtDemand(demand, kind, storageMode) {
-  if (!Number.isFinite(demand) || demand <= 0) return '—';
-  if (kind === 'bike') return `${Math.round(demand)} W`;
-  if (storageMode === 'speed') return `${(demand * 3.6).toFixed(1)} km/h`;
-  return `${fmtPaceSec(1000 / demand)}/km`;
-}
-
-/** A signed change in demand, printed the way the sport talks about it. */
-function fmtDemandDelta(delta, demandNow, kind, storageMode) {
-  if (!Number.isFinite(delta)) return '—';
-  if (kind === 'bike') return `${delta > 0 ? '+' : ''}${Math.round(delta)} W`;
-  if (storageMode === 'speed') return `${delta > 0 ? '+' : ''}${(delta * 3.6).toFixed(1)} km/h`;
-  // Pace: express the change in seconds per km, where faster is a bigger number.
-  const before = 1000 / (demandNow - delta);
-  const after = 1000 / demandNow;
-  const secs = Math.round(before - after);
-  return `${secs > 0 ? '+' : ''}${secs} s/km`;
-}
-
-function axisTick(demand, kind, storageMode) {
-  if (kind === 'bike') return Math.round(demand);
-  if (storageMode === 'speed') return (demand * 3.6).toFixed(1);
-  return fmtPaceSec(1000 / demand);
-}
 
 // ── Lactate samples off the session's laps ─────────────────────────────────
 

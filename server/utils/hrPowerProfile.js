@@ -1598,6 +1598,284 @@ function buildDriftHistory(sessions, { testDate, windowDays = 28 } = {}) {
   return { series, latest, retest };
 }
 
+// ── Where the tests themselves are heading ─────────────────────────────────
+
+/**
+ * A test is not the only test. An athlete with four of them has drawn a line
+ * without meaning to, and the honest question — "if I tested tomorrow, what
+ * would it say?" — has a second answer that owes nothing to heart rate.
+ *
+ * projectThresholdShift() reads the training since the last test. This reads
+ * the tests before it. The two are worth having side by side precisely because
+ * they can disagree: the training says where the heart is now, the history
+ * says where the athlete has been going for a season. When both point the same
+ * way the read is strong; when they part, that is the interesting fact.
+ *
+ * The fit is deliberately dull — least squares on threshold against days, then
+ * extrapolated to now. No exponentials, no plateau model. Athletes do not have
+ * enough tests to identify a curve, and fitting one to three points produces a
+ * confident shape made entirely of noise.
+ *
+ * Two guards keep the extrapolation from running away:
+ *
+ *   · **Reach.** Predicting forward more than half the span the tests cover is
+ *     inventing a season. Three tests across ten weeks may speak about the next
+ *     five; they say nothing about next year.
+ *   · **Rate.** Thresholds do not move by a quarter in a quarter. A slope past
+ *     the plausible ceiling means one test was mis-measured, not that the
+ *     athlete is transforming, so the projection is refused rather than drawn.
+ *
+ * @param {Array}  tests   [{date, lt1, lt2}] — thresholds already in DEMAND units,
+ *                         oldest or newest first, either is fine.
+ * @param {object} anchor  extractLactateThresholds() output for the governing test
+ * @param {object} [o]
+ * @param {Date}   [o.now]
+ * @returns {null | {lt1, lt2, tests:number, spanDays:number, reachDays:number,
+ *                   confidence:string, kind:string, storageMode:string}}
+ */
+/** Two tests draw a line through two points; three is the fewest worth trusting. */
+const MIN_TESTS_FOR_HISTORY = 3;
+/** Tests inside a fortnight of each other describe one block, not a trend. */
+const MIN_TEST_SPAN_DAYS = 35;
+/** Predicting forward more than half the span the tests cover invents a season. */
+const MAX_REACH_OF_SPAN = 0.6;
+/**
+ * A threshold climbing faster than this is a mis-measured test, not an athlete.
+ * Roughly 1%/week is a strong responder in a good block; twice that, sustained
+ * across a whole history, does not happen.
+ */
+const MAX_TEST_TREND_PCT_PER_WEEK = 2.0;
+/** So two confidences can be compared rather than merely printed. */
+const CONFIDENCE_RANK = { low: 0, medium: 1, high: 2 };
+
+function projectFromTestHistory(tests, anchor, { now = null } = {}) {
+  if (!anchor || !Array.isArray(tests)) return null;
+  const kind = sportKind(anchor.sport);
+  const storageMode = anchor.storageMode;
+
+  const rows = tests
+    .map((t) => ({ ms: new Date(t?.date).getTime(), lt1: num(t?.lt1), lt2: num(t?.lt2) }))
+    .filter((t) => Number.isFinite(t.ms) && (t.lt1 > 0 || t.lt2 > 0))
+    .sort((a, b) => a.ms - b.ms);
+  if (rows.length < MIN_TESTS_FOR_HISTORY) return null;
+
+  const nowMs = now ? new Date(now).getTime() : Date.now();
+  const firstMs = rows[0].ms;
+  const lastMs = rows[rows.length - 1].ms;
+  const spanDays = (lastMs - firstMs) / 86400000;
+  if (spanDays < MIN_TEST_SPAN_DAYS) return null;
+
+  // How far past the last test we are being asked to speak for.
+  const reachDays = Math.max(0, (nowMs - lastMs) / 86400000);
+  if (reachDays > spanDays * MAX_REACH_OF_SPAN) return null;
+
+  /** Least squares on one threshold, extrapolated to now. */
+  const fit = (key) => {
+    const pts = rows.filter((r) => r[key] > 0);
+    if (pts.length < MIN_TESTS_FOR_HISTORY) return null;
+    const days = pts.map((p) => (p.ms - firstMs) / 86400000);
+    const vals = pts.map((p) => p[key]);
+    const line = linreg(days, vals);
+    if (!line) return null;
+
+    const base = pts[pts.length - 1][key];
+    if (!(base > 0)) return null;
+
+    // Percent of threshold per week — the unit a coach would sanity-check in.
+    const pctPerWeek = (line.slope * 7 / base) * 100;
+    if (!Number.isFinite(pctPerWeek)) return null;
+    if (Math.abs(pctPerWeek) > MAX_TEST_TREND_PCT_PER_WEEK) return null;
+
+    const projected = line.intercept + line.slope * ((nowMs - firstMs) / 86400000);
+    if (!(projected > 0)) return null;
+
+    const shift = projected - base;
+    const shiftPct = (shift / base) * 100;
+    if (Math.abs(shiftPct) > SHIFT_REJECT_PCT_OF_THRESHOLD) return null;
+
+    // r² on three points is flattering by construction, so it only ever
+    // demotes: a scattered history is a low-confidence line however many
+    // tests it holds.
+    const r2 = Number.isFinite(line.r2) ? line.r2 : 0;
+    let confidence = pts.length >= 4 && r2 >= 0.7 ? 'high'
+      : pts.length >= 3 && r2 >= 0.4 ? 'medium' : 'low';
+    if (reachDays > spanDays * 0.35) confidence = confidence === 'high' ? 'medium' : 'low';
+
+    return {
+      shift,
+      shiftPct,
+      pctPerWeek,
+      r2,
+      from: demandToThreshold(base, { kind, storageMode }),
+      to: demandToThreshold(projected, { kind, storageMode }),
+      fromDemand: base,
+      toDemand: projected,
+      tests: pts.length,
+      confidence,
+    };
+  };
+
+  const lt1 = fit('lt1');
+  const lt2 = fit('lt2');
+  if (!lt1 && !lt2) return null;
+
+  const best = [lt1, lt2].filter(Boolean)
+    .reduce((a, b) => (CONFIDENCE_RANK[a.confidence] >= CONFIDENCE_RANK[b.confidence] ? a : b));
+
+  return {
+    lt1,
+    lt2,
+    tests: rows.length,
+    spanDays: Math.round(spanDays),
+    reachDays: Math.round(reachDays),
+    confidence: best.confidence,
+    kind,
+    storageMode,
+  };
+}
+
+// ── A curve for an athlete who has never tested ────────────────────────────
+
+/** Where LT1 sits on the lactate axis. Base plus one, held inside what a real test finds. */
+const MODEL_LT1_OVER_BASE = 1.0;
+const MODEL_LT1_LACTATE_MIN = 1.4;
+const MODEL_LT1_LACTATE_MAX = 2.2;
+/** LT2 is OBLA by construction — the same 4 mmol the app's own threshold finder uses. */
+const MODEL_LT2_LACTATE = 4.0;
+/** How steeply lactate accelerates past LT2. Fitted by eye to real ramp tests. */
+const MODEL_SUPRA_EXP = 0.75;
+/** How far either side of the LT1–LT2 band the modelled stages reach. */
+const MODEL_SPAN_BELOW = 0.55;
+const MODEL_SPAN_ABOVE = 0.55;
+const MODEL_STAGES = 7;
+
+/**
+ * The curve an athlete would probably draw, from the training they have
+ * already done.
+ *
+ * Most people arrive here having never had a needle near them. They have
+ * months of rides and runs with heart rate, and no curve — so the app has
+ * nothing to say to them until they book a test, which is precisely the moment
+ * they are least likely to. This gives them the shape their own training
+ * implies, so the thing the app is for is visible before they have paid a
+ * physiologist for it.
+ *
+ * Three things are modelled, and only one of them is invented:
+ *
+ *   · **The thresholds** come from their training — heart rate at a held
+ *     intensity, an FTP they entered, a best twenty minutes. Measured, however
+ *     indirectly. The caller supplies them and says where they came from.
+ *   · **The heart rate at each intensity** is interpolated along the line
+ *     between the two thresholds, which is the same linear HR-demand
+ *     assumption the drift engine makes everywhere else.
+ *   · **The lactate** is the invented part. Nobody has measured this athlete's
+ *     blood, so the shape is the population one: flat below LT1, quadratic
+ *     through the LT1–LT2 band, exponential above. Anchored so LT2 lands on
+ *     4 mmol, which is the definition the app's own threshold finder uses — so
+ *     a real test done later can be compared with this without changing units.
+ *
+ * What comes back is deliberately the same shape extractLactateThresholds()
+ * returns for a real test, so every consumer — the curve renderer, the drift
+ * projection, the zone tables — works on it unchanged. It carries
+ * `modelled: true` so nothing can mistake it for blood.
+ *
+ * @param {object} o
+ * @param {number} o.lt1          in threshold units (W, or sec/km)
+ * @param {number} o.lt2
+ * @param {number} [o.lt1Hr]
+ * @param {number} [o.lt2Hr]
+ * @param {number} [o.hrMax]      caps the modelled heart rate
+ * @param {number} [o.baseLactate]
+ * @param {string} o.sport
+ * @param {string} [o.storageMode]
+ * @returns {null | object} anchor-shaped, with modelled: true
+ */
+function modelledLactateCurve({
+  lt1, lt2, lt1Hr = null, lt2Hr = null, hrMax = null,
+  baseLactate = 1.0, sport, storageMode = 'pace', stages = MODEL_STAGES,
+}) {
+  const kind = sportKind(sport);
+  const toDemand = (v) => thresholdToDemand(v, { kind, storageMode });
+  const toThreshold = (d) => demandToThreshold(d, { kind, storageMode });
+
+  const lt2D = toDemand(lt2);
+  if (!(lt2D > 0)) return null;
+  // LT1 is the one people most often do not have. A fraction of LT2 is a poor
+  // substitute for measuring it, but it is a well-established one and saying
+  // nothing about the bottom of the curve is worse.
+  const lt1D = toDemand(lt1) || lt2D * (kind === 'bike' ? 0.80 : 0.86);
+  if (!(lt1D > 0) || lt1D >= lt2D) return null;
+
+  const base = Number.isFinite(Number(baseLactate)) && Number(baseLactate) > 0
+    ? Number(baseLactate) : 1.0;
+  const lt1Lac = Math.min(MODEL_LT1_LACTATE_MAX,
+    Math.max(MODEL_LT1_LACTATE_MIN, base + MODEL_LT1_OVER_BASE));
+  const band = lt2D - lt1D;
+
+  /** Lactate at one intensity, as a fraction of the way from LT1 to LT2. */
+  const lactateAt = (d) => {
+    const f = (d - lt1D) / band;
+    if (f <= 0) {
+      const t = Math.max(0, 1 + f);
+      return base + (lt1Lac - base) * t * t;
+    }
+    if (f <= 1) return lt1Lac + (MODEL_LT2_LACTATE - lt1Lac) * f * f;
+    return MODEL_LT2_LACTATE * Math.exp(MODEL_SUPRA_EXP * (f - 1));
+  };
+
+  // Heart rate along the line between the two thresholds. Without both, there
+  // is no line to draw and the curve is returned without heart rate rather
+  // than with a made-up one.
+  const hr1 = Number(lt1Hr) > 40 ? Number(lt1Hr) : null;
+  const hr2 = Number(lt2Hr) > 40 ? Number(lt2Hr) : null;
+  const hrSlope = hr1 && hr2 && hr2 > hr1 ? (hr2 - hr1) / band : null;
+  const ceiling = Number(hrMax) > 100 ? Number(hrMax) : (hr2 ? hr2 + 15 : null);
+  const hrAt = (d) => {
+    if (!hrSlope || !hr1) return null;
+    const v = hr1 + hrSlope * (d - lt1D);
+    const capped = ceiling ? Math.min(v, ceiling) : v;
+    return Math.round(Math.max(hr1 - 35, capped));
+  };
+
+  const from = lt1D - band * MODEL_SPAN_BELOW;
+  const to = lt2D + band * MODEL_SPAN_ABOVE;
+  const step = (to - from) / (stages - 1);
+
+  const points = [];
+  for (let i = 0; i < stages; i += 1) {
+    const d = from + step * i;
+    if (!(d > 0)) continue;
+    const x = toThreshold(d);
+    if (!(x > 0)) continue;
+    points.push({
+      x: kind === 'bike' ? Math.round(x) : Math.round(x * 100) / 100,
+      y: Math.round(lactateAt(d) * 100) / 100,
+      hr: hrAt(d),
+    });
+  }
+  if (points.length < 3) return null;
+
+  return {
+    sport: kind,
+    isPace: kind !== 'bike',
+    storageMode,
+    lt1: toThreshold(lt1D),
+    lt2: toThreshold(lt2D),
+    lt1Lac,
+    lt2Lac: MODEL_LT2_LACTATE,
+    lt1Hr: hr1,
+    lt2Hr: hr2,
+    ltp1: { power: toThreshold(lt1D), lactate: lt1Lac, hr: hr1 },
+    ltp2: { power: toThreshold(lt2D), lactate: MODEL_LT2_LACTATE, hr: hr2 },
+    baseLactate: base,
+    peakLactate: Math.max(...points.map((p) => p.y)),
+    points,
+    stagesCount: points.length,
+    /** Nothing downstream may present this as measured. */
+    modelled: true,
+  };
+}
+
 module.exports = {
   analyseSession,
   buildDriftHistory,
@@ -1610,6 +1888,8 @@ module.exports = {
   judgeThresholdSplit,
   lactateCurveShift,
   localSlopeAt,
+  modelledLactateCurve,
+  projectFromTestHistory,
   projectThresholdShift,
   projectThresholdTimeline,
   sessionCloud,
