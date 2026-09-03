@@ -74,6 +74,24 @@ export function resolveNotificationTarget(input = {}) {
     return { path: '/dashboard' };
   }
 
+  /**
+   * Anything about a lactate curve opens the curve.
+   *
+   * Both of these say a number has moved, and the only useful answer to that
+   * is the picture — so they land on the testing page with the curve panel
+   * asked for by name, not on a dashboard the athlete then has to navigate
+   * out of. `sport` picks the right test when the athlete has more than one.
+   */
+  if (type === 'threshold_shift' || type === 'predicted_curve' || screen === 'testing') {
+    const params = new URLSearchParams();
+    const testId = data.testId || data.test_id || (rt === 'test' ? rid : null);
+    if (testId) params.set('testId', String(testId));
+    const sport = data.sport || input.sport;
+    if (sport) params.set('sport', String(sport));
+    params.set('curve', '1');
+    return { path: `/testing?${params.toString()}` };
+  }
+
   const trainingId = data.trainingId || data.training_id;
   const trainingType = data.trainingType || data.training_type;
   if (trainingId && trainingType === 'planned') {

@@ -387,6 +387,28 @@ const userSchema = new mongoose.Schema({
     // Used to avoid duplicate weekly report sends
     weeklyReportsLastSentWeekStart: { type: Date, default: null }
   },
+  /**
+   * "Your threshold has moved" notices, per sport.
+   *
+   * Keyed by sport because an athlete's bike and run drift independently, and
+   * a rider who has been told about one should still hear about the other.
+   * `shiftPct` is what they were last told, so a threshold that keeps creeping
+   * the same way does not generate the same sentence every three weeks.
+   */
+  thresholdShiftNotice: {
+    lastCheckedAt: { type: Date, default: null },
+    bike: {
+      sentAt:   { type: Date, default: null },
+      shiftPct: { type: Number, default: null },
+      testId:   { type: String, default: null },
+    },
+    run: {
+      sentAt:   { type: Date, default: null },
+      shiftPct: { type: Number, default: null },
+      testId:   { type: String, default: null },
+    },
+  },
+
   /** Last-sent timestamps per training alert type (acute_fatigue, hrv_load, …). */
   trainingAlertsLastSent: {
     type: mongoose.Schema.Types.Mixed,

@@ -159,6 +159,44 @@ const TestingPage = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  /**
+   * Honour ?sport= and ?curve=1 from a notification tap.
+   *
+   * A notification that says a threshold has moved is answered by the picture,
+   * so the tap has to land on the curve rather than near it. The sport is
+   * applied immediately; the scroll waits for the panel to exist, because the
+   * tests it draws are still being fetched when this runs.
+   */
+  useEffect(() => {
+    const sport = String(searchParams.get('sport') || '').toLowerCase();
+    if (['bike', 'run', 'swim'].includes(sport)) {
+      setSelectedSport(sport);
+      setActiveTab('tests');
+      setMobileTab('tests');
+    }
+    if (searchParams.get('curve') !== '1') return undefined;
+
+    let tries = 0;
+    const timer = setInterval(() => {
+      tries += 1;
+      const el = document.querySelector('[data-curve-anchor]');
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        clearInterval(timer);
+        const next = new URLSearchParams(searchParams);
+        next.delete('curve');
+        next.delete('sport');
+        setSearchParams(next, { replace: true });
+      } else if (tries > 40) {
+        // ~8s. The panel never appeared — leave the page where it is rather
+        // than scrolling somewhere arbitrary.
+        clearInterval(timer);
+      }
+    }, 200);
+    return () => clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const handleUrlTestSelection = (nextTestId) => {
     setSearchParams((prev) => {
       const newParams = new URLSearchParams(prev);
@@ -1490,7 +1528,7 @@ const TestingPage = () => {
                   had a needle anywhere near them. Hidden while the new-test
                   form is open: at that point they are already entering one. */}
               {showPredictedCurve && !showNewTesting && (
-                <div style={sectionSnap}>
+                <div style={sectionSnap} data-curve-anchor="predicted">
                   <PredictedCurveCard
                     sport={predictedSport}
                     hrTestPlan={hrTestPlan?.[predictedSport] || null}
