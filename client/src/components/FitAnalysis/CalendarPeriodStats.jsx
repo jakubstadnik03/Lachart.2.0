@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect, useRef } from 'react';
+import React, { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import { Cog6ToothIcon, ChevronLeftIcon, ChevronRightIcon } from '@heroicons/react/24/outline';
 import EChartsModule from 'echarts-for-react';
 import { formatDuration, formatDistance } from '../../utils/fitAnalysisUtils';
@@ -1105,6 +1105,11 @@ export default function CalendarPeriodStats({
 
   // Zone sport toggle state — default to 'all'
   const [zoneSport, setZoneSport] = useState('all');
+  // The Overview donut picks its own sport and metric — it sits in a different
+  // panel from the Zones tab and answers a different question ("what did this
+  // month look like"), so tying the two switches together only surprised.
+  const [donutSport, setDonutSport] = useState('all');
+  const [donutMetric, setDonutMetric] = useState('power');
   // Daily training-load chart: switch the bars between Time (h, stacked by
   // sport) and TSS (single bar).
   const [dailyLoadMode, setDailyLoadMode] = useState('time'); // 'time' | 'tss'
@@ -1302,27 +1307,80 @@ export default function CalendarPeriodStats({
     };
   }, [weeklyTrend]);
 
-  // Intensity donut option — by training zones (Z1–Z5)
-  // Prefer server second-by-second data; fall back to client estimate
+  /**
+   * Seconds per zone for one sport and one metric — the single place both the
+   * Zones bars and the Overview donut read from.
+   *
+   * The donut used to pick its own way: power if any power seconds existed at
+   * all, else heart rate, with the cycling zone table applied to every sport.
+   * On a triathlete's month that meant the ride decided the metric and the run
+   * and swim were simply absent, while the card still called itself the
+   * period's intensity distribution. Same source, same numbers, or the two
+   * panels disagree about the same month.
+   *
+   * @param {string} sport 'all' | 'cycling' | 'running' | 'swimming'
+   * @param {string} metric 'power' | 'hr'  ('power' is pace for run and swim)
+   */
+  const zoneSecFor = useCallback((sport, metric) => {
+    // Week view always uses the period-reactive client aggregates; month can
+    // use the server's second-by-second totals, which are month-keyed.
+    const useServer = periodView === 'month';
+    const serverAll = metric === 'power' ? serverZoneSecAll.power : serverZoneSecAll.hr;
+    const clientAll = metric === 'power' ? aggregates.powerZoneSecAll : aggregates.hrZoneSecAll;
+    const serverBySport = metric === 'power' ? monthlyZones?.power : monthlyZones?.hr;
+    const clientBySport = metric === 'power' ? aggregates.powerZoneSec : aggregates.hrZoneSec;
+    if (sport === 'all') return (useServer && serverAll) || clientAll || {};
+    return (useServer && serverBySport?.[sport]) || clientBySport?.[sport] || {};
+  }, [periodView, serverZoneSecAll, monthlyZones, aggregates]);
+
+  const zoneSecTotal = (secMap) => ZONE_KEYS.reduce((s, k) => s + (secMap?.[k] || 0), 0);
+
+  /** What the non-HR axis is actually called for this sport. */
+  const paceOrPowerLabel = (sport) => (
+    sport === 'cycling' ? 'Power'
+      : sport === 'running' || sport === 'swimming' ? 'Pace'
+        : 'Power / Pace'
+  );
+
+  // Which sport+metric combinations the period actually has time in, so the
+  // donut never offers a button that leads to an empty circle.
+  const donutAvailable = useMemo(() => {
+    const out = {};
+    ['all', ...PROFILE_SPORTS].forEach((sp) => {
+      out[sp] = {
+        power: zoneSecTotal(zoneSecFor(sp, 'power')) > 0,
+        hr: zoneSecTotal(zoneSecFor(sp, 'hr')) > 0,
+      };
+    });
+    return out;
+  }, [zoneSecFor]);
+
+  // Keep the picker on something that exists. A month of pure swimming has no
+  // power, and the previous month's choice must not leave the card blank.
+  useEffect(() => {
+    const avail = donutAvailable[donutSport];
+    if (!avail) return;
+    if (avail[donutMetric]) return;
+    if (avail.power) setDonutMetric('power');
+    else if (avail.hr) setDonutMetric('hr');
+  }, [donutAvailable, donutSport, donutMetric]);
+
+  // Intensity donut — the same time-in-zones the Zones tab shows, for the
+  // sport and metric the athlete picked.
   const intensityDonutOption = useMemo(() => {
-    const powerSec = serverZoneSecAll.power || aggregates.powerZoneSecAll || {};
-    const hrSec = serverZoneSecAll.hr || aggregates.hrZoneSecAll || {};
-    // Prefer power zones if available, fall back to HR zones
-    const hasPower = ZONE_KEYS.some((k) => (powerSec[k] || 0) > 0);
-    const secMap = hasPower ? powerSec : hrSec;
-    const names = hasPower ? POWER_ZONE_NAMES : HR_ZONE_NAMES;
-    const unit = hasPower ? 'W' : 'bpm';
-    const zoneDefs = hasPower
-      ? (effectiveProfile?.powerZones?.cycling || null)
-      : (effectiveProfile?.heartRateZones?.cycling
-        || effectiveProfile?.heartRateZones?.running
-        || effectiveProfile?.heartRateZones?.swimming
-        || null);
-    const sourceLabel = hasPower ? 'Power zones' : 'Heart rate zones';
-    const fills = hasPower
-      ? ['#22c55e', '#84cc16', '#facc15', '#f97316', '#ef4444']  // green→red gradient by zone
-      : ['#86efac', '#4ade80', '#f97316', '#dc2626', '#991b1b'];
-    const total = ZONE_KEYS.reduce((s, k) => s + (secMap[k] || 0), 0);
+    const secMap = zoneSecFor(donutSport, donutMetric);
+    const isHr = donutMetric === 'hr';
+    const names = isHr ? HR_ZONE_NAMES : POWER_ZONE_NAMES;
+    const unit = isHr ? 'bpm' : (donutSport === 'cycling' ? 'W' : '/km');
+    // Ranges are only meaningful for one sport — "all" mixes three zone tables.
+    const zoneDefs = donutSport === 'all'
+      ? null
+      : (isHr ? effectiveProfile?.heartRateZones?.[donutSport] : effectiveProfile?.powerZones?.[donutSport]) || null;
+    const sourceLabel = isHr ? 'Heart rate zones' : `${paceOrPowerLabel(donutSport)} zones`;
+    const fills = isHr
+      ? ['#86efac', '#4ade80', '#f97316', '#dc2626', '#991b1b']
+      : ['#22c55e', '#84cc16', '#facc15', '#f97316', '#ef4444'];
+    const total = zoneSecTotal(secMap);
     if (total <= 0) return null;
     const pieData = ZONE_KEYS.map((zk, i) => ({
       value: secMap[zk] || 0,
@@ -1366,28 +1424,30 @@ export default function CalendarPeriodStats({
         },
       ],
     };
-  }, [aggregates, serverZoneSecAll, effectiveProfile]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [zoneSecFor, donutSport, donutMetric, effectiveProfile]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const intensityDonutTotalSec = useMemo(
+    () => zoneSecTotal(zoneSecFor(donutSport, donutMetric)),
+    [zoneSecFor, donutSport, donutMetric],
+  );
 
   // Zone horizontal bar chart options (power and HR) for Zones tab
   const zoneBarOptions = useMemo(() => {
     const isAll = zoneSport === 'all';
-    const profSport = { bike: 'cycling', run: 'running', swim: 'swimming' }[zoneSport] || null;
-    // Week view always uses the period-reactive client aggregates; month can use
-    // the more accurate server second-by-second data (which is month-keyed).
-    const useServer = periodView === 'month';
-    const powerSec = isAll
-      ? ((useServer && serverZoneSecAll.power) || aggregates.powerZoneSecAll || {})
-      : ((useServer && monthlyZones?.power?.[zoneSport]) || aggregates.powerZoneSec?.[zoneSport] || {});
-    const hrSec = isAll
-      ? ((useServer && serverZoneSecAll.hr) || aggregates.hrZoneSecAll || {})
-      : ((useServer && monthlyZones?.hr?.[zoneSport]) || aggregates.hrZoneSec?.[zoneSport] || {});
+    const powerSec = zoneSecFor(zoneSport, 'power');
+    const hrSec = zoneSecFor(zoneSport, 'hr');
 
     const powerTotal = ZONE_KEYS.reduce((s, k) => s + (powerSec[k] || 0), 0);
     const hrTotal = ZONE_KEYS.reduce((s, k) => s + (hrSec[k] || 0), 0);
 
     // Zone boundary ranges (only meaningful for a single sport).
-    const powerDefs = zoneSport === 'bike' ? (effectiveProfile?.powerZones?.cycling || null) : null;
-    const hrDefs = profSport ? (effectiveProfile?.heartRateZones?.[profSport] || null) : null;
+    //
+    // These used to be looked up through a { bike: 'cycling', … } map applied
+    // to `zoneSport` — but the sport buttons set 'cycling'/'running'/'swimming'
+    // directly, so the map never matched and every tooltip lost its W and bpm
+    // ranges. The keys are already profile keys; use them.
+    const powerDefs = isAll ? null : (effectiveProfile?.powerZones?.[zoneSport] || null);
+    const hrDefs = isAll ? null : (effectiveProfile?.heartRateZones?.[zoneSport] || null);
     const rangeStr = (defs, zk, unit) => {
       if (!defs || !defs[zk]) return '';
       const mn = parseZoneNumber(defs[zk]?.min);
@@ -1463,7 +1523,7 @@ export default function CalendarPeriodStats({
       powerTotalSec: powerTotal,
       hrTotalSec: hrTotal,
     };
-  }, [zoneSport, periodView, aggregates.powerZoneSec, aggregates.hrZoneSec, aggregates.powerZoneSecAll, aggregates.hrZoneSecAll, monthlyZones, serverZoneSecAll, effectiveProfile, period?.periodStart, period?.periodEnd]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [zoneSport, zoneSecFor, effectiveProfile, period?.periodStart, period?.periodEnd]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Activity effort scatter / timeline option
   const effortTimelineOption = useMemo(() => {
@@ -1544,14 +1604,8 @@ export default function CalendarPeriodStats({
 
   // --- Zone polarization computation ---
   const zonePolarization = useMemo(() => {
-    const isAll = zoneSport === 'all';
-    // Prefer server data here too
-    const powerSec = isAll
-      ? (serverZoneSecAll.power || aggregates.powerZoneSecAll || {})
-      : (monthlyZones?.power?.[zoneSport] || aggregates.powerZoneSec?.[zoneSport] || {});
-    const hrSec = isAll
-      ? (serverZoneSecAll.hr || aggregates.hrZoneSecAll || {})
-      : (monthlyZones?.hr?.[zoneSport] || aggregates.hrZoneSec?.[zoneSport] || {});
+    const powerSec = zoneSecFor(zoneSport, 'power');
+    const hrSec = zoneSecFor(zoneSport, 'hr');
     // Use power if available, else HR
     const secMap =
       ZONE_KEYS.some((zk) => (powerSec[zk] || 0) > 0) ? powerSec : hrSec;
@@ -1564,7 +1618,7 @@ export default function CalendarPeriodStats({
     if (easyPct > 75 && hardPct >= 5) badge = { label: 'Polarized', color: 'bg-green-100 text-green-800' };
     else if (midPct > 40) badge = { label: 'High threshold load', color: 'bg-yellow-100 text-yellow-800' };
     return { easyPct, midPct, hardPct, badge };
-  }, [zoneSport, aggregates.powerZoneSec, aggregates.hrZoneSec, aggregates.powerZoneSecAll, aggregates.hrZoneSecAll, monthlyZones, serverZoneSecAll]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [zoneSport, zoneSecFor]); // eslint-disable-line react-hooks/exhaustive-deps
 
 
   // ── Independent compare-tab navigation ──────────────────────────────────
@@ -2111,11 +2165,71 @@ export default function CalendarPeriodStats({
                 </div>
               )}
 
-              {/* Intensity distribution donut */}
+              {/* Intensity distribution donut — time in zones, per sport and
+                  per metric. Without the pickers a triathlete's month was
+                  whichever sport happened to record power. */}
               {Chart && intensityDonutOption && (
                 <div className="bg-gray-50 rounded-xl p-4">
-                  <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
-                    Intensity distribution
+                  <div className="flex items-baseline justify-between gap-2 mb-2">
+                    <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                      Intensity distribution
+                    </span>
+                    <span className="text-[11px] font-medium text-gray-400 tabular-nums flex-shrink-0">
+                      {fmtZoneTotal(intensityDonutTotalSec)}
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1 mb-2">
+                    {[
+                      { id: 'all', label: 'All', bucket: null },
+                      { id: 'cycling', label: 'Bike', bucket: 'bike' },
+                      { id: 'running', label: 'Run', bucket: 'run' },
+                      { id: 'swimming', label: 'Swim', bucket: 'swim' },
+                    ].map((opt) => {
+                      const avail = donutAvailable[opt.id];
+                      const hasData = !!(avail?.power || avail?.hr);
+                      const isActive = donutSport === opt.id;
+                      return (
+                        <button
+                          key={opt.id}
+                          type="button"
+                          disabled={!hasData}
+                          onClick={() => setDonutSport(opt.id)}
+                          className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-semibold transition-colors ${
+                            isActive ? 'bg-primary text-white' : 'bg-white text-gray-500 hover:bg-gray-100'
+                          } ${!hasData ? 'opacity-40 cursor-default' : ''}`}
+                        >
+                          {opt.bucket && (
+                            <img
+                              src={`/icon/${opt.bucket}.svg`}
+                              alt=""
+                              className={`w-3 h-3 object-contain ${isActive ? 'invert' : ''}`}
+                            />
+                          )}
+                          {opt.label}
+                        </button>
+                      );
+                    })}
+                    <span className="w-px h-4 bg-gray-200 mx-0.5" />
+                    {[
+                      { id: 'power', label: paceOrPowerLabel(donutSport) },
+                      { id: 'hr', label: 'HR' },
+                    ].map((opt) => {
+                      const hasData = !!donutAvailable[donutSport]?.[opt.id];
+                      const isActive = donutMetric === opt.id;
+                      return (
+                        <button
+                          key={opt.id}
+                          type="button"
+                          disabled={!hasData}
+                          onClick={() => setDonutMetric(opt.id)}
+                          className={`px-2 py-1 rounded-lg text-[11px] font-semibold transition-colors ${
+                            isActive ? 'bg-primary text-white' : 'bg-white text-gray-500 hover:bg-gray-100'
+                          } ${!hasData ? 'opacity-40 cursor-default' : ''}`}
+                        >
+                          {opt.label}
+                        </button>
+                      );
+                    })}
                   </div>
                   <Chart
                     option={intensityDonutOption}
@@ -2329,9 +2443,7 @@ export default function CalendarPeriodStats({
                       Power / Pace zones
                     </div>
                     <ZoneRows
-                      secMap={zoneSport === 'all'
-                        ? (serverZoneSecAll.power || aggregates.powerZoneSecAll || {})
-                        : (monthlyZones?.power?.[zoneSport] || aggregates.powerZoneSec?.[zoneSport] || {})}
+                      secMap={zoneSecFor(zoneSport, 'power')}
                       colors={POWER_ZONE_FILL}
                       zoneNames={POWER_ZONE_NAMES}
                     />
@@ -2339,9 +2451,7 @@ export default function CalendarPeriodStats({
                   <div className="bg-gray-50 rounded-xl p-4">
                     <div className="text-xs font-semibold text-gray-600 mb-3">Heart Rate zones</div>
                     <ZoneRows
-                      secMap={zoneSport === 'all'
-                        ? (serverZoneSecAll.hr || aggregates.hrZoneSecAll || {})
-                        : (monthlyZones?.hr?.[zoneSport] || aggregates.hrZoneSec?.[zoneSport] || {})}
+                      secMap={zoneSecFor(zoneSport, 'hr')}
                       colors={HR_ZONE_FILL}
                       zoneNames={HR_ZONE_NAMES}
                     />

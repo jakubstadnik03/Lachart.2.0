@@ -121,12 +121,20 @@ export function PlanMiniChart({ steps, color, width = 60, height = 16, fluid = f
  * @returns {number[]|null} relative heights in 0..1, oldest first
  */
 export function activityProfileBars(a, maxBars = 44) {
-  // Three vocabularies for the same session. A FIT upload and a manually
-  // logged training carry their laps in full, because those lists ship the
-  // whole document; a Strava or Garmin ride carries `lapProfile`, the
-  // four-key shape the activities endpoint projects in Mongo so the list can
-  // stay small. Whichever arrived, the rule below is the only one.
-  const laps = [a?.lapProfile, a?.laps, a?.results]
+  // Four vocabularies for the same session, in the order the opened workout
+  // reads them.
+  //
+  // `savedAutoLaps` is the athlete's own Smart-detect split, and it comes
+  // first because the Laps tab adopts it over the device's laps — a session
+  // whose splits were corrected there was drawing its old device shape on the
+  // card and its corrected one when opened. (The activities endpoint already
+  // applies this preference when it builds `lapProfile`; FIT uploads and
+  // manually logged trainings ship the whole document, so the choice has to
+  // be made here too.)
+  //
+  // Then `lapProfile`, the four-key shape Mongo projects so the calendar list
+  // can stay small, then the full laps, then hand-entered results.
+  const laps = [a?.savedAutoLaps, a?.lapProfile, a?.laps, a?.results]
     .find(l => Array.isArray(l) && l.length >= 3) || null;
   if (!laps) return null;
 
