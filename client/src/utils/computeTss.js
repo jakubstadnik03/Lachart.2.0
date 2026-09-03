@@ -28,6 +28,8 @@ function activityDuration(activity) {
   );
 }
 
+const ESTIMATED_TSS_PER_HOUR = 40;
+
 function activitySport(activity) {
   return String(activity.sport || activity.sport_type || activity.type || '').toLowerCase();
 }
@@ -246,7 +248,12 @@ export function hasExplicitManualTss(activity) {
 
 export function tssModeLabel(mode, { isBike = false, isRun = false, isSwim = false, activity = null } = {}) {
   if (mode === 'manual') {
-    return (activity && hasExplicitManualTss(activity)) ? 'TSS (manual)' : 'TSS (file)';
+    if (activity && hasExplicitManualTss(activity)) return 'TSS (manual)';
+    // Nothing was measured and the file carried no number either, so what is
+    // on screen is the duration estimate. Calling that "TSS (file)" would put
+    // the app's own guess in the device's mouth.
+    if (activity && getManualTssValue(activity) <= 0) return 'TSS (est.)';
+    return 'TSS (file)';
   }
   if (mode === 'hr') return 'hrTSS';
   if (mode === 'power') {
@@ -324,6 +331,35 @@ export function hasUserManualTss(activity) {
  * Single source of truth for which TSS value to use in totals, Form/Fitness, etc.
  * Respects the user's power vs hrTSS preference when both are available.
  */
+/**
+ * A session's load when nothing measured it.
+ *
+ * An hour in the pool is an hour of training whether or not the watch wrote a
+ * heart rate to the file, and a swim with no strap and no threshold pace on
+ * file was landing in the calendar as zero — invisible to CTL, to the week's
+ * totals, and to every decision made from them. A rough number that is roughly
+ * right beats a zero that is precisely wrong.
+ *
+ * 40 TSS an hour is the endurance rate, near IF 0.63: what a steady aerobic
+ * session costs. It is deliberately not flattering — an easy hour reads about
+ * right and a hard hour reads low, which is the safer direction for a number
+ * nobody measured. Sessions under twenty minutes are left at zero; a ten-minute
+ * warm-up walk is not training load.
+ *
+ * This used to be reserved for athletes whose thresholds had been guessed from
+ * their history. But having zones for cycling does nothing for a swim, and it
+ * was exactly the athletes with the most set up whose odd sessions vanished.
+ */
+export function estimateTssFromDuration(activity) {
+  const sport = activitySport(activity);
+  const dur = activityDuration(activity);
+  const endurance = sport.includes('ride') || sport.includes('cycl') || sport.includes('bike')
+    || sport.includes('run') || sport.includes('walk') || sport.includes('hike')
+    || sport.includes('swim') || sport.includes('row') || sport.includes('ski');
+  if (!endurance || !(dur >= 1200)) return 0;
+  return Math.round((dur / 3600) * ESTIMATED_TSS_PER_HOUR);
+}
+
 export function resolveActivityTss(activity, profile, options = {}) {
   if (!activity) return 0;
 
@@ -353,19 +389,7 @@ export function resolveActivityTss(activity, profile, options = {}) {
   if (mode === 'hr' && hrTss > 0) return hrTss;
   if (manualVal > 0) return manualVal;
 
-  // Duration-only fallback for users without saved zones (endurance sessions ≥ 20 min).
-  if (profile?._thresholdsInferredFromActivities) {
-    const sport = activitySport(activity);
-    const dur = activityDuration(activity);
-    const endurance = sport.includes('ride') || sport.includes('cycl') || sport.includes('bike')
-      || sport.includes('run') || sport.includes('walk') || sport.includes('hike')
-      || sport.includes('swim');
-    if (endurance && dur >= 1200) {
-      return Math.round((dur / 3600) * 40);
-    }
-  }
-
-  return 0;
+  return estimateTssFromDuration(activity);
 }
 
 export function computeActivityTss(activity, profile, options = {}) {

@@ -13,6 +13,8 @@ function activityDuration(activity) {
   );
 }
 
+const ESTIMATED_TSS_PER_HOUR = 40;
+
 function activitySport(activity) {
   return String(activity.sport || activity.sport_type || activity.type || '').toLowerCase();
 }
@@ -301,6 +303,35 @@ function effectiveDailyTss(total) {
   return Math.round(90 + (tss - 90) * 0.42);
 }
 
+/**
+ * A session's load when nothing measured it.
+ *
+ * An hour in the pool is an hour of training whether or not the watch wrote a
+ * heart rate to the file, and a swim with no strap and no threshold pace on
+ * file was landing in the calendar as zero — invisible to CTL, to the week's
+ * totals, and to every decision made from them. A rough number that is roughly
+ * right beats a zero that is precisely wrong.
+ *
+ * 40 TSS an hour is the endurance rate, near IF 0.63: what a steady aerobic
+ * session costs. It is deliberately not flattering — an easy hour reads about
+ * right and a hard hour reads low, which is the safer direction for a number
+ * nobody measured. Sessions under twenty minutes are left at zero; a ten-minute
+ * warm-up walk is not training load.
+ *
+ * This used to be reserved for athletes whose thresholds had been guessed from
+ * their history. But having zones for cycling does nothing for a swim, and it
+ * was exactly the athletes with the most set up whose odd sessions vanished.
+ */
+function estimateTssFromDuration(activity) {
+  const sport = activitySport(activity);
+  const dur = activityDuration(activity);
+  const endurance = sport.includes('ride') || sport.includes('cycl') || sport.includes('bike')
+    || sport.includes('run') || sport.includes('walk') || sport.includes('hike')
+    || sport.includes('swim') || sport.includes('row') || sport.includes('ski');
+  if (!endurance || !(dur >= 1200)) return 0;
+  return Math.round((dur / 3600) * ESTIMATED_TSS_PER_HOUR);
+}
+
 function resolveActivityTss(activity, profile) {
   if (!activity) return 0;
 
@@ -320,18 +351,7 @@ function resolveActivityTss(activity, profile) {
   if (mode === 'hr' && hrTss > 0) return hrTss;
   if (manualVal > 0) return manualVal;
 
-  if (profile?._thresholdsInferredFromActivities) {
-    const sport = activitySport(activity);
-    const dur = activityDuration(activity);
-    const endurance = sport.includes('ride') || sport.includes('cycl') || sport.includes('bike')
-      || sport.includes('run') || sport.includes('walk') || sport.includes('hike')
-      || sport.includes('swim');
-    if (endurance && dur >= 1200) {
-      return Math.round((dur / 3600) * 40);
-    }
-  }
-
-  return 0;
+  return estimateTssFromDuration(activity);
 }
 
 /** Map Strava / FIT documents to the shape expected by resolveActivityTss. */
