@@ -822,6 +822,8 @@ export default function DashboardPage() {
   /** Largest activity count any published PMC was computed from — see
    *  recomputeFormFitness. Reset when the athlete changes. */
   const widestActivityCountRef = useRef(0);
+  /** overlayServerMetrics, reachable from recomputeFormFitness above it. */
+  const overlayServerMetricsRef = useRef(null);
   const [isTrainingFormOpen, setIsTrainingFormOpen] = useState(false);
 
   // For heavy dashboard widgets (TrainingTable, TrainingStats, TrainingGraph, SpiderChart),
@@ -2008,6 +2010,11 @@ export default function DashboardPage() {
     if (series.length) setSparklineData(series);
     pushFormFitnessWidget(tm, series);
     setFormMetricsLoading(false);
+    // These numbers are the offline stand-in, not the answer. The calendar
+    // arrives in pieces and each wider piece lands here, overwriting whatever
+    // the server had already said — so every publish has to ask again, or the
+    // dashboard ends up on a Form the rest of the app disagrees with.
+    overlayServerMetricsRef.current?.(activeDataAthleteRef.current);
     return true;
   }, [pushFormFitnessWidget]);
 
@@ -2031,17 +2038,25 @@ export default function DashboardPage() {
    */
   const overlayServerMetrics = useCallback(async (targetId) => {
     if (!targetId) return;
-    const gen = formFitnessRequestGen.current;
     try {
       const res = await getTodayMetrics(targetId);
       const d = res?.data ?? res;
-      // A newer local recompute has landed meanwhile — leave it alone.
-      if (gen !== formFitnessRequestGen.current) return;
+      // Only a change of athlete invalidates this answer. It used to be
+      // discarded whenever a local recompute had landed while the request was
+      // in flight — but the calendar arrives in pieces and every piece
+      // triggers a recompute, so on a slow connection the overlay lost that
+      // race and nothing asked again. The dashboard then sat on its local
+      // numbers for the rest of the session while Charts, the readiness card
+      // and the overreach notification all read the server's, which is how one
+      // athlete saw Form -31 in the banner and -47 everywhere else.
+      if (String(targetId) !== String(activeDataAthleteRef.current)) return;
       if (d && Number.isFinite(Number(d.fitness))) setTodayMetrics(d);
     } catch {
       /* offline or refused — the local numbers stand */
     }
   }, []);
+
+  useEffect(() => { overlayServerMetricsRef.current = overlayServerMetrics; }, [overlayServerMetrics]);
 
   const loadFormFitness = useCallback(async (targetId) => {
     if (!targetId) return;

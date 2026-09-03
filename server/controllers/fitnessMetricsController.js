@@ -195,6 +195,19 @@ function mapAppleHealthToLoad(a, userProfile) {
   };
 }
 
+/**
+ * How many days of history every headline PMC read uses.
+ *
+ * CTL and ATL are exponential averages seeded at zero, and the loop starts at
+ * the earliest activity inside the queried range — so the requested window
+ * still sets how long the average has had to converge, and two callers asking
+ * for different windows get different numbers for the same day. Every surface
+ * that shows or acts on *today's* Form therefore asks for the same one: the
+ * dashboard, the readiness card and the overreach alert must not disagree
+ * about whether an athlete is at -31 or -47.
+ */
+const PMC_WINDOW_DAYS = 90;
+
 async function calculateFormFitnessData(athleteId, days = 60, sportFilter = 'all') {
   try {
     console.log('calculateFormFitnessData called with athleteId:', athleteId, 'days:', days, 'sportFilter:', sportFilter);
@@ -203,12 +216,16 @@ async function calculateFormFitnessData(athleteId, days = 60, sportFilter = 'all
     const maxDays = 180;
     const effectiveDays = Math.min(days, maxDays);
     
-    // Calculate date range. CTL has a 42-day time constant; to make today's
-    // CTL/ATL/Form identical regardless of the requested `days` (so the mobile
-    // dashboard, PC dashboard, and calendar all show the same form value), we
-    // warm up the EMA over 6× CTL_TC = 252 days of history before the
-    // displayed window. With < 60 days of warmup the series was only ~76%
-    // converged, which caused the values to drift between views.
+    // Calculate date range. CTL has a 42-day time constant, so the EMA is
+    // warmed up over 6x CTL_TC = 252 days of history before the displayed
+    // window; with under 60 days of warmup the series was only ~76% converged
+    // and the values drifted between views.
+    //
+    // Note that the warmup is 252 days *before the requested window*, not a
+    // fixed absolute date: the loop starts at the earliest activity inside the
+    // query, so a caller asking for 7 days and one asking for 90 warm up over
+    // different spans and do not agree on today's Form. Anything reading
+    // today's number therefore passes PMC_WINDOW_DAYS.
     const WARMUP_DAYS = 252;
     const today = new Date();
     today.setHours(23, 59, 59, 999);
@@ -443,7 +460,7 @@ async function calculateFormFitnessData(athleteId, days = 60, sportFilter = 'all
  */
 async function calculateTodayMetrics(athleteId) {
   try {
-    const data = await calculateFormFitnessData(athleteId, 90);
+    const data = await calculateFormFitnessData(athleteId, PMC_WINDOW_DAYS);
     
     if (data.length === 0) {
       return {
@@ -793,6 +810,7 @@ module.exports = {
   // Exported so the load mapping can be tested without a database.
   trainingDurationSeconds,
   mapTrainingToLoad,
+  PMC_WINDOW_DAYS,
 };
 
 

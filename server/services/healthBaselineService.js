@@ -25,7 +25,7 @@ const {
   dedupeActivitiesForLoad,
   normalizeSportBucket,
 } = require('../utils/activityTss');
-const { calculateFormFitnessData } = require('../controllers/fitnessMetricsController');
+const { calculateFormFitnessData, PMC_WINDOW_DAYS } = require('../controllers/fitnessMetricsController');
 
 /** Weeks of history behind a baseline. Long enough to smooth a taper week. */
 const BASELINE_WEEKS = 8;
@@ -273,7 +273,9 @@ async function captureBaseline(athleteId, startDate) {
   let atl = null;
   let form = null;
   try {
-    const series = await calculateFormFitnessData(athleteId, 7);
+    // Same window as everywhere else — a week of history leaves the EMA far
+    // from converged, and the baseline would record a Form nothing else shows.
+    const series = await calculateFormFitnessData(athleteId, PMC_WINDOW_DAYS);
     const latest = Array.isArray(series) && series.length ? series[series.length - 1] : null;
     if (latest) {
       ctl = latest.Fitness != null ? Math.round(Number(latest.Fitness)) : null;

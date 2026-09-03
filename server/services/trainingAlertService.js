@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 const User = require('../models/UserModel');
 const PlannedWorkout = require('../models/PlannedWorkout');
 const AppleHealthWellness = require('../models/AppleHealthWellness');
-const { calculateFormFitnessData } = require('../controllers/fitnessMetricsController');
+const { calculateFormFitnessData, PMC_WINDOW_DAYS } = require('../controllers/fitnessMetricsController');
 const { sendNotification } = require('../utils/notificationHelper');
 const { evaluateTrainingAlerts } = require('../utils/trainingAlertUtils');
 
@@ -77,7 +77,10 @@ async function processAthleteAlerts(user) {
   const athleteId = String(user._id);
 
   const [series, complianceStreak, wellness] = await Promise.all([
-    calculateFormFitnessData(athleteId, 21).catch(() => []),
+    // The same window the dashboard's own Form comes from. Asking for a
+    // shorter one gave the EMA less history to converge over, so the alert
+    // quoted a Form the athlete could not find anywhere in the app.
+    calculateFormFitnessData(athleteId, PMC_WINDOW_DAYS).catch(() => []),
     countComplianceStreak(athleteId),
     loadWellnessRows(athleteId),
   ]);
