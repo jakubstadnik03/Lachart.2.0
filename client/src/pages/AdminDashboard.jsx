@@ -9,6 +9,7 @@ import { useNotification } from '../context/NotificationContext';
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { OUTREACH_CONTACTS, buildOutreachEmail, ALL_COUNTRIES } from '../data/outreachContacts';
 import { PageSkeleton } from '../components/common/Skeleton';
+import PredictedCurvePanel from '../components/Admin/PredictedCurvePanel';
 
 /**
  * Coach leads — existing users already coaching 2+ athletes, i.e. already past
@@ -3469,6 +3470,11 @@ const AdminDashboard = () => {
             animate={{ opacity: 1, y: 0 }}
             className="space-y-4 sm:space-y-6"
           >
+            {/* Pick who gets the estimated-curve email and see their own
+                numbers in it before deciding. Above the paced campaigns
+                because it is the one that needs a person to look. */}
+            <PredictedCurvePanel addNotification={addNotification} />
+
             <PaidLaunchJul2026Card onCampaignUpdated={loadPacedCampaignOverview} />
             <IosLaunchJun2026Card onCampaignUpdated={loadPacedCampaignOverview} />
             <WhatsNewMay2026Card onCampaignUpdated={loadPacedCampaignOverview} />

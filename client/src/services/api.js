@@ -939,6 +939,43 @@ export const saveWeeklyReview = async (weekStart, { text, rating, athleteId } = 
 // Separate from sendCoachOutreachEmail below, which targets cold contacts who
 // have no account. Every send here is one explicit click on one named coach.
 // segment: 'coach' (2+ athletes) | 'athlete' (Strava connected + has a test)
+/* ── Predicted-curve campaign (admin) ─────────────────────────────────────
+ * The estimated lactate curve for athletes who have never tested. Every call
+ * is admin-gated server-side; these are just the wires.
+ */
+
+export const fetchPredictedCurveCandidates = async (limit = 60) => {
+  const { data } = await api.get(`/api/email/predicted-curve/candidates?limit=${limit}`);
+  return data;
+};
+
+export const fetchPredictedCurveStatus = async () => {
+  const { data } = await api.get('/api/email/predicted-curve/status');
+  return data;
+};
+
+/** The email one named athlete would receive, rendered with their own numbers. */
+export const fetchPredictedCurvePreview = async (userId) => {
+  const { data } = await api.get(`/api/email/predicted-curve/preview/${userId}`);
+  return data;
+};
+
+export const sendPredictedCurveToUser = async (userId) => {
+  const { data } = await api.post(`/api/email/predicted-curve/send/${userId}`, {});
+  return data;
+};
+
+/** Their numbers, the admin's inbox — no tracking, no notification. */
+export const sendPredictedCurveTest = async (userId) => {
+  const { data } = await api.post(`/api/email/predicted-curve/send-test/${userId}`, {});
+  return data;
+};
+
+export const sendPredictedCurveBatch = async (userIds) => {
+  const { data } = await api.post('/api/email/predicted-curve/send-batch', { userIds });
+  return data;
+};
+
 export const fetchCoachLeads = async (segment = 'coach') => {
   const { data } = await api.get(`/api/admin/coach-outreach/candidates?segment=${segment}`);
   return data;
