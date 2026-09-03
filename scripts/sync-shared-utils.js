@@ -16,8 +16,10 @@
  *   node scripts/sync-shared-utils.js          # rewrite the server copies
  *   node scripts/sync-shared-utils.js --check  # fail if any is out of date
  *
- * Only modules with no imports can be listed here — the transform rewrites
- * `export` and nothing else.
+ * The transform only rewrites module syntax: `export function` becomes a plain
+ * declaration, and a relative import of another module in this list becomes a
+ * `require` of its generated twin. Nothing else is touched, so the two copies
+ * cannot drift in anything that matters.
  */
 
 'use strict';
@@ -31,7 +33,17 @@ const ROOT = path.resolve(__dirname, '..');
 const PAIRS = [
   ['client/src/utils/hrPowerProfile.js', 'server/utils/hrPowerProfile.js'],
   ['client/src/utils/lactateTestInputMode.js', 'server/utils/lactateTestInputMode.js'],
+  // Thresholds for an athlete who has never tested. Shared because the email
+  // that quotes an estimated LT2 and the card that draws it have to agree on
+  // the number, and the two are computed on different sides of the wire.
+  ['client/src/utils/estimateAnchorFromTraining.js', 'server/utils/estimateAnchorFromTraining.js'],
 ];
+
+/** Which generated twin a client module's relative import resolves to. */
+const TWIN_BY_SOURCE = new Map(PAIRS.map(([from, to]) => [
+  path.basename(from, '.js'),
+  `./${path.basename(to)}`,
+]));
 
 function banner(from) {
   return `/**
@@ -53,15 +65,29 @@ function banner(from) {
 
 function generate(source, from) {
   const exported = [];
-  const body = source.replace(/^export function (\w+)/gm, (_, name) => {
+  let body = source.replace(/^export function (\w+)/gm, (_, name) => {
     exported.push(name);
     return `function ${name}`;
   });
   if (/^export /m.test(body)) {
     throw new Error(`${from}: unsupported export form — only \`export function\` is handled`);
   }
+
+  // A relative import is only followable when the thing it imports is itself
+  // generated; anything else would leave the server copy referring to a file
+  // that does not exist there.
+  body = body.replace(
+    /^import\s+(\{[^}]*\})\s+from\s+'\.\/([\w.-]+)';$/gm,
+    (line, names, mod) => {
+      const twin = TWIN_BY_SOURCE.get(mod.replace(/\.js$/, ''));
+      if (!twin) {
+        throw new Error(`${from}: imports './${mod}', which is not itself synced — add it to PAIRS`);
+      }
+      return `const ${names} = require('${twin}');`;
+    },
+  );
   if (/^import /m.test(body)) {
-    throw new Error(`${from}: has imports, which the transform cannot follow`);
+    throw new Error(`${from}: has an import the transform cannot follow`);
   }
   exported.sort();
   return `${banner(from)}${body}\nmodule.exports = {\n${exported.map((n) => `  ${n},`).join('\n')}\n};\n`;

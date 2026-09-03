@@ -1,4 +1,18 @@
 /**
+ * GENERATED FILE — DO NOT EDIT.
+ *
+ * CommonJS twin of client/src/utils/estimateAnchorFromTraining.js, produced by
+ * scripts/sync-shared-utils.js. Edit the client module and re-run:
+ *
+ *   node scripts/sync-shared-utils.js
+ *
+ * Both sides of the app compute these numbers — the browser for the session in
+ * front of you, the server for the history behind it — and they must agree.
+ */
+
+'use strict';
+
+/**
  * Thresholds for an athlete who has never tested.
  *
  * Everything else in the app hangs off a lactate test. That is the right
@@ -31,7 +45,7 @@
  * the zone tables all work on it unchanged. It carries `modelled: true`.
  */
 
-import { modelledLactateCurve, sportKind, thresholdToDemand } from './hrPowerProfile';
+const { modelledLactateCurve, sportKind, thresholdToDemand } = require('./hrPowerProfile.js');
 
 /** Best-20-minute power to FTP, and FTP is close enough to LT2 for this purpose. */
 const P20_TO_LT2 = 0.95;
@@ -203,7 +217,7 @@ function thresholdHrFromProfile(profile, kind, which) {
  * @param {Date}   [o.now]
  * @returns {null | object} anchor-shaped, plus {modelled, sources, confidence, lt1Derived}
  */
-export function estimateAnchorFromTraining({
+function estimateAnchorFromTraining({
   sport, hrTestPlan = null, profile = null, powerMetrics = null, activities = [], now = null,
 }) {
   const kind = sportKind(sport);
@@ -299,3 +313,7 @@ export function estimateAnchorFromTraining({
     ).length,
   };
 }
+
+module.exports = {
+  estimateAnchorFromTraining,
+};
