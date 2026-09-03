@@ -1332,18 +1332,37 @@ export default function CalendarPeriodStats({
    * @param {string} sport 'all' | 'cycling' | 'running' | 'swimming'
    * @param {string} metric 'power' | 'hr'  ('power' is pace for run and swim)
    */
+  /** Did the client have to place any of this sport+metric from an average? */
+  const clientEstimated = useCallback((sport, metric) => {
+    const est = aggregates.zoneSecEstimated || {};
+    const sports = sport === 'all' ? PROFILE_SPORTS : [sport];
+    return sports.some((ps) => est[ps]?.[metric]);
+  }, [aggregates]);
+
+  const clientZoneSec = useCallback((sport, metric) => {
+    const all = metric === 'power' ? aggregates.powerZoneSecAll : aggregates.hrZoneSecAll;
+    const bySport = metric === 'power' ? aggregates.powerZoneSec : aggregates.hrZoneSec;
+    return (sport === 'all' ? all : bySport?.[sport]) || {};
+  }, [aggregates]);
+
   const zoneSecFor = useCallback((sport, metric) => {
-    // The server's per-second answer when it has one; the lap-level aggregate
-    // until then and when it does not. Both cover the whole period, so unlike
-    // the month-keyed endpoint this replaced, the two agree about *which*
-    // days they describe and week view can use the server too.
     const server = serverZoneEntry(sport, metric);
-    if (server?.sec) return server.sec;
-    const clientAll = metric === 'power' ? aggregates.powerZoneSecAll : aggregates.hrZoneSecAll;
-    const clientBySport = metric === 'power' ? aggregates.powerZoneSec : aggregates.hrZoneSec;
-    if (sport === 'all') return clientAll || {};
-    return clientBySport?.[sport] || {};
-  }, [serverZoneEntry, aggregates]);
+    const client = clientZoneSec(sport, metric);
+
+    // Best evidence wins, and "came from the server" is not evidence.
+    //
+    // When the server has no stored trace for a session it places the whole
+    // thing at its average, exactly as the old card did — and that answer was
+    // overriding the lap-level count here, which is coarse but is at least a
+    // distribution. A 12x1km came back as 100% Z2, because 4:22/km averaged
+    // across reps and floats lands in Z2 and nothing else was ever consulted.
+    //
+    // So: a trace beats laps, laps beat an average, and an average from the
+    // server is no better than one computed here.
+    if (server?.sec && server.estimatedPct < 100) return server.sec;
+    if (!clientEstimated(sport, metric) && ZONE_KEYS.some((k) => (client[k] || 0) > 0)) return client;
+    return server?.sec || client;
+  }, [serverZoneEntry, clientZoneSec, clientEstimated]);
 
   /**
    * Where the numbers behind one sport+metric actually came from.
@@ -1355,15 +1374,13 @@ export default function CalendarPeriodStats({
    */
   const zoneSourceFor = useCallback((sport, metric) => {
     const server = serverZoneEntry(sport, metric);
-    if (server?.sec) {
-      // The server places a session from its average too when it has no trace
-      // for it, and says how much of the total that was.
-      return server.estimatedPct >= 50 ? 'average' : server.estimatedPct > 0 ? 'mixed' : 'records';
+    const client = clientZoneSec(sport, metric);
+    if (server?.sec && server.estimatedPct < 100) {
+      return server.estimatedPct > 0 ? 'mixed' : 'records';
     }
-    const est = aggregates.zoneSecEstimated || {};
-    const sports = sport === 'all' ? PROFILE_SPORTS : [sport];
-    return sports.some((ps) => est[ps]?.[metric]) ? 'average' : 'laps';
-  }, [serverZoneEntry, aggregates]);
+    if (!clientEstimated(sport, metric) && ZONE_KEYS.some((k) => (client[k] || 0) > 0)) return 'laps';
+    return 'average';
+  }, [serverZoneEntry, clientZoneSec, clientEstimated]);
 
   const zoneSecTotal = (secMap) => ZONE_KEYS.reduce((s, k) => s + (secMap?.[k] || 0), 0);
 

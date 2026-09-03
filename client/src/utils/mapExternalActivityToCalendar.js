@@ -94,6 +94,13 @@ export function mapExternalActivityToCalendar(a, trainingByStravaId = new Map())
         || null),
     tssDisplayMode: a.tssDisplayMode ?? linkedTraining?.tssDisplayMode ?? null,
     kilojoules: a.kilojoules ?? a.raw?.kilojoules,
+    // The compact per-lap shape the activities endpoint projects, when it was
+    // asked for. Dropping it here left every Strava and Garmin session looking
+    // lapless to everything downstream — the card thumbnails and the period's
+    // time-in-zones both fell back to reading the session at its average, so a
+    // 12x1km reported as one solid block at its overall pace.
+    lapProfile: Array.isArray(a.lapProfile) && a.lapProfile.length ? a.lapProfile : null,
+    savedAutoLaps: Array.isArray(a.savedAutoLaps) && a.savedAutoLaps.length ? a.savedAutoLaps : null,
   };
 }
 
