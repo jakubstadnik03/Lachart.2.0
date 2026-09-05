@@ -14,6 +14,7 @@ import {
   FireIcon,
   XMarkIcon,
 } from '@heroicons/react/24/outline';
+import { extractLactateThresholds } from '../../utils/extractLactateThresholds';
 
 // ─── App palette (matches tailwind.config.js) ──────────────────────────────
 const C = {
@@ -54,42 +55,30 @@ function fmtVal(val, isPace) {
   return isPace ? fmtPace(val) : `${Math.round(val)} W`;
 }
 
-// Extract LTP1 (aerobic, baseline +1.5) and LTP2 (anaerobic, ≥4.0 mmol/L)
+/**
+ * LT1 / LT2 for one test — the same numbers the test's own page shows.
+ *
+ * This used to interpolate straight between the raw data points at baseline
+ * +1.5 and 4.0 mmol/L, which is neither the method the test was read with nor
+ * the pair the athlete may have pinned by hand. On a test whose page reported
+ * LTP1 350 W at 1.90 mmol, this card said 374 W: it was answering a different
+ * question and labelling the answer the same.
+ *
+ * extractLactateThresholds is the shared reader — a hand-set LT1/LT2 first,
+ * then calculateThresholds(), the pipeline the curve and the zone tables use,
+ * and only then the crude interpolation as a last resort. One test, one pair
+ * of thresholds, wherever they are read.
+ */
 function extractThresholds(test) {
-  if (!test?.results || test.results.length < 3) return null;
-  const sport = normSport(test.sport);
-  const isPace = sport === 'run' || sport === 'swim';
-
-  const pts = test.results
-    .map(r => ({
-      x: Number(String(r.power ?? '').replace(',', '.')),
-      y: Number(String(r.lactate ?? '').replace(',', '.')),
-      hr: Number(String(r.heartRate ?? '').replace(',', '.')),
-    }))
-    .filter(p => Number.isFinite(p.x) && p.x > 0 && Number.isFinite(p.y) && p.y > 0);
-
-  if (pts.length < 3) return null;
-  pts.sort((a, b) => isPace ? b.x - a.x : a.x - b.x);
-
-  const base = Number(test.baseLactate) || pts[0]?.y || 1.0;
-  const lt1Target = base + 1.5;
-  const lt2Target = Math.max(4.0, base + 3.0);
-
-  const interp = (target) => {
-    for (let i = 0; i < pts.length - 1; i++) {
-      const a = pts[i], b = pts[i + 1];
-      if ((a.y - target) * (b.y - target) <= 0) {
-        const t = (target - a.y) / (b.y - a.y || 1);
-        const x = a.x + t * (b.x - a.x);
-        const hr = (Number.isFinite(a.hr) && Number.isFinite(b.hr))
-          ? Math.round(a.hr + t * (b.hr - a.hr)) : null;
-        return { value: Math.round(x * 10) / 10, hr };
-      }
-    }
-    return null;
+  const th = extractLactateThresholds(test);
+  if (!th || (th.lt1 == null && th.lt2 == null)) return null;
+  return {
+    ltp1: th.lt1 != null ? { value: th.lt1, hr: th.lt1Hr ?? null } : null,
+    ltp2: th.lt2 != null ? { value: th.lt2, hr: th.lt2Hr ?? null } : null,
+    base: th.baseLactate,
+    isPace: th.isPace,
+    sport: th.sport,
   };
-
-  return { ltp1: interp(lt1Target), ltp2: interp(lt2Target) ?? interp(4.0), base, isPace, sport };
 }
 
 // Linear regression slope for trend detection
