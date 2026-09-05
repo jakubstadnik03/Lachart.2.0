@@ -481,17 +481,33 @@ export default function ZoneDistributionChart({ selectedAthleteId = null }) {
   const fb = fallbackZones[fallbackKey] || null;
   const usingFallback = monthlyTotal <= 0 && fb && Object.values(fb).some((v) => v > 0);
   const effectiveZoneTimes = usingFallback ? fb : zoneTimes;
+  // The trace reader answers in seconds per zone and knows nothing about how
+  // many sessions produced them, so the total comes from the zones themselves
+  // and the session count is left off rather than printed as zero.
+  const effectiveTotalSecs = usingFallback
+    ? Object.values(fb).reduce((a, b) => a + b, 0)
+    : totalSecs;
 
   // Ask the trace reader only once the monthly payload has arrived and come
   // back empty — otherwise every card would fire a second request it does not
   // need, and the streams are the expensive half of that query.
   useEffect(() => {
-    if (!athleteId || monthlyTotal > 0) return;
+    // Not gated on athleteId: for an athlete on their own dashboard it is
+    // deliberately null and the server reads the token instead, which is also
+    // how the monthly request above is made. Requiring it here switched the
+    // fallback off for every athlete looking at their own data — that is,
+    // almost everyone who was seeing the empty card.
+    if (monthlyTotal > 0) return;
     // Only once the monthly payload for this window has actually landed —
     // asking while it is still in flight would call every window empty.
+    //
+    // Read that from state, not from the loading refs: a ref changing does not
+    // re-run an effect, so the first pass found the months still loading, bailed
+    // out, and nothing ever brought it back. The card stayed empty for exactly
+    // the athletes the fallback was written for.
     const landed = rangeBounds(period)
-      ? weekLoaded.current.has(period)
-      : monthKeys.every((k) => loadedRef.current.get(k) === 'done');
+      ? Array.isArray(weekData[period])
+      : (monthKeys.length > 0 && monthKeys.every((k) => loadedMonths.has(k)));
     if (!landed) return;
     if (fallbackAsked.current.has(fallbackKey)) return;
     fallbackAsked.current.add(fallbackKey);
@@ -514,7 +530,7 @@ export default function ZoneDistributionChart({ selectedAthleteId = null }) {
         setFallbackZones((prev) => ({ ...prev, [fallbackKey]: sec }));
       })
       .catch(() => { /* nothing to add — the empty state stands */ });
-  }, [athleteId, monthlyTotal, fallbackKey, period, sport, metric]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [athleteId, monthlyTotal, fallbackKey, period, sport, metric, loadedMonths, weekData, monthKeys]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Zone percentages
   const grandTotal = Object.values(effectiveZoneTimes).reduce((a, b) => a + b, 0);
@@ -553,7 +569,7 @@ export default function ZoneDistributionChart({ selectedAthleteId = null }) {
   const metricLabel = metric === 'power' ? 'Power' : metric === 'pace' ? 'Pace' : 'HR';
 
   const buildTooltipContent = (zone) => {
-    const t   = zoneTimes[zone.zone] || 0;
+    const t   = effectiveZoneTimes[zone.zone] || 0;
     const pct = zonePcts[zone.zone]  || 0;
     const rng = getZoneRange(zone.zone);
     return (
@@ -596,7 +612,7 @@ export default function ZoneDistributionChart({ selectedAthleteId = null }) {
           {hasData && (
             <>
               <span className="text-[10px] text-gray-500">
-                <span className="font-semibold text-gray-700">{fmtDur(totalSecs)}</span> · {sessions} sess
+                <span className="font-semibold text-gray-700">{fmtDur(effectiveTotalSecs)}</span>{sessions > 0 ? ` · ${sessions} sess` : ''}
               </span>
               <span className="text-[10px] text-green-700">
                 {Math.round(aerobicPct)}% Z1+Z2
@@ -710,7 +726,7 @@ export default function ZoneDistributionChart({ selectedAthleteId = null }) {
         ) : (
           <div className="space-y-0.5">
             {ZONES.map(zone => {
-              const t          = zoneTimes[zone.zone] || 0;
+              const t          = effectiveZoneTimes[zone.zone] || 0;
               const pct        = zonePcts[zone.zone]  || 0;
               const rng        = getZoneRange(zone.zone);
               const avg        = zoneAvgs?.[zone.zone] ?? null;
