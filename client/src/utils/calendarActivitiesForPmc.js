@@ -88,7 +88,12 @@ export async function fetchCalendarActivitiesForPmc(api, athleteId) {
     api.get(`/user/athlete/${athleteId}/trainings`, { cacheTtlMs: 60000 }).catch(() => ({ data: [] })),
     api.get('/api/fit/trainings', { params: { athleteId }, cacheTtlMs: 60000 }).catch(() => ({ data: [] })),
     api.get('/api/integrations/activities', {
-      params: { athleteId, summaryOnly: true, limit: MAX_CALENDAR_ACTIVITIES },
+      // withLapProfiles: the dashboard reads time in zones off these laps, the
+      // same way the calendar does. Without them every ride is placed whole in
+      // whichever zone its average lands in — a 4x25min at threshold averages
+      // 323 W and was being reported as one long Z2, with nothing above it in
+      // three months of riding.
+      params: { athleteId, summaryOnly: true, withLapProfiles: true, limit: MAX_CALENDAR_ACTIVITIES },
       cacheTtlMs: 60000,
     }).catch(() => ({ data: [] })),
   ]);

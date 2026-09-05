@@ -394,6 +394,8 @@ export default function ZoneDistributionChart({ selectedAthleteId = null, activi
   const [fallbackZones, setFallbackZones] = useState({});
   /** What the trace reader said when it too came back with nothing. */
   const [fallbackNote, setFallbackNote] = useState({});
+  /** Traces still to fetch for this window, from the reader's own count. */
+  const [fallbackProgress, setFallbackProgress] = useState({});
   const fallbackKey = `${period}|${sport}|${metric}`;
   const fallbackAsked = useRef(new Set());
 
@@ -521,6 +523,11 @@ export default function ZoneDistributionChart({ selectedAthleteId = null, activi
 
     const sec = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
     let any = false;
+    // Seconds placed from a session average rather than from its laps. An
+    // average puts a whole ride in one zone, so a card built mostly that way
+    // is a different claim from one built on laps and should say so.
+    let estimatedSec = 0;
+    let placedSec = 0;
     for (const act of activities) {
       const dk = activityCalendarDateKey(act);
       if (!dk || dk < fromKey || dk > toKey) continue;
@@ -531,7 +538,7 @@ export default function ZoneDistributionChart({ selectedAthleteId = null, activi
       const reader = metric === 'hr' ? lapHeartRate : lapPowerOrPaceMetric;
       const spans = zoneSpansForActivity(act, ps, table, reader);
       if (spans?.length) {
-        for (const span of spans) sec[Number(span.zoneKey.slice(4))] += span.sec;
+        for (const span of spans) { sec[Number(span.zoneKey.slice(4))] += span.sec; placedSec += span.sec; }
         any = true;
         continue;
       }
@@ -542,16 +549,17 @@ export default function ZoneDistributionChart({ selectedAthleteId = null, activi
         ? lapHeartRate(act)
         : lapPowerOrPaceMetric({ ...act, d: dur, m: act.distance }, ps);
       const zk = avg != null ? findZoneKeyForValue(avg, table) : null;
-      if (zk) { sec[Number(zk.slice(4))] += dur; any = true; }
+      if (zk) { sec[Number(zk.slice(4))] += dur; estimatedSec += dur; placedSec += dur; any = true; }
     }
-    return any ? sec : null;
+    if (!any) return null;
+    return { sec, estimatedPct: placedSec > 0 ? Math.round((estimatedSec / placedSec) * 100) : 0 };
   }, [activities, userProfile, period, sport, metric]);
 
   const monthlyTotal = Object.values(zoneTimes).reduce((a, b) => a + b, 0);
   const serverFb = fallbackZones[fallbackKey] || null;
   const serverFbHas = serverFb && Object.values(serverFb).some((v) => v > 0);
   // Traces first, then what can be read here from the laps.
-  const fb = serverFbHas ? serverFb : clientZones;
+  const fb = serverFbHas ? serverFb : (clientZones?.sec || null);
   const usingFallback = monthlyTotal <= 0 && fb && Object.values(fb).some((v) => v > 0);
   const effectiveZoneTimes = usingFallback ? fb : zoneTimes;
   // The trace reader answers in seconds per zone and knows nothing about how
@@ -601,6 +609,14 @@ export default function ZoneDistributionChart({ selectedAthleteId = null, activi
           for (let z = 1; z <= 5; z += 1) sec[z] += Number(d?.zones?.[`z${z}`]) || 0;
         });
         setFallbackZones((prev) => ({ ...prev, [fallbackKey]: sec }));
+        // How much of the window is still waiting on its per-second traces.
+        // They arrive a handful per request — Strava's rate limit is shared
+        // across the whole app — so the honest thing is to say the picture is
+        // still sharpening rather than let it change under the reader.
+        setFallbackProgress((prev) => ({
+          ...prev,
+          [fallbackKey]: Number(res?.backfill?.remaining) || 0,
+        }));
         // Why it is empty, when it is. The reader knows whether the athlete has
         // no zones set for this sport, no sessions in the window, or sessions
         // whose traces it could not place — and "Upload FIT files with power
@@ -700,6 +716,30 @@ export default function ZoneDistributionChart({ selectedAthleteId = null, activi
             <>
               <span className="text-[10px] text-gray-500">
                 <span className="font-semibold text-gray-700">{fmtDur(effectiveTotalSecs)}</span>{sessions > 0 ? ` · ${sessions} sess` : ''}
+                {usingFallback && !serverFbHas && clientZones?.estimatedPct >= 50 && (
+                  <span
+                    className="ml-1 text-amber-600"
+                    title="These sessions have no laps stored, so each is counted whole at its average — a hard session lands in one zone rather than across several."
+                  >
+                    · estimated
+                  </span>
+                )}
+                {usingFallback && !serverFbHas && clientZones && clientZones.estimatedPct < 50 && (
+                  <span
+                    className="ml-1 text-gray-400"
+                    title="Read from each session's laps. The per-second traces give a finer split; they are still being fetched from Strava."
+                  >
+                    · from laps
+                  </span>
+                )}
+                {fallbackProgress[fallbackKey] > 0 && (
+                  <span
+                    className="ml-1 text-gray-400"
+                    title="Strava sends these a few per page load, so this sharpens each time you come back."
+                  >
+                    · {fallbackProgress[fallbackKey]} traces still loading
+                  </span>
+                )}
               </span>
               <span className="text-[10px] text-green-700">
                 {Math.round(aerobicPct)}% Z1+Z2
