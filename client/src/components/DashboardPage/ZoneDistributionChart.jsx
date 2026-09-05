@@ -558,9 +558,13 @@ export default function ZoneDistributionChart({ selectedAthleteId = null, activi
   const monthlyTotal = Object.values(zoneTimes).reduce((a, b) => a + b, 0);
   const serverFb = fallbackZones[fallbackKey] || null;
   const serverFbHas = serverFb && Object.values(serverFb).some((v) => v > 0);
-  // Traces first, then what can be read here from the laps.
+  // Per-second traces first — the only one of these three that can see inside
+  // a lap, which is the whole point: a surge up a hill and the freewheel after
+  // it belong in different zones even though no lap was pressed. Then the
+  // month's own figures, then what can be read here from the laps.
   const fb = serverFbHas ? serverFb : (clientZones?.sec || null);
-  const usingFallback = monthlyTotal <= 0 && fb && Object.values(fb).some((v) => v > 0);
+  const fbHas = fb && Object.values(fb).some((v) => v > 0);
+  const usingFallback = serverFbHas || (monthlyTotal <= 0 && fbHas);
   const effectiveZoneTimes = usingFallback ? fb : zoneTimes;
   // The trace reader answers in seconds per zone and knows nothing about how
   // many sessions produced them, so the total comes from the zones themselves
@@ -569,16 +573,23 @@ export default function ZoneDistributionChart({ selectedAthleteId = null, activi
     ? Object.values(fb).reduce((a, b) => a + b, 0)
     : totalSecs;
 
-  // Ask the trace reader only once the monthly payload has arrived and come
-  // back empty — otherwise every card would fire a second request it does not
-  // need, and the streams are the expensive half of that query.
+  /**
+   * Always ask the trace reader, not only when everything else came back empty.
+   *
+   * It is the reading this card is supposed to show: seconds spent in each
+   * zone, taken from the recorded trace. The workout detail already draws
+   * exactly this for a single session; there is no reason a month of them
+   * should be a different, coarser answer.
+   *
+   * It used to be asked only when the monthly payload had nothing, so the
+   * better reading was skipped whenever the worse one had anything to say.
+   */
   useEffect(() => {
     // Not gated on athleteId: for an athlete on their own dashboard it is
     // deliberately null and the server reads the token instead, which is also
     // how the monthly request above is made. Requiring it here switched the
     // fallback off for every athlete looking at their own data — that is,
     // almost everyone who was seeing the empty card.
-    if (monthlyTotal > 0) return;
     // Only once the monthly payload for this window has actually landed —
     // asking while it is still in flight would call every window empty.
     //
