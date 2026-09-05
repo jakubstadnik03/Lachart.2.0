@@ -3,6 +3,10 @@ import ReactDOM from 'react-dom';
 import { motion } from 'framer-motion';
 import { SportGlyph } from '../shared/SportIcon';
 import { getMonthlyPowerAnalysis, getTimelineZones } from '../../services/api';
+import {
+  zoneSpansForActivity, lapPowerOrPaceMetric, lapHeartRate, findZoneKeyForValue,
+} from '../../utils/lapZoneSpans';
+import { activityCalendarDateKey } from '../../utils/calendarDateKeys';
 import { useAuth } from '../../context/AuthProvider';
 import {
   getSportsWithZoneData,
@@ -198,7 +202,18 @@ function ZoneTooltip({ data }) {
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export default function ZoneDistributionChart({ selectedAthleteId = null }) {
+/** Which zone table a sport is read against. */
+function profileSportOf(sport) {
+  const v = String(sport || '').toLowerCase();
+  if (/ride|bike|cycl|virtual/.test(v)) return 'cycling';
+  if (/swim/.test(v)) return 'swimming';
+  if (/run|walk|hike|trail|ski/.test(v)) return 'running';
+  return null;
+}
+
+const SPORT_TAB_TO_PROFILE = { bike: 'cycling', run: 'running', swim: 'swimming' };
+
+export default function ZoneDistributionChart({ selectedAthleteId = null, activities = null, userProfile = null }) {
   const { user } = useAuth();
   const [period, setPeriod]           = useState('3m');
   const [sport, setSport]             = useState('bike'); // 'bike' | 'run' | 'swim' | 'all'
@@ -377,6 +392,8 @@ export default function ZoneDistributionChart({ selectedAthleteId = null }) {
    * averages and boundaries are worth keeping.
    */
   const [fallbackZones, setFallbackZones] = useState({});
+  /** What the trace reader said when it too came back with nothing. */
+  const [fallbackNote, setFallbackNote] = useState({});
   const fallbackKey = `${period}|${sport}|${metric}`;
   const fallbackAsked = useRef(new Set());
 
@@ -477,8 +494,64 @@ export default function ZoneDistributionChart({ selectedAthleteId = null }) {
     return { zoneTimes: zt, zoneAvgs: za || {}, zoneDefs: zd, totalSecs, sessions };
   }, [periodMonths, sport, metric]);
 
+  /**
+   * Zone seconds computed here, from the activities the page already holds.
+   *
+   * This is what the training calendar's own intensity card does, and why that
+   * one fills in while this one sat empty: it never needed a zone endpoint at
+   * all. The two server sources are better when they answer — per-second
+   * traces beat lap averages — but neither is a prerequisite for showing an
+   * athlete the shape of their own training.
+   */
+  const clientZones = useMemo(() => {
+    const zones = userProfile && (metric === 'hr' ? userProfile.heartRateZones : userProfile.powerZones);
+    if (!zones || !Array.isArray(activities) || !activities.length) return null;
+    const bounds = rangeBounds(period);
+    let from; let to;
+    if (bounds) {
+      from = new Date(bounds.startDate); to = new Date(bounds.endDate);
+    } else {
+      const months = PERIODS.find((p) => p.label === period)?.months ?? 3;
+      to = new Date();
+      from = new Date(); from.setMonth(from.getMonth() - months); from.setHours(0, 0, 0, 0);
+    }
+    const fromKey = from.toISOString().slice(0, 10);
+    const toKey = to.toISOString().slice(0, 10);
+    const want = sport === 'all' ? null : SPORT_TAB_TO_PROFILE[sport];
+
+    const sec = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+    let any = false;
+    for (const act of activities) {
+      const dk = activityCalendarDateKey(act);
+      if (!dk || dk < fromKey || dk > toKey) continue;
+      const ps = profileSportOf(act.sport);
+      if (!ps || (want && ps !== want)) continue;
+      const table = zones[ps];
+      if (!table) continue;
+      const reader = metric === 'hr' ? lapHeartRate : lapPowerOrPaceMetric;
+      const spans = zoneSpansForActivity(act, ps, table, reader);
+      if (spans?.length) {
+        for (const span of spans) sec[Number(span.zoneKey.slice(4))] += span.sec;
+        any = true;
+        continue;
+      }
+      // No usable laps — the session's own average, as everywhere else.
+      const dur = Number(act.totalTime || act.totalElapsedTime || act.movingTime || act.duration || 0) || 0;
+      if (!(dur > 0)) continue;
+      const avg = metric === 'hr'
+        ? lapHeartRate(act)
+        : lapPowerOrPaceMetric({ ...act, d: dur, m: act.distance }, ps);
+      const zk = avg != null ? findZoneKeyForValue(avg, table) : null;
+      if (zk) { sec[Number(zk.slice(4))] += dur; any = true; }
+    }
+    return any ? sec : null;
+  }, [activities, userProfile, period, sport, metric]);
+
   const monthlyTotal = Object.values(zoneTimes).reduce((a, b) => a + b, 0);
-  const fb = fallbackZones[fallbackKey] || null;
+  const serverFb = fallbackZones[fallbackKey] || null;
+  const serverFbHas = serverFb && Object.values(serverFb).some((v) => v > 0);
+  // Traces first, then what can be read here from the laps.
+  const fb = serverFbHas ? serverFb : clientZones;
   const usingFallback = monthlyTotal <= 0 && fb && Object.values(fb).some((v) => v > 0);
   const effectiveZoneTimes = usingFallback ? fb : zoneTimes;
   // The trace reader answers in seconds per zone and knows nothing about how
@@ -528,6 +601,20 @@ export default function ZoneDistributionChart({ selectedAthleteId = null }) {
           for (let z = 1; z <= 5; z += 1) sec[z] += Number(d?.zones?.[`z${z}`]) || 0;
         });
         setFallbackZones((prev) => ({ ...prev, [fallbackKey]: sec }));
+        // Why it is empty, when it is. The reader knows whether the athlete has
+        // no zones set for this sport, no sessions in the window, or sessions
+        // whose traces it could not place — and "Upload FIT files with power
+        // data" is none of those.
+        const any = Object.values(sec).some((v) => v > 0);
+        setFallbackNote((prev) => ({
+          ...prev,
+          [fallbackKey]: any ? null
+            : res?.hasZones === false
+              ? (res?.reason === 'no-sessions'
+                ? 'No sessions in this period.'
+                : `No ${metric === 'hr' ? 'heart rate' : 'power or pace'} zones set for ${sport === 'all' ? 'these sports' : sport} — a lactate test sets them.`)
+              : 'Nothing recorded in this period that could be placed in a zone.',
+        }));
       })
       .catch(() => { /* nothing to add — the empty state stands */ });
   }, [athleteId, monthlyTotal, fallbackKey, period, sport, metric, loadedMonths, weekData, monthKeys]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -714,12 +801,13 @@ export default function ZoneDistributionChart({ selectedAthleteId = null }) {
         ) : !hasData ? (
           <div className="flex flex-col items-center justify-center py-4 text-center">
             <p className="text-[11px] font-medium text-gray-600">No zone data for this period</p>
-            <p className="mt-0.5 max-w-[200px] text-[10px] text-gray-400">
+            <p className="mt-0.5 max-w-[220px] text-[10px] text-gray-400">
               {!allLoaded
                 ? 'Loading…'
-                : sport === 'bike'
-                  ? 'Upload FIT files with power data.'
-                  : 'Record sessions with HR data.'}
+                : (fallbackNote[fallbackKey]
+                  || (sport === 'bike'
+                    ? 'Upload FIT files with power data.'
+                    : 'Record sessions with HR data.'))}
             </p>
           </div>
 

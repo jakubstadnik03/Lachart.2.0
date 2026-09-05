@@ -3213,7 +3213,15 @@ export default function DashboardPage() {
           className="lg:col-span-2 md:col-span-2 flex flex-col self-start"
         >
           {isPremium ? (
-            <ZoneDistributionChart key={`zdc-${dashboardDataAthleteId}`} selectedAthleteId={dashboardDataAthleteId} />
+            <ZoneDistributionChart
+              key={`zdc-${dashboardDataAthleteId}`}
+              selectedAthleteId={dashboardDataAthleteId}
+              // The calendar's own intensity card reads zones straight off the
+              // activities in memory, which is why it fills in where this one
+              // used to sit empty. Same data, so it can do the same.
+              activities={calendarData}
+              userProfile={getFitnessProfile()}
+            />
           ) : (
             <PremiumLockedCard
               title="Zone Distribution"

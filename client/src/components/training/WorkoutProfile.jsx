@@ -178,15 +178,36 @@ export function activityProfileBars(a, maxBars = 44) {
     },
   ];
 
-  // Whichever channel the device actually recorded for most of the session.
-  const channel = READERS.find(r => laps.filter(l => r.read(l) > 0).length >= laps.length * 0.6);
+  // Whichever channel the device actually recorded for most of the session,
+  // measured in seconds rather than in laps. A pool set is half rests, and a
+  // rest carries no speed — counting laps, a swim with eight repeats and eight
+  // walls failed the threshold and drew nothing at all, even though the rests
+  // are thirty seconds each against repeats of eighty.
+  const sessionSecs = laps.reduce((sum, l) => sum + durOf(l), 0) || laps.length;
+  const covered = (r) => laps.reduce((sum, l) => sum + (r.read(l) > 0 ? (durOf(l) || 1) : 0), 0);
+  const channel = READERS.find(r => covered(r) >= sessionSecs * 0.6);
   if (!channel) return null;
   const read = channel.read;
 
   const values = laps.map(read).filter(v => v > 0);
-  const peak = Math.max(...values);
-  if (!(peak > 0)) return null;
-  const base = channel.floor === 'min' ? Math.min(...values) * 0.9 : 0;
+  if (!values.length) return null;
+
+  // The band the bars are drawn against.
+  //
+  // Raw min-to-max let a single lap set both ends. On a swim with one sprint
+  // and a float, the sprint took the top and the float the bottom, and every
+  // real repeat was squashed into a flat strip along the floor — one spike and
+  // a hedge, which is not what the session looked like. The opened workout's
+  // lap chart never had this problem because it builds its scale from the work
+  // laps and clamps whatever falls outside; percentiles are the same idea in
+  // one line, and they leave the outliers visible at the ends rather than
+  // letting them own the axis.
+  const sorted = [...values].sort((x, y) => x - y);
+  const at = (q) => sorted[Math.min(sorted.length - 1, Math.max(0, Math.round(q * (sorted.length - 1))))];
+  const lo = sorted.length >= 5 ? at(0.1) : sorted[0];
+  const hi = sorted.length >= 5 ? at(0.9) : sorted[sorted.length - 1];
+  const peak = hi > lo ? hi : sorted[sorted.length - 1];
+  const base = channel.floor === 'min' ? Math.min(lo, peak) * 0.95 : 0;
   const span = peak - base;
   if (!(span > 0)) return null;
 
@@ -200,7 +221,15 @@ export function activityProfileBars(a, maxBars = 44) {
   // 2:02 is a fiftieth of the session by distance and a twentieth by time, and
   // every recovery swelled the same way — which is what made the card and the
   // chart look like different workouts.
-  const weightOf = isRunLikeSport(a?.sport) && laps.every(l => distOf(l) > 0) ? distOf : durOf;
+  //
+  // A rest lap with no distance is a hairline rather than a disqualification:
+  // requiring every lap to carry distance sent a whole swim back to being read
+  // in time, because the rests between its repeats measure zero metres. The
+  // chart does the same with Math.max(dist, 1).
+  const paceSport = isRunLikeSport(a?.sport);
+  const distanceLaps = laps.filter(l => distOf(l) > 0).length;
+  const useDistance = paceSport && distanceLaps >= Math.max(2, laps.length * 0.5);
+  const weightOf = useDistance ? (l => Math.max(distOf(l), 1)) : durOf;
 
   const total = laps.reduce((s, l) => s + weightOf(l), 0);
   if (!(total > 0)) return null;
