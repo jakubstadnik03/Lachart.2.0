@@ -988,6 +988,12 @@ export default function DashboardPage() {
             summaryOnly: true,
             limit: MAX_DASHBOARD_CALENDAR_ACTIVITIES,
             withLapSignals: true,
+            // The zone card reads time in zones off these laps when no
+            // per-second trace is stored yet. Without them every ride is
+            // placed whole at its average, which is one zone per session —
+            // the "estimated, 100% Z1+Z2" the dashboard was showing for weeks
+            // that the calendar, which does ask for them, split properly.
+            withLapProfiles: true,
           },
           cacheTtlMs: 60000,
         }).catch(() => ({ data: [] }))
@@ -1257,6 +1263,7 @@ export default function DashboardPage() {
           athleteId: targetId,
           summaryOnly: true,
           limit: MAX_DASHBOARD_CALENDAR_ACTIVITIES,
+          withLapProfiles: true,
         }).catch(err => {
           externalActivitiesError = err;
           if (err.response?.status !== 429 && err.code !== 'ERR_NETWORK' && err.code !== 'ERR_EMPTY_RESPONSE') {
