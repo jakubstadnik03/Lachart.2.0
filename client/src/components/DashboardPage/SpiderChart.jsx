@@ -212,6 +212,35 @@ const MONTH_COLORS = [
 ];
 
 // ── Component ─────────────────────────────────────────────────────────────────
+
+/**
+ * Why the radar is empty, in the server's own words.
+ *
+ * getPowerMetrics already reports what it looked at — how many FIT sessions it
+ * processed, how many rides carried power, how many of those it could actually
+ * read a trace for, and whether it stopped short of the pool. Telling an
+ * athlete with two hundred rides on file to "upload cycling activities with
+ * power data" is both wrong and unactionable; this says which of those numbers
+ * came back zero.
+ */
+function describeSources(sources) {
+  if (!sources) return null;
+  const fit = Number(sources.fit?.processed) || 0;
+  const withPower = Number(sources.strava?.totalWithPower) || 0;
+  const processed = Number(sources.strava?.processed) || 0;
+  const pool = Number(sources.strava?.pool) || 0;
+  if (fit === 0 && pool === 0) {
+    return 'No cycling activities found. Connect Strava or upload a FIT file.';
+  }
+  if (withPower === 0 && fit === 0) {
+    return `${pool} ride${pool === 1 ? '' : 's'} found, none with power recorded.`;
+  }
+  if (processed === 0 && withPower > 0) {
+    return `${withPower} ride${withPower === 1 ? '' : 's'} have power, but none of their per-second traces are stored yet. They arrive in the background — check back shortly.`;
+  }
+  return null;
+}
+
 export default function SpiderChart({
   trainings = [],
   userTrainings = [],
@@ -275,6 +304,8 @@ export default function SpiderChart({
   // bikeReady: true once we've received real bike data (cache or API).
   // Prevents the chart from flashing with all-zero data on first render.
   const [bikeReady, setBikeReady] = useState(false);
+  /** What the server found, for when the radar comes back empty. */
+  const [sourceNote, setSourceNote] = useState(null);
   // refreshKey: bump to force-reload both allTime and compare effects.
   const [refreshKey, setRefreshKey] = useState(0);
   const [, setLoading] = useState(false);
@@ -503,6 +534,10 @@ export default function SpiderChart({
         } catch {}
         if (reqId !== metricsReqRef.current) return;
         setBikeMetrics(metrics);
+        // The server says what it actually found; the card used to throw that
+        // away and offer "upload cycling activities with power data" to an
+        // athlete whose rides are already here.
+        setSourceNote(describeSources(metrics?.sources));
         setBikeReady(true);
       } catch (err) {
         const status = err.response?.status;
@@ -1026,9 +1061,9 @@ export default function SpiderChart({
               </svg>
             </div>
             <p className="text-sm font-medium text-gray-500">No {sport === 'bike' ? 'power' : 'pace'} data yet</p>
-            <p className="text-xs text-gray-400 max-w-[200px]">
+            <p className="text-xs text-gray-400 max-w-[240px]">
               {sport === 'bike'
-                ? 'Upload cycling activities with power data to see your radar.'
+                ? (sourceNote || 'Upload cycling activities with power data to see your radar.')
                 : 'Log run training sessions with interval data to see your pace radar.'}
             </p>
           </div>

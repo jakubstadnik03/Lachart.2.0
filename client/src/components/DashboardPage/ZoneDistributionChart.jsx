@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import ReactDOM from 'react-dom';
 import { motion } from 'framer-motion';
 import { SportGlyph } from '../shared/SportIcon';
-import { getMonthlyPowerAnalysis } from '../../services/api';
+import { getMonthlyPowerAnalysis, getTimelineZones } from '../../services/api';
 import { useAuth } from '../../context/AuthProvider';
 import {
   getSportsWithZoneData,
@@ -363,6 +363,23 @@ export default function ZoneDistributionChart({ selectedAthleteId = null }) {
   // Collapse expanded zone when metric changes
   useEffect(() => { setExpandedZone(null); }, [metric]);
 
+  /**
+   * Zone seconds from the traces, for when the monthly analysis has none.
+   *
+   * That endpoint reads FitTraining records and nothing else, so an athlete who
+   * rides with Strava gets an empty card and the message "upload FIT files with
+   * power data" — for rides that are already in the app, already carrying
+   * power. /api/timeline/zones is the reader that also knows about stored
+   * Strava traces, and about the session average as a last resort.
+   *
+   * It answers with seconds per zone and no more, so this is a fallback rather
+   * than a replacement: when the monthly payload has the data, its per-zone
+   * averages and boundaries are worth keeping.
+   */
+  const [fallbackZones, setFallbackZones] = useState({});
+  const fallbackKey = `${period}|${sport}|${metric}`;
+  const fallbackAsked = useRef(new Set());
+
   // ── Build zone data for current sport + metric ────────────────────────────
   const { zoneTimes, zoneAvgs, zoneDefs, totalSecs, sessions } = useMemo(() => {
     if (!periodMonths.length) {
@@ -460,11 +477,50 @@ export default function ZoneDistributionChart({ selectedAthleteId = null }) {
     return { zoneTimes: zt, zoneAvgs: za || {}, zoneDefs: zd, totalSecs, sessions };
   }, [periodMonths, sport, metric]);
 
+  const monthlyTotal = Object.values(zoneTimes).reduce((a, b) => a + b, 0);
+  const fb = fallbackZones[fallbackKey] || null;
+  const usingFallback = monthlyTotal <= 0 && fb && Object.values(fb).some((v) => v > 0);
+  const effectiveZoneTimes = usingFallback ? fb : zoneTimes;
+
+  // Ask the trace reader only once the monthly payload has arrived and come
+  // back empty — otherwise every card would fire a second request it does not
+  // need, and the streams are the expensive half of that query.
+  useEffect(() => {
+    if (!athleteId || monthlyTotal > 0) return;
+    // Only once the monthly payload for this window has actually landed —
+    // asking while it is still in flight would call every window empty.
+    const landed = rangeBounds(period)
+      ? weekLoaded.current.has(period)
+      : monthKeys.every((k) => loadedRef.current.get(k) === 'done');
+    if (!landed) return;
+    if (fallbackAsked.current.has(fallbackKey)) return;
+    fallbackAsked.current.add(fallbackKey);
+    const bounds = rangeBounds(period);
+    const end = bounds ? new Date(bounds.endDate) : new Date();
+    const start = bounds ? new Date(bounds.startDate) : (() => {
+      const months = PERIODS.find((p) => p.label === period)?.months ?? 3;
+      const d = new Date();
+      d.setMonth(d.getMonth() - months);
+      return d;
+    })();
+    const iso = (d) => new Date(d).toISOString().slice(0, 10);
+    getTimelineZones(athleteId, iso(start), iso(end), sport === 'all' ? 'all' : sport, metric === 'hr' ? 'hr' : 'power')
+      .then((res) => {
+        const days = Array.isArray(res?.days) ? res.days : [];
+        const sec = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+        days.forEach((d) => {
+          for (let z = 1; z <= 5; z += 1) sec[z] += Number(d?.zones?.[`z${z}`]) || 0;
+        });
+        setFallbackZones((prev) => ({ ...prev, [fallbackKey]: sec }));
+      })
+      .catch(() => { /* nothing to add — the empty state stands */ });
+  }, [athleteId, monthlyTotal, fallbackKey, period, sport, metric]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Zone percentages
-  const grandTotal = Object.values(zoneTimes).reduce((a, b) => a + b, 0);
+  const grandTotal = Object.values(effectiveZoneTimes).reduce((a, b) => a + b, 0);
   const zonePcts   = {};
   for (let z = 1; z <= 5; z++) {
-    zonePcts[z] = grandTotal > 0 ? ((zoneTimes[z] || 0) / grandTotal) * 100 : 0;
+    zonePcts[z] = grandTotal > 0 ? ((effectiveZoneTimes[z] || 0) / grandTotal) * 100 : 0;
   }
 
   const hasData    = grandTotal > 0;
