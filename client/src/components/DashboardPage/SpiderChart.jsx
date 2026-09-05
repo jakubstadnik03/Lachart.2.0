@@ -633,17 +633,25 @@ export default function SpiderChart({
         };
       }
 
+      // A window with no rides carrying power comes back as five zeros, and
+      // plotting those drew a dot in the middle of the chart — which reads as
+      // "you have no power data" to someone whose all-time bests are sitting
+      // right there. Leave the series off and say the window was empty; the
+      // all-time shape still carries the athlete's profile.
+      const compareVals = BIKE_KEYS.map(k => normBike(bikeMetrics.compare?.[k], k));
+      const compareHasData = compareVals.some(v => v > 0);
       return {
         labels,
         datasets: [
           { label: 'All Time', data: [100, 100, 100, 100, 100], borderColor: RADAR_REF.line, backgroundColor: RADAR_REF.fill, borderWidth: 1.5, pointBackgroundColor: RADAR_REF.line, pointRadius: 3, fill: true, __kind: 'alltime' },
-          ...(comparePeriod !== 'alltime' && comparePeriod !== 'monthly' ? [{
+          ...(comparePeriod !== 'alltime' && comparePeriod !== 'monthly' && compareHasData ? [{
             label: comparePeriod === '90days' ? 'Past 90 days' : 'Past 30 days',
-            data: BIKE_KEYS.map(k => normBike(bikeMetrics.compare?.[k], k)),
+            data: compareVals,
             borderColor: radarSportColor(sport), backgroundColor: withAlpha(radarSportColor(sport), 0.16),
             borderWidth: 2.5, pointBackgroundColor: radarSportColor(sport), pointRadius: 4, fill: true, __kind: 'compare',
           }] : []),
         ],
+        __compareEmpty: comparePeriod !== 'alltime' && comparePeriod !== 'monthly' && !compareHasData,
       };
     }
 
@@ -716,7 +724,23 @@ export default function SpiderChart({
           backdropPadding: 0,
           color: '#9ca3af',
         },
-        pointLabels: { font: { size: 11, weight: '600' }, color: '#374151', padding: 4 },
+        pointLabels: {
+          font: { size: 11, weight: '600' },
+          color: '#374151',
+          padding: 4,
+          // The polygon is normalised against the athlete's own best, so on its
+          // own it is the same shape for everyone. The numbers are the content;
+          // without them the card is a pentagon that says nothing.
+          callback: (label, i) => {
+            const best = sport === 'bike'
+              ? bikeAllTimeBest[BIKE_KEYS[i]]
+              : runMetrics?.allTimeBest?.[RUN_AXES[i]?.id];
+            if (!best) return label;
+            return sport === 'bike'
+              ? [label, `${Math.round(best)} W`]
+              : [label, fmtPace(best)];
+          },
+        },
         grid: { color: 'rgba(0,0,0,0.06)', lineWidth: 1 },
         angleLines: { color: 'rgba(0,0,0,0.06)' },
       },
@@ -1072,6 +1096,12 @@ export default function SpiderChart({
         {/* Radar chart */}
         {!isLoadingBike && !isLoadingRun && !isEmpty && (
           <>
+            {chartData?.__compareEmpty && (
+              <p className="text-[11px] text-gray-400 text-center mt-2 -mb-1">
+                Nothing with {sport === 'bike' ? 'power' : 'pace'} in the past{' '}
+                {comparePeriod === '30days' ? '30' : '90'} days — showing your all-time bests.
+              </p>
+            )}
             <div className="w-full relative mt-2" style={{ height: '280px' }}>
               {chartData && (
                 <Radar data={chartData} options={chartOptions} />
