@@ -306,8 +306,10 @@ async function dailyZoneDistribution(athleteId, startDate, endDate, { sport = 'a
     if (!mins) { day.unmeasuredSec += duration; continue; }
     anyZones = true;
 
-    // Precomputed at upload — by far the cheapest path.
-    if (Array.isArray(t.timeInZone) && t.timeInZone.length) {
+    // Precomputed at upload — by far the cheapest path, and heart rate only.
+    // It was being used whatever the caller asked for, so a request for power
+    // came back as the heart-rate split wearing power's labels.
+    if (!usePower && Array.isArray(t.timeInZone) && t.timeInZone.length) {
       let added = 0;
       for (const entry of t.timeInZone) {
         const z = Number(entry?.zone);
@@ -321,9 +323,18 @@ async function dailyZoneDistribution(athleteId, startDate, endDate, { sport = 'a
 
     const recs = Array.isArray(t.records) ? t.records : [];
     if (recs.length) {
-      const hr = recs.map((r) => r?.heartRate);
+      // Read the channel the caller asked for. This always read heartRate, so
+      // a power request bucketed heart rates against watt boundaries — every
+      // reading under Z2's opening, which is every heart rate there has ever
+      // been, landed in Z1. A ride full of threshold work came back as an easy
+      // one, which is exactly how it looked on the dashboard.
+      const series = usePower
+        ? (pace
+          ? recs.map((r) => (Number(r?.speed) > 0.3 ? 1000 / Number(r.speed) : null))
+          : recs.map((r) => r?.power))
+        : recs.map((r) => r?.heartRate);
       const time = recs.map((r) => (r?.elapsedTime != null ? r.elapsedTime : null));
-      const added = addSeries(day.zones, hr, time.some((x) => x != null) ? time : null, mins);
+      const added = addSeries(day.zones, series, time.some((x) => x != null) ? time : null, mins, pace);
       day.totalSec += added;
       if (duration > added) day.unmeasuredSec += duration - added;
     } else {

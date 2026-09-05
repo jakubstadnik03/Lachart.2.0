@@ -184,4 +184,24 @@ test('ignores nonsense paces', () => {
   assert.strictEqual(zoneForPace(null, bounds), null);
 });
 
+console.log('\nreading the channel the caller asked for');
+
+test('power boundaries must not be fed heart rates', () => {
+  // The bug: a FIT ride's records were always read as heartRate, whatever the
+  // metric. Against cycling power boundaries every heart rate there has ever
+  // been sits under Z2's opening, so a session full of threshold work came
+  // back as an easy one. These two must not bucket the same.
+  const powerMins = [1, 281, 331, 356, 391];
+  const hrMins = [100, 130, 150, 165, 175];
+
+  const wattsAtThreshold = 355;
+  const heartRateAtThreshold = 155;
+
+  assert.strictEqual(zoneForHr(wattsAtThreshold, powerMins), 3);
+  // Feeding the heart rate to the power table is what produced the Z1 wall.
+  assert.strictEqual(zoneForHr(heartRateAtThreshold, powerMins), 1);
+  // The same effort read on its own axis is Z3 either way.
+  assert.strictEqual(zoneForHr(heartRateAtThreshold, hrMins), 3);
+});
+
 console.log(`\n${passed} passed`);
