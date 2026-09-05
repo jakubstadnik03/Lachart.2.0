@@ -6,7 +6,7 @@ import { getMonthlyPowerAnalysis, getTimelineZones } from '../../services/api';
 import {
   zoneSpansForActivity, lapPowerOrPaceMetric, lapHeartRate, findZoneKeyForValue,
 } from '../../utils/lapZoneSpans';
-import { activityCalendarDateKey } from '../../utils/calendarDateKeys';
+import { activityCalendarDateKey, localCalendarDateKey } from '../../utils/calendarDateKeys';
 import { useAuth } from '../../context/AuthProvider';
 import {
   getSportsWithZoneData,
@@ -517,8 +517,12 @@ export default function ZoneDistributionChart({ selectedAthleteId = null, activi
       to = new Date();
       from = new Date(); from.setMonth(from.getMonth() - months); from.setHours(0, 0, 0, 0);
     }
-    const fromKey = from.toISOString().slice(0, 10);
-    const toKey = to.toISOString().slice(0, 10);
+    // Local day keys, not UTC ones. The week runs Monday 00:00 to Sunday
+    // 23:59 in the athlete's own time, and toISOString() moves that midnight
+    // back across the date line in any zone east of UTC — so "this week"
+    // started on Sunday and swallowed the previous day's ride.
+    const fromKey = localCalendarDateKey(from);
+    const toKey = localCalendarDateKey(to);
     const want = sport === 'all' ? null : SPORT_TAB_TO_PROFILE[sport];
 
     const sec = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
@@ -611,7 +615,9 @@ export default function ZoneDistributionChart({ selectedAthleteId = null, activi
       d.setMonth(d.getMonth() - months);
       return d;
     })();
-    const iso = (d) => new Date(d).toISOString().slice(0, 10);
+    // Same reason as above: the reader is asked for local days, so the bounds
+    // have to be formatted in local time rather than shifted into UTC first.
+    const iso = (d) => localCalendarDateKey(d);
     getTimelineZones(athleteId, iso(start), iso(end), sport === 'all' ? 'all' : sport, metric === 'hr' ? 'hr' : 'power')
       .then((res) => {
         const days = Array.isArray(res?.days) ? res.days : [];

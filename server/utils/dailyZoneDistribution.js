@@ -261,11 +261,43 @@ async function dailyZoneDistribution(athleteId, startDate, endDate, { sport = 'a
     timestamp: { $gte: startDate, $lte: endDate },
   }).select('timestamp sport totalElapsedTime totalTimerTime timeInZone records').lean();
 
+  /**
+   * Sessions already counted, so a ride that exists as both a FIT upload and a
+   * Strava sync is not counted twice.
+   *
+   * Every other reader in the app dedupes across sources — the load model, the
+   * calendar merge — and this one did not, so an athlete who uploads their FIT
+   * files *and* has Strava connected saw a week come out hours longer here than
+   * in the sport split beside it, with the duplicated session's zones doubled
+   * along with it. Same rule as dedupeActivitiesForLoad: same day, same sport,
+   * durations within 10% or three minutes.
+   */
+  const counted = [];
+  const alreadyCounted = (dayKey, sport_, dur) => counted.some((c) => (
+    c.day === dayKey
+    && c.sport === sport_
+    && (!dur || !c.dur
+      ? dur === c.dur
+      : Math.abs(dur - c.dur) <= Math.max(180, 0.1 * Math.max(dur, c.dur)))
+  ));
+  const sportBucketOf = (s) => {
+    const v = String(s || '').toLowerCase();
+    if (/ride|bike|cycl|virtual/.test(v)) return 'bike';
+    if (/swim/.test(v)) return 'swim';
+    if (/run|walk|hike/.test(v)) return 'run';
+    return 'other';
+  };
+
   for (const t of fits) {
     if (!sportMatches(t.sport)) continue;
     const key = localDayKey(t.timestamp);
     if (!key) continue;
     const day = dayFor(key);
+    counted.push({
+      day: key,
+      sport: sportBucketOf(t.sport),
+      dur: Number(t.totalElapsedTime || t.totalTimerTime || 0),
+    });
     day.sessions += 1;
 
     const { mins, pace } = boundsFor(t.sport);
@@ -329,6 +361,10 @@ async function dailyZoneDistribution(athleteId, startDate, endDate, { sport = 'a
   for (const a of wanted) {
     const key = localDayKey(a.startDate);
     if (!key) continue;
+    const duration0 = Number(a.movingTime || a.elapsedTime || 0);
+    // The same session, already counted from its FIT upload.
+    if (alreadyCounted(key, sportBucketOf(a.sport), duration0)) continue;
+    counted.push({ day: key, sport: sportBucketOf(a.sport), dur: duration0 });
     const day = dayFor(key);
     day.sessions += 1;
 
