@@ -299,6 +299,7 @@ const { startStravaAutoSyncScheduler } = require('./services/stravaAutoSyncSched
 const { startLactateTestFollowUpScheduler } = require('./services/lactateTestFollowUpScheduler');
 const { startRetentionScheduler } = require('./services/retentionScheduler');
 const { startAppReengagementScheduler } = require('./services/appReengagementScheduler');
+const { startProductUpdateScheduler } = require('./services/productUpdateScheduler');
 const { startGarminTokenRefreshScheduler } = require('./services/garminTokenRefreshScheduler');
 const { startStreamBackfillScheduler } = require('./services/streamBackfillScheduler');
 const { startWinBackScheduler } = require('./services/winBackScheduler');
@@ -386,6 +387,7 @@ startRetentionScheduler();
 
 // Web-only 3-step drip: app download → Strava → workout planning (Zoho-safe auto pacing)
 startAppReengagementScheduler();
+startProductUpdateScheduler();
 
 // Garmin OAuth2 tokens expire silently for webhook-only users — refresh ahead of time.
 startGarminTokenRefreshScheduler();

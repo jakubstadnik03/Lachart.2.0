@@ -446,6 +446,12 @@ const userSchema = new mongoose.Schema({
     whatsNewMay2026Sent:     { type: Date, default: null },
     iosLaunchJun2026Sent:    { type: Date, default: null },
     paidLaunchJul2026Sent:   { type: Date, default: null },
+    /** Recurring product-update newsletter. Unlike the one-off campaigns above,
+     *  this is keyed per ISSUE (e.g. "2026-08") so a new changelog can be sent
+     *  to everyone again without a code/schema change. Map of issueId → sentAt.
+     *  Mongoose Map keys must not contain "." or "$" — issue ids are limited to
+     *  [A-Za-z0-9_-] (see productUpdateCampaignService.isValidIssueId). */
+    productUpdates:          { type: Map, of: Date, default: undefined },
     /** Automated web-only re-engagement drip (app → Strava → planning). */
     appReengagementStep1Sent: { type: Date, default: null },
     appReengagementStep2Sent: { type: Date, default: null },

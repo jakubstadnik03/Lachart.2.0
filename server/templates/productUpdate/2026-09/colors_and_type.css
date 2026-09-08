@@ -1,0 +1,186 @@
+/* ==========================================================================
+   LaChart — Colors & Type tokens
+   Source: client/tailwind.config.js, client/public/index.html, brand spec
+   ========================================================================== */
+
+/* Webfont — served locally from /fonts (brand master files) */
+@font-face {
+  font-family: 'Hind Vadodara';
+  src: url('fonts/HindVadodara-Light.ttf') format('truetype');
+  font-weight: 300; font-style: normal; font-display: swap;
+}
+@font-face {
+  font-family: 'Hind Vadodara';
+  src: url('fonts/HindVadodara-Regular.ttf') format('truetype');
+  font-weight: 400; font-style: normal; font-display: swap;
+}
+@font-face {
+  font-family: 'Hind Vadodara';
+  src: url('fonts/HindVadodara-Medium.ttf') format('truetype');
+  font-weight: 500; font-style: normal; font-display: swap;
+}
+@font-face {
+  font-family: 'Hind Vadodara';
+  src: url('fonts/HindVadodara-SemiBold.ttf') format('truetype');
+  font-weight: 600; font-style: normal; font-display: swap;
+}
+@font-face {
+  font-family: 'Hind Vadodara';
+  src: url('fonts/HindVadodara-Bold.ttf') format('truetype');
+  font-weight: 700; font-style: normal; font-display: swap;
+}
+
+:root {
+  /* ---------- Brand colors (from tailwind.config.js) ---------- */
+  --lc-primary:         #767EB5;   /* LaChart purple — signature */
+  --lc-primary-dark:    #5E6590;
+  --lc-primary-50:      #EEF0F8;
+  --lc-primary-100:     #DADDEE;
+  --lc-primary-200:     #B8BDDB;
+  --lc-primary-tint:    #E9ECF6;   /* selected row / bg wash */
+
+  --lc-secondary:       #599FD0;   /* mid blue */
+  --lc-secondary-dark:  #4780A8;
+  --lc-tertiary:        #7BC2EB;   /* light blue — used in logo curve */
+
+  /* ---------- Warm accent ---------- */
+  /* Use SPARINGLY — CTAs, PRs, key data highlights only. Never for body type. */
+  --lc-accent:          #FF6B4A;   /* coral — primary warm accent */
+  --lc-accent-dark:     #E85535;   /* hover / press */
+  --lc-accent-tint:     #FFE6DF;   /* background wash, PR badge bg */
+
+  /* ---------- Neutrals ---------- */
+  --lc-white:           #F9FBFD;   /* app near-white */
+  --lc-custom-gray:     #FCFCFC;
+  --lc-bg:              #F3F4F6;   /* html/body bg */
+  --lc-surface:         #FFFFFF;
+  --lc-border:          #E5E7EB;
+  --lc-border-soft:     #F1F2F5;
+
+  --lc-text:            #1D2C4C;   /* primary text */
+  --lc-text-light:      #4A5E82;   /* secondary text */
+  --lc-text-muted:      #6B7280;
+  --lc-text-ink:        #0A0E1A;   /* deepest text / dark headlines */
+
+  /* ---------- Semantic ---------- */
+  --lc-success:         #4BA87D;   /* greenos */
+  --lc-warning:         #F59E0B;
+  --lc-danger:          #E05347;
+  --lc-danger-dark:     #B84238;
+  --lc-info:            #599FD0;
+
+  /* ---------- Status dots (from Menu.jsx) ---------- */
+  --lc-status-fresh:    #4ADE80;   /* tested < 6w */
+  --lc-status-stale:    #FACC15;   /* tested 6–12w */
+  --lc-status-old:      #F87171;   /* > 12w */
+  --lc-status-pending:  #FBBF24;
+
+  /* ---------- Chart / zones palette (from styles/theme.js) ---------- */
+  --lc-chart-grid:      rgba(0,0,0,.15);
+  --lc-chart-measured:  #000000;
+  --lc-chart-loglog:    #52525B;
+  --lc-zone-obla-20:    #86EFAC;
+  --lc-zone-obla-25:    #FDBA74;
+  --lc-zone-obla-30:    #818CF8;
+  --lc-zone-obla-35:    #FDA4AF;
+  --lc-zone-bsln-05:    #0D9488;
+  --lc-zone-bsln-10:    #C026D3;
+  --lc-zone-ltp1:       #BEF264;
+  --lc-zone-ltp2:       #FCD34D;
+
+  /* ---------- Typography ---------- */
+  --lc-font-sans: 'Hind Vadodara', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --lc-font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+
+  /* Type scale — tuned for app + marketing carousels */
+  --lc-fs-display:  clamp(3rem, 6vw, 5rem);   /* 48–80px */
+  --lc-fs-h1:       2.5rem;                    /* 40 */
+  --lc-fs-h2:       2rem;                      /* 32 */
+  --lc-fs-h3:       1.5rem;                    /* 24 */
+  --lc-fs-h4:       1.25rem;                   /* 20 */
+  --lc-fs-body:     1rem;                      /* 16 */
+  --lc-fs-small:    0.875rem;                  /* 14 */
+  --lc-fs-xs:       0.75rem;                   /* 12 */
+
+  --lc-lh-tight:    1.1;
+  --lc-lh-snug:     1.25;
+  --lc-lh-normal:   1.5;
+  --lc-lh-relaxed:  1.65;
+
+  --lc-fw-regular:  400;
+  --lc-fw-medium:   500;
+  --lc-fw-semibold: 600;
+  --lc-fw-bold:     700;
+
+  /* ---------- Spacing / radii / shadow (extracted from CRA + tailwind defaults used) ---------- */
+  --lc-space-1:  4px;
+  --lc-space-2:  8px;
+  --lc-space-3:  12px;
+  --lc-space-4:  16px;
+  --lc-space-5:  20px;
+  --lc-space-6:  24px;
+  --lc-space-8:  32px;
+  --lc-space-10: 40px;
+  --lc-space-12: 48px;
+  --lc-space-16: 64px;
+
+  --lc-radius-sm:  6px;
+  --lc-radius-md:  8px;      /* default card/input */
+  --lc-radius-lg:  12px;     /* large cards */
+  --lc-radius-xl:  16px;
+  --lc-radius-2xl: 24px;
+  --lc-radius-full: 9999px;
+
+  /* Menu.jsx uses shadow-md on sidebar; cards use shadow-sm/md */
+  --lc-shadow-xs: 0 1px 2px 0 rgba(10, 14, 26, 0.05);
+  --lc-shadow-sm: 0 1px 2px 0 rgba(10, 14, 26, 0.05), 0 1px 3px 0 rgba(10, 14, 26, 0.06);
+  --lc-shadow-md: 0 4px 6px -1px rgba(10, 14, 26, 0.08), 0 2px 4px -2px rgba(10, 14, 26, 0.06);
+  --lc-shadow-lg: 0 10px 15px -3px rgba(10, 14, 26, 0.10), 0 4px 6px -4px rgba(10, 14, 26, 0.06);
+  --lc-shadow-brand: 0 10px 30px -10px rgba(118, 126, 181, 0.45);
+
+  /* Motion — from Menu.jsx (framer-motion spring defaults) */
+  --lc-ease-standard: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --lc-ease-in:       cubic-bezier(0.4, 0, 1, 1);
+  --lc-ease-out:      cubic-bezier(0, 0, 0.2, 1);
+  --lc-dur-fast:      150ms;
+  --lc-dur-base:      220ms;
+  --lc-dur-slow:      320ms;
+
+  /* ---------- Semantic aliases ---------- */
+  --fg1: var(--lc-text);
+  --fg2: var(--lc-text-light);
+  --fg3: var(--lc-text-muted);
+  --bg1: var(--lc-bg);
+  --bg2: var(--lc-surface);
+  --brand: var(--lc-primary);
+  --brand-ink: var(--lc-text-ink);
+  --danger: var(--lc-danger);
+  --success: var(--lc-success);
+}
+
+/* ---------- Base elements ---------- */
+html, body {
+  font-family: var(--lc-font-sans);
+  color: var(--fg1);
+  background: var(--bg1);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: "ss01", "cv11";
+}
+
+h1, .h1 { font-size: var(--lc-fs-h1); font-weight: var(--lc-fw-bold);    line-height: var(--lc-lh-tight); letter-spacing: -0.02em; color: var(--fg1); }
+h2, .h2 { font-size: var(--lc-fs-h2); font-weight: var(--lc-fw-bold);    line-height: var(--lc-lh-snug);  letter-spacing: -0.015em; color: var(--fg1); }
+h3, .h3 { font-size: var(--lc-fs-h3); font-weight: var(--lc-fw-semibold); line-height: var(--lc-lh-snug);  color: var(--fg1); }
+h4, .h4 { font-size: var(--lc-fs-h4); font-weight: var(--lc-fw-semibold); line-height: var(--lc-lh-snug);  color: var(--fg1); }
+
+.display {
+  font-size: var(--lc-fs-display);
+  font-weight: var(--lc-fw-bold);
+  line-height: 1.02;
+  letter-spacing: -0.035em;
+}
+
+p { font-size: var(--lc-fs-body); line-height: var(--lc-lh-relaxed); color: var(--fg2); }
+small, .small { font-size: var(--lc-fs-small); color: var(--fg3); }
+.eyebrow { font-size: var(--lc-fs-xs); font-weight: var(--lc-fw-semibold); letter-spacing: 0.14em; text-transform: uppercase; color: var(--fg2); }
+code, pre { font-family: var(--lc-font-mono); }

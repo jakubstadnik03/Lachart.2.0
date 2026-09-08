@@ -26,6 +26,7 @@ const {
 const ios = require('../services/iosLaunchCampaignService');
 const paidLaunch = require('../services/paidLaunchCampaignService');
 const appReeng = require('../services/appReengagementCampaignService');
+const productUpdate = require('../services/productUpdateCampaignService');
 const {
   getCampaignAdminStats,
   getCampaignRecipients,
@@ -587,6 +588,115 @@ async function handleUnsubscribe(req, res) {
     return res.status(500).send('Server error. Try again later.');
   }
 }
+
+// ─── Recurring product-update newsletter — admin endpoints ──────────────────
+//
+// Unlike the one-off campaigns above, this is issue-based: the issue id is a
+// path param, so a new changelog needs only a new template folder — no new
+// route. Nothing sends automatically unless ENABLE_PRODUCT_UPDATE_SCHEDULER is
+// set; these endpoints are the manual controls (status / preview / run / reset).
+
+// GET /api/email/product-update/issues — list available issues + which is active.
+router.get('/product-update/issues', verifyToken, async (req, res) => {
+  try {
+    if (!(await requireAdmin(req, res))) return;
+    res.json({ activeIssueId: productUpdate.getActiveIssueId(), issues: productUpdate.listIssues() });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /api/email/product-update/:issueId/status — sent / pending / eligible counts.
+router.get('/product-update/:issueId/status', verifyToken, async (req, res) => {
+  try {
+    if (!(await requireAdmin(req, res))) return;
+    if (!productUpdate.isValidIssueId(req.params.issueId)) {
+      return res.status(400).json({ error: 'Invalid issue id' });
+    }
+    res.json(await productUpdate.getIssueStats(req.params.issueId));
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /api/email/product-update/:issueId/preview
+// Send the issue to a single recipient (yourself or body.email) without marking
+// anyone as sent, so you can sanity-check the render before rolling it out.
+router.post('/product-update/:issueId/preview', verifyToken, async (req, res) => {
+  try {
+    const me = await requireAdmin(req, res);
+    if (!me) return;
+    const { issueId } = req.params;
+    if (!productUpdate.issueExists(issueId)) {
+      return res.status(404).json({ error: 'Unknown issue' });
+    }
+    const targetEmail = (req.body?.email || '').toLowerCase().trim();
+    const recipient = targetEmail
+      ? await User.findOne({ email: targetEmail }).lean()
+      : await User.findById(req.user.userId).lean();
+    if (!recipient || !recipient.email) {
+      return res.status(404).json({ error: 'No matching user with an email address' });
+    }
+    // Force-clear this issue's sent-marker on a copy so sendOne actually sends,
+    // then roll back whatever it wrote — a preview must not count as delivered.
+    const draft = { ...recipient, retentionEmails: { ...(recipient.retentionEmails || {}), productUpdates: {} } };
+    const result = await productUpdate.sendOne(draft, issueId);
+    if (result.sent) {
+      await User.updateOne(
+        { _id: recipient._id },
+        { $unset: { [`retentionEmails.productUpdates.${issueId}`]: '' } }
+      );
+    }
+    res.json({ to: recipient.email, issueId, ...result });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /api/email/product-update/:issueId/run — paced mass-send (blocks until done/paused).
+router.post('/product-update/:issueId/run', verifyToken, async (req, res) => {
+  try {
+    if (!(await requireAdmin(req, res))) return;
+    const { issueId } = req.params;
+    if (!productUpdate.issueExists(issueId)) {
+      return res.status(404).json({ error: 'Unknown issue' });
+    }
+    const {
+      batchSize = 1,
+      batchIntervalMs = 5 * 60 * 1000,
+      maxBatches = 1000,
+      maxEmailsPerRun = 20,
+      dryRun = false,
+    } = req.body || {};
+
+    const stats = await productUpdate.runCampaign({
+      issueId,
+      batchSize: Math.max(1, Math.min(50, Number(batchSize) || 1)),
+      batchIntervalMs: Math.max(5_000, Number(batchIntervalMs) || 5 * 60_000),
+      maxBatches: Math.max(1, Math.min(10_000, Number(maxBatches) || 1000)),
+      maxEmailsPerRun: maxEmailsPerRun === null ? null : Math.max(1, Math.min(1000, Number(maxEmailsPerRun) || 20)),
+      dryRun: !!dryRun,
+    });
+    res.json({ ok: true, stats });
+  } catch (e) {
+    console.error('[productUpdate run] error:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /api/email/product-update/:issueId/reset — clear sent-marker (everyone or body.email).
+router.post('/product-update/:issueId/reset', verifyToken, async (req, res) => {
+  try {
+    if (!(await requireAdmin(req, res))) return;
+    if (!productUpdate.isValidIssueId(req.params.issueId)) {
+      return res.status(400).json({ error: 'Invalid issue id' });
+    }
+    const email = (req.body?.email || '').toLowerCase().trim() || null;
+    res.json(await productUpdate.resetIssue(req.params.issueId, { email }));
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
 
 router.get('/unsubscribe', handleUnsubscribe);
 router.post('/unsubscribe', handleUnsubscribe);
