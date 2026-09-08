@@ -425,6 +425,42 @@ function MonthYearPicker({ date, onPick, label }) {
 }
 
 /**
+ * A session's lactate, split into what the profile chart can carry and what
+ * has to be written out.
+ *
+ * Both answers come from one place because the calendar asks the question on
+ * two screens that cannot share a layout: the desktop's hover card, and the
+ * mobile day list, where there is no hover at all — a tap opens the session,
+ * so a phone that answered the tap with a tooltip would have swallowed the
+ * gesture. Same rule on both, or the same ride reads as measured on one and
+ * unmeasured on the other.
+ *
+ * @returns {{marks: Array, line: string|null}} marks to draw over the bars,
+ *   and the line to print when the chart cannot say it
+ */
+function sessionLactateDisplay(activity, bars) {
+  const marks = activity ? activityLactateMarks(activity) : [];
+  // The session's own single reading, for the sessions that have one number
+  // rather than a set — a hand-logged training, or a ride with too few laps
+  // for the list to send a profile at all.
+  const sessionValue = Number(activity?.lactate) > 0 ? Number(activity.lactate) : null;
+  // The chart carries them when it has a profile to put them on and few enough
+  // to label; a set measured every rep is more badges than a thumbnail this
+  // wide can hold apart.
+  const onChart = !!bars && marks.length > 0 && marks.length <= MAX_LACTATE_BADGES;
+  // Printing the same numbers under a chart that already labels them is noise.
+  // Printing them nowhere — a session whose laps carry lactate and no power, or
+  // one measured only as a whole — is how the reading went missing to begin
+  // with.
+  const line = onChart
+    ? null
+    : marks.length > 0
+      ? `${marks.map(m => m.value.toFixed(1)).join(' · ')} mmol`
+      : sessionValue != null ? `${sessionValue.toFixed(1)} mmol` : null;
+  return { marks: onChart ? marks : [], line };
+}
+
+/**
  * What a session says when there is room to say it.
  *
  * The card in the grid has space for a name and two numbers; this is the rest
@@ -453,25 +489,7 @@ function SessionHoverContent({ planned, activity, profile, getCategory }) {
   // The blood, over the reps it was drawn after. A card in the grid has no
   // room for it and the profile alone cannot say it, so a measured session
   // read exactly like an unmeasured one until it was opened.
-  const lactateMarks = activity ? activityLactateMarks(activity) : [];
-  // The session's own single reading, for the sessions that have one number
-  // rather than a set — a hand-logged training, or a ride with too few laps
-  // for the list to send a profile at all.
-  const sessionLactate = Number(activity?.lactate) > 0 ? Number(activity.lactate) : null;
-  // The chart carries the readings when it has a profile to put them on and
-  // few enough of them to label; a set measured every rep is more badges than
-  // 230 pixels can hold apart.
-  const chartCarriesLactate = !!bars && lactateMarks.length > 0
-    && lactateMarks.length <= MAX_LACTATE_BADGES;
-  // Otherwise they are spelled out. Printing the same numbers under a chart
-  // that already labels them is noise; printing them nowhere, for a session
-  // whose laps carry lactate and no power, or one measured only as a whole,
-  // is how the reading went missing in the first place.
-  const lactateLine = chartCarriesLactate
-    ? null
-    : lactateMarks.length > 0
-      ? `${lactateMarks.map(m => m.value.toFixed(1)).join(' · ')} mmol`
-      : sessionLactate != null ? `${sessionLactate.toFixed(1)} mmol` : null;
+  const { marks: lactateMarks, line: lactateLine } = sessionLactateDisplay(activity, bars);
 
   return (
     <div className="flex flex-col gap-1.5">
@@ -9660,6 +9678,8 @@ export default function CalendarView({
                                   const title = a.title || a.name || a.originalFileName || 'Activity';
                                   const statsLine = activityCompletedStats(a, userProfile);
                                   const actBars = activityProfileBars(a);
+                                  // No hover on a phone, so the card itself has to carry the blood.
+                                  const actLa = sessionLactateDisplay(a, actBars);
                                   return (
                                     <button key={`act-${pi}`}
                                       onClick={e => { e.stopPropagation(); const r = e.currentTarget?.getBoundingClientRect() || null; handleActivityClick(a, r); }}
@@ -9696,9 +9716,16 @@ export default function CalendarView({
                                           {statsLine}
                                         </div>
                                       )}
+                                      {/* No truncate: an ellipsis would eat the readings at the end of the
+                                          set, which is the loss this line exists to stop. */}
+                                      {actLa.line && (
+                                        <div className="text-[12px] font-semibold pl-7 leading-snug tabular-nums" style={{ color: LACTATE_INK }}>
+                                          {actLa.line}
+                                        </div>
+                                      )}
                                       {actBars && (
                                         <CardProfileBand bleed="-mx-3 -mb-2.5">
-                                          <ActivityMiniChart bars={actBars} color={color} height={22} />
+                                          <ActivityMiniChart bars={actBars} color={color} height={22} lactate={actLa.marks} />
                                         </CardProfileBand>
                                       )}
                                     </button>
@@ -9716,6 +9743,7 @@ export default function CalendarView({
                                 if (act) {
                                   const actStats = activityCompletedStats(act, userProfile);
                                   const pairBars = activityProfileBars(act);
+                                  const pairLa = sessionLactateDisplay(act, pairBars);
                                   const cc = compliance || { color: '#22c55e', bg: '#f0fdf4', label: 'Done' };
                                   return (
                                     <button key={`pw-${pi}`}
@@ -9748,10 +9776,15 @@ export default function CalendarView({
                                         )}
                                         {renderCategoryBadge(pwCategory)}
                                       </div>
+                                      {pairLa.line && (
+                                        <div className="text-[12px] font-semibold pl-0.5 leading-snug tabular-nums" style={{ color: LACTATE_INK }}>
+                                          {pairLa.line}
+                                        </div>
+                                      )}
                                       {/* What was ridden, not what was asked for. */}
                                       {pairBars && (
                                         <CardProfileBand bleed="-mx-3 -mb-2.5">
-                                          <ActivityMiniChart bars={pairBars} color={cc.color} height={22} />
+                                          <ActivityMiniChart bars={pairBars} color={cc.color} height={22} lactate={pairLa.marks} />
                                         </CardProfileBand>
                                       )}
                                     </button>
