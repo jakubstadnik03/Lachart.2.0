@@ -8,6 +8,7 @@
  */
 
 const express = require('express');
+const mongoose = require('mongoose');
 const router = express.Router();
 const verifyToken = require('../middleware/verifyToken');
 const User = require('../models/UserModel');
@@ -637,23 +638,40 @@ router.post('/product-update/:issueId/preview', verifyToken, async (req, res) =>
       return res.status(404).json({ error: 'Unknown issue' });
     }
     const targetEmail = (req.body?.email || '').toLowerCase().trim();
-    const recipient = targetEmail
+    let recipient = targetEmail
       ? await User.findOne({ email: targetEmail }).lean()
       : await User.findById(req.user.userId).lean();
+
+    // Allow a raw test send to ANY address (e.g. a personal inbox that isn't a
+    // registered account) — admin-only, and it never counts as delivered. We
+    // hand sendOne a synthetic recipient with a throwaway ObjectId so its
+    // success-path User.updateOne(...) simply matches no document (no write,
+    // no cast error), and clear opt-out flags so nothing blocks the test.
+    let synthetic = false;
     if (!recipient || !recipient.email) {
-      return res.status(404).json({ error: 'No matching user with an email address' });
+      if (!targetEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(targetEmail)) {
+        return res.status(400).json({ error: 'Provide a valid email address to send the test to' });
+      }
+      recipient = {
+        _id: new mongoose.Types.ObjectId(),
+        email: targetEmail,
+        notifications: { emailNotifications: true, marketingEmails: true },
+        retentionEmails: {},
+      };
+      synthetic = true;
     }
+
     // Force-clear this issue's sent-marker on a copy so sendOne actually sends,
     // then roll back whatever it wrote — a preview must not count as delivered.
     const draft = { ...recipient, retentionEmails: { ...(recipient.retentionEmails || {}), productUpdates: {} } };
     const result = await productUpdate.sendOne(draft, issueId);
-    if (result.sent) {
+    if (result.sent && !synthetic) {
       await User.updateOne(
         { _id: recipient._id },
         { $unset: { [`retentionEmails.productUpdates.${issueId}`]: '' } }
       );
     }
-    res.json({ to: recipient.email, issueId, ...result });
+    res.json({ to: recipient.email, issueId, testToNonUser: synthetic, ...result });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
