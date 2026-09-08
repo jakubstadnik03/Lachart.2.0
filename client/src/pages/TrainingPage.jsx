@@ -7,6 +7,7 @@ import TrainingStats from '../components/DashboardPage/TrainingStats';
 import UpgradeModal from '../components/UpgradeModal';
 import api from '../services/api';
 import { dedupeTrainingRows } from '../utils/dedupeTrainingRows';
+import { normalizeCategoryKey } from '../utils/trainingCategory';
 import { useAuth } from '../context/AuthProvider';
 import { addTraining, updateTraining, getStravaActivityDetail, createFieldLactateMeasurement, autoSyncStravaActivities, assignFieldLactateMeasurement } from '../services/api';
 import { maybeNotifyStravaActivitiesImported } from '../utils/stravaImportLocalNotification';
@@ -803,6 +804,28 @@ export default function TrainingPage() {
     return [...counts.entries()].sort((a, b) => b[1] - a[1]);
   }, [logEligibleTrainings]);
 
+  /**
+   * What the history chart may plot, which is more than the log lists.
+   *
+   * `logEligibleTrainings` keeps only what the athlete has written up as a
+   * training — it drops every raw Strava and FIT row on sight. That is right
+   * for a log of trainings and wrong for a chart of sessions: a ride that was
+   * never exported still has laps, still carries the category it was tagged
+   * with in the calendar, and still has a shape worth drawing. Its whole
+   * category came up empty in the picker for no better reason than that.
+   *
+   * Sport is left to TrainingStats, which normalises it — filtering here on the
+   * raw field would drop every Strava row for calling a ride 'Ride' where a
+   * training calls it 'bike'. Sessions with nothing to draw fall out there too.
+   */
+  const chartEligibleTrainings = useMemo(() => {
+    const data = trainings || [];
+    if (selectedCategory === 'all') return data;
+    if (selectedCategory === 'uncategorized') return data.filter(t => !normalizeCategoryKey(t?.category));
+    const want = normalizeCategoryKey(selectedCategory);
+    return data.filter(t => normalizeCategoryKey(t?.category) === want);
+  }, [trainings, selectedCategory]);
+
   const filteredTrainings = useMemo(() => {
     let data = logEligibleTrainings;
     if (selectedSport !== 'all') {
@@ -1189,7 +1212,7 @@ export default function TrainingPage() {
               {isFreePlan ? (
                 <LockedFeatureOverlay feature="Training Load & LT2 Trend" minHeight={260}>
                   <TrainingStats
-                    trainings={filteredTrainings}
+                    trainings={chartEligibleTrainings}
                     categoryCatalog={trainings}
                     selectedSport={selectedSport}
                     onSportChange={setSelectedSport}
@@ -1201,7 +1224,7 @@ export default function TrainingPage() {
                 </LockedFeatureOverlay>
               ) : (
                 <TrainingStats
-                  trainings={filteredTrainings}
+                  trainings={chartEligibleTrainings}
                   categoryCatalog={trainings}
                   selectedSport={selectedSport}
                   onSportChange={setSelectedSport}
@@ -1224,7 +1247,7 @@ export default function TrainingPage() {
             {isFreePlan ? (
               <LockedFeatureOverlay feature="Training Load & LT2 Trend" minHeight={260}>
                 <TrainingStats
-                  trainings={filteredTrainings}
+                  trainings={chartEligibleTrainings}
                   categoryCatalog={trainings}
                   selectedSport={selectedSport}
                   onSportChange={setSelectedSport}
@@ -1235,7 +1258,7 @@ export default function TrainingPage() {
               </LockedFeatureOverlay>
             ) : (
               <TrainingStats
-                trainings={filteredTrainings}
+                trainings={chartEligibleTrainings}
                 categoryCatalog={trainings}
                 selectedSport={selectedSport}
                 onSportChange={setSelectedSport}

@@ -930,25 +930,29 @@ export function TrainingStats({
   /**
    * Show the session a neighbouring panel asked for.
    *
-   * Held in a ref rather than acted on directly, because the wanted session may
+   * Held in state rather than acted on directly, because the wanted session may
    * not be in the current pool at all — a category or lactate filter can hide
    * it. In that case the filter is widened and the request survives to the next
    * pass, when the pool has been rebuilt and the session is in it.
+   *
+   * State and not a ref: a ref does not re-run this effect, so the click set it
+   * and nothing read it until something else happened to change the pool. It
+   * looked exactly like a button that does nothing.
    *
    * `categorySelectionRef` is stamped on the way through so the default-
    * selection effect above does not read the widened filter as a change and
    * immediately reset the chart to the newest session instead.
    */
-  const pendingFocusRef = useRef(null);
-  useEffect(() => { if (focusSession) pendingFocusRef.current = focusSession; }, [focusSession]);
+  const [pendingFocus, setPendingFocus] = useState(null);
+  useEffect(() => { if (focusSession) setPendingFocus(focusSession); }, [focusSession]);
 
   useEffect(() => {
-    const want = pendingFocusRef.current;
+    const want = pendingFocus;
     if (!want) return;
 
     const inPool = categoryPool.find(t => sameSession(t, want));
     if (inPool) {
-      pendingFocusRef.current = null;
+      setPendingFocus(null);
       categorySelectionRef.current = { categoryId: pickerCategoryId, sport: currentSelectedSport };
       setSelectedTrainingKeys([trainingKey(inPool)]);
       setVisibleTrainingIndex(0);
@@ -963,8 +967,8 @@ export function TrainingStats({
     // from re-running against every pool for the rest of the session.
     const anywhere = sportFilteredTrainings.find(t => sameSession(t, want));
     if (anywhere && pickerCategoryId !== PICKER_ALL) setPickerCategoryId(PICKER_ALL);
-    else pendingFocusRef.current = null;
-  }, [categoryPool, sportFilteredTrainings, pickerCategoryId, currentSelectedSport, setSelectedTrainingId, setCurrentSelectedTitle]);
+    else setPendingFocus(null);
+  }, [pendingFocus, categoryPool, sportFilteredTrainings, pickerCategoryId, currentSelectedSport, setSelectedTrainingId, setCurrentSelectedTitle]);
 
   const filteredTrainings = useMemo(() => {
     const keys = selectedTrainingKeys === null
