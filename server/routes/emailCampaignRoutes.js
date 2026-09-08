@@ -661,9 +661,15 @@ router.post('/product-update/:issueId/preview', verifyToken, async (req, res) =>
       synthetic = true;
     }
 
-    // Force-clear this issue's sent-marker on a copy so sendOne actually sends,
-    // then roll back whatever it wrote — a preview must not count as delivered.
-    const draft = { ...recipient, retentionEmails: { ...(recipient.retentionEmails || {}), productUpdates: {} } };
+    // Build a send-copy that forces the test through: clear this issue's
+    // sent-marker AND the opt-out flags, so an admin can always preview to a
+    // chosen address (even their own opted-out account) without touching the
+    // recipient's stored preferences. A preview never counts as delivered.
+    const draft = {
+      ...recipient,
+      notifications: { ...(recipient.notifications || {}), emailNotifications: true, marketingEmails: true },
+      retentionEmails: { ...(recipient.retentionEmails || {}), productUpdates: {} },
+    };
     const result = await productUpdate.sendOne(draft, issueId);
     if (result.sent && !synthetic) {
       await User.updateOne(
