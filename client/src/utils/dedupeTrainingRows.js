@@ -60,6 +60,21 @@ export function activityKeysOf(t) {
   return keys;
 }
 
+/**
+ * Do these two rows describe the same session?
+ *
+ * The same question the dedup asks, asked about one pair instead of a list —
+ * a training and the ride behind it share at least one activity id however
+ * either of them happens to spell it. Used to point one panel at the session
+ * another panel is showing.
+ */
+export function sameSession(a, b) {
+  const keysA = activityKeysOf(a);
+  if (!keysA.length) return false;
+  const keysB = new Set(activityKeysOf(b));
+  return keysA.some((k) => keysB.has(k));
+}
+
 export function dedupeTrainingRows(rows) {
   const list = Array.isArray(rows) ? rows.filter(Boolean) : [];
 

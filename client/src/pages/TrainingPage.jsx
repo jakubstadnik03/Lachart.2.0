@@ -115,6 +115,8 @@ export default function TrainingPage() {
     };
   }, []);
   const [selectedTitle, setSelectedTitle] = useState(null);
+  // The ride picked in the Field Lactate list, for the history chart beside it.
+  const [lactateFocusSession, setLactateFocusSession] = useState(null);
   // eslint-disable-next-line no-unused-vars
   const [selectedTraining, setSelectedTraining] = useState(null);
   const [error, setError] = useState(null);
@@ -1170,6 +1172,11 @@ export default function TrainingPage() {
                 // lap" UI. Same end result, one fewer flaky code path.
                 onOpenMeasurementInForm={handleOpenMeasurementInForm}
                 loadingActivityId={lactateActivityLoadingId}
+                // A fresh object per click on purpose: clicking the same row
+                // again after changing the picker by hand has to re-point the
+                // chart, and an unchanged reference would not re-run the effect.
+                onSelectActivity={(a) => setLactateFocusSession(a ? { ...a } : null)}
+                selectedActivityId={lactateFocusSession?._id ?? null}
               />
             </motion.div>
 
@@ -1189,6 +1196,7 @@ export default function TrainingPage() {
                     isFullWidth={true}
                     user={user}
                     integrationAthleteId={integrationAthleteId}
+                    focusSession={lactateFocusSession}
                   />
                 </LockedFeatureOverlay>
               ) : (
@@ -1200,6 +1208,7 @@ export default function TrainingPage() {
                   isFullWidth={true}
                   user={user}
                   integrationAthleteId={integrationAthleteId}
+                  focusSession={lactateFocusSession}
                 />
               )}
             </motion.div>

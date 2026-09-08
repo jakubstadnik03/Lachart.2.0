@@ -8,6 +8,7 @@ import { useCategories } from "../../context/CategoryContext";
 import { filterWorkResults, classifyWorkLaps, getWorkLapMetricValue } from "../../utils/workLapFilter";
 import { enrichTrainingsWithCategory, normalizeCategoryKey } from "../../utils/trainingCategory";
 import { getChartIntervals, needsStravaLapFetch, resolveStravaNumericId, canChartTraining } from "../../utils/trainingChartIntervals";
+import { sameSession } from "../../utils/dedupeTrainingRows";
 
 const CATEGORY_OPTION_PREFIX = '__category__:';
 const PICKER_ALL = "__all__";
@@ -760,6 +761,12 @@ export function TrainingStats({
   integrationAthleteId = null,
   /** Full trainings list (incl. Strava/FIT) — used to inherit calendar category tags. */
   categoryCatalog = null,
+  /**
+   * A session another panel wants shown — the Field Lactate list sits beside
+   * this chart, and picking a ride there should point the chart at it rather
+   * than leave the athlete to find the same session again in the picker.
+   */
+  focusSession = null,
 }) {
   const navigate   = useNavigate();
   const unitSystem = resolveDistanceUnitSystem(user, "metric");
@@ -919,6 +926,45 @@ export function TrainingStats({
       if (setSelectedTrainingId) setSelectedTrainingId(newest._id || newest.id || newest.stravaId || null);
     }
   }, [pickerCategoryId, currentSelectedSport, categoryPool, selectedTrainingKeys, setSelectedTrainingId, setCurrentSelectedTitle]);
+
+  /**
+   * Show the session a neighbouring panel asked for.
+   *
+   * Held in a ref rather than acted on directly, because the wanted session may
+   * not be in the current pool at all — a category or lactate filter can hide
+   * it. In that case the filter is widened and the request survives to the next
+   * pass, when the pool has been rebuilt and the session is in it.
+   *
+   * `categorySelectionRef` is stamped on the way through so the default-
+   * selection effect above does not read the widened filter as a change and
+   * immediately reset the chart to the newest session instead.
+   */
+  const pendingFocusRef = useRef(null);
+  useEffect(() => { if (focusSession) pendingFocusRef.current = focusSession; }, [focusSession]);
+
+  useEffect(() => {
+    const want = pendingFocusRef.current;
+    if (!want) return;
+
+    const inPool = categoryPool.find(t => sameSession(t, want));
+    if (inPool) {
+      pendingFocusRef.current = null;
+      categorySelectionRef.current = { categoryId: pickerCategoryId, sport: currentSelectedSport };
+      setSelectedTrainingKeys([trainingKey(inPool)]);
+      setVisibleTrainingIndex(0);
+      setProgressIndex(0);
+      if (inPool.title) setCurrentSelectedTitle(inPool.title);
+      if (setSelectedTrainingId) setSelectedTrainingId(inPool._id || inPool.id || inPool.stravaId || null);
+      return;
+    }
+
+    // Somewhere in this sport but behind a category filter — widen and retry.
+    // Nowhere at all is the end of it: dropping the request stops this effect
+    // from re-running against every pool for the rest of the session.
+    const anywhere = sportFilteredTrainings.find(t => sameSession(t, want));
+    if (anywhere && pickerCategoryId !== PICKER_ALL) setPickerCategoryId(PICKER_ALL);
+    else pendingFocusRef.current = null;
+  }, [categoryPool, sportFilteredTrainings, pickerCategoryId, currentSelectedSport, setSelectedTrainingId, setCurrentSelectedTitle]);
 
   const filteredTrainings = useMemo(() => {
     const keys = selectedTrainingKeys === null

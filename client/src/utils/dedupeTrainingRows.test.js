@@ -1,4 +1,4 @@
-import { dedupeTrainingRows, activityKeysOf } from './dedupeTrainingRows';
+import { dedupeTrainingRows, activityKeysOf, sameSession } from './dedupeTrainingRows';
 
 const idsOf = (rows) => dedupeTrainingRows(rows).map((r) => String(r._id));
 
@@ -89,5 +89,19 @@ describe('dedupeTrainingRows', () => {
   it('survives junk', () => {
     expect(dedupeTrainingRows(null)).toEqual([]);
     expect(dedupeTrainingRows([null, undefined])).toEqual([]);
+  });
+});
+
+describe('sameSession', () => {
+  it('matches a training to its ride whichever id shape either uses', () => {
+    expect(sameSession(TRAINING, ACTIVITY)).toBe(true);
+    expect(sameSession(ACTIVITY, TRAINING)).toBe(true);
+    expect(sameSession({ ...TRAINING, sourceStravaActivityId: '19124087286' }, ACTIVITY)).toBe(true);
+  });
+
+  it('says no when the rows share nothing', () => {
+    expect(sameSession(TRAINING, { _id: 'x', stravaId: 999 })).toBe(false);
+    // A row with no activity ids at all cannot be matched to anything.
+    expect(sameSession({ _id: 'plain', title: 'Manual' }, ACTIVITY)).toBe(false);
   });
 });

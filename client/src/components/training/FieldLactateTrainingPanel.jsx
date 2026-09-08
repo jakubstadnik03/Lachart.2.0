@@ -61,6 +61,10 @@ export default function FieldLactateTrainingPanel({
   onAddLactate,
   onOpenMeasurementInForm = null,
   loadingActivityId = null,
+  // Picking a session here points the history chart beside this panel at it.
+  // The row selects; '+ Lactate' still goes where it always went.
+  onSelectActivity = null,
+  selectedActivityId = null,
 }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -269,10 +273,22 @@ export default function FieldLactateTrainingPanel({
             <ul className="divide-y divide-slate-100">
               {scored.map((a) => {
                 const isLoading = loadingActivityId != null && String(loadingActivityId) === String(a._id);
+                const isSelected = selectedActivityId != null
+                  && String(selectedActivityId) === String(a._id);
+                const selectable = typeof onSelectActivity === 'function';
                 return (
-                  <li key={String(a._id)} className="px-4 py-2.5 hover:bg-slate-50 transition-colors">
+                  <li key={String(a._id)}
+                    className={`px-4 py-2.5 transition-colors ${isSelected ? 'bg-indigo-50/70' : 'hover:bg-slate-50'}`}
+                    style={isSelected ? { boxShadow: 'inset 3px 0 0 #767EB5' } : undefined}>
                     <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0 flex-1">
+                      <div
+                        role={selectable ? 'button' : undefined}
+                        tabIndex={selectable ? 0 : undefined}
+                        onClick={selectable ? () => onSelectActivity(a) : undefined}
+                        onKeyDown={selectable ? (e) => {
+                          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelectActivity(a); }
+                        } : undefined}
+                        className={`min-w-0 flex-1 text-left ${selectable ? 'cursor-pointer' : ''}`}>
                         <div className="flex items-center gap-1.5 flex-wrap mb-0.5">
                           <ConfidenceBadge score={a.score} />
                           <span className="text-xs font-semibold text-slate-900 truncate">{a.name}</span>
