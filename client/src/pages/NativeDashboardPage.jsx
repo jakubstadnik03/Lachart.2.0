@@ -1533,13 +1533,21 @@ export default function NativeDashboardPage({
                 sparklineData={sparklineData}
                 tests={tests}
                 userProfile={fitnessProfile}
+                todayMetrics={todayMetrics}
               />
             </PremiumLock>
           </div>
 
           {/* 6 · Zone distribution */}
           <div style={{ ...cardEntry(6), ...snapStyle }}>
-            <ZoneDistCard athleteId={athleteId || null} />
+            {/* The trace reader is the primary source; these let it fall back
+                to the laps of what the page already holds when a back
+                catalogue's traces have not arrived from Strava yet. */}
+            <ZoneDistCard
+              athleteId={athleteId || null}
+              activities={activities}
+              userProfile={fitnessProfile}
+            />
           </div>
 
           {/* 7 · Last lab test — drop snap-align on the last card so its tail

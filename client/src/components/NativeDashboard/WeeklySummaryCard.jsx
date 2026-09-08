@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { Share2 } from 'lucide-react';
 import FormFitnessHelpSheet from '../shared/FormFitnessHelpSheet';
 import { mergeProfileZones } from '../../utils/inferThresholdsFromActivities';
 import { activityCalendarDateKey, activityOnLocalDay, computePmcFromActivities } from '../../utils/formFitnessFromActivities';
@@ -7,6 +8,10 @@ import { useAuth } from '../../context/AuthProvider';
 import { formatDistance, resolveDistanceUnitSystem } from '../../utils/unitsConverter';
 import { TSS_DISPLAY_MODE_EVENT } from '../../utils/uiPrefs';
 import { completedSecs, completedTss } from '../../utils/completedSessionStats';
+
+// Loaded only when someone actually shares — the story renderer pulls in a
+// canvas pipeline that has no business in the dashboard's first paint.
+const ActivityShareSheet = React.lazy(() => import('../sharing/ActivityShareSheet'));
 
 // ─── date helpers ─────────────────────────────────────────────────────────────
 
@@ -115,13 +120,14 @@ const navBtnStyle = {
   WebkitTapHighlightColor: 'transparent', touchAction: 'manipulation',
 };
 
-export default function WeeklySummaryCard({ activities = [], plannedWorkouts = [], sparklineData = [], userProfile = null }) {
+export default function WeeklySummaryCard({ activities = [], plannedWorkouts = [], sparklineData = [], userProfile = null, todayMetrics = null, tests = [] }) {
   const { user } = useAuth() || {};
   const profile = useMemo(
     () => mergeProfileZones(userProfile, user) || userProfile || user,
     [userProfile, user],
   );
   const [metric, setMetric] = useState('TSS');
+  const [shareOpen, setShareOpen] = useState(false);
   const [metricsTick, setMetricsTick] = useState(0);
   React.useEffect(() => {
     const bump = () => setMetricsTick((t) => t + 1);
@@ -272,7 +278,42 @@ export default function WeeklySummaryCard({ activities = [], plannedWorkouts = [
     return `${fmt(monday)}–${fmt(sunday)}`;
   })();
 
+  /**
+   * The story card's payload, in the shape ActivityShareSheet already renders
+   * for the summary carousel — so a shared week looks the same whichever card
+   * it was shared from.
+   */
+  const shareSummary = useMemo(() => {
+    const rangeShort = `${monday.toLocaleDateString('en', { month: 'short', day: 'numeric' })} - ${sunday.getDate()}`;
+    return {
+      label: 'Weekly summary',
+      title: weekLabel,
+      subtitle: rangeShort,
+      rangeShort,
+      monday: monday.toISOString(),
+      sunday: sunday.toISOString(),
+      kpis: todayMetrics || null,
+      totals: { count: sessions, secs: totalSecs, distM: totalDist, tss: totalTss },
+      activities: weekActs,
+      allActivities: activities,
+      sparklineData,
+      tests,
+      allTests: tests,
+    };
+  }, [monday, sunday, weekLabel, todayMetrics, sessions, totalSecs, totalDist, totalTss, weekActs, activities, sparklineData, tests]);
+
   return (
+    <>
+    {shareOpen && (
+      <React.Suspense fallback={null}>
+        <ActivityShareSheet
+          open={shareOpen}
+          summary={shareSummary}
+          accent="#5E6590"
+          onClose={() => setShareOpen(false)}
+        />
+      </React.Suspense>
+    )}
     <div
       style={styles.card}
       onTouchStart={onTouchStart}
@@ -316,15 +357,27 @@ export default function WeeklySummaryCard({ activities = [], plannedWorkouts = [
           )}
         </div>
 
-        <button
-          onClick={() => setWeekOffset(w => w + 1)}
-          aria-label="Next week"
-          style={navBtnStyle}
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="9 18 15 12 9 6" />
-          </svg>
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <button
+            onClick={() => setWeekOffset(w => w + 1)}
+            aria-label="Next week"
+            style={navBtnStyle}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="9 18 15 12 9 6" />
+            </svg>
+          </button>
+          {/* A week is the unit athletes actually post. The story card is the
+              same one the summary carousel already builds — one design, not a
+              second one that drifts. */}
+          <button
+            onClick={() => setShareOpen(true)}
+            aria-label="Share this week"
+            style={{ ...navBtnStyle, background: 'rgba(118,126,181,.12)', color: '#5E6590' }}
+          >
+            <Share2 width={13} height={13} strokeWidth={2.3} />
+          </button>
+        </div>
       </div>
 
       {/* ── KPI row ── */}
@@ -646,6 +699,7 @@ export default function WeeklySummaryCard({ activities = [], plannedWorkouts = [
         )}
       </div>
     </div>
+    </>
   );
 }
 

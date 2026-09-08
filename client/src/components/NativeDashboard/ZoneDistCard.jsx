@@ -1,5 +1,9 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { getMonthlyPowerAnalysis } from '../../services/api';
+import { getMonthlyPowerAnalysis, getTimelineZones } from '../../services/api';
+import {
+  zoneSpansForActivity, lapPowerOrPaceMetric, lapHeartRate, findZoneKeyForValue,
+} from '../../utils/lapZoneSpans';
+import { activityCalendarDateKey, localCalendarDateKey } from '../../utils/calendarDateKeys';
 import { NativeSkeleton } from '../native/shared/Tiles';
 import { SportGlyph } from '../shared/SportIcon';
 import { useAuth } from '../../context/AuthProvider';
@@ -57,7 +61,19 @@ function weekBounds(offset = 0) {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export default function ZoneDistCard({ athleteId = null }) {
+/** Which zone table a sport is read against. */
+function profileSportOf(sport) {
+  const v = String(sport || '').toLowerCase();
+  if (/ride|bike|cycl|virtual/.test(v)) return 'cycling';
+  if (/swim/.test(v)) return 'swimming';
+  if (/run|walk|hike|trail|ski/.test(v)) return 'running';
+  return null;
+}
+
+const TAB_TO_PROFILE = { bike: 'cycling', run: 'running', swim: 'swimming' };
+const TAB_TO_TIMELINE = { all: 'all', bike: 'bike', run: 'run', swim: 'swim' };
+
+export default function ZoneDistCard({ athleteId = null, activities = null, userProfile = null }) {
   const { user } = useAuth() || {};
   const unitSystem = resolveDistanceUnitSystem(user);
   const [range, setRange]           = useState('week');
@@ -158,6 +174,88 @@ export default function ZoneDistCard({ athleteId = null }) {
     }
   }, [availableSports, sport]);
 
+  /** The window this card is showing, as local day keys. */
+  const bounds = useMemo(() => {
+    if (range === 'week' || range === 'lastweek') {
+      const { startDate, endDate } = weekBounds(range === 'lastweek' ? -1 : 0);
+      return { start: localCalendarDateKey(startDate), end: localCalendarDateKey(endDate) };
+    }
+    const end = new Date();
+    const start = new Date();
+    start.setMonth(start.getMonth() - (range === 'lastmonth' ? 2 : 1));
+    return { start: localCalendarDateKey(start), end: localCalendarDateKey(end) };
+  }, [range]);
+
+  /**
+   * Time in zones counted second by second, from the recorded trace.
+   *
+   * The monthly analysis this card was built on reads FitTraining records and
+   * nothing else, so for an athlete who rides with Strava it answers nothing
+   * and the card says "upload FIT files" about rides that are already here.
+   * This is the reader that also knows about stored Strava traces — the same
+   * one the web dashboard and the workout detail use.
+   */
+  const [traceZones, setTraceZones] = useState({});
+  const traceKey = `${bounds.start}|${bounds.end}|${sport}|${metric}`;
+  const traceAsked = useRef(new Set());
+
+  useEffect(() => {
+    if (metric === 'pace' && sport === 'all') return;
+    if (traceAsked.current.has(traceKey)) return;
+    traceAsked.current.add(traceKey);
+    getTimelineZones(
+      athleteId || null,
+      bounds.start,
+      bounds.end,
+      TAB_TO_TIMELINE[sport] || 'all',
+      metric === 'hr' ? 'hr' : 'power',
+    )
+      .then((res) => {
+        const days = Array.isArray(res?.days) ? res.days : [];
+        const sec = { z1: 0, z2: 0, z3: 0, z4: 0, z5: 0 };
+        days.forEach((d) => {
+          for (let z = 1; z <= 5; z += 1) sec[`z${z}`] += Number(d?.zones?.[`z${z}`]) || 0;
+        });
+        setTraceZones((prev) => ({ ...prev, [traceKey]: sec }));
+      })
+      .catch(() => { /* the readings below still stand */ });
+  }, [traceKey, athleteId, bounds.start, bounds.end, sport, metric]);
+
+  /**
+   * The same thing read off the laps of activities the page already holds —
+   * coarser than a trace, but it can still tell a threshold block from a
+   * recovery spin, which an activity average cannot.
+   */
+  const lapZones = useMemo(() => {
+    const tables = userProfile && (metric === 'hr' ? userProfile.heartRateZones : userProfile.powerZones);
+    if (!tables || !Array.isArray(activities) || !activities.length) return null;
+    const want = sport === 'all' ? null : TAB_TO_PROFILE[sport];
+    const sec = { z1: 0, z2: 0, z3: 0, z4: 0, z5: 0 };
+    let any = false;
+    for (const act of activities) {
+      const dk = activityCalendarDateKey(act);
+      if (!dk || dk < bounds.start || dk > bounds.end) continue;
+      const ps = profileSportOf(act.sport);
+      if (!ps || (want && ps !== want)) continue;
+      const table = tables[ps];
+      if (!table) continue;
+      const spans = zoneSpansForActivity(act, ps, table, metric === 'hr' ? lapHeartRate : lapPowerOrPaceMetric);
+      if (spans?.length) {
+        for (const span of spans) sec[`z${span.zoneKey.slice(4)}`] += span.sec;
+        any = true;
+        continue;
+      }
+      const dur = Number(act.totalTime || act.totalElapsedTime || act.movingTime || act.duration || 0) || 0;
+      if (!(dur > 0)) continue;
+      const avg = metric === 'hr'
+        ? lapHeartRate(act)
+        : lapPowerOrPaceMetric({ ...act, d: dur, m: act.distance }, ps);
+      const zk = avg != null ? findZoneKeyForValue(avg, table) : null;
+      if (zk) { sec[`z${zk.slice(4)}`] += dur; any = true; }
+    }
+    return any ? sec : null;
+  }, [activities, userProfile, bounds.start, bounds.end, sport, metric]);
+
   // ── Aggregate zone totals ──────────────────────────────────────────────────
 
   const totals  = { z1: 0, z2: 0, z3: 0, z4: 0, z5: 0 };
@@ -177,6 +275,17 @@ export default function ZoneDistCard({ athleteId = null }) {
       });
       if (anyNonZero) hasData = true;
     }
+  }
+
+  // Best evidence wins: a trace, then the month's own figures, then laps.
+  const trace = traceZones[traceKey];
+  const traceHas = trace && Object.values(trace).some((v) => v > 0);
+  if (traceHas) {
+    Object.keys(totals).forEach((z) => { totals[z] = trace[z] || 0; });
+    hasData = true;
+  } else if (!hasData && lapZones) {
+    Object.keys(totals).forEach((z) => { totals[z] = lapZones[z] || 0; });
+    hasData = true;
   }
 
   const totalSecs = Object.values(totals).reduce((s, v) => s + v, 0);
