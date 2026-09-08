@@ -20,6 +20,7 @@ import { getAtpPlans, getAtpPlan } from '../services/atpApi';
 import { periodColor as atpPeriodColor } from '../components/ATP/atpPeriods';
 import { mapExternalActivitiesToCalendar } from '../utils/mapExternalActivityToCalendar';
 import { getStravaActivityDetail, updateStravaActivity, getAllTitles, createStravaLap, deleteStravaLap, getTrainingById, addTraining, updateTraining } from '../services/api';
+import { mirrorLactateToSource } from '../utils/mirrorLactateToSource';
 import api from '../services/api';
 import { getPlannedWorkouts, createPlannedWorkout, updatePlannedWorkout, deletePlannedWorkout, reorderPlannedWorkouts, getWorkoutTemplates, getDayPlans, setDayPlan as apiSetDayPlan, deleteDayPlan as apiDeleteDayPlan, getPeriods, savePeriod as apiSavePeriod, deletePeriod as apiDeletePeriod } from '../services/workoutPlannerApi';
 import WorkoutPlanModal from '../components/WorkoutPlanner/WorkoutPlanModal';
@@ -4196,6 +4197,18 @@ const FitAnalysisPage = () => {
         }
       }
       
+      // Push the readings onto the ride's own laps.
+      //
+      // This page is the calendar, and the calendar draws laps, not results —
+      // so without this the lactate an athlete had just typed here saved to
+      // the training and vanished from the very screen they typed it on. The
+      // reload below was written believing the Strava detail merge would pick
+      // it up, but that merge reads lactate off the activity document, which
+      // is exactly what nothing had written to. Every other page that saves a
+      // training already mirrored; this one, the one it matters most on, did
+      // not.
+      await mirrorLactateToSource(trainingData, cleanedResults);
+
       // Notify other components (e.g. LactateStatistics) that training data changed
       window.dispatchEvent(new Event('trainingAdded'));
 
@@ -4206,7 +4219,8 @@ const FitAnalysisPage = () => {
       if (savedTrainingId) {
         const stravaLink = formData?.sourceStravaActivityId;
         if (stravaLink) {
-          // Training is linked to a Strava activity → reload Strava detail (which will merge lactate)
+          // Reload the Strava detail so the merge picks up the lactate the
+          // mirror above has just written onto the activity's laps.
           loadStravaDetail(stravaLink);
           navigate(`/training-calendar/${encodeURIComponent(`strava-${stravaLink}`)}`);
         } else {
@@ -4410,6 +4424,9 @@ const FitAnalysisPage = () => {
       } else {
         await addTraining(payload);
       }
+      // Same reason as the form above: the calendar renders the ride's laps.
+      // No source link on the training means this is a no-op.
+      await mirrorLactateToSource(payload, payload.results);
       setShowManualForm(false);
       setManualFormInitialData(null);
       // Reload trainings so the calendar reflects the change
