@@ -4,6 +4,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import api, { clearApiCache } from '../services/api';
 import WelcomeModal from '../components/WelcomeModal';
 import { saveUserToStorage } from '../utils/userStorage';
+import { clearReturnSession } from '../utils/impersonation';
 import {
   PREMIUM_PREVIEW_NO_ACCESS_KEY,
   readPremiumPreviewNoAccess,
@@ -49,7 +50,15 @@ export const AuthProvider = ({ children }) => {
     // The APNs token identifies the phone, not the account: keeping it is what
     // lets the next sign-in move the device to its new owner, and the logout
     // above detach it from the old one.
-    const KEEP_KEYS = new Set(['cookiesAccepted', 'lachart_device_push_token']);
+    // `impersonation_return` is the admin's way back out of a borrowed
+    // account. It survives this wipe because the wipe also runs when a login
+    // fails — and a failed login is exactly when an admin still needs to get
+    // back to their own account. A real logout clears it explicitly below.
+    const KEEP_KEYS = new Set([
+      'cookiesAccepted',
+      'lachart_device_push_token',
+      'impersonation_return',
+    ]);
     try {
       const allKeys = [];
       for (let i = 0; i < localStorage.length; i++) {
@@ -385,6 +394,9 @@ export const AuthProvider = ({ children }) => {
     } catch (error) {
       console.error('Logout error:', error);
     } finally {
+      // Logging out ends the borrowed session too — there is nothing to go
+      // back to, and a stale one would offer a dead token to the next login.
+      clearReturnSession();
       removeToken();
       // Navigate to login — no reload needed; removeToken() clears all localStorage cache
       // and React state (setUser(null), setToken(null)) resets the in-memory state cleanly.

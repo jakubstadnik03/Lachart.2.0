@@ -10,6 +10,7 @@ import { TrainingProvider } from './context/TrainingContext';
 import { CategoryProvider } from './context/CategoryContext';
 import { AthleteSelectionProvider } from './context/AthleteSelectionContext';
 import Layout from './components/Layout';
+import ImpersonationBar from './components/ImpersonationBar';
 import ProtectedRoute from './components/ProtectedRoute';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { initAnalytics, initRedditPixel, trackPageView } from './utils/analytics';
@@ -540,6 +541,9 @@ function App() {
                   app_platform (ios/android/web) and a stable client_id. */}
               {isProd && initAnalytics('G-HNHPQH30BL')}
               {isProd && initRedditPixel()}
+              {/* Above every page, so it is never unclear whose account is on
+                  screen while an admin is borrowing one. */}
+              <ImpersonationBar />
               <AppRoutes />
               {/* Floating "return to active workout" pill — renders only when
                   a session is live and the user is on a non-execution route.

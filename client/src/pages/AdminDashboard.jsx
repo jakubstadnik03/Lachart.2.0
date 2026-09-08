@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { getEventStats } from '../utils/eventLogger';
 import { fetchCoachLeads, fetchCoachLeadPreview, sendCoachLeadTest, sendCoachLeadEmail, startCoachLeadBatch, fetchCoachLeadBatchStatus } from '../services/api';
 import { lastOutreachSentAt, formatOutreachSentAt } from '../utils/lastOutreachSentAt';
+import { rememberAdminSession } from '../utils/impersonation';
 import { getAdminUsers, getAdminStats, getAdminHealth, getAdminBilling, getCoachAthletesPage, updateUserAdmin, deleteUserAdmin, sendReactivationEmail, sendThankYouEmail, sendPremiumEmail, sendThankYouEmailToAll, sendFeatureAnnouncementEmail, sendStravaReminderEmail, sendAppDownloadEmail, sendCoachOutreachEmail, getCoachOutreachLeads, updateCoachOutreachLead, importCoachOutreachLeads, startBulkOutreachCampaign, stopBulkCampaign, listBulkCampaigns, getDefaultOutreachTemplate, impersonateUser, sendRetentionEmailPreview, fetchWhatsNewMay2026Status, sendWhatsNewMay2026Preview, runWhatsNewMay2026Campaign, resetWhatsNewMay2026, fetchIosLaunchJun2026Status, sendIosLaunchJun2026Preview, runIosLaunchJun2026Campaign, resetIosLaunchJun2026, fetchPaidLaunchJul2026Status, sendPaidLaunchJul2026Preview, runPaidLaunchJul2026Campaign, resetPaidLaunchJul2026, fetchCampaignRecipients } from '../services/api';
 import { useAuth } from '../context/AuthProvider';
 import { useNotification } from '../context/NotificationContext';
@@ -438,7 +439,8 @@ function CollapsibleSection({ title, badge, defaultOpen = false, children }) {
 }
 
 const AdminDashboard = () => {
-  const { user: currentUser, loading, login: authLogin } = useAuth();
+  const { user: currentUser, loading, login: authLogin, token: adminToken } = useAuth();
+  const adminUser = currentUser;
   const { addNotification } = useNotification();
   const [activeTab, setActiveTab] = useState('overview');
   const [users, setUsers] = useState([]);
@@ -566,8 +568,14 @@ const AdminDashboard = () => {
         console.error('Impersonation response missing token or user');
         return;
       }
+      // Remember who to come back as, before the tab becomes someone else.
+      // A browser tab has one identity and localStorage is shared across all
+      // of them, so this cannot hold both sessions at once — it hands the tab
+      // over and keeps the way back.
+      rememberAdminSession(adminToken, adminUser);
       // Reuse existing auth login flow so all caches and storage are handled consistently
       await authLogin(null, null, token, impersonatedUser);
+      window.dispatchEvent(new Event('impersonationChanged'));
     } catch (error) {
       console.error('Failed to impersonate user:', error);
       window.alert('Failed to impersonate user. Please check console for details.');
