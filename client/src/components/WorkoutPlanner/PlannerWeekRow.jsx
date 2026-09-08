@@ -182,6 +182,11 @@ export default function PlannerWeekRow({
         return (
           <div
             key={dateStr}
+            // The page scrolls the athlete to today on open; this is what it
+            // looks for, and the margin is the gap it lands with — kept here
+            // so the page needs no arithmetic about the header's height.
+            data-planner-day={dateStr}
+            style={{ scrollMarginTop: 88 }}
             onDragOver={(e) => {
               if (Array.from(e.dataTransfer.types).includes('application/x-lachart-template')) {
                 e.preventDefault();

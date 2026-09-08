@@ -6,7 +6,7 @@
  *   • Completed trainings from the same week
  * Plus: create/edit planned workouts with WorkoutBuilder
  */
-import React, { useState, useEffect, useCallback, useMemo, lazy, Suspense } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef, lazy, Suspense } from 'react';
 import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { ChevronLeftIcon, ChevronRightIcon } from '@heroicons/react/24/outline';
 import { useAuth } from '../context/AuthProvider';
@@ -20,7 +20,7 @@ import PlannerIntake from '../components/WorkoutPlanner/PlannerIntake';
 import {
   buildBlockDraft, deleteDraft, draftToPlannedWorkouts, listDrafts, saveDraft,
 } from '../utils/planDraft';
-import { startOfWeek, addDays, filterItemsForWeek } from '../components/WorkoutPlanner/plannerWeekUtils';
+import { startOfWeek, addDays, filterItemsForWeek, toLocalDateStr } from '../components/WorkoutPlanner/plannerWeekUtils';
 import { buildTrainingHistoryProfile } from '../utils/trainingHistoryProfile';
 import { computePmcFromActivities } from '../utils/formFitnessFromActivities';
 import { attachStepsToPlannedWorkouts } from '../utils/planSessionSteps';
@@ -63,6 +63,16 @@ const DEFAULT_TEMPLATE_DEFS = [
 ];
 
 const VISIBLE_WEEKS = 8;
+/**
+ * Weeks kept behind the anchor, so the days already trained are still there.
+ *
+ * The planner used to start at the current week and run forward only: the
+ * moment a session was done it fell off the top of the page, and there was no
+ * way to scroll back to what the week had actually looked like. Planning the
+ * week ahead is most of the job, but not being able to look at the one behind
+ * makes it a worse tool than the calendar.
+ */
+const PAST_WEEKS = 4;
 const NAV_SHIFT_WEEKS = 4;
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -142,11 +152,42 @@ export default function WorkoutPlannerPage() {
       .catch(() => { /* keep cache */ });
   }, [athleteId]);
 
+  const rangeStart = useMemo(() => addDays(anchorWeek, -PAST_WEEKS * 7), [anchorWeek]);
   const weekStarts = useMemo(
-    () => Array.from({ length: VISIBLE_WEEKS }, (_, i) => addDays(anchorWeek, i * 7)),
-    [anchorWeek],
+    () => Array.from({ length: PAST_WEEKS + VISIBLE_WEEKS }, (_, i) => addDays(rangeStart, i * 7)),
+    [rangeStart],
   );
   const rangeEnd = addDays(anchorWeek, VISIBLE_WEEKS * 7 - 1);
+
+  /**
+   * Put today at the top of the screen, with the trained days above it.
+   *
+   * Opening on the first week drawn now means opening a month in the past,
+   * which is the wrong end of the planner to land on. Today is where the work
+   * is; the weeks behind it are there to be scrolled back to, not to be read
+   * first.
+   *
+   * `scroll-margin-top` on the day cell handles the header rather than any
+   * arithmetic here, so this does not need to know which element is doing the
+   * scrolling or how tall the bar above it is.
+   */
+  const scrollToToday = useCallback(() => {
+    const el = document.querySelector(`[data-planner-day="${toLocalDateStr(new Date())}"]`);
+    if (!el) return false;
+    requestAnimationFrame(() => el.scrollIntoView({ block: 'start', behavior: 'auto' }));
+    return true;
+  }, []);
+
+  // Once the range has loaded, and once per range: the rows above today grow
+  // as their sessions arrive, so scrolling before that lands short.
+  const scrolledForRangeRef = useRef(null);
+  useEffect(() => {
+    if (loading) return;
+    const key = rangeStart.toISOString();
+    if (scrolledForRangeRef.current === key) return;
+    scrolledForRangeRef.current = key;
+    scrollToToday();
+  }, [loading, rangeStart, scrollToToday]);
 
   // ── Load athlete context: latest test thresholds + profile zone ranges ──────
   // The WorkoutBuilder uses `cyclingZones` (from the profile) as the primary
@@ -204,7 +245,9 @@ export default function WorkoutPlannerPage() {
     if (!athleteId) return;
     setLoading(true);
     try {
-      const fetchStart = addDays(start, -7);
+      // A week either side of what is drawn: the row above needs last week's
+      // trainings to compare against, and a day can land just past the edge.
+      const fetchStart = addDays(start, -(PAST_WEEKS + 1) * 7);
       const fetchEnd = addDays(start, VISIBLE_WEEKS * 7 - 1);
       const from = toLocalISO(fetchStart);
       const to = toLocalISO(fetchEnd);
@@ -231,7 +274,7 @@ export default function WorkoutPlannerPage() {
         ...extList,
       ];
       const seen = new Set();
-      const rangeEndExclusive = addDays(fetchStart, VISIBLE_WEEKS * 7 + 7);
+      const rangeEndExclusive = addDays(fetchStart, (PAST_WEEKS + VISIBLE_WEEKS + 2) * 7);
       const chartCutoff = addDays(new Date(), -120);
       const rangeTrainings = [];
       const chartList = [];
@@ -521,10 +564,10 @@ export default function WorkoutPlannerPage() {
           <h1 className={`font-bold text-slate-900 leading-tight ${isMobile ? 'text-xl' : 'text-2xl'}`}>Workout Planner</h1>
           <div className="flex items-center gap-2 mt-1 flex-wrap">
             <p className="text-sm font-medium text-slate-500 tabular-nums">
-              {anchorWeek.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} –{' '}
+              {rangeStart.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} –{' '}
               {rangeEnd.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
             </p>
-            <span className="text-xs text-slate-400">· {VISIBLE_WEEKS} weeks</span>
+            <span className="text-xs text-slate-400">· {PAST_WEEKS + VISIBLE_WEEKS} weeks</span>
             {loading && <div className="w-3.5 h-3.5 border-2 border-primary border-t-transparent rounded-full animate-spin" />}
           </div>
         </div>
@@ -539,7 +582,13 @@ export default function WorkoutPlannerPage() {
           </button>
           <button
             type="button"
-            onClick={() => setAnchorWeek(startOfWeek(new Date()))}
+            onClick={() => {
+              setAnchorWeek(startOfWeek(new Date()));
+              // When the range is already this one nothing re-renders, so the
+              // effect above never fires; this covers that and is harmless
+              // otherwise.
+              scrollToToday();
+            }}
             className="text-xs font-semibold px-3 py-1.5 rounded-lg hover:bg-slate-100 text-slate-700 transition-colors"
           >
             Today
