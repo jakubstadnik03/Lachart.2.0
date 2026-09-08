@@ -110,6 +110,57 @@ export function PlanMiniChart({ steps, color, width = 60, height = 16, fluid = f
   );
 }
 
+function sessionLaps(a) {
+  // Four vocabularies for the same session, in the order the opened workout
+  // reads them.
+  //
+  // `savedAutoLaps` is the athlete's own Smart-detect split, and it comes
+  // first because the Laps tab adopts it over the device's laps — a session
+  // whose splits were corrected there was drawing its old device shape on the
+  // card and its corrected one when opened. (The activities endpoint already
+  // applies this preference when it builds `lapProfile`; FIT uploads and
+  // manually logged trainings ship the whole document, so the choice has to
+  // be made here too.)
+  //
+  // Then `lapProfile`, the compact shape Mongo projects so the calendar list
+  // can stay small, then the full laps, then hand-entered results.
+  return [a?.savedAutoLaps, a?.lapProfile, a?.laps, a?.results]
+    .find(l => Array.isArray(l) && l.length >= 3) || null;
+}
+
+const durOf = (l) => Number(
+  l.d ?? l.totalTimerTime ?? l.totalElapsedTime ?? l.moving_time ?? l.elapsed_time
+  ?? l.durationSeconds ?? l.duration ?? 0
+) || 0;
+
+const distOf = (l) => Number(
+  l.m ?? l.totalDistance ?? l.distance ?? l.distanceMeters ?? 0
+) || 0;
+
+/**
+ * What a lap's width measures — the same rule the opened workout's lap chart
+ * uses, or the thumbnail draws a different session from the one it is a
+ * thumbnail of. A ride is read in time; a run and a swim are read in
+ * distance, because that is how their sets are written and how the chart
+ * below them is drawn.
+ *
+ * On a 4x1km with floats the two disagree sharply: the 189m float that took
+ * 2:02 is a fiftieth of the session by distance and a twentieth by time, and
+ * every recovery swelled the same way — which is what made the card and the
+ * chart look like different workouts.
+ *
+ * A rest lap with no distance is a hairline rather than a disqualification:
+ * requiring every lap to carry distance sent a whole swim back to being read
+ * in time, because the rests between its repeats measure zero metres. The
+ * chart does the same with Math.max(dist, 1).
+ */
+function lapWeigher(a, laps) {
+  const paceSport = isRunLikeSport(a?.sport);
+  const distanceLaps = laps.filter(l => distOf(l) > 0).length;
+  const useDistance = paceSport && distanceLaps >= Math.max(2, laps.length * 0.5);
+  return useDistance ? (l => Math.max(distOf(l), 1)) : durOf;
+}
+
 /**
  * The shape of a session that was actually done, read off its laps.
  *
@@ -126,31 +177,8 @@ export function PlanMiniChart({ steps, color, width = 60, height = 16, fluid = f
  * @returns {number[]|null} relative heights in 0..1, oldest first
  */
 export function activityProfileBars(a, maxBars = 44) {
-  // Four vocabularies for the same session, in the order the opened workout
-  // reads them.
-  //
-  // `savedAutoLaps` is the athlete's own Smart-detect split, and it comes
-  // first because the Laps tab adopts it over the device's laps — a session
-  // whose splits were corrected there was drawing its old device shape on the
-  // card and its corrected one when opened. (The activities endpoint already
-  // applies this preference when it builds `lapProfile`; FIT uploads and
-  // manually logged trainings ship the whole document, so the choice has to
-  // be made here too.)
-  //
-  // Then `lapProfile`, the four-key shape Mongo projects so the calendar list
-  // can stay small, then the full laps, then hand-entered results.
-  const laps = [a?.savedAutoLaps, a?.lapProfile, a?.laps, a?.results]
-    .find(l => Array.isArray(l) && l.length >= 3) || null;
+  const laps = sessionLaps(a);
   if (!laps) return null;
-
-  const durOf = (l) => Number(
-    l.d ?? l.totalTimerTime ?? l.totalElapsedTime ?? l.moving_time ?? l.elapsed_time
-    ?? l.durationSeconds ?? l.duration ?? 0
-  ) || 0;
-
-  const distOf = (l) => Number(
-    l.m ?? l.totalDistance ?? l.distance ?? l.distanceMeters ?? 0
-  ) || 0;
 
   // `floor` is where the bar's zero sits. Power really can be nothing, so a
   // coast should draw as nothing. Nobody runs at zero and nobody's heart
@@ -211,26 +239,7 @@ export function activityProfileBars(a, maxBars = 44) {
   const span = peak - base;
   if (!(span > 0)) return null;
 
-  // What a lap's width measures — the same rule the opened workout's lap chart
-  // uses, or the thumbnail draws a different session from the one it is a
-  // thumbnail of. A ride is read in time; a run and a swim are read in
-  // distance, because that is how their sets are written and how the chart
-  // below them is drawn.
-  //
-  // On a 4x1km with floats the two disagree sharply: the 189m float that took
-  // 2:02 is a fiftieth of the session by distance and a twentieth by time, and
-  // every recovery swelled the same way — which is what made the card and the
-  // chart look like different workouts.
-  //
-  // A rest lap with no distance is a hairline rather than a disqualification:
-  // requiring every lap to carry distance sent a whole swim back to being read
-  // in time, because the rests between its repeats measure zero metres. The
-  // chart does the same with Math.max(dist, 1).
-  const paceSport = isRunLikeSport(a?.sport);
-  const distanceLaps = laps.filter(l => distOf(l) > 0).length;
-  const useDistance = paceSport && distanceLaps >= Math.max(2, laps.length * 0.5);
-  const weightOf = useDistance ? (l => Math.max(distOf(l), 1)) : durOf;
-
+  const weightOf = lapWeigher(a, laps);
   const total = laps.reduce((s, l) => s + weightOf(l), 0);
   if (!(total > 0)) return null;
 
@@ -251,12 +260,107 @@ export function activityProfileBars(a, maxBars = 44) {
   return bars;
 }
 
-/** The bars from activityProfileBars, drawn to fill whatever box they are given. */
-export function ActivityMiniChart({ bars, color, height = 18 }) {
+/** The violet every lactate reading in the app is printed in. */
+export const LACTATE_INK = '#7c3aed';
+
+/**
+ * Where a session's blood readings sit along the profile it draws.
+ *
+ * A lactate value is the one number on a lap that no device records: it
+ * belongs to that rep and nothing derived from the session as a whole can
+ * stand in for it. The calendar knew a ride's shape but not that four of its
+ * reps had been pricked, so a measured session and an unmeasured one looked
+ * identical until one of them was opened.
+ *
+ * Positions are fractions of the same weight axis `activityProfileBars` draws
+ * on — a reading lands over the lap it was taken against, whatever the bar
+ * count. Reported at the lap's midpoint, because the bars resample the session
+ * and a lap can span several of them.
+ *
+ * @returns {Array<{pos: number, value: number}>} in session order, oldest first
+ */
+export function activityLactateMarks(a) {
+  const laps = sessionLaps(a);
+  if (!laps) return [];
+
+  // `l` is the calendar list's compact key; `lactate` is what every fuller
+  // shape — device laps, a saved split, a hand-entered result — calls it.
+  const readingOf = (l) => {
+    const v = Number(l?.l ?? l?.lactate);
+    return Number.isFinite(v) && v > 0 ? v : null;
+  };
+  if (!laps.some(readingOf)) return [];
+
+  const weightOf = lapWeigher(a, laps);
+  const total = laps.reduce((sum, l) => sum + weightOf(l), 0);
+  if (!(total > 0)) return [];
+
+  const marks = [];
+  let cursor = 0;
+  for (const lap of laps) {
+    const w = weightOf(lap);
+    const value = readingOf(lap);
+    if (value != null) marks.push({ pos: (cursor + w / 2) / total, value });
+    cursor += w;
+  }
+  return marks;
+}
+
+/** 2 as "2", 2.15 as "2.2" — the way every other lactate label in the app reads. */
+function fmtLactate(v) {
+  return v % 1 === 0 ? String(v) : v.toFixed(1);
+}
+
+/**
+ * How many readings a thumbnail this size can label and still be read.
+ *
+ * A badge is about a tenth of the chart's width, so eight is what fits across
+ * it without one covering another. A set measured more often than that is
+ * better read as a list of numbers than as eight overlapping badges, and the
+ * hover card prints it that way instead.
+ */
+export const MAX_LACTATE_BADGES = 8;
+
+/**
+ * The same marks, moved just far enough apart to all stay readable.
+ *
+ * Two readings taken a minute apart sit within a badge's width of each other,
+ * and the second would print on top of the first. Nudged rather than dropped:
+ * a reading the athlete drew blood for is not something to hide because the
+ * chart is 230 pixels wide. The shift is a few percent, so each badge still
+ * sits over its own stretch of the profile.
+ */
+function laidOutMarks(marks) {
+  if (!marks?.length || marks.length > MAX_LACTATE_BADGES) return [];
+  const MIN_GAP = 0.1;   // a three-character badge, as a share of the chart
+  const EDGE = 0.05;     // the card clips its overflow, so nothing may hang off
+  const out = marks
+    .map(m => ({ ...m, pos: Math.min(1 - EDGE, Math.max(EDGE, m.pos)) }))
+    .sort((x, y) => x.pos - y.pos);
+  for (let i = 1; i < out.length; i++) {
+    if (out[i].pos - out[i - 1].pos < MIN_GAP) out[i].pos = out[i - 1].pos + MIN_GAP;
+  }
+  // Pushing right can run the last one off the end; walk the whole row back.
+  // Within the badge cap the row always fits, so this only ever shifts — it
+  // cannot run out of room at the left and stack two marks on one spot.
+  const spill = out[out.length - 1].pos - (1 - EDGE);
+  if (spill > 0) out.forEach((m) => { m.pos -= spill; });
+  return out;
+}
+
+/**
+ * The bars from activityProfileBars, drawn to fill whatever box they are given.
+ *
+ * `lactate` — marks from activityLactateMarks — prints each reading over the
+ * lap it was taken against. The badges are HTML rather than more SVG because
+ * this chart stretches to its container with preserveAspectRatio="none", which
+ * would squash any text drawn inside it out of shape.
+ */
+export function ActivityMiniChart({ bars, color, height = 18, lactate = null }) {
   if (!bars?.length) return null;
   const W = 140;
   const step = W / bars.length;
-  return (
+  const chart = (
     <svg
       width="100%"
       height={height}
@@ -278,6 +382,31 @@ export function ActivityMiniChart({ bars, color, height = 18 }) {
         />
       ))}
     </svg>
+  );
+
+  const marks = laidOutMarks(lactate);
+  if (!marks.length) return chart;
+
+  // 15px of headroom: a badge is 13 tall, and the two spare pixels keep it off
+  // the tallest bar rather than resting on it.
+  return (
+    <div className="relative" style={{ paddingTop: 15 }}>
+      {chart}
+      {marks.map((m, i) => (
+        <span
+          key={i}
+          className="absolute top-0 rounded-full border bg-white px-1 text-[8px] font-bold leading-[11px] tabular-nums"
+          style={{
+            left: `${m.pos * 100}%`,
+            transform: 'translateX(-50%)',
+            borderColor: LACTATE_INK,
+            color: LACTATE_INK,
+          }}
+        >
+          {fmtLactate(m.value)}
+        </span>
+      ))}
+    </div>
   );
 }
 

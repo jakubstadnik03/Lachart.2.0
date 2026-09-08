@@ -34,6 +34,12 @@ const savedAutoLapSchema = new mongoose.Schema({
   average_watts: Number,
   average_heartrate: Number,
   average_speed: Number,
+  // A blood reading belongs to the rep it was taken after, and the athlete's
+  // own split is what defines that rep. Without this field, re-splitting a
+  // session with Smart detect dropped every lactate value it had: the device
+  // laps kept theirs, but `savedAutoLaps` is what the app reads once a split
+  // is saved, so the session came back looking unmeasured.
+  lactate: { type: Number, default: null },
 }, { _id: false });
 
 const stravaActivitySchema = new mongoose.Schema({

@@ -10,6 +10,12 @@ function num(v) {
   return Number.isFinite(n) ? n : 0;
 }
 
+function lactateOrNull(v) {
+  if (v == null || v === '') return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
 function sanitizeSavedAutoLaps(input) {
   if (!Array.isArray(input)) return [];
   return input
@@ -23,6 +29,10 @@ function sanitizeSavedAutoLaps(input) {
       average_watts: num(l.average_watts),
       average_heartrate: num(l.average_heartrate),
       average_speed: num(l.average_speed),
+      // Null rather than 0, and deliberately not num(): a lap nobody pricked
+      // has no reading, while 0 mmol is one. num(undefined) is 0, which would
+      // have written a measurement onto every unmeasured lap in the set.
+      lactate: lactateOrNull(l.lactate),
     }));
 }
 

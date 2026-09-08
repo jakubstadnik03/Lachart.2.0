@@ -569,8 +569,14 @@ async function lapSignalsById(Model, match, limit) {
  * say "six by three" at a glance — and it can only do that from laps. The
  * list has always refused to ship `laps[]`, and rightly: the full array is
  * most of the document. But the card needs three numbers per lap, not twenty,
- * so the projection happens in Mongo and only `{d,w,s,h}` travels:
- * duration, and whichever of watts / speed / heart rate the device recorded.
+ * so the projection happens in Mongo and only `{d,m,w,s,h,l}` travels:
+ * duration, distance, whichever of watts / speed / heart rate the device
+ * recorded, and the lactate the athlete typed against that lap.
+ *
+ * Lactate rides along because a blood reading is the one number on a lap that
+ * no device records and no average can replace: it belongs to that rep and
+ * nothing else in the list carries it. Without it the calendar knew a session
+ * had been measured only if the athlete opened it.
  *
  * Activities with fewer than three laps are dropped here rather than sent and
  * discarded — a two-lap ride has no shape to draw. Laps past `maxLaps` are cut
@@ -613,6 +619,8 @@ async function lapProfilesById(Model, match, limit, maxLaps = 120) {
               w: { $ifNull: ['$$l.average_watts', null] },
               s: { $ifNull: ['$$l.average_speed', null] },
               h: { $ifNull: ['$$l.average_heartrate', null] },
+              // mmol/L, typed by hand against this lap.
+              l: { $ifNull: ['$$l.lactate', null] },
             },
           },
         },
@@ -630,6 +638,7 @@ async function lapProfilesById(Model, match, limit, maxLaps = 120) {
       if (l.w > 0) lap.w = l.w;
       if (l.s > 0) lap.s = l.s;
       if (l.h > 0) lap.h = l.h;
+      if (l.l > 0) lap.l = l.l;
       return lap;
     });
     if (laps.length >= 3) out.set(String(row._id), laps);

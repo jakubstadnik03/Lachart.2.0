@@ -57,7 +57,7 @@ import { buildStructureTitle } from '../../utils/workoutStructureTitle';
 import { plannedWorkoutDurationSecs } from '../../utils/planCompliance';
 import { activityCompletedStats, fmtPlanDuration, userUnitSystem } from '../../utils/activityStatsLine';
 import WeekSummaryCell, { SPORT_COLORS_CELL } from '../training/WeekSummaryCell';
-import { PlanMiniChart, activityProfileBars, ActivityMiniChart, CardProfileBand } from '../training/WorkoutProfile';
+import { PlanMiniChart, activityProfileBars, activityLactateMarks, ActivityMiniChart, CardProfileBand, LACTATE_INK, MAX_LACTATE_BADGES } from '../training/WorkoutProfile';
 import { classifyLaps } from '../../utils/lapClassify';
 import {
   buildActivityMatcher,
@@ -450,6 +450,29 @@ function SessionHoverContent({ planned, activity, profile, getCategory }) {
   const color = SPORT_PLAN_COLORS[(sport || 'bike').toLowerCase()] || '#767EB5';
   const description = planned?.description || activity?.description || null;
 
+  // The blood, over the reps it was drawn after. A card in the grid has no
+  // room for it and the profile alone cannot say it, so a measured session
+  // read exactly like an unmeasured one until it was opened.
+  const lactateMarks = activity ? activityLactateMarks(activity) : [];
+  // The session's own single reading, for the sessions that have one number
+  // rather than a set — a hand-logged training, or a ride with too few laps
+  // for the list to send a profile at all.
+  const sessionLactate = Number(activity?.lactate) > 0 ? Number(activity.lactate) : null;
+  // The chart carries the readings when it has a profile to put them on and
+  // few enough of them to label; a set measured every rep is more badges than
+  // 230 pixels can hold apart.
+  const chartCarriesLactate = !!bars && lactateMarks.length > 0
+    && lactateMarks.length <= MAX_LACTATE_BADGES;
+  // Otherwise they are spelled out. Printing the same numbers under a chart
+  // that already labels them is noise; printing them nowhere, for a session
+  // whose laps carry lactate and no power, or one measured only as a whole,
+  // is how the reading went missing in the first place.
+  const lactateLine = chartCarriesLactate
+    ? null
+    : lactateMarks.length > 0
+      ? `${lactateMarks.map(m => m.value.toFixed(1)).join(' · ')} mmol`
+      : sessionLactate != null ? `${sessionLactate.toFixed(1)} mmol` : null;
+
   return (
     <div className="flex flex-col gap-1.5">
       <div className="flex items-center gap-1.5 min-w-0">
@@ -465,7 +488,7 @@ function SessionHoverContent({ planned, activity, profile, getCategory }) {
         <p className="text-[11px] leading-snug text-gray-600 whitespace-pre-line">{description}</p>
       )}
 
-      {(plannedLine || done) && (
+      {(plannedLine || done || lactateLine) && (
         <div className="flex flex-col gap-0.5 pt-1 border-t border-gray-100">
           {plannedLine && (
             <div className="flex items-baseline gap-1.5 text-[11px]">
@@ -479,13 +502,19 @@ function SessionHoverContent({ planned, activity, profile, getCategory }) {
               <span className="tabular-nums font-semibold text-gray-800">{done}</span>
             </div>
           )}
+          {lactateLine && (
+            <div className="flex items-baseline gap-1.5 text-[11px]">
+              <span className="text-gray-400 w-[54px] flex-shrink-0">Lactate</span>
+              <span className="tabular-nums font-semibold" style={{ color: LACTATE_INK }}>{lactateLine}</span>
+            </div>
+          )}
         </div>
       )}
 
       {(bars || planned?.steps?.length > 0) && (
         <div className="pt-1 border-t border-gray-100">
           {bars
-            ? <ActivityMiniChart bars={bars} color={color} height={26} />
+            ? <ActivityMiniChart bars={bars} color={color} height={26} lactate={lactateMarks} />
             : <PlanMiniChart steps={planned.steps} color={color} width={140} height={26} fluid />}
         </div>
       )}
@@ -3219,6 +3248,11 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
       lapNumber: l.lapNumber, elapsed_time: l.elapsed_time, moving_time: l.moving_time,
       distance: l.distance, average_watts: l.average_watts,
       average_heartrate: l.average_heartrate, average_speed: l.average_speed,
+      // The reading goes with the split it was taken against. Left out of this
+      // payload, saving a split was how an athlete lost every lactate value on
+      // it — the calendar reads the saved laps once they exist, so the session
+      // went back to looking unmeasured everywhere outside the open workout.
+      lactate: l.lactate ?? null,
     })) : [];
     const isStrava = id.startsWith('strava-') || merged?.source === 'strava' || merged?.type === 'strava' || !!merged?.stravaId;
     const isFit = id.startsWith('fit-') || merged?.source === 'fit' || merged?.type === 'fit';

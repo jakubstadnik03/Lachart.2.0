@@ -1,4 +1,4 @@
-import { activityProfileBars } from './WorkoutProfile';
+import { activityProfileBars, activityLactateMarks } from './WorkoutProfile';
 
 /**
  * A real session: 4×~1km hard with floats, then a 3km jog home. The card's
@@ -75,5 +75,71 @@ describe('activityProfileBars', () => {
     expect(activityProfileBars(null)).toBeNull();
     expect(activityProfileBars({ sport: 'Run', laps: [{ d: 10, s: 3 }] })).toBeNull();
     expect(activityProfileBars({ sport: 'Run', laps: [{ d: 10 }, { d: 10 }, { d: 10 }] })).toBeNull();
+  });
+});
+
+/**
+ * A ride the athlete pricked twice: once after the opening block, once after
+ * the 25-minute effort. The calendar has to be able to say so on hover, and to
+ * say it over the right rep.
+ */
+const MEASURED_RIDE = {
+  sport: 'Ride',
+  lapProfile: [
+    { d: 600, m: 6200, w: 205 },
+    { d: 180, m: 1940, w: 372, l: 4.1 },
+    { d: 1500, m: 18910, w: 355, l: 2.8 },
+  ],
+};
+
+describe('activityLactateMarks', () => {
+  it('puts each reading over the lap it was taken against', () => {
+    const marks = activityLactateMarks(MEASURED_RIDE);
+    expect(marks.map((m) => m.value)).toEqual([4.1, 2.8]);
+
+    // The ride is 2280s of time. The 3-minute effort spans 600–780s, so its
+    // midpoint is 690/2280; the 25-minute block spans 780–2280, midpoint
+    // 1530/2280. Positions are fractions of the same axis the bars are drawn
+    // on, so a badge lands over its own rep whatever the bar count.
+    expect(marks[0].pos).toBeCloseTo(690 / 2280, 3);
+    expect(marks[1].pos).toBeCloseTo(1530 / 2280, 3);
+  });
+
+  it('measures a run in distance, the way its bars are', () => {
+    const run = {
+      sport: 'Run',
+      lapProfile: [
+        { d: 300, m: 1000, s: 3.33, l: 2.1 },
+        { d: 120, m: 200, s: 1.67 },
+        { d: 300, m: 1000, s: 3.33, l: 5.4 },
+      ],
+    };
+    const marks = activityLactateMarks(run);
+    // 2200m in total: the first km's midpoint is 500m in, the last km's 1700m.
+    expect(marks[0].pos).toBeCloseTo(500 / 2200, 3);
+    expect(marks[1].pos).toBeCloseTo(1700 / 2200, 3);
+  });
+
+  it('reads the full lap shapes too, not only the list projection', () => {
+    const fromLaps = {
+      sport: 'Ride',
+      laps: [
+        { moving_time: 600, average_watts: 205 },
+        { moving_time: 180, average_watts: 372, lactate: 4.1 },
+        { moving_time: 1500, average_watts: 355 },
+      ],
+    };
+    expect(activityLactateMarks(fromLaps)).toHaveLength(1);
+    expect(activityLactateMarks(fromLaps)[0].value).toBe(4.1);
+  });
+
+  it('says nothing about a session nobody measured', () => {
+    expect(activityLactateMarks(null)).toEqual([]);
+    expect(activityLactateMarks({ sport: 'Ride', lapProfile: MEASURED_RIDE.lapProfile.map(({ l, ...rest }) => rest) }))
+      .toEqual([]);
+    // A zero is the absence of a reading everywhere else in the app, and the
+    // list projection only ever sends `l` when it is above zero.
+    expect(activityLactateMarks({ sport: 'Ride', lapProfile: [{ d: 60, w: 200, l: 0 }, { d: 60, w: 200 }, { d: 60, w: 200 }] }))
+      .toEqual([]);
   });
 });

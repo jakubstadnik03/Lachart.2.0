@@ -38,6 +38,8 @@ const savedAutoLapSchema = new mongoose.Schema({
   average_watts: Number,
   average_heartrate: Number,
   average_speed: Number,
+  /** mmol/L typed against this lap — see StravaActivity for why it lives here. */
+  lactate: { type: Number, default: null },
 }, { _id: false });
 
 const fitRecordSchema = new mongoose.Schema({

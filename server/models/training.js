@@ -172,6 +172,8 @@ const trainingSchema = new mongoose.Schema({
             average_watts:      Number,
             average_heartrate:  Number,
             average_speed:      Number,
+            /** mmol/L typed against this lap — see StravaActivity for why. */
+            lactate:            { type: Number, default: null },
         }],
         default: undefined,
     },
