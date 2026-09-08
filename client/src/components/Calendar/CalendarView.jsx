@@ -1172,10 +1172,20 @@ function LapChart({ laps, color, isBike, isRun, isSwim, unitSystem = 'metric', s
   const isPaceEligible = (e) => {
     if (e.isPause || !e.value || e.value <= 0) return false;
     if (isRun || isSwim) {
-      if ((e.dur || 0) < 30) return false;
-      if ((e.dist || 0) < 100) return false;
-      if (isRun && e.value > 1200) return false;  // > 20:00/km — GPS glitch only
-      if (isSwim && e.value > 900) return false;
+      // These floors are here to drop GPS junk, and they were dropping reps.
+      // Thirty seconds and a hundred metres excludes every stride and hill
+      // sprint there is: a 10x20s set is 80 m a rep, so the scale was built
+      // from the float recoveries alone and every rep drew clipped off the top
+      // of the chart — an axis of 5:05-5:40 over laps that ran 3:51.
+      //
+      // A rep is not junk for being short. What makes a segment junk is a pace
+      // no one runs or swims, so that is what is tested now: standing still at
+      // one end, a GPS jump at the other. 2:00/km is 30 km/h and 0:25/100m is
+      // inside the world record — nothing real sits past either.
+      if ((e.dur || 0) < 8) return false;
+      if ((e.dist || 0) < (isSwim ? 20 : 30)) return false;
+      if (isRun && (e.value > 1200 || e.value < 120)) return false;
+      if (isSwim && (e.value > 900 || e.value < 25)) return false;
     }
     return true;
   };
