@@ -269,6 +269,20 @@ function SkylineChart({ results, sport, width = 180, height = 52 }) {
   const preferDistance = isRunLikeSport(sport);
   const primary = preferDistance ? distances : durations;
   const measure = sum(primary) > 0 ? primary : (preferDistance ? durations : distances);
+
+  /**
+   * The rests in a set that is measured in distance.
+   *
+   * A pool set is half rests, and a rest covers no distance — that is exactly
+   * what separates it from a slow length. Measured in metres it is worth
+   * nothing, so an 8x100 drew as one unbroken wall of bars and the set was
+   * unreadable: no way to see where a repeat ended.
+   *
+   * Only where the axis is distance. A ride is measured in time, and a bike
+   * lap with no distance is a trainer session, not a pause.
+   */
+  const isPause = results.map((r, i) => preferDistance && measure === distances && !(measure[i] > 0));
+
   const weights = measure.map(v => (v > 0 ? v : 1));
   const totalWeight = weights.reduce((a, b) => a + b, 0) || results.length;
 
@@ -276,18 +290,26 @@ function SkylineChart({ results, sport, width = 180, height = 52 }) {
   const totalGapW = gap * Math.max(0, results.length - 1);
   const usableW = Math.max(1, width - totalGapW);
   const MIN_BAR_W = 2;
+  // A rest takes no share of a distance axis, so whatever width it gets is a
+  // concession either way. Three pixels is the smallest that reads as a break
+  // between repeats, and it costs the work laps a couple of pixels between
+  // them — which is what a rest is.
+  const PAUSE_BAR_W = 3;
 
   // First pass: target widths from weight share, clamped to MIN_BAR_W.
   const rawWidths = weights.map(w => (w / totalWeight) * usableW);
-  const widths = rawWidths.map(w => Math.max(MIN_BAR_W, w));
-  // Redistribute overflow by trimming from the largest bars.
+  const widths = rawWidths.map((w, i) => (isPause[i] ? PAUSE_BAR_W : Math.max(MIN_BAR_W, w)));
+  // Redistribute overflow by trimming from the largest bars. Rests are left
+  // out of it: they are already at the smallest width that reads as a break,
+  // and trimming them is how the marking disappeared again.
   let overflow = widths.reduce((a, b) => a + b, 0) - usableW;
   if (overflow > 0.5) {
     const order = widths
       .map((w, i) => ({ i, w }))
+      .filter(({ i }) => !isPause[i])
       .sort((a, b) => b.w - a.w);
     let idx = 0;
-    while (overflow > 0.5 && idx < order.length * 4) {
+    while (overflow > 0.5 && order.length && idx < order.length * 4) {
       const slot = order[idx % order.length];
       if (widths[slot.i] - 0.5 > MIN_BAR_W) {
         widths[slot.i] -= 0.5;
@@ -302,11 +324,21 @@ function SkylineChart({ results, sport, width = 180, height = 52 }) {
       {results.map((r, i) => {
         const val = vals[i];
         const pct = maxVal > 0 ? val / maxVal : 0;
-        const barH = Math.max(3, pct * BAR_AREA_H);
+        // A rest carries no pace, so scaling it gives 3 pixels and it vanishes
+        // into the baseline — indistinguishable from the gap between two bars,
+        // which is exactly what it must not look like. Drawn instead at a
+        // fixed low height: short enough to read as a rest at a glance, tall
+        // enough to see that the set was broken there.
+        const barH = isPause[i]
+          ? Math.max(6, BAR_AREA_H * 0.22)
+          : Math.max(3, pct * BAR_AREA_H);
         const x = widths.slice(0, i).reduce((a, b) => a + b, 0) + i * gap;
         const barW = widths[i];
         const y = BAR_AREA_H - barH + 12; // +12 to shift below label area
-        const typeMeta = intervalTypeMeta(r.intervalType);
+        // A rest reads as a rest, in the same grey a deliberately-marked
+        // recovery already uses — the eye should not have to work out which
+        // of two short bars was a length and which was the wall.
+        const typeMeta = isPause[i] ? INTERVAL_TYPE_COLOR.recovery : intervalTypeMeta(r.intervalType);
         const { fill } = typeMeta ? { fill: typeMeta.fill } : zoneColor(pct);
         const lac = r.lactate != null && r.lactate !== '' ? Number(r.lactate) : null;
 
