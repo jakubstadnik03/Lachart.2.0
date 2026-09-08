@@ -837,9 +837,11 @@ export default function SpiderChart({
           allTimeDate: prEntry?.date || atDate || null,
           allTimeTrainingId:   typeof atEntry === 'object' ? atEntry?.trainingId  : null,
           allTimeTrainingType: typeof atEntry === 'object' ? atEntry?.trainingType : null,
+          allTimeGarminId: typeof atEntry === 'object' ? atEntry?.garminId : null,
           allTimeStravaId:     typeof atEntry === 'object' ? atEntry?.stravaId     : null,
           cmpTrainingId:   typeof cmpEntry === 'object' ? cmpEntry?.trainingId  : null,
           cmpTrainingType: typeof cmpEntry === 'object' ? cmpEntry?.trainingType : null,
+          cmpGarminId: typeof cmpEntry === 'object' ? cmpEntry?.garminId : null,
           cmpStravaId:     typeof cmpEntry === 'object' ? cmpEntry?.stravaId     : null,
           pr: prEntry,
         };
@@ -868,8 +870,8 @@ export default function SpiderChart({
   }, [sport, bikeMetrics, bikeAllTimeBest, bikeAllTimeRef, runMetrics, comparePeriod]);
 
   // ── Navigation helper (bike) ──────────────────────────────────────────────
-  const handleTrainingClick = (trainingId, trainingType, stravaId, metricKey, claimedWatts) => {
-    if (!trainingId && !stravaId) return;
+  const handleTrainingClick = (trainingId, trainingType, stravaId, metricKey, claimedWatts, garminId = null) => {
+    if (!trainingId && !stravaId && !garminId) return;
     try {
       const athletePart = targetAthleteId ? `/${targetAthleteId}` : '';
       const params = new URLSearchParams();
@@ -877,7 +879,8 @@ export default function SpiderChart({
       if (claimedWatts) params.set('radarWatts', String(Math.round(claimedWatts)));
       const qs = params.toString() ? `?${params}` : '';
       const base = `/training-calendar${athletePart}`;
-      if (stravaId) navigate(`${base}/${encodeURIComponent(`strava-${stravaId}`)}${qs}`);
+      if (garminId) navigate(`${base}/${encodeURIComponent(`garmin-${garminId}`)}${qs}`);
+      else if (stravaId) navigate(`${base}/${encodeURIComponent(`strava-${stravaId}`)}${qs}`);
       else if (trainingType === 'strava' && trainingId) navigate(`${base}/${encodeURIComponent(`strava-${trainingId}`)}${qs}`);
       else navigate(`${base}/${encodeURIComponent(`fit-${trainingId}`)}${qs}`);
     } catch {}
@@ -1198,7 +1201,7 @@ export default function SpiderChart({
                               </div>
                               {sport === 'bike' && (row.cmpTrainingId || row.cmpStravaId) ? (
                                 <button
-                                  onClick={() => handleTrainingClick(row.cmpTrainingId, row.cmpTrainingType, row.cmpStravaId, row.id, row.compareVal)}
+                                  onClick={() => handleTrainingClick(row.cmpTrainingId, row.cmpTrainingType, row.cmpStravaId, row.id, row.compareVal, row.cmpGarminId)}
                                   className="text-xs font-semibold text-primary hover:underline"
                                 >
                                   {cmpDisplay}
@@ -1212,7 +1215,7 @@ export default function SpiderChart({
                             <div className="text-[10px] text-gray-400 mb-0.5 uppercase tracking-wide">All time</div>
                             {sport === 'bike' && (row.allTimeTrainingId || row.allTimeStravaId) ? (
                               <button
-                                onClick={() => handleTrainingClick(row.allTimeTrainingId, row.allTimeTrainingType, row.allTimeStravaId, row.id, row.allTimeVal)}
+                                onClick={() => handleTrainingClick(row.allTimeTrainingId, row.allTimeTrainingType, row.allTimeStravaId, row.id, row.allTimeVal, row.allTimeGarminId)}
                                 className="text-xs font-semibold text-primary hover:underline"
                               >
                                 {allTimeDisplay}

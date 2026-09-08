@@ -2996,12 +2996,27 @@ async function analyzeTrainingsByMonth(req, res) {
  * Used as fallback when per-second records don't carry power data.
  * Only considers laps whose duration is at least 80% of the target window.
  */
+/**
+ * The best average power held for at least this long, read off the laps.
+ *
+ * A lower bound on the real peak — a 20-minute lap at 370 W says the athlete
+ * held 370 W for 20 minutes, not that they could not have held more — which is
+ * why it is only ever a fallback for a per-second trace. But it is the whole
+ * radar for a ride whose trace is not stored: a session synced yesterday has
+ * laps immediately and a stream only once the backfill reaches it.
+ *
+ * Reads all three vocabularies. FIT parses to `totalTimerTime`/`avgPower`;
+ * Strava and Garmin both store `moving_time`/`average_watts`, and looking for
+ * the FIT names alone is why neither of them ever reached this fallback.
+ */
 function maxPowerFromLaps(laps, durationSeconds) {
   if (!laps || laps.length === 0) return 0;
   let best = 0;
   for (const lap of laps) {
-    const dur = Number(lap.totalTimerTime || lap.totalElapsedTime || 0);
-    const avg = Number(lap.avgPower || 0);
+    const dur = Number(
+      lap.totalTimerTime || lap.totalElapsedTime || lap.moving_time || lap.elapsed_time || 0,
+    );
+    const avg = Number(lap.avgPower || lap.average_watts || 0);
     if (avg > 0 && dur >= durationSeconds * 0.8) {
       best = Math.max(best, avg);
     }
@@ -3121,7 +3136,7 @@ async function getPowerMetrics(req, res) {
       sport: { $in: ['Ride', 'VirtualRide'] }
     })
       // include extra predictors so we can pick better candidates for peak power without scanning all rides
-      .select('_id startDate stravaId sport averagePower movingTime raw.max_watts raw.maxWatts raw.weighted_average_watts raw.weightedAverageWatts')
+      .select('_id startDate stravaId sport averagePower movingTime laps raw.max_watts raw.maxWatts raw.weighted_average_watts raw.weightedAverageWatts')
       .lean();
 
     if (stravaActivities.length === 0 && athleteIdObj) {
@@ -3129,7 +3144,7 @@ async function getPowerMetrics(req, res) {
         userId: athleteIdObj,
         sport: { $in: ['Ride', 'VirtualRide'] }
       })
-        .select('_id startDate stravaId sport averagePower movingTime raw.max_watts raw.maxWatts raw.weighted_average_watts raw.weightedAverageWatts')
+        .select('_id startDate stravaId sport averagePower movingTime laps raw.max_watts raw.maxWatts raw.weighted_average_watts raw.weightedAverageWatts')
         .lean();
     }
     
@@ -3309,6 +3324,12 @@ async function getPowerMetrics(req, res) {
         
         stravaTrainingsProcessed.push({
           records: records,
+          // Carried alongside the trace, not instead of it: `fromRecords ||
+          // fromLaps` means the laps only speak for a duration the trace could
+          // not cover — a stream that stops short, or one without watts.
+          laps: activity.laps || [],
+          avgPower: activity.averagePower || 0,
+          totalTimerTime: activity.movingTime || 0,
           timestamp: activityStartTime,
           sport: activity.sport || 'Ride',
           stravaId: activity.stravaId ? activity.stravaId.toString() : null
@@ -3356,8 +3377,65 @@ async function getPowerMetrics(req, res) {
       }
     }
     
+    // Rides whose trace we do not have, read from their laps instead.
+    //
+    // A stream is fetched for at most 60 activities and skipped entirely on a
+    // rate limit, and a session synced yesterday has laps immediately but a
+    // stream only once the backfill reaches it. Those rides used to contribute
+    // nothing at all, which is how a radar could say "nothing with power in
+    // the past 90 days" over a week of rides that plainly had power.
+    const streamedStravaIds = new Set(
+      stravaTrainingsProcessed.map(t => String(t.stravaId || '')),
+    );
+    const stravaFromLaps = stravaActivitiesWithPower
+      .filter(a => !streamedStravaIds.has(String(a.stravaId || '')))
+      .map(a => ({
+        records: [],
+        laps: a.laps || [],
+        avgPower: a.averagePower || 0,
+        totalTimerTime: a.movingTime || 0,
+        timestamp: a.startDate ? new Date(a.startDate).getTime() : 0,
+        sport: a.sport || 'Ride',
+        stravaId: a.stravaId ? a.stravaId.toString() : null,
+      }));
+
+    // Garmin, which this had never looked at.
+    //
+    // An athlete who records on a Garmin and does not also sync to Strava had
+    // no radar at all — every ride they own was invisible to it. Read from
+    // laps for the same reason as above; the per-second traces live in
+    // GarminStream and reading those is a bigger job than this fix.
+    const GarminActivity = require('../models/GarminActivity');
+    let garminActivities = [];
+    try {
+      garminActivities = await GarminActivity.find({
+        userId: athleteIdObj || athleteIdStr,
+        sport: { $regex: /rid|bik|cycl/i },
+      })
+        .select('_id startDate garminId sport averagePower movingTime elapsedTime laps')
+        .lean();
+    } catch (garminErr) {
+      console.warn('[Power Metrics] Garmin lookup failed:', garminErr.message);
+    }
+    const garminFromLaps = garminActivities
+      .filter(a => Number(a.averagePower) > 0 || (a.laps || []).some(l => Number(l.average_watts) > 0))
+      .map(a => ({
+        records: [],
+        laps: a.laps || [],
+        avgPower: a.averagePower || 0,
+        totalTimerTime: a.movingTime || a.elapsedTime || 0,
+        timestamp: a.startDate ? new Date(a.startDate).getTime() : 0,
+        sport: a.sport || 'Ride',
+        garminId: a.garminId ? String(a.garminId) : null,
+      }));
+
     // Combine FIT and Strava trainings
-    const allTrainings = [...fitTrainingsProcessed, ...stravaTrainingsProcessed];
+    const allTrainings = [
+      ...fitTrainingsProcessed,
+      ...stravaTrainingsProcessed,
+      ...stravaFromLaps,
+      ...garminFromLaps,
+    ];
     
     if (process.env.NODE_ENV !== 'production') {
       console.log(`[Power Metrics] Total trainings to process: ${allTrainings.length} (${fitTrainingsProcessed.length} FIT + ${stravaTrainingsProcessed.length} Strava)`);
@@ -3384,8 +3462,11 @@ async function getPowerMetrics(req, res) {
           date: new Date(training.timestamp),
           // Store training ID and type for navigation
           trainingId: training._id ? training._id.toString() : null,
-          trainingType: training._id ? 'fit' : (training.stravaId ? 'strava' : null),
-          stravaId: training.stravaId ? training.stravaId.toString() : null
+          trainingType: training._id ? 'fit'
+            : training.stravaId ? 'strava'
+              : training.garminId ? 'garmin' : null,
+          stravaId: training.stravaId ? training.stravaId.toString() : null,
+          garminId: training.garminId ? String(training.garminId) : null
         };
       });
     
@@ -3409,13 +3490,14 @@ async function getPowerMetrics(req, res) {
     // Calculate max values more safely (handle empty arrays) with training ID
     const getMaxValue = (key) => {
       const values = allMetrics.map(m => ({ value: m[key] || 0, metric: m })).filter(v => v.value > 0);
-      if (values.length === 0) return { value: 0, trainingId: null, trainingType: null, stravaId: null };
+      if (values.length === 0) return { value: 0, trainingId: null, trainingType: null, stravaId: null, garminId: null };
       const max = values.reduce((best, current) => current.value > best.value ? current : best);
       return {
         value: max.value,
         trainingId: max.metric.trainingId,
         trainingType: max.metric.trainingType,
-        stravaId: max.metric.stravaId
+        stravaId: max.metric.stravaId,
+        garminId: max.metric.garminId || null
       };
     };
     
