@@ -6,6 +6,7 @@ import TrainingForm from '../components/TrainingForm';
 import TrainingStats from '../components/DashboardPage/TrainingStats';
 import UpgradeModal from '../components/UpgradeModal';
 import api from '../services/api';
+import { dedupeTrainingRows } from '../utils/dedupeTrainingRows';
 import { useAuth } from '../context/AuthProvider';
 import { addTraining, updateTraining, getStravaActivityDetail, createFieldLactateMeasurement, autoSyncStravaActivities, assignFieldLactateMeasurement } from '../services/api';
 import { maybeNotifyStravaActivitiesImported } from '../utils/stravaImportLocalNotification';
@@ -286,45 +287,9 @@ export default function TrainingPage() {
         }))
       ];
 
-      // Deduplicate: prefer the entry with more data (results/power/lactate).
-      // Same sourceStravaActivityId → keep richer one.
-      // Same title + same calendar day → keep richer one.
-      const scoreT = (t) => {
-        const res = Array.isArray(t.results) ? t.results : [];
-        return res.length * 10
-          + (res.some(r => Number(r.power) > 0) ? 5 : 0)
-          + (res.some(r => Number(r.lactate) > 0) || Number(t.lactate) > 0 ? 3 : 0);
-      };
-      // Pass 1: exact _id
-      const seenId = new Set();
-      const p1 = rawTrainings.filter(t => {
-        const k = String(t._id || t.id || '');
-        if (!k || seenId.has(k)) return false;
-        seenId.add(k); return true;
-      });
-      // Pass 2: sourceStravaActivityId
-      const byStrava = new Map();
-      p1.forEach(t => {
-        const sid = t.sourceStravaActivityId ? String(t.sourceStravaActivityId) : null;
-        if (!sid) return;
-        const prev = byStrava.get(sid);
-        if (!prev || scoreT(t) > scoreT(prev)) byStrava.set(sid, t);
-      });
-      const stravaWinners = new Set([...byStrava.values()].map(t => String(t._id || t.id || '')));
-      const p2 = p1.filter(t => {
-        const sid = t.sourceStravaActivityId ? String(t.sourceStravaActivityId) : null;
-        if (!sid) return true;
-        return stravaWinners.has(String(t._id || t.id || ''));
-      });
-      // Pass 3: title + date
-      const byTD = new Map();
-      p2.forEach(t => {
-        const k = `${String(t.title || '').trim()}|${new Date(t.date || 0).toDateString()}`;
-        const prev = byTD.get(k);
-        if (!prev || scoreT(t) > scoreT(prev)) byTD.set(k, t);
-      });
-      const tdWinners = new Set([...byTD.values()].map(t => String(t._id || t.id || '')));
-      const allTrainings = p2.filter(t => tdWinners.has(String(t._id || t.id || '')));
+      // One session, one row — see utils/dedupeTrainingRows for the three
+      // ways the same ride reaches this list.
+      const allTrainings = dedupeTrainingRows(rawTrainings);
 
       setTrainings(allTrainings);
 
@@ -612,9 +577,27 @@ export default function TrainingPage() {
           });
           if (bestIdx >= 0) {
             try {
+              // Which lap of the *ride*, not which row of the table.
+              //
+              // `bestIdx` is a position in `cleanedResults`, and the two
+              // numberings part company the moment the results are anything
+              // but every lap in order — a set with the warm-up dropped, or
+              // the recoveries deselected, shifts every row. The reading was
+              // then written onto whatever lap happened to sit at that
+              // position, which is how a value taken after rep four came back
+              // attached to rep two. `sourceLapIndex` is the row's own record
+              // of the lap it came from; mirrorLactateToSource has always read
+              // it, and this path is now the same.
+              const row = cleanedResults[bestIdx];
+              const sourceLap = Number.isInteger(row?.sourceLapIndex)
+                ? row.sourceLapIndex
+                : (Number(row?.interval) > 0 ? Number(row.interval) - 1 : bestIdx);
               const payload = {
-                lapIndex: bestIdx,
-                lapNumber: bestIdx + 1,
+                lapIndex: sourceLap,
+                lapNumber: sourceLap + 1,
+                // The row this came from, so the training's own copy is
+                // written by position while the ride is written by lap.
+                resultIndex: bestIdx,
                 trainingTitle: formData.title || 'Training',
                 trainingDate: formData.date || null,
               };

@@ -59,12 +59,39 @@ router.delete('/:id', verifyToken, async (req, res) => {
   }
 });
 
+/**
+ * Which row of a training's results stands for a given lap of the ride.
+ *
+ * `lapIndex` means one thing here — the lap of the source activity — and a
+ * training's `results` are not that list. A set with the warm-up dropped, or
+ * the recoveries deselected, is shorter and shifted, so using the lap number
+ * as a position in `results` wrote the reading onto whatever row happened to
+ * sit there. `sourceLapIndex` is each row's own record of the lap it came
+ * from; `interval` is the older 1-based form of the same thing.
+ *
+ * `resultIndex`, when the caller sends it, is that caller saying outright
+ * which row it meant, and is trusted first.
+ */
+function resultRowForLap(results, lapIndex, resultIndex) {
+  if (!Array.isArray(results)) return -1;
+  if (Number.isInteger(resultIndex) && results[resultIndex] != null) return resultIndex;
+  const bySource = results.findIndex((r) => Number(r?.sourceLapIndex) === Number(lapIndex));
+  if (bySource >= 0) return bySource;
+  const byInterval = results.findIndex((r) => Number(r?.interval) - 1 === Number(lapIndex));
+  if (byInterval >= 0) return byInterval;
+  // Nothing says otherwise: the results really may be the laps, in order.
+  return results[lapIndex] != null ? Number(lapIndex) : -1;
+}
+
 // PUT /api/field-lactate/:id/assign — assign to a training lap
 router.put('/:id/assign', verifyToken, async (req, res) => {
   try {
-    const { trainingId, stravaActivityId, lapIndex, lapNumber, trainingTitle, trainingDate } = req.body;
+    const { trainingId, stravaActivityId, lapIndex, lapNumber, trainingTitle, trainingDate, resultIndex } = req.body;
     const doc = await FieldLactateMeasurement.findById(req.params.id);
     if (!doc) return res.status(404).json({ error: 'Not found' });
+    const isOwner = String(doc.athleteId) === String(req.user.userId)
+      || String(doc.recordedBy) === String(req.user.userId);
+    if (!isOwner) return res.status(403).json({ error: 'Forbidden' });
 
     doc.status = 'assigned';
     doc.assignment = { trainingId, stravaActivityId, lapIndex, lapNumber, trainingTitle, trainingDate };
@@ -74,8 +101,10 @@ router.put('/:id/assign', verifyToken, async (req, res) => {
     if (trainingId && lapIndex != null) {
       try {
         const training = await Training.findById(trainingId);
-        if (training && training.results && training.results[lapIndex] != null) {
-          training.results[lapIndex].lactate = doc.value;
+        const row = resultRowForLap(training?.results, lapIndex, resultIndex);
+        if (row >= 0) {
+          training.results[row].lactate = doc.value;
+          training.markModified('results');
           await training.save();
         }
       } catch (writeErr) {
@@ -87,9 +116,20 @@ router.put('/:id/assign', verifyToken, async (req, res) => {
     if (stravaActivityId && lapIndex != null) {
       try {
         const StravaActivity = require('../models/StravaActivity');
-        const sa = await StravaActivity.findOne({ stravaId: stravaActivityId });
+        const mongoose = require('mongoose');
+        const raw = String(stravaActivityId).replace(/^strava-/i, '').trim();
+        // Two id shapes reach this field, both written by code that is in
+        // production: the client stores Strava's numeric id, the server stores
+        // the activity's Mongo _id. Scoped to the measurement's own athlete —
+        // an unscoped stravaId lookup would happily write onto someone else's
+        // ride.
+        const scope = { userId: doc.athleteId };
+        const sa = (raw.length === 24 && mongoose.Types.ObjectId.isValid(raw))
+          ? await StravaActivity.findOne({ ...scope, _id: raw })
+          : await StravaActivity.findOne({ ...scope, stravaId: Number(raw) });
         if (sa && sa.laps && sa.laps[lapIndex] != null) {
           sa.laps[lapIndex].lactate = doc.value;
+          sa.markModified('laps');
           await sa.save();
         }
       } catch (writeErr) {

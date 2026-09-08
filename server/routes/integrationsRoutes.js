@@ -115,6 +115,51 @@ function stripStravaActivityIdPrefix(id) {
   return String(id).replace(/^strava-/i, '');
 }
 
+/**
+ * One imported activity, whichever id shape the caller happens to hold.
+ *
+ * A training records the activity it came from in `sourceStravaActivityId` /
+ * `sourceGarminActivityId`, and the two paths that write it disagree about
+ * what goes in there. Trainings built on the client store the provider's own
+ * id; trainings the server builds from an imported activity store that
+ * activity's Mongo `_id` (trainingAbl). Both are in the database already, so
+ * a route that understands only one of them is broken for half the athletes.
+ *
+ * The activity detail route has always accepted both. The lactate routes
+ * below did not: they ran `parseInt` over the parameter, and `parseInt` of an
+ * ObjectId like '68f186d538a2540fd70d3aed' is 68 — a silent wrong answer, not
+ * an error. Every reading mirrored from a server-created training therefore
+ * looked up Strava activity 68, missed, and was swallowed by the mirror's
+ * deliberate catch. The training kept the lactate; the activity never got it;
+ * and the calendar, which draws laps rather than results, went on showing the
+ * session as unmeasured.
+ */
+function looksLikeObjectId(id) {
+  const s = String(id || '');
+  if (s.length !== 24) return false;
+  return require('mongoose').Types.ObjectId.isValid(s);
+}
+
+async function findStravaActivityByEitherId(userId, rawId) {
+  const id = stripStravaActivityIdPrefix(rawId);
+  if (looksLikeObjectId(id)) return StravaActivity.findOne({ _id: id, userId });
+  const stravaId = parseInt(id, 10);
+  if (!Number.isFinite(stravaId) || stravaId <= 0) return null;
+  return StravaActivity.findOne({ userId, stravaId });
+}
+
+async function findGarminActivityByEitherId(userId, rawId) {
+  const id = String(rawId || '').replace(/^garmin-/i, '').trim();
+  if (!id) return null;
+  // `garminId` is a string column, so an ObjectId-shaped value is not
+  // impossible there — try the document id first, then fall back.
+  if (looksLikeObjectId(id)) {
+    const byObjectId = await GarminActivity.findOne({ _id: id, userId });
+    if (byObjectId) return byObjectId;
+  }
+  return GarminActivity.findOne({ userId, garminId: id });
+}
+
 // Cache for activities endpoint (2 minutes cache)
 const cache = require('node-cache');
 const activitiesCache = new cache({ stdTTL: 120 }); // 2 minutes cache
@@ -6557,13 +6602,16 @@ router.put('/garmin/activities/:id/lactate', verifyToken, async (req, res) => {
     const user = await User.findById(req.user.userId);
     if (!user) return res.status(404).json({ error: 'User not found' });
 
-    const garminId = String(req.params.id || '').replace(/^garmin-/i, '').trim();
-    if (!garminId) return res.status(400).json({ error: 'Invalid Garmin activity ID' });
+    if (!String(req.params.id || '').trim()) {
+      return res.status(400).json({ error: 'Invalid Garmin activity ID' });
+    }
 
     const lactateValues = Array.isArray(req.body?.lactateValues) ? req.body.lactateValues : [];
 
-    const activity = await GarminActivity.findOne({ userId: user._id, garminId });
+    // Either id shape — see findGarminActivityByEitherId.
+    const activity = await findGarminActivityByEitherId(user._id, req.params.id);
     if (!activity) return res.status(404).json({ error: 'Garmin activity not found' });
+    const garminId = activity.garminId;
     if (!Array.isArray(activity.laps) || activity.laps.length === 0) {
       return res.status(400).json({ error: 'No laps available for this activity' });
     }
@@ -6669,17 +6717,17 @@ router.delete('/garmin/activities/:id/laps/:lapIndex', verifyToken, async (req, 
 router.put('/strava/activities/:id/lactate', verifyToken, async (req, res) => {
   try {
     const user = await User.findById(req.user.userId);
-    const stravaId = parseInt(stripStravaActivityIdPrefix(req.params.id), 10);
     const { lactateValues } = req.body; // [{ lapIndex: number, lactate: number }]
 
-    const activity = await StravaActivity.findOne({
-      userId: user._id,
-      stravaId: stravaId
-    });
+    // Either id shape — see findStravaActivityByEitherId for why both exist.
+    const activity = await findStravaActivityByEitherId(user._id, req.params.id);
 
     if (!activity) {
       return res.status(404).json({ error: 'Strava activity not found' });
     }
+    // Strava's own id, for talking to Strava. Taken off the document rather
+    // than off the URL, which may have carried our _id instead.
+    const stravaId = activity.stravaId;
 
     // Initialize laps array if it doesn't exist
     if (!activity.laps || activity.laps.length === 0) {
