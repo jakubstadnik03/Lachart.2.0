@@ -191,6 +191,52 @@ function banner(lines) {
   console.warn(`└${bar}┘\n`);
 }
 
+/**
+ * Get a browser, robust across environments:
+ *   • Vercel / CI — the build image ships a downloadable Chrome that cannot
+ *     start (exit 127: missing system libraries such as libnss3/libnspr4, which
+ *     you can't apt-get on a managed build). @sparticuz/chromium bundles a
+ *     Chromium built WITH those libraries, so we try it first there.
+ *   • Local dev — full puppeteer with its own Chromium, fetched on demand if
+ *     the download is missing.
+ * Every failure falls through to the next option; if all fail the caller's
+ * outer catch ships the SPA (same non-fatal behaviour as before).
+ */
+async function launchBrowser(launchOpts) {
+  if (process.env.VERCEL || process.env.CI) {
+    try {
+      const chromium = require('@sparticuz/chromium').default;
+      const puppeteerCore = require('puppeteer-core');
+      const executablePath = await chromium.executablePath();
+      const browser = await puppeteerCore.launch({
+        args: [...chromium.args, '--no-sandbox', '--disable-setuid-sandbox'],
+        executablePath,
+        headless: true,
+      });
+      console.log('[prerender] Launched via @sparticuz/chromium.');
+      return browser;
+    } catch (e) {
+      console.warn(
+        '[prerender] @sparticuz/chromium unavailable, falling back to puppeteer:',
+        (e && (e.message || String(e)) || '').toString().slice(0, 160)
+      );
+    }
+  }
+  try {
+    return await puppeteer.launch(launchOpts);
+  } catch (first) {
+    // A missing download is recoverable; anything else (e.g. missing libs)
+    // rethrows to the caller's fatal handler.
+    if (!/Could not find Chrome|Could not find browser/i.test(first?.message || '')) throw first;
+    console.log('[prerender] No browser found — downloading Chrome for Puppeteer…');
+    execSync('npx --no-install puppeteer browsers install chrome', {
+      stdio: 'inherit',
+      cwd: path.resolve(__dirname, '..'),
+    });
+    return await puppeteer.launch(launchOpts);
+  }
+}
+
 (async () => {
   // Escape hatch for an environment that genuinely cannot run a browser.
   // It should almost never be needed: the usual failure was "Could not find
@@ -235,23 +281,7 @@ function banner(lines) {
 
   let browser;
   try {
-    try {
-      browser = await puppeteer.launch(LAUNCH_OPTS);
-    } catch (first) {
-      // "Could not find Chrome" is not a broken environment, it is a missing
-      // download — and on Vercel it is the normal state of every cache-hit
-      // build, because npm skips puppeteer's postinstall when node_modules
-      // comes back from cache. Fetch the browser and carry on rather than
-      // shipping a site with no meta on it.
-      if (!/Could not find Chrome|Could not find browser/i.test(first?.message || '')) throw first;
-
-      console.log('[prerender] No browser found — downloading Chrome for Puppeteer…');
-      execSync('npx --no-install puppeteer browsers install chrome', {
-        stdio: 'inherit',
-        cwd: path.resolve(__dirname, '..'),
-      });
-      browser = await puppeteer.launch(LAUNCH_OPTS);
-    }
+    browser = await launchBrowser(LAUNCH_OPTS);
   } catch (e) {
     // Chromium could not be started even after trying to fetch it — /tmp full,
     // sandbox disabled, a genuinely missing system library. Non-fatal by
