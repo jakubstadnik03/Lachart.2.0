@@ -311,15 +311,25 @@ function fmtLactate(v) {
   return v % 1 === 0 ? String(v) : v.toFixed(1);
 }
 
-/**
- * How many readings a thumbnail this size can label and still be read.
- *
- * A badge is about a tenth of the chart's width, so eight is what fits across
- * it without one covering another. A set measured more often than that is
- * better read as a list of numbers than as eight overlapping badges, and the
- * hover card prints it that way instead.
- */
+/** Roughly what a three-character badge takes up, in CSS pixels. */
+const LACTATE_BADGE_PX = 22;
+/** The card the hover popover draws in, and the width everything defaults to. */
+const DEFAULT_CHART_PX = 230;
+/** Never more than this, however wide the box: a wall of badges says nothing. */
 export const MAX_LACTATE_BADGES = 8;
+
+/**
+ * How many readings a chart of this width can label and still be read.
+ *
+ * A day cell is a third of the hover card's width, so a count that is
+ * comfortable in the popover is a pile-up on the card. Derived from the width
+ * rather than fixed, because the same chart is drawn at 150, 230 and 330
+ * pixels across this app.
+ */
+export function maxLactateBadgesFor(widthPx = DEFAULT_CHART_PX) {
+  const gap = Math.min(0.34, LACTATE_BADGE_PX / Math.max(widthPx, 60));
+  return Math.max(1, Math.min(MAX_LACTATE_BADGES, Math.floor(0.9 / gap) + 1));
+}
 
 /**
  * The same marks, moved just far enough apart to all stay readable.
@@ -327,12 +337,12 @@ export const MAX_LACTATE_BADGES = 8;
  * Two readings taken a minute apart sit within a badge's width of each other,
  * and the second would print on top of the first. Nudged rather than dropped:
  * a reading the athlete drew blood for is not something to hide because the
- * chart is 230 pixels wide. The shift is a few percent, so each badge still
- * sits over its own stretch of the profile.
+ * chart is narrow. The shift is a few percent, so each badge still sits over
+ * its own stretch of the profile.
  */
-function laidOutMarks(marks) {
-  if (!marks?.length || marks.length > MAX_LACTATE_BADGES) return [];
-  const MIN_GAP = 0.1;   // a three-character badge, as a share of the chart
+function laidOutMarks(marks, widthPx = DEFAULT_CHART_PX) {
+  if (!marks?.length || marks.length > maxLactateBadgesFor(widthPx)) return [];
+  const MIN_GAP = Math.min(0.34, LACTATE_BADGE_PX / Math.max(widthPx, 60));
   const EDGE = 0.05;     // the card clips its overflow, so nothing may hang off
   const out = marks
     .map(m => ({ ...m, pos: Math.min(1 - EDGE, Math.max(EDGE, m.pos)) }))
@@ -356,7 +366,7 @@ function laidOutMarks(marks) {
  * this chart stretches to its container with preserveAspectRatio="none", which
  * would squash any text drawn inside it out of shape.
  */
-export function ActivityMiniChart({ bars, color, height = 18, lactate = null }) {
+export function ActivityMiniChart({ bars, color, height = 18, lactate = null, chartWidthPx = DEFAULT_CHART_PX }) {
   if (!bars?.length) return null;
   const W = 140;
   const step = W / bars.length;
@@ -384,7 +394,7 @@ export function ActivityMiniChart({ bars, color, height = 18, lactate = null }) 
     </svg>
   );
 
-  const marks = laidOutMarks(lactate);
+  const marks = laidOutMarks(lactate, chartWidthPx);
   if (!marks.length) return chart;
 
   // 15px of headroom: a badge is 13 tall, and the two spare pixels keep it off

@@ -4,6 +4,7 @@ import { getStravaActivityDetail } from '../../services/api';
 import { useCategories } from '../../context/CategoryContext';
 import { useAuth } from '../../context/AuthProvider';
 import { filterWorkResults } from '../../utils/workLapFilter';
+import { isRunLikeSport } from '../training/WorkoutProfile';
 import {
   resolveDistanceUnitSystem,
   formatDistance,
@@ -248,15 +249,27 @@ function SkylineChart({ results, sport, width = 180, height = 52 }) {
 
   const BAR_AREA_H = height - 16; // reserve top 16px for lactate labels
 
-  // Width weight per lap: distance when at least one lap has it (better for
-  // run/swim where pace varies more than duration), else duration. Falls
-  // back to 1 for laps with neither, so they still appear as a thin sliver.
+  // What a lap's width measures: a ride is read in time, a run and a swim in
+  // distance. That is how those sets are written, and it is the rule the
+  // calendar thumbnails and the opened workout's lap chart already use — the
+  // same session has to keep its shape wherever it is drawn.
+  //
+  // This used to take distance from any session that had it, bikes included.
+  // A ride's laps are written in minutes, so measuring them in kilometres drew
+  // a set nobody rode: a 20-minute effort into a headwind came out narrower
+  // than the tailwind leg it was paired with, and the bars stopped lining up
+  // with the intervals they stand for.
+  //
+  // Falls back to the other measure rather than drawing nothing, for the
+  // sessions that only carry one of the two. A lap with neither is a thin
+  // sliver, not a disqualification.
   const distances = results.map(parseLapDistanceMeters);
-  const totalDist = distances.reduce((a, b) => a + b, 0);
-  const useDist = totalDist > 0;
-  const weights = useDist
-    ? distances.map(d => (d > 0 ? d : 1))
-    : results.map(r => Math.max(parseLapDurationSec(r), 1));
+  const durations = results.map(r => parseLapDurationSec(r));
+  const sum = (xs) => xs.reduce((a, b) => a + (b > 0 ? b : 0), 0);
+  const preferDistance = isRunLikeSport(sport);
+  const primary = preferDistance ? distances : durations;
+  const measure = sum(primary) > 0 ? primary : (preferDistance ? durations : distances);
+  const weights = measure.map(v => (v > 0 ? v : 1));
   const totalWeight = weights.reduce((a, b) => a + b, 0) || results.length;
 
   const gap = results.length <= 8 ? 2 : results.length <= 15 ? 1.5 : results.length <= 25 ? 1 : 0.5;

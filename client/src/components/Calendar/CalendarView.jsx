@@ -650,6 +650,7 @@ function PlannedWorkoutCard({ pw, onSelect, onStart, compact = false, showDescri
   // Once a plan has a ride against it, the card should show the shape that
   // was ridden, not the one that was asked for.
   const actualBars = linkedActivity ? activityProfileBars(linkedActivity) : null;
+  const actualLactate = linkedActivity ? activityLactateMarks(linkedActivity) : [];
 
   if (compact) {
     const isCompletedPair = pairingState === 'completed' || isCompleted;
@@ -761,7 +762,7 @@ function PlannedWorkoutCard({ pw, onSelect, onStart, compact = false, showDescri
           {!isSkipped && (actualBars || pw.steps?.length > 0) && (
             <CardProfileBand>
               {actualBars
-                ? <ActivityMiniChart bars={actualBars} color={color} height={showDescription ? 20 : 14} />
+                ? <ActivityMiniChart bars={actualBars} color={color} height={showDescription ? 20 : 14} lactate={actualLactate} chartWidthPx={150} />
                 : <PlanMiniChart steps={pw.steps} color={color} width={140} height={showDescription ? 20 : 14} fluid />}
             </CardProfileBand>
           )}
@@ -964,6 +965,10 @@ function WeekActivityCard({ a, isSelected, onSelect, onActivityClick, onAddLacta
   // blue on this page and red on that one.
   const color = activityAccentColor(a, getCategory);
   const bars = React.useMemo(() => activityProfileBars(a), [a]);
+  // The blood on the card itself, not only behind a hover: a phone has no
+  // hover at all, and on a desktop a measured session should be findable in
+  // the month without going looking for it.
+  const cardLactate = React.useMemo(() => activityLactateMarks(a), [a]);
   const description = a.description || null;
 
   const handleClick = (e) => {
@@ -1019,7 +1024,14 @@ function WeekActivityCard({ a, isSelected, onSelect, onActivityClick, onAddLacta
         {/* What the session actually looked like, from its laps. */}
         {bars && (
           <CardProfileBand>
-            <ActivityMiniChart bars={bars} color={isSelected ? '#ffffff' : color} height={18} />
+            <ActivityMiniChart
+              bars={bars}
+              color={isSelected ? '#ffffff' : color}
+              height={18}
+              lactate={cardLactate}
+              // A day cell is about this wide; the badges thin out to suit.
+              chartWidthPx={150}
+            />
           </CardProfileBand>
         )}
       </button>
@@ -9725,7 +9737,7 @@ export default function CalendarView({
                                       )}
                                       {actBars && (
                                         <CardProfileBand bleed="-mx-3 -mb-2.5">
-                                          <ActivityMiniChart bars={actBars} color={color} height={22} lactate={actLa.marks} />
+                                          <ActivityMiniChart bars={actBars} color={color} height={22} lactate={actLa.marks} chartWidthPx={320} />
                                         </CardProfileBand>
                                       )}
                                     </button>
@@ -9784,7 +9796,7 @@ export default function CalendarView({
                                       {/* What was ridden, not what was asked for. */}
                                       {pairBars && (
                                         <CardProfileBand bleed="-mx-3 -mb-2.5">
-                                          <ActivityMiniChart bars={pairBars} color={cc.color} height={22} lactate={pairLa.marks} />
+                                          <ActivityMiniChart bars={pairBars} color={cc.color} height={22} lactate={pairLa.marks} chartWidthPx={320} />
                                         </CardProfileBand>
                                       )}
                                     </button>

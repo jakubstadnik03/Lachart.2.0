@@ -1,4 +1,4 @@
-import { canChartTraining } from './trainingChartIntervals';
+import { canChartTraining, getChartIntervals } from './trainingChartIntervals';
 
 /**
  * canChartTraining decides what the Training History picker offers. The rule it
@@ -59,5 +59,43 @@ describe('canChartTraining', () => {
 
   test('null training is not offered', () => {
     expect(canChartTraining(null, {}, 'bike')).toBe(false);
+  });
+});
+
+/**
+ * A real 4x20min: the ride has 18 laps, the training kept 13 of them, and the
+ * blood was drawn after the rep sitting at lap 15. Merging the two lists by
+ * position put that reading on lap 11 — a different rep, at 374 W instead of
+ * the 370 W actually ridden.
+ */
+describe('getChartIntervals — a result row lands on its own lap', () => {
+  const laps = Array.from({ length: 18 }, (_, i) => ({
+    average_watts: i === 10 ? 374.3 : i === 14 ? 369.7 : 200,
+    moving_time: 1200,
+    distance: 15400,
+  }));
+  const results = [
+    { interval: 11, sourceLapIndex: 14, lactate: '2.2', power: 369.7 },
+    { interval: 12, sourceLapIndex: 16, power: 319 },
+  ];
+
+  it('puts the reading on the lap the row came from', () => {
+    const out = getChartIntervals({ laps, results }, {}, 'bike');
+    expect(out).toHaveLength(18);
+    expect(out[14].lactate).toBe('2.2');
+    expect(out[10].lactate).toBeFalsy();
+  });
+
+  it('still merges by position when no row says where it came from', () => {
+    const plain = results.map(({ sourceLapIndex, ...r }) => r);
+    const out = getChartIntervals({ laps, results: plain }, {}, 'bike');
+    expect(out[0].lactate).toBe('2.2');
+    expect(out[14].lactate).toBeFalsy();
+  });
+
+  it('leaves a session whose results are the laps untouched', () => {
+    const sameLength = laps.map((_, i) => ({ interval: i + 1, lactate: i === 3 ? '4.1' : undefined }));
+    const out = getChartIntervals({ laps, results: sameLength }, {}, 'bike');
+    expect(out[3].lactate).toBe('4.1');
   });
 });

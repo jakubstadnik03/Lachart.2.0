@@ -82,10 +82,43 @@ function mergeResultRow(lap, r, { copyIntervalType = true } = {}) {
   return merged;
 }
 
+/**
+ * Which lap of the session a result row came from, or null when it cannot say.
+ *
+ * Only `sourceLapIndex`. `interval` looks like it would do the same job and
+ * does not: it numbers the row's place among the *selected* results, so a row
+ * can carry `interval: 11` and `sourceLapIndex: 14` at once. Reading `interval`
+ * as a lap index is the very mistake this exists to undo.
+ */
+function resultSourceLap(r) {
+  return Number.isInteger(r?.sourceLapIndex) ? r.sourceLapIndex : null;
+}
+
+/**
+ * Put each result row's metadata on the lap it actually belongs to.
+ *
+ * A training's `results` are usually a subset of the session's laps — the
+ * recoveries deselected, the warm-up dropped — so the row at position 10 is
+ * not the eleventh lap. Merging by position put a blood reading drawn after
+ * the eighth rep onto the fifth one, and the history chart said 374 W where
+ * the athlete had ridden 370.
+ *
+ * Once any row says where it came from, the rest are not guessed at:
+ * positioning the remainder by index is exactly the guess that misplaces them.
+ * A set where no row knows keeps the old positional merge, which is right
+ * whenever the two lists are the same length anyway.
+ */
 function mergeResultMetadata(intervals, results) {
   if (!Array.isArray(results) || results.length === 0) return intervals;
   if (!Array.isArray(intervals) || intervals.length === 0) return results;
   if (results.length > intervals.length) return results;
+
+  const located = results.filter(r => resultSourceLap(r) != null);
+  if (located.length > 0) {
+    const byLap = new Map(located.map(r => [resultSourceLap(r), r]));
+    return intervals.map((lap, i) => mergeResultRow(lap, byLap.get(i), { copyIntervalType: true }));
+  }
+
   const copyIntervalType = results.length === intervals.length;
   return intervals.map((lap, i) => mergeResultRow(lap, results[i], { copyIntervalType }));
 }
