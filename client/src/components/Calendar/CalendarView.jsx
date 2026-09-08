@@ -71,6 +71,8 @@ import { sanitizeDecimalInput, parseLactateValue } from '../../utils/lactateInpu
 import { fetchWellness } from '../../services/wellnessData';
 import { baseline, dayRecoveryStatus } from '../../utils/recovery';
 import WellnessDetailSheet from '../shared/WellnessDetailSheet';
+import DailyMetricsCard from '../training/DailyMetricsCard';
+import { localCalendarDateKey } from '../../utils/calendarDateKeys';
 import { useAuth } from '../../context/AuthProvider';
 import { useCategories, hexToRgba } from '../../context/CategoryContext';
 import { activityAccentColor } from '../../utils/activityAccentColor';
@@ -7773,6 +7775,8 @@ export default function CalendarView({
   // in every day cell. 90 days is the server-side max window; refetched after
   // each Apple Health sync via the global `appleHealth:synced` event.
   const [wellnessDays, setWellnessDays] = useState([]);
+  /** Which day's own numbers are being written, if any. */
+  const [metricsDay, setMetricsDay] = useState(null);
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
@@ -9300,6 +9304,13 @@ export default function CalendarView({
             </button>
           )}
           <button
+            onClick={() => setMetricsDay(localCalendarDateKey(new Date()))}
+            title="Log weight, sleep, steps and how you feel"
+            className="px-2 md:px-3 py-1 md:py-1.5 rounded-lg md:rounded-xl border shadow-sm transition-colors text-xs md:text-sm bg-white border-emerald-200 hover:bg-emerald-50 text-emerald-700"
+          >
+            + Metrics
+          </button>
+          <button
             onClick={() => setAddRaceOpen(true)}
             title="Plan a race / goal event"
             className="px-2 md:px-3 py-1 md:py-1.5 rounded-lg md:rounded-xl border shadow-sm transition-colors text-xs md:text-sm bg-white border-red-200 hover:bg-red-50 text-red-600"
@@ -10607,6 +10618,34 @@ export default function CalendarView({
         />
       )}
       {/* Wellness (sleep / RHR / HRV) trend detail */}
+      {metricsDay && (
+        <div
+          className="fixed inset-0 z-[10040] flex items-start justify-center bg-black/40 p-4 pt-[10vh]"
+          onClick={() => setMetricsDay(null)}
+        >
+          <div
+            className="w-full max-w-[520px] rounded-2xl bg-white p-4 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-3 flex items-center gap-2">
+              <input
+                type="date"
+                value={metricsDay}
+                onChange={(e) => setMetricsDay(e.target.value || metricsDay)}
+                className="rounded-lg border border-gray-200 px-2 py-1 text-sm font-semibold"
+              />
+              <button
+                type="button"
+                onClick={() => setMetricsDay(null)}
+                className="ml-auto rounded-lg px-2 py-1 text-sm font-semibold text-gray-400 hover:bg-gray-100"
+              >
+                Done
+              </button>
+            </div>
+            <DailyMetricsCard key={metricsDay} date={metricsDay} athleteId={athleteId || null} />
+          </div>
+        </div>
+      )}
       <WellnessDetailSheet
         open={Boolean(wellnessDetailMetric)}
         initialMetric={wellnessDetailMetric || 'sleep'}

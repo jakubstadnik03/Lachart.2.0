@@ -2408,3 +2408,29 @@ export const getActivityWeather = async (activityKey) => {
   if (data.pending) return data;
   return data.tempC != null ? data : null;
 };
+
+/**
+ * The athlete's own daily numbers — weight, morning pulse, sleep, work hours,
+ * steps, how the day felt. Device syncs write their own store; this is what a
+ * person typed, and the two are kept apart on purpose.
+ */
+export const getDailyMetrics = async (start, end, athleteId = null) => {
+  const params = { start, end };
+  if (athleteId) params.athleteId = String(athleteId);
+  const { data } = await api.get('/api/daily-metrics', { params, cacheTtlMs: 60 * 1000 });
+  return Array.isArray(data) ? data : [];
+};
+
+/** Upsert one day. Only the fields passed are touched. */
+export const saveDailyMetric = async (date, fields, athleteId = null) => {
+  const body = { ...fields };
+  if (athleteId) body.athleteId = String(athleteId);
+  const { data } = await api.put(`/api/daily-metrics/${date}`, body);
+  return data;
+};
+
+export const deleteDailyMetric = async (date, athleteId = null) => {
+  const params = athleteId ? { athleteId } : {};
+  const { data } = await api.delete(`/api/daily-metrics/${date}`, { params });
+  return data;
+};

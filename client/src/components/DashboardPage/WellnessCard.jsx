@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import DailyMetricsCard from '../training/DailyMetricsCard';
 import { HeartIcon, MoonIcon, BoltIcon, ChevronLeftIcon, ChevronRightIcon } from '@heroicons/react/24/outline';
 import { useAuth } from '../../context/AuthProvider';
 import { getTodayMetrics } from '../../services/api';
@@ -66,6 +67,7 @@ export default function WellnessCard({ athleteId = null }) {
   const [loaded, setLoaded] = useState(false);
   const [tsb, setTsb] = useState(null);
   const [tsbTick, setTsbTick] = useState(0);
+  const [metricsOpen, setMetricsOpen] = useState(false);
   const [dayIdx, setDayIdx] = useState(-1); // -1 = latest day
   const [detailMetric, setDetailMetric] = useState(null);
 
@@ -112,6 +114,9 @@ export default function WellnessCard({ athleteId = null }) {
 
   const effectiveIdx = dayIdx === -1 ? days.length - 1 : dayIdx;
   const latest = effectiveIdx >= 0 ? days[effectiveIdx] : null;
+  // The metrics belong to the day the card is showing, not to today: paging
+  // back and typing yesterday's weight into today's row would be a trap.
+  const metricsDate = latest?.date || new Date().toISOString().slice(0, 10);
   const viewingLatest = effectiveIdx === days.length - 1;
   const canPrev = effectiveIdx > 0;
   const canNext = effectiveIdx < days.length - 1;
@@ -206,6 +211,23 @@ export default function WellnessCard({ athleteId = null }) {
               <ChevronRightIcon className="w-3.5 h-3.5" />
             </button>
           </span>
+        )}
+      </div>
+
+      {/* What the watch cannot know: the scale, the pulse taken before getting
+          up, hours actually worked, how the day felt. Reachable here as well as
+          from the calendar, because the phone is where most of it gets typed. */}
+      <div className="mb-3">
+        {metricsOpen ? (
+          <DailyMetricsCard date={metricsDate} athleteId={athleteId || null} compact />
+        ) : (
+          <button
+            type="button"
+            onClick={() => setMetricsOpen(true)}
+            className="w-full rounded-xl border border-dashed border-slate-200 px-3 py-2 text-left text-[12px] font-semibold text-slate-500 hover:border-primary/40 hover:text-primary"
+          >
+            + Log weight, sleep, steps &amp; feeling
+          </button>
         )}
       </div>
 
