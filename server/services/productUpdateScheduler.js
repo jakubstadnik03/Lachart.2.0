@@ -29,7 +29,7 @@
 'use strict';
 
 const {
-  getActiveIssueId,
+  getScheduledIssueId,
   findPendingUsers,
   sendOne,
 } = require('./productUpdateCampaignService');
@@ -60,9 +60,9 @@ async function tick() {
   if (isRunning) return;
   if (!process.env.EMAIL_USER || !process.env.EMAIL_APP_PASSWORD) return;
 
-  const issueId = getActiveIssueId();
+  const issueId = await getScheduledIssueId();
   if (!issueId) {
-    console.log('[ProductUpdateScheduler] no active issue on disk, skipping tick');
+    console.log('[ProductUpdateScheduler] no issue due for sending, skipping tick');
     return;
   }
 

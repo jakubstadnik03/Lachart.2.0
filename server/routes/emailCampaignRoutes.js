@@ -600,7 +600,13 @@ async function handleUnsubscribe(req, res) {
 router.get('/product-update/issues', verifyToken, async (req, res) => {
   try {
     if (!(await requireAdmin(req, res))) return;
-    res.json({ activeIssueId: productUpdate.getActiveIssueId(), issues: productUpdate.listIssues() });
+    res.json({
+      // Newest issue on disk (what the admin edits), and the one the scheduler
+      // will actually send next (oldest released issue still pending).
+      activeIssueId: productUpdate.getActiveIssueId(),
+      scheduledIssueId: await productUpdate.getScheduledIssueId(),
+      issues: productUpdate.listIssues(),
+    });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

@@ -81,6 +81,30 @@ function getActiveIssueId() {
   return all.length ? all[0].id : null;
 }
 
+/**
+ * Which issue the SCHEDULER should send right now — the queue picker that keeps
+ * a backlog of issues rolling out one at a time so Zoho never sees a flood:
+ *   • PRODUCT_UPDATE_ACTIVE_ISSUE env wins (manual pin), else
+ *   • the OLDEST issue whose releaseDate (meta.json, "YYYY-MM-DD") has passed
+ *     (or is unset) AND that still has pending recipients.
+ * Because it always drains the oldest-still-pending issue first, a newer issue
+ * only starts once the previous one is fully delivered — and only after its own
+ * releaseDate — so several queued issues send sequentially, not all at once.
+ * Returns null when nothing is due. Async: it checks pending counts.
+ */
+async function getScheduledIssueId(nowIso = new Date().toISOString().slice(0, 10)) {
+  const env = (process.env.PRODUCT_UPDATE_ACTIVE_ISSUE || '').trim();
+  if (env && issueExists(env)) return env;
+  const due = listIssues()
+    .filter((m) => !m.releaseDate || String(m.releaseDate) <= nowIso)
+    // listIssues() is newest-first; drain oldest-still-pending first.
+    .sort((a, b) => String(a.date).localeCompare(String(b.date)) || String(a.id).localeCompare(String(b.id)));
+  for (const m of due) {
+    if ((await getPendingCount(m.id)) > 0) return m.id;
+  }
+  return null;
+}
+
 /** Image filenames in the issue's assets/ folder (become CID attachments). */
 function listAssets(issueId) {
   const dir = path.join(issueDir(issueId), 'assets');
@@ -333,6 +357,7 @@ module.exports = {
   loadMeta,
   listAssets,
   getActiveIssueId,
+  getScheduledIssueId,
   sendOne,
   findPendingUsers,
   getPendingCount,
