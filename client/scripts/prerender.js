@@ -104,6 +104,7 @@ const PRERENDER_ROUTES = [
   '/blog/lactate-testing-software-for-coaches',
   '/blog/what-is-vlamax',
   '/blog/critical-power-vs-ftp-vs-lthr',
+  '/blog/trainingpeaks-alternatives',
 ];
 
 async function startServer() {

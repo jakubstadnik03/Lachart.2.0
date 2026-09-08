@@ -1,6 +1,17 @@
 // Blog posts metadata — single source of truth for index cards, related posts, and SEO
 export const blogPosts = [
   {
+    slug:     'trainingpeaks-alternatives',
+    title:    'The Best TrainingPeaks Alternatives in 2026 (Honest Roundup)',
+    excerpt:  'Garmin now owns TrainingPeaks, and plenty of athletes and coaches are weighing their options. The alternatives actually worth considering in 2026 — intervals.icu, WKO5, TrainerRoad, Coachbox, LaChart and more — what each is best at and where it falls short.',
+    date:     '2026-09-08',
+    readTime: '12 min',
+    category: 'Comparisons',
+    tags:     ['trainingpeaks alternatives', 'intervals.icu', 'WKO5', 'coaching software', 'training platform', 'lactate testing'],
+    image:    '/images/lactate_curve_calculator_lachart.jpg',
+    featured: true,
+  },
+  {
     slug:     'critical-power-vs-ftp-vs-lthr',
     title:    'Critical Power vs FTP vs LTHR: Which Threshold Number Should You Train By?',
     excerpt:  'Three numbers claim to define your endurance ceiling — Critical Power, FTP and lactate threshold heart rate. They sit close together but they are not the same, and using the wrong one quietly mis-sets every zone below it. Here is what each measures and which to trust.',
