@@ -1500,6 +1500,7 @@ export default function NativeDashboardPage({
                 onTaperApplied={onTaperApplied}
                 focusRaceId={raceFocusId}
                 onFocusHandled={() => setRaceFocusId(null)}
+                compact
               />
             </PremiumLock>
           </div>

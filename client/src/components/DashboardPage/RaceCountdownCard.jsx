@@ -72,6 +72,16 @@ export default function RaceCountdownCard({
    *  notification was about instead of a dashboard the user has to search. */
   focusRaceId = null,
   onFocusHandled = null,
+  /**
+   * Phone-sized: the countdown, the race and the form, and nothing else.
+   *
+   * The planning half — fitness against the race's CTL target, the hint pills,
+   * the taper suggestion — is what a coach works through sitting down. On a
+   * phone it pushed the week's numbers below the fold to answer a question
+   * nobody asks while standing in a kitchen. It is all still on the web
+   * dashboard, and one tap into the race opens it here too.
+   */
+  compact = false,
 }) {
   const { user } = useAuth();
   const [races, setRaces] = useState([]);
@@ -414,7 +424,7 @@ export default function RaceCountdownCard({
                   <FormPill form={currentForm} />
                 </div>
               </div>
-              {next.targetCTL != null && (
+              {next.targetCTL != null && !compact && (
                 <div
                   className="shrink-0"
                   style={{
@@ -439,7 +449,7 @@ export default function RaceCountdownCard({
               )}
             </div>
           </button>
-          {hints.length > 0 && (
+          {hints.length > 0 && !compact && (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
               {hints.map((h) => (
                 <span
@@ -460,7 +470,7 @@ export default function RaceCountdownCard({
             </div>
           )}
 
-          {showTaperCta && editable && (
+          {showTaperCta && editable && !compact && (
             <div style={{ marginTop: 12 }}>
               {!taperOpen ? (
                 <button
