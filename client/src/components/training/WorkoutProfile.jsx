@@ -174,20 +174,36 @@ function lapWeigher(a, laps) {
  * never had. Power first, then speed, then heart rate, whichever most laps
  * agree on.
  *
- * @returns {number[]|null} relative heights in 0..1, oldest first
+ * @returns {Array<{h: number, w: number}>|null} one entry per lap, oldest
+ *   first: `h` is its height in 0..1, `w` its share of the width
  */
-export function activityProfileBars(a, maxBars = 44) {
+export function activityProfileBars(a) {
   const laps = sessionLaps(a);
   if (!laps) return null;
 
-  // `floor` is where the bar's zero sits. Power really can be nothing, so a
-  // coast should draw as nothing. Nobody runs at zero and nobody's heart
-  // stops between reps: scaled from zero those two channels draw every
-  // session as one near-full slab, so they measure from just under the
-  // session's own easiest lap and the shape comes back.
+  // `floor` is where the bar's zero sits.
+  //
+  // Nobody runs at zero and nobody's heart stops between reps: scaled from
+  // zero those two channels draw every session as one near-full slab, so they
+  // measure from just under the session's own easiest lap — 'min'.
+  //
+  // Power is the awkward one, because both answers are right for different
+  // rides. Measured from zero, a 4x20min swinging 195 W to 374 W was drawn
+  // between 0.52 and 1.00: half the height spent on watts nobody rode, and at
+  // thumbnail size the set read as one slab with shallow notches instead of
+  // four blocks. Measured from the easiest lap instead, that set comes back —
+  // and a steady four-hour ride, which has almost no spread to begin with,
+  // turns into a jagged mess of intervals that were never ridden.
+  //
+  // So the floor follows the session's own spread ('spread', below): a ride
+  // that swings lifts its floor to just under its easiest lap, a ride that
+  // holds one wattage keeps a floor near zero and draws flat. Coasting needs
+  // no special case either way — the scale is built from the laps that carry
+  // power, and a lap below the floor clamps to the same hairline as an empty
+  // one.
   const READERS = [
     {
-      floor: 'zero',
+      floor: 'spread',
       read: (l) => Number(l.w ?? l.avgPower ?? l.average_watts ?? l.averagePower ?? l.power ?? 0) || 0,
     },
     {
@@ -235,7 +251,16 @@ export function activityProfileBars(a, maxBars = 44) {
   const lo = sorted.length >= 5 ? at(0.1) : sorted[0];
   const hi = sorted.length >= 5 ? at(0.9) : sorted[sorted.length - 1];
   const peak = hi > lo ? hi : sorted[sorted.length - 1];
-  const base = channel.floor === 'min' ? Math.min(lo, peak) * 0.95 : 0;
+  const lowLap = Math.min(lo, peak) * 0.95;
+  // How much of the way to `lowLap` the floor rises. A session whose easiest
+  // lap is a fraction of its hardest is a set and wants the full lift; one
+  // that holds a single wattage wants none. Doubling means anything past a
+  // half-to-full swing gets the whole lift, which is where reading a set as a
+  // set starts to matter.
+  const relSpread = peak > 0 ? (peak - lo) / peak : 0;
+  const base = channel.floor === 'min' ? lowLap
+    : channel.floor === 'spread' ? lowLap * Math.min(1, relSpread * 2)
+      : 0;
   const span = peak - base;
   if (!(span > 0)) return null;
 
@@ -243,21 +268,22 @@ export function activityProfileBars(a, maxBars = 44) {
   const total = laps.reduce((s, l) => s + weightOf(l), 0);
   if (!(total > 0)) return null;
 
-  // Sample the session at even points along that axis rather than drawing one
-  // bar per lap: a ride with 90 auto-laps would otherwise draw 90 hairlines,
-  // and one with 4 would draw four blocks whose widths say nothing. Always
-  // sample at full resolution: with one bar per lap a six-by-three session
-  // aliased into a single wide hump, because 14 samples cannot resolve
-  // 180-second reps.
-  const bars = [];
-  const n = maxBars;
-  let cursor = 0, acc = weightOf(laps[0]);
-  for (let i = 0; i < n; i++) {
-    const t = ((i + 0.5) / n) * total;
-    while (t > acc && cursor < laps.length - 1) acc += weightOf(laps[++cursor]);
-    bars.push(Math.max(0.08, Math.min(1, (read(laps[cursor]) - base) / span)));
-  }
-  return bars;
+  // One bar per lap, as wide as that lap's share of the session.
+  //
+  // This used to resample the session at 44 even points, so a four-lap ride
+  // and a ninety-lap one drew the same forty-four hairlines and neither
+  // resembled the lap chart underneath it. Sampling also swallowed anything
+  // short: a two-minute recovery inside a two-and-a-half-hour ride is a
+  // seventieth of the axis, less than one sample wide, so the 4x20min it
+  // belonged to drew as one unbroken block.
+  //
+  // A lap that is genuinely a sliver stays a sliver — the width is its own
+  // share, not a slot handed out equally — and the chart puts a floor under it
+  // so it is still a visible mark.
+  return laps.map((l) => ({
+    h: Math.max(0.08, Math.min(1, (read(l) - base) / span)),
+    w: weightOf(l) / total,
+  }));
 }
 
 /** The violet every lactate reading in the app is printed in. */
@@ -366,10 +392,45 @@ function laidOutMarks(marks, widthPx = DEFAULT_CHART_PX) {
  * this chart stretches to its container with preserveAspectRatio="none", which
  * would squash any text drawn inside it out of shape.
  */
+/**
+ * Where each lap's bar sits, in the 140-unit viewBox.
+ *
+ * The chart stretches to whatever box it is given, so a width in viewBox units
+ * is a different number of pixels on a day cell than on a hover card. The
+ * gap and the minimum bar are quoted in pixels and converted, or a ninety-lap
+ * ride would be solid on the small card and airy on the big one.
+ *
+ * A lap below the minimum is promoted to it, and the width that costs is taken
+ * back from the bars that have room — in proportion, so the shape holds.
+ */
+function layOutBars(bars, W, chartWidthPx) {
+  const unitsPerPx = W / Math.max(chartWidthPx, 40);
+  const gap = (bars.length <= 12 ? 1 : bars.length <= 30 ? 0.6 : 0.3) * unitsPerPx;
+  const minW = 1.2 * unitsPerPx;
+  const usable = Math.max(1, W - gap * Math.max(0, bars.length - 1));
+
+  const widths = bars.map(b => Math.max(minW, b.w * usable));
+  const excess = widths.reduce((s, w) => s + w, 0) - usable;
+  if (excess > 0) {
+    const slack = widths.reduce((s, w) => s + Math.max(0, w - minW), 0);
+    if (slack > 0) {
+      const k = Math.min(1, excess / slack);
+      for (let i = 0; i < widths.length; i++) widths[i] -= Math.max(0, widths[i] - minW) * k;
+    }
+  }
+
+  let x = 0;
+  return widths.map((w, i) => {
+    const placed = { x, w, h: bars[i].h };
+    x += w + gap;
+    return placed;
+  });
+}
+
 export function ActivityMiniChart({ bars, color, height = 18, lactate = null, chartWidthPx = DEFAULT_CHART_PX }) {
   if (!bars?.length) return null;
   const W = 140;
-  const step = W / bars.length;
+  const laidOut = layOutBars(bars, W, chartWidthPx);
   const chart = (
     <svg
       width="100%"
@@ -379,16 +440,16 @@ export function ActivityMiniChart({ bars, color, height = 18, lactate = null, ch
       style={{ display: 'block' }}
       aria-hidden="true"
     >
-      {bars.map((v, i) => (
+      {laidOut.map((b, i) => (
         <rect
           key={i}
-          x={i * step}
-          y={height - v * height}
-          width={Math.max(0.8, step - 0.4)}
-          height={v * height}
+          x={b.x}
+          y={height - b.h * height}
+          width={Math.max(0.4, b.w)}
+          height={b.h * height}
           fill={color}
           // The hard efforts read darker than the rest without a second colour.
-          opacity={0.3 + 0.55 * v}
+          opacity={0.3 + 0.55 * b.h}
         />
       ))}
     </svg>

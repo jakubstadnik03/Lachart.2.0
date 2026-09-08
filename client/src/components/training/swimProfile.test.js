@@ -16,22 +16,23 @@ const SWIM = {
   ],
 };
 
-const share = (bars, test) => bars.filter(test).length / bars.length;
+/** The share of the chart's width taken by bars matching `test`. */
+const share = (bars, test) => bars.filter(test).reduce((sum, b) => sum + b.w, 0);
 
 describe('a swim thumbnail', () => {
   it('draws it at all', () => {
     // The channel picker counted laps, and half a pool set is rests carrying
     // no speed — so this session failed the threshold and drew nothing. It
     // counts seconds now: a 30s wall against a 69s repeat.
-    expect(activityProfileBars(SWIM, 100)).not.toBeNull();
+    expect(activityProfileBars(SWIM)).not.toBeNull();
   });
 
   it('sizes each part by its distance, the way the lap chart does', () => {
-    const bars = activityProfileBars(SWIM, 100);
+    const bars = activityProfileBars(SWIM);
     // 800m warm-up, 800m of repeats, 500m down — 38% / 38% / 24% of 2100m.
     // Read in time instead, the rests alone would take a sixth of the width.
-    expect(share(bars, (v) => v > 0.9)).toBeGreaterThan(0.3);
-    expect(share(bars, (v) => v > 0.9)).toBeLessThan(0.45);
+    expect(share(bars, (b) => b.h > 0.9)).toBeGreaterThan(0.3);
+    expect(share(bars, (b) => b.h > 0.9)).toBeLessThan(0.45);
   });
 
   it('does not let one lap flatten the rest', () => {
@@ -41,14 +42,14 @@ describe('a swim thumbnail', () => {
       ...SWIM,
       lapProfile: SWIM.lapProfile.map((l, i) => (i === 3 ? { ...l, s: 2.9 } : l)),
     };
-    const bars = activityProfileBars(withOutlier, 100);
-    expect(share(bars, (v) => v > 0.9)).toBeGreaterThan(0.25);
+    const bars = activityProfileBars(withOutlier);
+    expect(share(bars, (b) => b.h > 0.9)).toBeGreaterThan(0.25);
   });
 
   it('keeps a rest to a hairline rather than dropping the whole session to time', () => {
     // Requiring every lap to carry distance sent the session back to being read
     // in time. Half its laps have none; it must still be read in distance.
-    const byTime = activityProfileBars({ ...SWIM, sport: 'Ride' }, 100);
-    expect(JSON.stringify(activityProfileBars(SWIM, 100))).not.toBe(JSON.stringify(byTime));
+    const byTime = activityProfileBars({ ...SWIM, sport: 'Ride' });
+    expect(JSON.stringify(activityProfileBars(SWIM))).not.toBe(JSON.stringify(byTime));
   });
 });

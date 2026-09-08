@@ -20,34 +20,42 @@ const LUNCH_RUN = {
   ],
 };
 
-const countIn = (bars, lo, hi) => bars.filter((v) => v >= lo && v < hi).length;
+/** How much of the chart's width is taken by bars in a height band. */
+const widthIn = (bars, lo, hi) =>
+  bars.filter((b) => b.h >= lo && b.h < hi).reduce((s, b) => s + b.w, 0);
 
 describe('activityProfileBars', () => {
-  it('gives a run lap the width of its distance, not its duration', () => {
-    const bars = activityProfileBars(LUNCH_RUN, 100);
+  it('draws one bar per lap, not a fixed number of samples', () => {
+    const bars = activityProfileBars(LUNCH_RUN);
+    expect(bars).toHaveLength(LUNCH_RUN.lapProfile.length);
+    // The widths are shares of the session and add up to it.
+    expect(bars.reduce((s, b) => s + b.w, 0)).toBeCloseTo(1, 6);
+  });
 
-    // The two floats are 189m and 183m of a 9.47km run — 3.9% of it together,
-    // so about four bars in a hundred. Measured in time they are 9.7%, which
-    // is what used to be drawn: every recovery came out twice the width it has
-    // on the lap chart directly below the card.
-    expect(countIn(bars, 0, 0.1)).toBeLessThanOrEqual(6);
-    expect(countIn(bars, 0, 0.1)).toBeGreaterThanOrEqual(2);
+  it('gives a run lap the width of its distance, not its duration', () => {
+    const bars = activityProfileBars(LUNCH_RUN);
+
+    // The two floats are 189m and 183m of a 9.47km run — 3.9% of it together.
+    // Measured in time they are 9.7%, which is what used to be drawn: every
+    // recovery came out twice the width it has on the lap chart below the card.
+    expect(widthIn(bars, 0, 0.1)).toBeGreaterThan(0.02);
+    expect(widthIn(bars, 0, 0.1)).toBeLessThan(0.06);
 
     // The four reps are 4.91km of the 9.47km — about half the picture.
-    const repBars = countIn(bars, 0.9, 1.01);
-    expect(repBars).toBeGreaterThan(44);
-    expect(repBars).toBeLessThan(58);
+    const reps = widthIn(bars, 0.9, 1.01);
+    expect(reps).toBeGreaterThan(0.44);
+    expect(reps).toBeLessThan(0.58);
 
     // The 2.99km jog home sits between the two and takes about a third.
-    const jog = countIn(bars, 0.45, 0.6);
-    expect(jog).toBeGreaterThan(28);
-    expect(jog).toBeLessThan(36);
+    const jog = widthIn(bars, 0.45, 0.6);
+    expect(jog).toBeGreaterThan(0.28);
+    expect(jog).toBeLessThan(0.36);
   });
 
   it('keeps the reps tall and the floats short', () => {
-    const bars = activityProfileBars(LUNCH_RUN, 100);
-    expect(Math.max(...bars)).toBeGreaterThan(0.95);
-    expect(Math.min(...bars)).toBeLessThan(0.12);
+    const bars = activityProfileBars(LUNCH_RUN);
+    expect(Math.max(...bars.map((b) => b.h))).toBeGreaterThan(0.95);
+    expect(Math.min(...bars.map((b) => b.h))).toBeLessThan(0.12);
   });
 
   it('reads a ride in time, the way its lap chart does', () => {
@@ -59,16 +67,37 @@ describe('activityProfileBars', () => {
         { d: 1500, m: 18910, w: 355 },
       ],
     };
-    const bars = activityProfileBars(ride, 100);
+    const bars = activityProfileBars(ride);
     // The 25-minute block is two thirds of the ride's time and must dominate,
     // even though the 3-minute effort is the harder one.
-    const tall = bars.filter((v) => v > 0.9).length / bars.length;
-    expect(tall).toBeGreaterThan(0.6);
+    expect(widthIn(bars, 0.9, 1.01)).toBeGreaterThan(0.6);
+  });
+
+  it('opens the scale for a set and leaves a steady ride flat', () => {
+    // Watts measured from zero drew a 4x20min between 0.52 and 1.00 — half the
+    // height spent on power nobody rode, and the set unreadable at card size.
+    const intervals = { sport: 'Ride', lapProfile: [] };
+    intervals.lapProfile.push({ d: 1200, m: 11000, w: 210 });
+    [374, 374, 370, 319].forEach((w, i) => {
+      intervals.lapProfile.push({ d: 1200, m: 15400, w });
+      intervals.lapProfile.push({ d: 120, m: 1240, w: [192, 179, 277, 150][i] });
+    });
+    const set = activityProfileBars(intervals).map((b) => b.h);
+    expect(Math.min(...set)).toBeLessThan(0.15);
+
+    // ...and lifting that floor unconditionally turned a steady four-hour ride
+    // into intervals it never rode. A ride that holds one wattage stays flat.
+    const steady = {
+      sport: 'Ride',
+      lapProfile: Array.from({ length: 24 }, (_, i) => ({ d: 600, m: 5000, w: 205 + Math.round(12 * Math.sin(i)) })),
+    };
+    const flat = activityProfileBars(steady).map((b) => b.h);
+    expect(Math.min(...flat)).toBeGreaterThan(0.7);
   });
 
   it('falls back to duration when a run has no lap distances', () => {
     const noDist = { sport: 'Run', lapProfile: LUNCH_RUN.lapProfile.map(({ d, s }) => ({ d, s })) };
-    expect(activityProfileBars(noDist, 100)).toHaveLength(100);
+    expect(activityProfileBars(noDist)).toHaveLength(LUNCH_RUN.lapProfile.length);
   });
 
   it('needs three laps and a channel before it draws anything', () => {
