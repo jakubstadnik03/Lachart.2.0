@@ -29,6 +29,7 @@ import { buildActivityMatcher, metricsPatchFromDetail } from '../utils/activityE
 import { addTraining, updateTraining, getStravaActivityDetail, getGarminActivityDetail, createFieldLactateMeasurement, getFieldLactateMeasurements, deleteFieldLactateMeasurement, assignFieldLactateMeasurement } from '../services/api';
 import { useCategories, hexToRgba } from '../context/CategoryContext';
 import { normalizeCategoryKey } from '../utils/trainingCategory';
+import { resultsByLapIndex } from '../utils/trainingChartIntervals';
 import {
   formatActivityDistance,
   formatPaceSeconds,
@@ -442,8 +443,14 @@ function getIntervalsForChart(t, stravaLapsCache = {}, garminLapsCache = {}) {
       intervals = t.laps;
     }
   } else if (Array.isArray(t.results) && t.results.length > 0) {
+    // Which row belongs to which lap. A training's results are usually a
+    // subset — recoveries deselected, warm-up dropped — so the row at position
+    // 10 is not the eleventh lap, and merging by position put a reading taken
+    // after the eighth rep onto the fifth. Same rule the web charts use, from
+    // the same place, so the two cannot drift apart again.
+    const byLap = resultsByLapIndex(t.results);
     intervals = intervals.map((lap, i) => {
-      const r = t.results[i];
+      const r = byLap ? byLap.get(i) : t.results[i];
       if (!r) return lap;
       const merged = { ...lap };
       if (r.lactate != null && merged.lactate == null) merged.lactate = r.lactate;
@@ -509,15 +516,19 @@ function isWarmupOrCooldown(iv, idx, total) {
 //   warmup  → amber
 //   cooldown → sky
 //   recovery → gray
-//   work / unknown + lactate → violet
+//   work / unknown + lactate → red
 //   work / unknown (no lactate) → fall back to per-session purple shade
+//
+// Red and not violet: the session shades are themselves purples, so a measured
+// interval in violet read as one more shade of the same scale rather than a
+// mark. The web charts made the same move for the same reason.
 function lapBarColor({ intervalType, lactate, sessionShade: shade, isSelected = false }) {
   const t = String(intervalType || '').toLowerCase();
   if (t === 'warmup')   return isSelected ? '#d97706' : '#fbbf24';
   if (t === 'cooldown') return isSelected ? '#0284c7' : '#38bdf8';
   if (t === 'recovery') return isSelected ? '#6b7280' : '#d1d5db';
   // work or untyped
-  if (lactate != null)  return isSelected ? '#7c3aed' : '#a78bfa';
+  if (lactate != null)  return isSelected ? '#b91c1c' : '#ef4444';
   return shade;
 }
 
@@ -891,8 +902,21 @@ function SessionBarChart({ sessions, metric, sport, user = null, unitSystem = 'm
           const clusterX = runningX;
           runningX += sessionW + sessionGap;
 
-          // Lap widths inside this session — proportional to durationSec
-          const lapDurs = s.laps.map(l => l.durationSec || 1);
+          // Lap widths inside this session, on the axis the sport is written
+          // in: a ride is read in time, a run and a swim in distance. Time for
+          // everything drew a pool set and an interval run in proportions
+          // neither was written in — and it is the rule the calendar
+          // thumbnails and the web charts already use, so one session keeps
+          // its shape wherever it is drawn. Falls back to the other measure
+          // for a session that only carries one of the two.
+          const lapDists = s.laps.map(l => Number(l.dist) || 0);
+          const lapTimes = s.laps.map(l => l.durationSec || 0);
+          const sumOf = (xs) => xs.reduce((a, b) => a + (b > 0 ? b : 0), 0);
+          const primaryMeasure = sportIsPace ? lapDists : lapTimes;
+          const lapMeasure = sumOf(primaryMeasure) > 0
+            ? primaryMeasure
+            : (sportIsPace ? lapTimes : lapDists);
+          const lapDurs = lapMeasure.map(v => (v > 0 ? v : 1));
           const lapTotal = lapDurs.reduce((a, b) => a + b, 0) || 1;
           const innerLapW = sessionW - (s.laps.length - 1) * lapGap;
           // Per-lap widths (with a sane minimum so very short recoveries are still visible)

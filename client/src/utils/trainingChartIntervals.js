@@ -95,6 +95,20 @@ function resultSourceLap(r) {
 }
 
 /**
+ * Result rows keyed by the lap they came from, or null when none of them says.
+ *
+ * Null is the caller's signal to fall back to merging by position — which is
+ * right whenever the two lists are the same length, and the only option left
+ * when the rows carry no lap index at all.
+ */
+export function resultsByLapIndex(results) {
+  if (!Array.isArray(results)) return null;
+  const located = results.filter(r => resultSourceLap(r) != null);
+  if (!located.length) return null;
+  return new Map(located.map(r => [resultSourceLap(r), r]));
+}
+
+/**
  * Put each result row's metadata on the lap it actually belongs to.
  *
  * A training's `results` are usually a subset of the session's laps — the
@@ -113,9 +127,8 @@ function mergeResultMetadata(intervals, results) {
   if (!Array.isArray(intervals) || intervals.length === 0) return results;
   if (results.length > intervals.length) return results;
 
-  const located = results.filter(r => resultSourceLap(r) != null);
-  if (located.length > 0) {
-    const byLap = new Map(located.map(r => [resultSourceLap(r), r]));
+  const byLap = resultsByLapIndex(results);
+  if (byLap) {
     return intervals.map((lap, i) => mergeResultRow(lap, byLap.get(i), { copyIntervalType: true }));
   }
 
