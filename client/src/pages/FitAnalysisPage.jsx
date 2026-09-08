@@ -4447,6 +4447,7 @@ const FitAnalysisPage = () => {
           onClose={() => setPlanModal(null)}
           onAddDayTheme={(iso, preset) => { setPlanModal(null); setQuickTheme({ date: iso, preset: preset || null }); }}
           onAddPeriod={(iso) => { setPlanModal(null); setQuickPeriod({ defaultDate: iso }); }}
+          onLogInjury={(healthCatalog?.bodySites?.length || 0) > 0 ? () => setHealthShowNew(true) : null}
         />
       )}
       {quickTheme && (

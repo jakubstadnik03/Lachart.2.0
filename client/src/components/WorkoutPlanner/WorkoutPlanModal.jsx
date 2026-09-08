@@ -29,6 +29,7 @@ import api from '../../services/api';
 import { createWorkoutTemplate, exportPlannedWorkout } from '../../services/workoutPlannerApi';
 import { useCategories } from '../../context/CategoryContext';
 import { useAuth } from '../../context/AuthProvider';
+import DailyMetricsCard from '../training/DailyMetricsCard';
 import { plannedDistanceMetres } from '../../utils/plannedWorkoutDistance';
 import {
   distanceInputUnitLabel,
@@ -401,7 +402,7 @@ export function WorkoutLapList({ steps, context, sport }) {
   );
 }
 
-export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onClose, context = {}, templates = [], onAddDayTheme = null, onAddPeriod = null }) {
+export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onClose, context = {}, templates = [], onAddDayTheme = null, onAddPeriod = null, onLogInjury = null }) {
   const isEdit = Boolean(workout?._id);
   const { user: authUser } = useAuth() || {};
 
@@ -474,6 +475,7 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
   const [saving, setSaving]       = useState(false);
   // Inline "Plan a race" form (opened from the Or-mark-this-day tile).
   const [raceOpen, setRaceOpen]   = useState(false);
+  const [metricsOpen, setMetricsOpen] = useState(false);
   const [raceSaving, setRaceSaving] = useState(false);
   const [raceForm, setRaceForm]   = useState({ name: '', sport: 'run', priority: 'A', targetCTL: '' });
   const submitRace = async () => {
@@ -712,7 +714,9 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
               </div>
 
               {/* ── Or mark this day — day theme / race / multi-day period ── */}
-              {(onAddDayTheme || onAddPeriod) && (
+              {/* Metrics is always here — the day's own numbers need no caller
+                  wiring — so the row shows whenever the modal does. */}
+              {true && (
                 <div>
                   <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-widest mb-3">Or mark this day</p>
                   <div className="grid grid-cols-3 gap-2.5">
@@ -738,6 +742,29 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
                       </svg>
                       <span className="text-[11px] font-semibold text-slate-600 leading-tight text-center">Race</span>
                     </button>
+                    <button
+                      onClick={() => setMetricsOpen(true)}
+                      className="flex flex-col items-center gap-1.5 p-3 rounded-2xl border-2 border-slate-100 bg-white hover:border-emerald-300 hover:bg-emerald-50/40 active:scale-95 transition-all min-h-[72px] justify-center"
+                    >
+                      {/* Scale — the day's own numbers */}
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M12 3v3M7 6h10l3 9a5 5 0 0 1-10 0l3-9M4 21h16" />
+                      </svg>
+                      <span className="text-[11px] font-semibold text-slate-600 leading-tight text-center">Metrics</span>
+                    </button>
+                    {onLogInjury && (
+                      <button
+                        onClick={() => { onLogInjury(toLocalISO(date)); onClose(); }}
+                        className="flex flex-col items-center gap-1.5 p-3 rounded-2xl border-2 border-slate-100 bg-white hover:border-amber-300 hover:bg-amber-50/40 active:scale-95 transition-all min-h-[72px] justify-center"
+                      >
+                        {/* Plaster — injury or illness */}
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#d97706" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <rect x="2.5" y="8.5" width="19" height="7" rx="3.5" transform="rotate(-45 12 12)" />
+                          <path d="M12 10v4M10 12h4" />
+                        </svg>
+                        <span className="text-[11px] font-semibold text-slate-600 leading-tight text-center">Injury</span>
+                      </button>
+                    )}
                     {onAddPeriod && (
                       <button
                         onClick={() => { onAddPeriod(toLocalISO(date)); onClose(); }}
@@ -1177,6 +1204,25 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
         )}
         </>)}
       </motion.div>
+
+      {/* Inline daily metrics — the same card the dashboard uses, for this day */}
+      {metricsOpen && (
+        <div
+          className="absolute inset-0 z-10 flex items-end sm:items-center justify-center bg-black/40 p-0 sm:p-4"
+          onClick={(e) => { if (e.target === e.currentTarget) setMetricsOpen(false); }}
+        >
+          <div
+            className="w-full sm:max-w-md bg-white rounded-t-3xl sm:rounded-2xl p-5 shadow-2xl"
+            style={{ paddingBottom: 'calc(20px + env(safe-area-inset-bottom, 0px))' }}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-base font-bold text-slate-900">{toLocalISO(date)}</h3>
+              <button onClick={() => setMetricsOpen(false)} className="text-sm font-semibold text-slate-400">Done</button>
+            </div>
+            <DailyMetricsCard date={toLocalISO(date)} athleteId={context?.athleteId || null} compact />
+          </div>
+        </div>
+      )}
 
       {/* Inline "Plan a race" form */}
       {raceOpen && (
