@@ -354,8 +354,21 @@ function BarTooltip({ barRef, visible, index, power, heartRate, lactate, duratio
 /* ── VerticalBar ───────────────────────────────────────────────────────────── */
 // Violet shades from darkest (rank 0 = highest value) to lightest
 const BAR_COLORS = ["#4c1d95","#5b21b6","#6d28d9","#7c3aed","#8b5cf6","#a78bfa","#c4b5fd"];
-// Amber/orange shades for bars with lactate data
-const BAR_LACTATE_COLORS = ["#92400e","#b45309","#d97706","#f59e0b","#fbbf24","#fcd34d","#fde68a"];
+// Red shades for bars with lactate data — red-700 through red-400, with the
+// midpoints between them, darkest first like the violet ramp.
+//
+// Amber before this, and its darkest step (#92400e) is a brown: against the
+// violets it read as a muted variant rather than a mark, so the one interval
+// in the session that had been pricked was the hardest bar in the row to pick
+// out.
+//
+// Deliberately a narrow band rather than the full red-900→red-300 spread the
+// violet uses. Bars are drawn at 0.75 opacity on white, which takes the dark
+// end back to brick — the very brown this replaces — and washes the light end
+// to a pink that disappears. A measured interval has to read as measured
+// whether it was the session's hardest rep or its easiest, and rank is already
+// carried by the bar's height.
+const BAR_LACTATE_COLORS = ["#b91c1c","#cb2020","#dc2626","#e63535","#ef4444","#f45a5a","#f87171"];
 
 function VerticalBar({ heightPercent, colorIdx, intervalType, power, pace, distance, heartRate, lactate, duration, durationType, durationSeconds, index, isHovered, onHover, sport, user = null, widthPercent = null }) {
   const barRef = useRef(null);
