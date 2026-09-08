@@ -1,6 +1,17 @@
 // Blog posts metadata — single source of truth for index cards, related posts, and SEO
 export const blogPosts = [
   {
+    slug:     'critical-power-vs-ftp-vs-lthr',
+    title:    'Critical Power vs FTP vs LTHR: Which Threshold Number Should You Train By?',
+    excerpt:  'Three numbers claim to define your endurance ceiling — Critical Power, FTP and lactate threshold heart rate. They sit close together but they are not the same, and using the wrong one quietly mis-sets every zone below it. Here is what each measures and which to trust.',
+    date:     '2026-07-14',
+    readTime: '11 min',
+    category: 'Training Science',
+    tags:     ['critical power', 'FTP', 'LTHR', 'threshold power', 'W prime', 'power vs heart rate'],
+    image:    '/images/lactate_curve_calculator_lachart.jpg',
+    featured: true,
+  },
+  {
     slug:     'what-is-vlamax',
     title:    'VLaMax Explained: What Your Maximal Glycolytic Rate Means for Endurance',
     excerpt:  'VO2max gets the attention, but the number that often decides your threshold is VLaMax — your maximal rate of lactate production. What it is, why it moves your LT2, and how to train it in the right direction.',

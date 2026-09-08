@@ -16,6 +16,7 @@ import { getUserUnits, resolveDistanceUnitSystem } from '../../utils/unitsConver
 import { usePremium } from '../../hooks/usePremium';
 import UpgradeModal from '../UpgradeModal';
 import { LockClosedIcon } from '@heroicons/react/24/outline';
+import { trackFeatureUsage } from '../../utils/analytics';
 
 const KM_PER_MILE = 1.609344;
 
@@ -106,7 +107,7 @@ function buildPredictorTraining(externalActivities, sport) {
   };
 }
 
-function PremiumLockedCard({ title, description, onUpgrade }) {
+function PremiumLockedCard({ title, description, onUpgrade, ctaLabel = 'Upgrade to Pro' }) {
   return (
     <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-8 flex flex-col items-center justify-center gap-3 text-center min-h-[160px]">
       <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
@@ -120,7 +121,7 @@ function PremiumLockedCard({ title, description, onUpgrade }) {
         onClick={onUpgrade}
         className="mt-1 px-4 py-1.5 bg-primary text-white text-xs font-semibold rounded-lg hover:bg-primary/90 transition-colors"
       >
-        Upgrade to Pro
+        {ctaLabel}
       </button>
     </div>
   );
@@ -485,9 +486,21 @@ const PreviousTestingComponent = ({
           />
         ) : (
           <PremiumLockedCard
-            title="Your test history"
-            description="Switch between all your past tests and track how your thresholds change. Free shows your latest test only."
-            onUpgrade={() => gate('Test History', 'pro')}
+            title={
+              uniqueTests.length > 1
+                ? `You've saved ${uniqueTests.length} tests`
+                : 'Your test history'
+            }
+            description={
+              uniqueTests.length > 1
+                ? `Free shows only your latest. Unlock your full history to switch between all ${uniqueTests.length} tests and track how your thresholds change over time.`
+                : 'Switch between all your past tests and track how your thresholds change. Free shows your latest test only.'
+            }
+            ctaLabel="Unlock full history"
+            onUpgrade={() => {
+              trackFeatureUsage('test_history_upsell', 'click', { testCount: uniqueTests.length });
+              gate('Test History', 'pro');
+            }}
           />
         )}
           </motion.div>

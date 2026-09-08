@@ -60,6 +60,7 @@ const Zone2TrainingLactate = lazy(() => import('./pages/blog/Zone2TrainingLactat
 const LactateThresholdHeartRate = lazy(() => import('./pages/blog/LactateThresholdHeartRate'));
 const LactateTestingSoftwareForCoaches = lazy(() => import('./pages/blog/LactateTestingSoftwareForCoaches'));
 const WhatIsVlamax = lazy(() => import('./pages/blog/WhatIsVlamax'));
+const CriticalPowerVsFtpVsLthr = lazy(() => import('./pages/blog/CriticalPowerVsFtpVsLthr'));
 const AdminDashboard = lazy(() => import('./pages/AdminDashboard'));
 const WorkoutPlannerPage = lazy(() => import('./pages/WorkoutPlannerPage'));
 const ForTestersPage = lazy(() => import('./pages/ForTesters'));
@@ -341,6 +342,7 @@ function AppRoutes() {
         <Route path="/blog/lactate-threshold-heart-rate" element={<LactateThresholdHeartRate />} />
         <Route path="/blog/lactate-testing-software-for-coaches" element={<LactateTestingSoftwareForCoaches />} />
         <Route path="/blog/what-is-vlamax" element={<WhatIsVlamax />} />
+        <Route path="/blog/critical-power-vs-ftp-vs-lthr" element={<CriticalPowerVsFtpVsLthr />} />
 
         {/* Chráněné routy s Layoutem */}
         <Route

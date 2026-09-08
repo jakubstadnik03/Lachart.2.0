@@ -103,6 +103,7 @@ const PRERENDER_ROUTES = [
   '/blog/lactate-threshold-heart-rate',
   '/blog/lactate-testing-software-for-coaches',
   '/blog/what-is-vlamax',
+  '/blog/critical-power-vs-ftp-vs-lthr',
 ];
 
 async function startServer() {
