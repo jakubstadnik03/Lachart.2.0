@@ -1657,8 +1657,12 @@ router.post("/coach/invite-athlete", verifyToken, async (req, res) => {
                 password: stubPassword,
                 isPreRegistered: true,
             });
-        } else if (athlete.role !== 'athlete') {
-            return res.status(400).json({ error: "User with this email is not an athlete" });
+        } else if (String(athlete._id) === String(coachId)) {
+            // Nothing else stops this now. A coach may be another coach's
+            // athlete — plenty of them are coached themselves — but not their
+            // own, and the role check that used to reject a coach's email was
+            // the only thing keeping that out.
+            return res.status(400).json({ error: "You cannot add yourself as your own athlete" });
         }
 
         // Already linked to this coach (multi-coach: block duplicate link only)
@@ -2146,18 +2150,13 @@ router.post('/athlete/invite-coach', verifyToken, async (req, res) => {
             return res.status(400).json({ error: "Email is required" });
         }
 
-        // Check if user is an athlete
+        // The requester, whatever their role — a coach may be coached too.
         const athlete = await userDao.findById(athleteId);
         console.log('Found athlete:', athlete);
 
         if (!athlete) {
             console.log('Athlete not found for ID:', athleteId);
             return res.status(404).json({ error: "Athlete not found" });
-        }
-
-        if (athlete.role !== 'athlete') {
-            console.log('User is not an athlete:', athlete.role);
-            return res.status(403).json({ error: "Access allowed only for athletes" });
         }
 
         // Find coach by email
@@ -2173,6 +2172,15 @@ router.post('/athlete/invite-coach', verifyToken, async (req, res) => {
         if (!isCoachLikeRole(coach.role)) {
             console.log('User is not a coach:', coach.role);
             return res.status(400).json({ error: "User with this email is not a coach" });
+        }
+
+        // No role check on the requester: the invite direction allows a coach
+        // to be somebody's athlete, and this is the request they would send to
+        // arrange it — a coach who is coached themselves adds their own coach
+        // here. Refusing it would leave the two directions disagreeing about
+        // the same link. Only being one's own coach is out.
+        if (String(athlete._id) === String(coach._id)) {
+            return res.status(400).json({ error: "You cannot be your own coach" });
         }
 
         // Already linked to this coach (multi-coach allowed for others)

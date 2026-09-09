@@ -65,8 +65,8 @@ class GetAbl {
             if (!athlete) {
                 throw new Error('Atlet nenalezen');
             }
-            if (athlete.role !== 'athlete') {
-                throw new Error('Uživatel není atlet');
+            if (String(athlete._id) === String(coachId)) {
+                throw new Error('Nelze přidat sám sebe jako svěřence');
             }
             if (athleteHasCoachUser(athlete, coachId)) {
                 throw new Error('Atlet již je u tohoto trenéra');
