@@ -463,6 +463,36 @@ exports.handleWebhook = async (req, res) => {
   }
 };
 
+/**
+ * The billing period, wherever this Stripe API version keeps it.
+ *
+ * Stripe moved `current_period_start` / `current_period_end` off the
+ * subscription and onto its items in the 2025-03-31 API version. Read at the
+ * top level they are now undefined, and `undefined * 1000` is NaN — which
+ * Mongoose refuses to cast, so the whole save throws. A renewal webhook
+ * recorded nothing at all and the stored status drifted away from Stripe's,
+ * silently, because the throw happened after the 200 had gone back.
+ *
+ * Null rather than an Invalid Date when a value is missing, so a caller can
+ * leave what it has alone instead of overwriting a good date with a broken
+ * one.
+ */
+function stripeBillingPeriod(sub) {
+  const item = sub?.items?.data?.[0] || {};
+  const at = (sec) => {
+    const n = Number(sec);
+    if (!Number.isFinite(n) || n <= 0) return null;
+    const d = new Date(n * 1000);
+    return Number.isNaN(d.getTime()) ? null : d;
+  };
+  return {
+    start: at(sub?.current_period_start ?? item.current_period_start),
+    end: at(sub?.current_period_end ?? item.current_period_end),
+  };
+}
+
+exports.stripeBillingPeriod = stripeBillingPeriod;
+
 async function handleCheckoutCompleted(session) {
   if (!stripe) {
     console.error('Stripe not configured, cannot handle checkout');
@@ -488,6 +518,7 @@ async function handleCheckoutCompleted(session) {
   let userSubscription = await Subscription.findOne({ userId: user._id });
   // Capture previous plan so we only email on a real free→paid transition.
   const previousPlan = userSubscription?.plan || 'free';
+  const period = stripeBillingPeriod(subscription);
 
   if (!userSubscription) {
     userSubscription = await Subscription.create({
@@ -497,8 +528,8 @@ async function handleCheckoutCompleted(session) {
       stripeSubscriptionId: subscription.id,
       stripeCustomerId: subscription.customer,
       stripePriceId: subscription.items.data[0]?.price.id,
-      currentPeriodStart: new Date(subscription.current_period_start * 1000),
-      currentPeriodEnd: new Date(subscription.current_period_end * 1000),
+      currentPeriodStart: period.start ?? undefined,
+      currentPeriodEnd: period.end ?? undefined,
       trialStart: subscription.trial_start ? new Date(subscription.trial_start * 1000) : null,
       trialEnd: subscription.trial_end ? new Date(subscription.trial_end * 1000) : null,
       cancelAtPeriodEnd: subscription.cancel_at_period_end
@@ -509,8 +540,10 @@ async function handleCheckoutCompleted(session) {
     userSubscription.stripeSubscriptionId = subscription.id;
     userSubscription.stripeCustomerId = subscription.customer;
     userSubscription.stripePriceId = subscription.items.data[0]?.price.id;
-    userSubscription.currentPeriodStart = new Date(subscription.current_period_start * 1000);
-    userSubscription.currentPeriodEnd = new Date(subscription.current_period_end * 1000);
+    // Left alone when Stripe sent no period, rather than overwritten with a
+    // date that cannot be cast.
+    if (period.start) userSubscription.currentPeriodStart = period.start;
+    if (period.end) userSubscription.currentPeriodEnd = period.end;
     userSubscription.trialStart = subscription.trial_start ? new Date(subscription.trial_start * 1000) : null;
     userSubscription.trialEnd = subscription.trial_end ? new Date(subscription.trial_end * 1000) : null;
     userSubscription.cancelAtPeriodEnd = subscription.cancel_at_period_end;
@@ -550,8 +583,9 @@ async function handleSubscriptionUpdate(stripeSubscription) {
   }
 
   subscription.status = stripeSubscription.status;
-  subscription.currentPeriodStart = new Date(stripeSubscription.current_period_start * 1000);
-  subscription.currentPeriodEnd = new Date(stripeSubscription.current_period_end * 1000);
+  const period = stripeBillingPeriod(stripeSubscription);
+  if (period.start) subscription.currentPeriodStart = period.start;
+  if (period.end) subscription.currentPeriodEnd = period.end;
   subscription.cancelAtPeriodEnd = stripeSubscription.cancel_at_period_end;
   
   if (stripeSubscription.canceled_at) {
@@ -745,6 +779,7 @@ exports.syncSubscriptionFromStripe = async (req, res) => {
       [process.env.STRIPE_PRICE_ID_ENTERPRISE]: 'enterprise',
     };
     const priceId = liveSub.items?.data?.[0]?.price?.id;
+    const livePeriod = stripeBillingPeriod(liveSub);
     const planId = priceToPlan[priceId] || userSubscription?.plan || 'pro';
 
     // Capture previous plan for activation-email gating.
@@ -758,8 +793,8 @@ exports.syncSubscriptionFromStripe = async (req, res) => {
         stripeSubscriptionId: liveSub.id,
         stripeCustomerId: customerId,
         stripePriceId: priceId,
-        currentPeriodStart: liveSub.current_period_start ? new Date(liveSub.current_period_start * 1000) : undefined,
-        currentPeriodEnd: liveSub.current_period_end ? new Date(liveSub.current_period_end * 1000) : undefined,
+        currentPeriodStart: livePeriod.start ?? undefined,
+        currentPeriodEnd: livePeriod.end ?? undefined,
         trialStart: liveSub.trial_start ? new Date(liveSub.trial_start * 1000) : null,
         trialEnd: liveSub.trial_end ? new Date(liveSub.trial_end * 1000) : null,
         cancelAtPeriodEnd: liveSub.cancel_at_period_end,
@@ -770,8 +805,11 @@ exports.syncSubscriptionFromStripe = async (req, res) => {
       userSubscription.stripeSubscriptionId = liveSub.id;
       userSubscription.stripeCustomerId = customerId;
       userSubscription.stripePriceId = priceId;
-      userSubscription.currentPeriodStart = liveSub.current_period_start ? new Date(liveSub.current_period_start * 1000) : undefined;
-      userSubscription.currentPeriodEnd = liveSub.current_period_end ? new Date(liveSub.current_period_end * 1000) : undefined;
+      // These two never threw, because they were already guarded — but the
+      // guard read the top level only, so on the new API version they stored
+      // undefined every time and the period quietly went missing.
+      if (livePeriod.start) userSubscription.currentPeriodStart = livePeriod.start;
+      if (livePeriod.end) userSubscription.currentPeriodEnd = livePeriod.end;
       userSubscription.trialStart = liveSub.trial_start ? new Date(liveSub.trial_start * 1000) : null;
       userSubscription.trialEnd = liveSub.trial_end ? new Date(liveSub.trial_end * 1000) : null;
       userSubscription.cancelAtPeriodEnd = liveSub.cancel_at_period_end;

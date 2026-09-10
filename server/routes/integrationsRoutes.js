@@ -796,7 +796,18 @@ function triggerGarminBackfillQueued(user, startSec, endSec) {
     try {
       const tokenData = await getValidGarminToken(user);
       let cursor = startSec;
-      while (cursor < endSec) {
+      /**
+       * A refusal that is about the key, not the window.
+       *
+       * Garmin answers a backfill this consumer key is not entitled to with
+       * 412 and `required HISTORICAL_DATA_EXPORT`. That verdict is the same
+       * for every chunk and every endpoint, so grinding on asks eighteen
+       * chunks twice over and collects a 429 — and a 65-second wait — on most
+       * of them. Forty minutes of it, against a rate limit shared with every
+       * other LaChart user, to be told the same thing thirty-six times.
+       */
+      let jobDenied = null;
+      while (cursor < endSec && !jobDenied) {
         const chunkEnd = Math.min(cursor + MAX_CHUNK, endSec);
         const rangeLabel = `${new Date(cursor * 1000).toISOString().slice(0, 10)} → ${new Date(chunkEnd * 1000).toISOString().slice(0, 10)}`;
         let nextCursor = chunkEnd;
@@ -805,7 +816,7 @@ function triggerGarminBackfillQueued(user, startSec, endSec) {
         let chunkOutOfRange = false;
 
         for (const endpoint of GARMIN_BACKFILL_ENDPOINTS) {
-          if (chunkOutOfRange) break;
+          if (chunkOutOfRange || jobDenied) break;
           const url = `${getGarminWellnessApiBaseUrl()}/rest/backfill/${endpoint}`;
           let attempt = 0;
           for (;;) {
@@ -871,6 +882,12 @@ function triggerGarminBackfillQueued(user, startSec, endSec) {
               job.failed += 1;
               job.lastError = { status: status || null, body: bodyStr.slice(0, 300), range: rangeLabel, endpoint };
               console.error(`[Garmin backfill] ${endpoint} ${rangeLabel} failed permanently (HTTP ${status || '?'}):`, body || e.message);
+              // Not this window's problem — this key may not backfill at all.
+              if (status === 412 && /HISTORICAL_DATA_EXPORT|Access denied/i.test(bodyStr)) {
+                jobDenied = bodyStr.slice(0, 300);
+                job.denied = jobDenied;
+                console.error('[Garmin backfill] abandoning the run: the consumer key lacks the permission this needs, so every remaining chunk would be refused the same way');
+              }
               break;
             }
           }
@@ -890,6 +907,7 @@ function triggerGarminBackfillQueued(user, startSec, endSec) {
       job.finishedAt = new Date();
       console.log(`[Garmin backfill] finished for user ${key}: ${job.requested}/${job.total} requests sent `
         + `(${job.chunks} window(s) × ${job.endpoints.join('+')}), ${job.failed} failed` +
+        (job.denied ? ' — ABANDONED: consumer key not entitled to backfill' : '') +
         (job.skippedBeforeMin ? `, ${job.skippedBeforeMin} skipped (older than this key's min backfill start ${job.minBackfillStart})` : '') +
         (job.lastError ? ` (last error HTTP ${job.lastError.status}: ${job.lastError.body})` : ''));
     }
