@@ -2442,49 +2442,11 @@ export default function NativeTrainingPage({
     <>
       <style>{NATIVE_DASHBOARD_KEYFRAMES}</style>
       <div ref={pageRef} style={styles.page}>
-        {/* Header */}
-        <div style={{ ...styles.header, ...cardEntry(0), ...snap }}>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={styles.title}>Trainings</div>
-            <div style={styles.subtitle}>
-              {filtered.length} {filtered.length === 1 ? 'session' : 'sessions'}
-              {annotateQueueAll.length > 0 && (
-                <> · <span style={{ color: '#7C3AED', fontWeight: 700 }}>
-                  {annotateQueueAll.length} ready for lactate
-                </span></>
-              )}
-            </div>
-          </div>
-          <button
-            onClick={() => setShowRecordLactate(true)}
-            onMouseDown={(e) => { e.currentTarget.style.transform = 'scale(.94)'; }}
-            onMouseUp={(e)   => { e.currentTarget.style.transform = ''; }}
-            onMouseLeave={(e)=> { e.currentTarget.style.transform = ''; }}
-            onTouchStart={(e)=> { e.currentTarget.style.transform = 'scale(.94)'; }}
-            onTouchEnd={(e)  => { e.currentTarget.style.transform = ''; }}
-            style={{ ...styles.headerBtn, background: '#f5f3ff', color: '#7c3aed', width: 'auto', borderRadius: 18, padding: '0 12px', gap: 6, fontSize: 12, fontWeight: 700 }}
-            title="Record a new lactate measurement"
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M9 3h6M10 3v6.5L4.5 19a2 2 0 001.7 3h11.6a2 2 0 001.7-3L14 9.5V3" />
-            </svg>
-            <span>Record</span>
-          </button>
-          <button
-            onClick={() => navigate('/training?full=1')}
-            onMouseDown={(e) => { e.currentTarget.style.transform = 'scale(.94)'; }}
-            onMouseUp={(e)   => { e.currentTarget.style.transform = ''; }}
-            onMouseLeave={(e)=> { e.currentTarget.style.transform = ''; }}
-            onTouchStart={(e)=> { e.currentTarget.style.transform = 'scale(.94)'; }}
-            onTouchEnd={(e)  => { e.currentTarget.style.transform = ''; }}
-            style={styles.headerBtn}
-            title="Open full training page"
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-              <line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="18" x2="21" y2="18" />
-            </svg>
-          </button>
-        </div>
+        {/* The page opens on its own content. The title, the session count and
+            the two header buttons were removed at the athlete's request — with
+            them went the only entry points to the lactate Record sheet and to
+            the full training page (/training?full=1). The sheet below is left
+            wired up so restoring a way in is a one-line change. */}
 
         {/* Record Lactate modal */}
         {showRecordLactate && (
@@ -3270,14 +3232,14 @@ export default function NativeTrainingPage({
                   </div>
                   {/* Render the button whenever the list could be paginated
                       (more than one page worth of items). When the user has
-                      already revealed everything, the button flips to
-                      "Show less" so they can collapse back to the first
-                      page. Without the collapse path the only way to tame
-                      the giant list was to reload the page. */}
+                      grown it past the first page a "Show less" appears
+                      beside it, so there is always a way back to a tight
+                      list. */}
                   {annotateQueueAll.length > PAGE_SIZE && (
                     <ShowMoreButton
                       shown={annotateQueue.length}
                       total={annotateQueueAll.length}
+                      pageSize={PAGE_SIZE}
                       onClick={() => setAnnotateLimit(l => l + PAGE_SIZE * 2)}
                       onCollapse={() => setAnnotateLimit(PAGE_SIZE)}
                     />
@@ -4197,46 +4159,64 @@ function ChevronBtn({ dir, onClick, disabled, small }) {
 
 // ─── ShowMoreButton — pagination footer for the lactate cards ────────────────
 //
-// `onCollapse` is optional. When the list has been expanded past the initial
-// page size the parent passes it through, and we render an inverted variant
-// ("Show less · N of N") with an upward chevron instead of a downward one,
-// so the user has a way back to a tight list.
+// "Show less" used to appear only once `shown >= total`. With a page of four
+// and 263 sessions behind it, that was thirty-two taps away — so in practice
+// the list only ever grew, and the way back was to reload the app. It now
+// appears as soon as the list has grown past its first page, beside the button
+// that grew it.
 
-function ShowMoreButton({ shown, total, onClick, onCollapse }) {
-  const isExpanded = typeof onCollapse === 'function' && shown >= total;
-  const label = isExpanded ? 'Show less' : 'Show more';
-  const handler = isExpanded ? onCollapse : onClick;
-  return (
-    <button
-      onClick={handler}
-      onMouseDown={(e) => { e.currentTarget.style.transform = 'scale(.985)'; }}
-      onMouseUp={(e)   => { e.currentTarget.style.transform = ''; }}
-      onMouseLeave={(e)=> { e.currentTarget.style.transform = ''; }}
-      onTouchStart={(e)=> { e.currentTarget.style.transform = 'scale(.985)'; }}
-      onTouchEnd={(e)  => { e.currentTarget.style.transform = ''; }}
-      style={{
-        marginTop: 8,
-        width: '100%',
-        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-        padding: '9px 12px', borderRadius: 11,
-        background: 'rgba(255,255,255,.55)',
-        border: '1px dashed rgba(118,126,181,.3)',
-        color: '#5E6590',
-        fontFamily: 'inherit', fontSize: 11, fontWeight: 700,
-        cursor: 'pointer',
-        transition: 'transform .12s ease, background .15s ease',
-        WebkitTapHighlightColor: 'transparent', touchAction: 'manipulation',
-      }}
-    >
-      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-        {isExpanded
-          ? <polyline points="6 15 12 9 18 15" />
-          : <polyline points="6 9 12 15 18 9" />}
-      </svg>
-      {label} · <span style={{ color: '#9CA3AF', fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>
+const showMoreBtnStyle = {
+  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+  padding: '9px 12px', borderRadius: 11,
+  background: 'rgba(255,255,255,.55)',
+  border: '1px dashed rgba(118,126,181,.3)',
+  color: '#5E6590',
+  fontFamily: 'inherit', fontSize: 11, fontWeight: 700,
+  cursor: 'pointer',
+  transition: 'transform .12s ease, background .15s ease',
+  WebkitTapHighlightColor: 'transparent', touchAction: 'manipulation',
+};
+
+const pressProps = {
+  onMouseDown: (e) => { e.currentTarget.style.transform = 'scale(.985)'; },
+  onMouseUp: (e) => { e.currentTarget.style.transform = ''; },
+  onMouseLeave: (e) => { e.currentTarget.style.transform = ''; },
+  onTouchStart: (e) => { e.currentTarget.style.transform = 'scale(.985)'; },
+  onTouchEnd: (e) => { e.currentTarget.style.transform = ''; },
+};
+
+const Chevron = ({ up }) => (
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+    {up ? <polyline points="6 15 12 9 18 15" /> : <polyline points="6 9 12 15 18 9" />}
+  </svg>
+);
+
+function ShowMoreButton({ shown, total, pageSize, onClick, onCollapse }) {
+  const canCollapse = typeof onCollapse === 'function' && shown > pageSize;
+  const canExpand = shown < total;
+
+  const less = (
+    <button key="less" onClick={onCollapse} {...pressProps}
+      style={{ ...showMoreBtnStyle, flex: canExpand ? '0 0 auto' : 1, width: canExpand ? 'auto' : '100%' }}>
+      <Chevron up />
+      Show less
+    </button>
+  );
+
+  const more = (
+    <button key="more" onClick={onClick} {...pressProps} style={{ ...showMoreBtnStyle, flex: 1 }}>
+      <Chevron />
+      Show more · <span style={{ color: '#9CA3AF', fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>
         {shown} of {total}
       </span>
     </button>
+  );
+
+  return (
+    <div style={{ marginTop: 8, display: 'flex', gap: 6 }}>
+      {canExpand && more}
+      {canCollapse && less}
+    </div>
   );
 }
 
@@ -4245,24 +4225,6 @@ const styles = {
     display: 'flex', flexDirection: 'column', minHeight: '100%',
     background: 'linear-gradient(160deg, #EEF0F4 0%, #E8EAF0 100%)',
     fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", sans-serif',
-  },
-  header: {
-    display: 'flex', alignItems: 'center', gap: 10,
-    padding: '22px 18px 10px',
-  },
-  title: { fontSize: 19, fontWeight: 800, color: '#0A0E1A', letterSpacing: '-0.02em', lineHeight: 1.25 },
-  subtitle: { fontSize: 12, fontWeight: 600, color: '#6B7280', marginTop: 2 },
-  headerBtn: {
-    width: 36, height: 36, borderRadius: '50%',
-    border: 'none',
-    background: 'rgba(255,255,255,.65)',
-    color: '#5E6590',
-    boxShadow: '0 1px 4px -1px rgba(10,14,26,.06)',
-    display: 'flex', alignItems: 'center', justifyContent: 'center',
-    cursor: 'pointer', fontFamily: 'inherit',
-    transition: 'transform .12s ease, background .15s ease',
-    WebkitTapHighlightColor: 'transparent', touchAction: 'manipulation',
-    flexShrink: 0,
   },
   body: {
     flex: 1, padding: '8px 14px 0',
