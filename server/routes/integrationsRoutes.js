@@ -4635,11 +4635,109 @@ router.get('/garmin/test-connection', verifyToken, async (req, res) => {
 });
 
 /**
- * Strava activities from the last N days where field lactate is still missing on at least one lap,
- * or laps are not loaded yet (empty laps) — for "add lactate to training" UX.
- * GET /api/integrations/strava/pending-lactate?days=14&athleteId=...
+ * Activities from the last N days where field lactate is still missing on at
+ * least one lap, or where laps are not loaded yet — the feed behind the Field
+ * Lactate panel.
+ *
+ * Strava AND Garmin, on identical terms. This read StravaActivity alone, so an
+ * athlete whose watch talks to Garmin and not Strava opened the panel to
+ * "Strava not connected" and an empty list, with no way to put a lap value
+ * against a ride the app already held. Garmin laps carry the same field names
+ * the lap readers below already fall back through, and the calendar has
+ * addressed Garmin sessions as `garmin-<id>` for as long as it has addressed
+ * Strava ones as `strava-<id>`.
+ *
+ * GET /api/integrations/pending-lactate?days=14&athleteId=...
  */
-router.get('/strava/pending-lactate', verifyToken, async (req, res) => {
+
+/** How many laps of this activity still have no blood value against them. */
+function lapsMissingLactate(laps) {
+  if (!Array.isArray(laps) || laps.length === 0) {
+    // No laps cached yet is a reason to offer the activity, not to skip it —
+    // opening it is what loads them.
+    return { needed: true, missing: null };
+  }
+  let missing = 0;
+  for (const l of laps) {
+    const v = l.lactate;
+    if (v == null || v === '') missing += 1;
+  }
+  return { needed: missing > 0, missing };
+}
+
+/** One activity in the shape the panel scores and renders, whichever service it came from. */
+function toPendingLactateRow(a, source, athleteIdParam) {
+  const laps = Array.isArray(a.laps) ? a.laps : [];
+  const { needed, missing } = lapsMissingLactate(laps);
+  if (!needed) return null;
+
+  const externalId = source === 'garmin' ? a.garminId : a.stravaId;
+  const openPath = athleteIdParam
+    ? `/training-calendar/${athleteIdParam}/${source}-${externalId}`
+    : `/training-calendar/${source}-${externalId}`;
+
+  // Intensity signals for the client-side "Intervals?" / "Likely test" scoring.
+  const lapHrs = laps
+    .map(l => l.avgHeartRate ?? l.avg_heart_rate ?? l.average_heartrate ?? l.averageHeartRate ?? 0)
+    .filter(v => Number(v) > 0).map(Number);
+  const lapWatts = laps
+    .map(l => l.avgPower ?? l.avg_power ?? l.average_watts ?? l.averageWatts ?? 0)
+    .filter(v => Number(v) > 0).map(Number);
+  const lapTimes = laps.map(lapDurationSeconds).filter(v => v > 0);
+  const arrAvg = arr => arr.reduce((s2, v) => s2 + v, 0) / arr.length;
+
+  return {
+    _id: a._id,
+    source,
+    // Both ids travel: the panel keys rows off stravaId today, and a row that
+    // answered null there would collide with every other Garmin row.
+    stravaId: source === 'strava' ? a.stravaId : null,
+    garminId: source === 'garmin' ? a.garminId : null,
+    externalId: String(externalId ?? ''),
+    name: a.titleManual || a.name || 'Activity',
+    sport: a.sport,
+    startDate: a.startDate,
+    lapCount: laps.length,
+    missingLactateCount: missing,
+    openPath,
+    avgHr: lapHrs.length ? Math.round(arrAvg(lapHrs)) : null,
+    maxHr: lapHrs.length ? Math.max(...lapHrs) : null,
+    avgWatts: lapWatts.length ? Math.round(arrAvg(lapWatts)) : null,
+    // Shared with the activities list, so the "Intervals?" badge here and the
+    // dashboard's admission rule can't disagree about what "structured" means.
+    lapDurationCv: lapDurationCv(lapTimes),
+    movingTime: a.movingTime || a.moving_time || null,
+    distance: a.distance || null,
+  };
+}
+
+/**
+ * The same ride, twice.
+ *
+ * A Garmin watch that also pushes to Strava puts one session in both
+ * collections, and offering it twice would be the training-log duplicate bug
+ * again in a smaller window. Sessions starting within five minutes of each
+ * other are the same session; the copy with more laps wins, because laps are
+ * the entire point of this panel.
+ */
+function dedupePendingLactate(rows) {
+  const SAME_SESSION_MS = 5 * 60 * 1000;
+  const kept = [];
+  for (const row of rows) {
+    const t = row.startDate ? new Date(row.startDate).getTime() : NaN;
+    const twin = Number.isFinite(t)
+      ? kept.find((k) => {
+        const kt = k.startDate ? new Date(k.startDate).getTime() : NaN;
+        return Number.isFinite(kt) && Math.abs(kt - t) <= SAME_SESSION_MS;
+      })
+      : null;
+    if (!twin) { kept.push(row); continue; }
+    if ((row.lapCount || 0) > (twin.lapCount || 0)) kept[kept.indexOf(twin)] = row;
+  }
+  return kept;
+}
+
+async function handlePendingLactate(req, res) {
   try {
     const resolved = await resolveIntegrationTargetUserId(req);
     if (!resolved.ok) {
@@ -4650,86 +4748,48 @@ router.get('/strava/pending-lactate', verifyToken, async (req, res) => {
 
     const days = Math.min(30, Math.max(1, parseInt(req.query.days, 10) || 14));
     const since = new Date(Date.now() - days * 86400000);
+    const where = { userId: userIdMatch(targetUserId), startDate: { $gte: since } };
 
-    const rows = await StravaActivity.find({
-      userId: userIdMatch(targetUserId),
-      startDate: { $gte: since },
-    })
-      .sort({ startDate: -1 })
-      .limit(150)
-      .select('_id stravaId name sport startDate laps movingTime elapsedTime distance')
-      .lean();
+    const [stravaRows, garminRows] = await Promise.all([
+      StravaActivity.find(where)
+        .sort({ startDate: -1 })
+        .limit(150)
+        .select('_id stravaId name sport startDate laps movingTime elapsedTime distance')
+        .lean(),
+      GarminActivity.find(where)
+        .sort({ startDate: -1 })
+        .limit(150)
+        .select('_id garminId name titleManual sport startDate laps movingTime elapsedTime distance')
+        .lean(),
+    ]);
 
-    const activities = [];
-    for (const a of rows) {
-      const laps = Array.isArray(a.laps) ? a.laps : [];
-      let needsLactate = false;
-      let missingLactateCount = 0;
+    const coachViewingAthlete =
+      req.query.athleteId && String(req.query.athleteId) !== String(userId);
+    const athleteIdParam = coachViewingAthlete ? req.query.athleteId : null;
 
-      if (laps.length === 0) {
-        needsLactate = true;
-        missingLactateCount = 0;
-      } else {
-        for (const l of laps) {
-          const v = l.lactate;
-          if (v == null || v === '') {
-            missingLactateCount += 1;
-            needsLactate = true;
-          }
-        }
-      }
-
-      if (!needsLactate) continue;
-
-      const coachViewingAthlete =
-        req.query.athleteId && String(req.query.athleteId) !== String(userId);
-      const openPath = coachViewingAthlete
-        ? `/training-calendar/${req.query.athleteId}/strava-${a.stravaId}`
-        : `/training-calendar/strava-${a.stravaId}`;
-
-      // Compute intensity signals from laps for client-side scoring
-      const lapHrs = laps
-        .map(l => l.avgHeartRate ?? l.avg_heart_rate ?? l.average_heartrate ?? l.averageHeartRate ?? 0)
-        .filter(v => Number(v) > 0).map(Number);
-      const lapWatts = laps
-        .map(l => l.avgPower ?? l.avg_power ?? l.average_watts ?? l.averageWatts ?? 0)
-        .filter(v => Number(v) > 0).map(Number);
-      const lapTimes = laps.map(lapDurationSeconds).filter(v => v > 0);
-      const arrAvg = arr => arr.reduce((s, v) => s + v, 0) / arr.length;
-      const avgHr = lapHrs.length ? Math.round(arrAvg(lapHrs)) : null;
-      const maxHr = lapHrs.length ? Math.max(...lapHrs) : null;
-      const avgWatts = lapWatts.length ? Math.round(arrAvg(lapWatts)) : null;
-      // Shared with the activities list, so the "Intervals?" badge here and the
-      // dashboard's admission rule can't disagree about what "structured" means.
-      const cv = lapDurationCv(lapTimes);
-
-      activities.push({
-        _id: a._id,
-        stravaId: a.stravaId,
-        name: a.name || 'Activity',
-        sport: a.sport,
-        startDate: a.startDate,
-        lapCount: laps.length,
-        missingLactateCount: laps.length === 0 ? null : missingLactateCount,
-        openPath,
-        // Intensity signals for smart scoring
-        avgHr,
-        maxHr,
-        avgWatts,
-        lapDurationCv: cv,
-        movingTime: a.movingTime || a.moving_time || null,
-        distance: a.distance || null,
-      });
-
-      if (activities.length >= 30) break;
-    }
+    const activities = dedupePendingLactate(
+      [
+        ...stravaRows.map(a => toPendingLactateRow(a, 'strava', athleteIdParam)),
+        ...garminRows.map(a => toPendingLactateRow(a, 'garmin', athleteIdParam)),
+      ]
+        .filter(Boolean)
+        // Newest first across both services — the panel re-sorts by score, but
+        // the 30-row cut has to be taken on one merged list or whichever
+        // service happens to be second loses every slot.
+        .sort((a, b) => new Date(b.startDate) - new Date(a.startDate)),
+    ).slice(0, 30);
 
     return res.json({ activities, days });
   } catch (error) {
     console.error('[integrations] pending-lactate:', error);
     return res.status(500).json({ error: error.message || 'Server error' });
   }
-});
+}
+
+router.get('/pending-lactate', verifyToken, handlePendingLactate);
+// The old name, kept so a tab that has not reloaded through a deploy keeps
+// working. It was never Strava-only in anything but its path.
+router.get('/strava/pending-lactate', verifyToken, handlePendingLactate);
 
 /**
  * Sync Strava activity → Training model and return training JSON for TrainingForm (field lactate).
@@ -8695,3 +8755,10 @@ module.exports.GARMIN_BACKFILL_ENDPOINTS = GARMIN_BACKFILL_ENDPOINTS;
 // Exported for unit testing the wellness upsert — specifically that a day the
 // payload says nothing about is left alone rather than blanked.
 module.exports.appleWellnessPatch = appleWellnessPatch;
+
+// Exported for unit testing the Field Lactate feed — in particular that a
+// Garmin activity reaches it on the same terms as a Strava one, and that a
+// session held by both services is offered once.
+module.exports.toPendingLactateRow = toPendingLactateRow;
+module.exports.dedupePendingLactate = dedupePendingLactate;
+module.exports.lapsMissingLactate = lapsMissingLactate;

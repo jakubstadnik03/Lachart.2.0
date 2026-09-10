@@ -2099,6 +2099,17 @@ const FitAnalysisPage = () => {
         loadTrainingFromTrainingModel(id.replace('training-', ''));
         return;
       }
+      if (id.startsWith('garmin-')) {
+        // Garmin has no side-panel loader and does not need one: the calendar's
+        // ActivityFullModal has read `garmin-` ids through
+        // getGarminActivityDetail since it was written, and
+        // autoOpenSelectedActivity opens it as soon as the activity appears in
+        // the loaded list. Falling through to loadTrainingDetail instead — as
+        // this did — asked the FIT endpoint for a training whose _id was the
+        // string "garmin-20482044991", which is how a link from the Field
+        // Lactate panel would have died.
+        return;
+      }
       // Backwards-compat (old links might be just raw FitTraining _id)
       loadTrainingDetail(id);
     };
@@ -4661,6 +4672,11 @@ const FitAnalysisPage = () => {
         <CalendarView
           activities={calendarMergedActivities}
           selectedActivityId={
+            // An explicit `garmin-` deep link beats every remembered selection
+            // below it — nothing here loads Garmin into `selectedTraining` or
+            // `selectedStrava`, so without this the modal would open on
+            // whatever was last viewed instead.
+            (activityId && String(activityId).startsWith('garmin-') ? String(activityId) : null) ||
             (selectedTraining
               ? (selectedTraining?.isFromTrainingModel
                   ? `training-${selectedTraining?._id}`

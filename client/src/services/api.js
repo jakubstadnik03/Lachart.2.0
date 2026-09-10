@@ -1968,7 +1968,8 @@ export const deleteAppleHealthWorkouts = async () => {
 };
 
 /**
- * Strava activities (recent) missing field lactate on at least one lap, or with no laps loaded yet.
+ * Recent Strava AND Garmin activities missing field lactate on at least one
+ * lap, or with no laps loaded yet.
  * @param {string | null} [athleteId] coach viewing athlete
  * @param {{ days?: number; signal?: AbortSignal }} [opts]
  */
@@ -1978,7 +1979,7 @@ export const getPendingLactateActivities = async (athleteId = null, opts = {}) =
   if (opts.days != null) params.days = opts.days;
   const cfg = { params };
   if (opts.signal) cfg.signal = opts.signal;
-  const { data } = await api.get('/api/integrations/strava/pending-lactate', cfg);
+  const { data } = await api.get('/api/integrations/pending-lactate', cfg);
   return data; // { activities: [...], days }
 };
 

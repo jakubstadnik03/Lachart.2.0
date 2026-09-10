@@ -68,7 +68,9 @@ export default function FieldLactateTrainingPanel({
 }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [stravaConnected, setStravaConnected] = useState(null);
+  // Both, because either one can supply the activities this panel lists. Only
+  // when neither is connected is there anything to tell the athlete.
+  const [sourcesConnected, setSourcesConnected] = useState(null);
   const [rows, setRows] = useState([]);
 
   // Pending field measurements
@@ -87,7 +89,10 @@ export default function FieldLactateTrainingPanel({
         getIntegrationStatus({ timeout: 15000, athleteId: integrationAthleteId || undefined }),
         getPendingLactateActivities(integrationAthleteId, { days: 21 }),
       ]);
-      setStravaConnected(Boolean(status && status.stravaConnected));
+      setSourcesConnected({
+        strava: Boolean(status && status.stravaConnected),
+        garmin: Boolean(status && status.garminConnected),
+      });
       setRows(Array.isArray(pending?.activities) ? pending.activities : []);
     } catch (e) {
       setError(e?.response?.data?.error || e?.message || 'Could not load');
@@ -146,7 +151,7 @@ export default function FieldLactateTrainingPanel({
         <div className="flex items-center justify-between gap-2 px-4 py-3 border-b border-slate-100">
           <div className="min-w-0">
             <h3 className="text-sm font-bold text-slate-900 leading-tight">Field Lactate</h3>
-            <p className="text-[11px] text-slate-400 mt-0.5">Strava activities · add blood lactate per lap</p>
+            <p className="text-[11px] text-slate-400 mt-0.5">Strava &amp; Garmin · add blood lactate per lap</p>
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
             {/* Record new measurement button */}
@@ -244,10 +249,14 @@ export default function FieldLactateTrainingPanel({
             </div>
           )}
 
-          {/* ── Strava activities needing lactate ── */}
-          {stravaConnected === false && (
+          {/* ── Activities needing lactate ──
+              Only when neither service is connected. This used to fire on
+              Strava alone, so an athlete whose watch talks to Garmin was told
+              to connect something they had no need of, above a list the app
+              was refusing to fill from the source they did have. */}
+          {sourcesConnected && !sourcesConnected.strava && !sourcesConnected.garmin && (
             <div className="m-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-              Strava not connected.{' '}
+              No activity source connected.{' '}
               <Link to="/settings" className="font-semibold underline">Settings → Integrations</Link>
             </div>
           )}

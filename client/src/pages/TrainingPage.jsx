@@ -210,12 +210,19 @@ export default function TrainingPage() {
       if (cached && ts) {
         const age = Date.now() - parseInt(ts, 10);
         if (!Number.isNaN(age) && age < CACHE_TTL) {
-          // Drop Garmin/Apple entries on restore too — caches written before
-          // the source filter existed would keep unloadable sessions in the
-          // Training History picker until the TTL ran out.
+          // Same admission rule as the fetch below — Garmin belongs, Apple
+          // Health does not. This kept dropping Garmin as well, so on a cache
+          // hit the log and the history picker showed a shorter list than the
+          // one they showed a second later when the request landed, and shorter
+          // again than the one DashboardPage wrote into the very same key.
           const parsed = (JSON.parse(cached) || []).filter((a) => {
-            const src = a?.source || (a?.garminId != null ? 'garmin' : 'strava');
-            return src !== 'garmin' && src !== 'apple_health';
+            const src = a?.source || (
+              a?.stravaId != null ? 'strava'
+              : a?.garminId != null ? 'garmin'
+              : a?.healthKitId != null ? 'apple_health'
+              : 'strava'
+            );
+            return src !== 'apple_health';
           });
           if (Array.isArray(parsed) && parsed.length > 0) {
             setTrainings(parsed);
