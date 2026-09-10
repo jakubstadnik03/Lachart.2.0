@@ -79,21 +79,46 @@ export default function NativeProfilePage({ user, userInfo, calendarData = [], o
   // Loaded athlete profile (only fetched when coach is viewing another athlete).
   // For the logged-in-self case, we just use `userInfo` straight from props.
   const [athleteProfile, setAthleteProfile] = useState(null);
+  /**
+   * Why the athlete could not be loaded, if that is what happened.
+   *
+   * This used to be a bare `.catch(() => setAthleteProfile(null))`, and the
+   * line below then fell back to `me` — so a coach who tapped an athlete and
+   * hit a 403 or a dropped connection was shown their OWN profile, with the
+   * athlete still selected everywhere else and nothing on screen saying so.
+   * "It doesn't show his profile" and "nothing is wrong" looked identical.
+   */
+  const [athleteError, setAthleteError] = useState(null);
   useEffect(() => {
-    if (!isViewingOtherAthlete) { setAthleteProfile(null); return; }
+    if (!isViewingOtherAthlete) { setAthleteProfile(null); setAthleteError(null); return undefined; }
     let active = true;
+    setAthleteError(null);
     // Hit the /profile variant so we receive powerZones + heartRateZones —
     // the bare /user/athlete/:id endpoint strips them, which is why FTP,
     // MAX HR and the training-zones panel read empty for coach-viewed athletes.
     api.get(`/user/athlete/${effectiveAthleteId}/profile`)
-      .then(res => { if (active) setAthleteProfile(res?.data || null); })
-      .catch(() => { if (active) setAthleteProfile(null); });
+      .then(res => {
+        if (!active) return;
+        setAthleteProfile(res?.data || null);
+        if (!res?.data) setAthleteError('This athlete returned no profile.');
+      })
+      .catch(err => {
+        if (!active) return;
+        setAthleteProfile(null);
+        setAthleteError(
+          err?.response?.data?.error
+          || (err?.response?.status ? `Could not load this athlete (${err.response.status}).` : null)
+          || 'Could not load this athlete.'
+        );
+      });
     return () => { active = false; };
   }, [isViewingOtherAthlete, effectiveAthleteId]);
 
   // Display profile = the loaded athlete profile (when coach is viewing other),
-  // otherwise the logged-in-self info.
+  // otherwise the logged-in-self info. Never the coach's data under an
+  // athlete's name — see athleteError above.
   const u = (isViewingOtherAthlete && athleteProfile) ? athleteProfile : me;
+  const showingWrongPerson = isViewingOtherAthlete && !athleteProfile;
 
   const [tests, setTests] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -193,6 +218,24 @@ export default function NativeProfilePage({ user, userInfo, calendarData = [], o
         {/* "Viewing athlete" pill removed — the active avatar in the
             top NativeAthleteBar already signals which athlete you're
             looking at, so this was visual noise. */}
+
+        {/* An athlete is selected but their profile did not load. Everything
+            below is the coach's own data, and saying so is the difference
+            between a bug the athlete can report and one they cannot see. */}
+        {showingWrongPerson && (
+          <div style={{
+            margin: '10px 14px 0', padding: '10px 12px', borderRadius: 14,
+            background: 'rgba(255,149,0,.12)', color: '#B25000',
+            fontSize: 12, fontWeight: 600, lineHeight: 1.45,
+          }}>
+            {athleteError || 'Loading this athlete\u2019s profile\u2026'}
+            {athleteError && (
+              <span style={{ display: 'block', fontWeight: 500, marginTop: 2 }}>
+                Showing your own profile below.
+              </span>
+            )}
+          </div>
+        )}
 
         {/* ─── Header — avatar + name + role ─── */}
         <div style={{ ...styles.header, ...cardEntry(0), ...snap }}>
