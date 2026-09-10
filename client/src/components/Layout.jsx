@@ -9,7 +9,7 @@ import { useNotification } from "../context/NotificationContext";
 import { LAYOUT_DESKTOP_MIN_PX } from "../constants/layoutBreakpoints";
 import CoachAthleteBar from "./CoachAthleteBar";
 import { isCapacitorNative } from "../utils/isNativeApp";
-import { useAthleteSelection } from "../context/AthleteSelectionContext";
+import { athleteIdInPath, useAthleteSelection } from "../context/AthleteSelectionContext";
 import NativeLayout from "./native/NativeLayout";
 import { shouldShowOnboarding } from "./Onboarding/OnboardingFlow";
 import {
@@ -115,13 +115,19 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
   React.useEffect(() => {
     if (!user?._id) return;
     const uid = String(user._id);
-    if (prevUserIdRef.current !== uid) {
-      prevUserIdRef.current = uid;
-      // Always start viewing your own data after (re-)login or cold start
-      setGlobalAthleteId(uid);
-      try { localStorage.setItem('trainingCalendar_selectedAthleteId', uid); } catch {}
-    }
-  }, [user?._id, setGlobalAthleteId]);
+    if (prevUserIdRef.current === uid) return;
+    prevUserIdRef.current = uid;
+
+    // …unless the address bar names an athlete. A link into a specific
+    // athlete's dashboard is an instruction, and it usually arrives before the
+    // user object does — resetting here would land the coach on their own data
+    // and, now that the URL follows the selection, rewrite the link away too.
+    if (athleteIdInPath(location.pathname)) return;
+
+    // Always start viewing your own data after (re-)login or cold start
+    setGlobalAthleteId(uid);
+    try { localStorage.setItem('trainingCalendar_selectedAthleteId', uid); } catch {}
+  }, [user?._id, setGlobalAthleteId, location.pathname]);
 
   const handleNativeAthleteSelect = useCallback((athleteId) => {
     setGlobalAthleteId(athleteId);  // context writes localStorage + broadcasts event

@@ -9,13 +9,91 @@
  *   1. URL param (:athleteId) — pages push this into the context via setSelectedAthleteId
  *   2. Context state (backed by localStorage global_selectedAthleteId)
  *   3. Coach self (user._id) — fallback only if nothing is stored
+ *
+ * The provider also keeps those first two from drifting apart — see
+ * useSelectionUrlSync below. Half the app decides whose data to show from the
+ * URL and the other half from this context, so the moment they disagree the
+ * page shows one athlete, the menu highlights a second, and the coach's clicks
+ * appear to do nothing.
  */
 
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 
 const STORAGE_KEY = 'global_selectedAthleteId';
 
+/**
+ * Sections whose SECOND path segment is the athlete.
+ *
+ * `training-calendar` is deliberately absent: its second segment is an
+ * activity id (`/training-calendar/:activityId`), and rewriting it would break
+ * every deep link into a session.
+ */
+const ATHLETE_URL_SECTIONS = ['dashboard', 'training', 'testing', 'athlete'];
+
+const OBJECT_ID = /^[a-f0-9]{24}$/;
+
+/** The athlete this path names, or null if it names none. */
+export function athleteIdInPath(pathname) {
+  const [, section, seg] = String(pathname || '').split('/');
+  if (!ATHLETE_URL_SECTIONS.includes(section)) return null;
+  return seg && OBJECT_ID.test(seg) ? seg : null;
+}
+
 const AthleteSelectionContext = createContext(null);
+
+/**
+ * Keep the athlete in the URL and the athlete in this context equal.
+ *
+ * Which one is right depends entirely on which one just moved:
+ *
+ *   - The path changed, so a link, a redirect or the back button named an
+ *     athlete. That is an instruction, and the selection follows it.
+ *   - Only the selection changed, so a control set it and stopped short of
+ *     routing — several pages reset it to the coach themselves on mount, and
+ *     the athlete bar used to be the only thing that pushed a selection into
+ *     the URL. The URL follows instead.
+ *
+ * Without the second case the two could drift apart and stay apart: the bar's
+ * old reconciler watched the path alone, so once the selection had moved on a
+ * path that did not change, nothing could bring them back together until the
+ * coach navigated somewhere else entirely.
+ */
+function useSelectionUrlSync(selectedAthleteId, adoptId) {
+  const location = useLocation();
+  const navigate = useNavigate();
+  // null, not the first pathname: a cold load from a shared link has to count
+  // as a navigation, or the stored selection would overwrite the link.
+  const lastPathRef = useRef(null);
+
+  useEffect(() => {
+    const urlId = athleteIdInPath(location.pathname);
+    const pathChanged = lastPathRef.current !== location.pathname;
+    lastPathRef.current = location.pathname;
+
+    // A route that names nobody is not a disagreement — plenty of pages carry
+    // the selection without putting it in the URL.
+    if (!urlId || urlId === selectedAthleteId) return;
+
+    if (pathChanged) {
+      adoptId(urlId);
+      try { localStorage.setItem(STORAGE_KEY, urlId); } catch {}
+      return;
+    }
+
+    // A selection that has been cleared rather than moved — logout wipes it —
+    // must not be refilled from the URL it is on its way off. Adoption is for
+    // navigation only, and the first run counts as one.
+    if (!selectedAthleteId) return;
+
+    const parts = location.pathname.split('/');
+    parts[2] = selectedAthleteId;
+    navigate(
+      { pathname: parts.join('/'), search: location.search, hash: location.hash },
+      { replace: true },
+    );
+  }, [location.pathname, location.search, location.hash, selectedAthleteId, adoptId, navigate]);
+}
 
 export function AthleteSelectionProvider({ children }) {
   const [selectedAthleteId, setSelectedAthleteIdState] = useState(() => {
@@ -63,6 +141,8 @@ export function AthleteSelectionProvider({ children }) {
       window.removeEventListener('userLoggedOut', handleLogout);
     };
   }, []);
+
+  useSelectionUrlSync(selectedAthleteId, setSelectedAthleteIdState);
 
   return (
     <AthleteSelectionContext.Provider value={{ selectedAthleteId, setSelectedAthleteId }}>

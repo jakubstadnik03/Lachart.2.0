@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import { BRAND_LOGO_SRC } from "../constants/brandLogo";
 import { NavLink, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from '../context/AuthProvider';
-import { useAthleteSelection } from '../context/AthleteSelectionContext';
+import { athleteIdInPath, useAthleteSelection } from '../context/AthleteSelectionContext';
 import api from '../services/api';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getAvatarBySportAndGender } from '../utils/avatarUtils';
@@ -124,9 +124,11 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
   if (["coach", "tester", "testing"].includes(user?.role)) {
     // URL takes highest priority (so direct-link navigation is reflected immediately),
     // then fall back to the globally selected ID from context.
-    effectiveAthleteId = (currentAthleteIdFromUrl && /^[a-f0-9]{24}$/.test(currentAthleteIdFromUrl))
-      ? currentAthleteIdFromUrl
-      : (globalSelectedAthleteId || user?._id || null);
+    // athleteIdInPath, not the raw second segment: on /training-calendar that
+    // segment is an activity, and highlighting it as an athlete pointed every
+    // nav link at an id no athlete has.
+    effectiveAthleteId = athleteIdInPath(location.pathname)
+      || globalSelectedAthleteId || user?._id || null;
   } else {
     effectiveAthleteId = currentAthleteIdFromUrl || null;
   }
@@ -169,11 +171,14 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
         return;
       }
 
-      // Pokud klikneme na stejného atleta, zrušíme výběr
-      if (currentAthleteIdFromUrl === athleteId) {
-        navigate(`/${currentPath}`, { replace: true });
-        return;
-      }
+      // This used to strip the athlete out of the URL when you clicked whoever
+      // was already selected — a deselect. It never deselected anything: the
+      // line above had already set this athlete as the selection, so all it did
+      // was leave the URL naming nobody while the selection named them. Half
+      // the app reads the URL, so the next click on the same athlete put the id
+      // back, the one after took it away again, and none of them changed whose
+      // data was on screen. Clicking the selected athlete now simply keeps them
+      // selected.
 
       // Pro ostatní stránky přidáme ID atleta do URL — pages re-load via their selectedAthleteId useEffect
       navigate(`/${currentPath}/${athleteId}`, { replace: true });

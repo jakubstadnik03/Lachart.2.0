@@ -11,15 +11,6 @@
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-// extractLactateThresholds reaches DataTable, which reaches AuthProvider, which
-// imports react-router-dom. The installed 7.10.1 declares main: ./dist/main.js
-// and ships no such file — webpack resolves it through the exports map, jest
-// falls back to main and cannot. Nothing here routes.
-jest.mock('react-router-dom', () => ({
-  useNavigate: () => () => {},
-  useLocation: () => ({ pathname: '/', search: '', hash: '', state: null }),
-}), { virtual: true });
-
 jest.mock('../../services/api', () => ({
   __esModule: true,
   default: { get: jest.fn(() => Promise.resolve({ data: [] })) },
@@ -174,10 +165,6 @@ describe('SessionVsTestPanel · the zones segment', () => {
 
   beforeEach(() => {
     jest.resetModules();
-    jest.doMock('react-router-dom', () => ({
-      useNavigate: () => () => {},
-      useLocation: () => ({ pathname: '/', search: '', hash: '', state: null }),
-    }), { virtual: true });
     jest.doMock('../../services/api', () => ({
       __esModule: true,
       default: { get: jest.fn(() => Promise.resolve({ data: [] })) },

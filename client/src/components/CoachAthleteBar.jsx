@@ -30,15 +30,10 @@ export default function CoachAthleteBar() {
   const location = useLocation();
   const isCoach = isCoachRole(user);
 
+  // Adopting the athlete named in the URL is AthleteSelectionProvider's job —
+  // it watches the selection as well as the path, so a selection that moves
+  // without routing gets the URL corrected instead of drifting.
   const { selectedAthleteId, setSelectedAthleteId } = useAthleteSelection();
-
-  useEffect(() => {
-    const seg = location.pathname.split('/')[2];
-    if (seg && /^[a-f0-9]{24}$/.test(seg) && seg !== selectedAthleteId) {
-      setSelectedAthleteId(seg);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [location.pathname]);
 
   const [athletes, setAthletes] = useState([]);
   const [statuses, setStatuses] = useState({});
@@ -124,15 +119,14 @@ export default function CoachAthleteBar() {
    * looked intermittent because it depended entirely on which page you were
    * standing on.
    *
-   * A section outside the list that already carries an id in the URL has
-   * proved it accepts one, so rewriting it is safe. One that carries none is
-   * left alone — navigating there would hit the catch-all redirect.
+   * Only the sections that genuinely take an :athleteId. It used to also
+   * rewrite any section whose second segment looked like an id, which on
+   * /training-calendar/:activityId meant replacing the activity with an
+   * athlete and navigating the coach off the session they were reading.
    */
   const followSelectionInUrl = (athleteId) => {
     if (!athleteId) return;
-    const seg = location.pathname.split('/')[2];
-    const urlNamesAnAthlete = seg && /^[a-f0-9]{24}$/.test(seg);
-    if (ATHLETE_URL_SECTIONS.includes(currentSection) || urlNamesAnAthlete) {
+    if (ATHLETE_URL_SECTIONS.includes(currentSection)) {
       navigate(`/${currentSection}/${athleteId}`, { replace: true });
     }
   };

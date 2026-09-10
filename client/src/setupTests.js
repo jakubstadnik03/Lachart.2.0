@@ -14,3 +14,13 @@ try {
   // Tests that need DOM matchers will fail on their own, with a clearer message
   // than a module-not-found in the setup file.
 }
+
+// jsdom in this CRA generation predates TextEncoder/TextDecoder, which are Node
+// globals everywhere else. react-router v7 reaches for TextEncoder at import
+// time, so without these no test that renders a route can even load.
+if (typeof global.TextEncoder === 'undefined') {
+  // eslint-disable-next-line global-require
+  const { TextEncoder, TextDecoder } = require('util');
+  global.TextEncoder = TextEncoder;
+  global.TextDecoder = TextDecoder;
+}
