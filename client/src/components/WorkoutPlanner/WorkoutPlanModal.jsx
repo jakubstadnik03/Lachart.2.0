@@ -18,7 +18,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import ReactDOM from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence, useDragControls } from 'framer-motion';
-import { XMarkIcon, TrashIcon, BookmarkIcon, WrenchScrewdriverIcon, RectangleStackIcon, ArrowRightIcon, ArrowLeftIcon, BellIcon, CheckCircleIcon, PlayIcon } from '@heroicons/react/24/outline';
+import { XMarkIcon, TrashIcon, BookmarkIcon, WrenchScrewdriverIcon, RectangleStackIcon, ArrowRightIcon, ArrowLeftIcon, BellIcon, CheckCircleIcon, PlayIcon, ChevronDownIcon } from '@heroicons/react/24/outline';
 import { Bike, WavesLadder, Dumbbell, PersonStanding, Repeat2, Sparkles, Waves, TestTube2, MoreHorizontal, Mountain, Snowflake } from 'lucide-react';
 import WorkoutBuilder, {
   PRESET_CATALOG, buildPresetSteps, computeEstTSS,
@@ -467,6 +467,10 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
   // 'pick' = sport selector (new workouts only), 'build' = full builder
   const [step, setStep]           = useState(isEdit ? 'build' : 'pick');
   const [sport, setSport]         = useState(workout?.sport || 'bike');
+  // Editing changes the sport in place. Sending an edit back to the 'pick'
+  // step would show it "Add a workout" over a Day theme / Race row whose
+  // buttons call onClose() — one stray tap and the edit is gone.
+  const [sportPickerOpen, setSportPickerOpen] = useState(false);
   const [title, setTitle]         = useState(workout?.title || '');
   const [desc, setDesc]           = useState(workout?.description || '');
   // The coach's notes grow to fit what is in them.
@@ -851,22 +855,23 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
               <div className="px-5 py-3 border-b border-slate-100">
                 {/* Sport pill + category row */}
                 <div className="flex items-center gap-2 mb-3 flex-wrap">
-                  {!isEdit ? (
-                    <button
-                      onClick={() => setStep('pick')}
-                      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-[11px] font-bold transition-all hover:opacity-80"
-                      style={{ borderColor: selectedSportMeta?.color + '50', color: selectedSportMeta?.color, backgroundColor: selectedSportMeta?.color + '12' }}
-                    >
-                      <SportOptIcon opt={selectedSportMeta} size={13} />
-                      {selectedSportMeta?.label}
-                    </button>
-                  ) : (
-                    <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-[11px] font-bold"
-                      style={{ borderColor: selectedSportMeta?.color + '50', color: selectedSportMeta?.color, backgroundColor: selectedSportMeta?.color + '12' }}>
-                      <SportOptIcon opt={selectedSportMeta} size={13} />
-                      {selectedSportMeta?.label}
-                    </div>
-                  )}
+                  {/* The sport was fixed once a workout existed — same pill,
+                      rendered as a plain div instead of a button — so a session
+                      planned under the wrong sport had to be deleted and typed
+                      in again. It opens the picker in both modes now. */}
+                  <button
+                    onClick={() => (isEdit ? setSportPickerOpen(v => !v) : setStep('pick'))}
+                    aria-expanded={isEdit ? sportPickerOpen : undefined}
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-[11px] font-bold transition-all hover:opacity-80"
+                    style={{ borderColor: selectedSportMeta?.color + '50', color: selectedSportMeta?.color, backgroundColor: selectedSportMeta?.color + '12' }}
+                  >
+                    <SportOptIcon opt={selectedSportMeta} size={13} />
+                    {selectedSportMeta?.label}
+                    <ChevronDownIcon
+                      className="w-3 h-3 transition-transform"
+                      style={{ transform: isEdit && sportPickerOpen ? 'rotate(180deg)' : undefined }}
+                    />
+                  </button>
                   {/* Category picker */}
                   <div className="flex items-center gap-1.5 flex-wrap">
                     <button
@@ -890,6 +895,29 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
                     ))}
                   </div>
                 </div>
+
+                {/* Inline sport picker — edit only. Same options as step 1,
+                    without leaving the form the athlete is part-way through. */}
+                {isEdit && sportPickerOpen && (
+                  <div className="mb-3 -mt-1 p-2 rounded-2xl bg-slate-50 border border-slate-100">
+                    <div className="grid grid-cols-4 sm:grid-cols-5 gap-1.5">
+                      {SPORT_OPTIONS.map(opt => {
+                        const active = opt.key === sport;
+                        return (
+                          <button
+                            key={opt.key}
+                            onClick={() => { setSport(opt.key); setPresetSport(opt.key); setSportPickerOpen(false); }}
+                            className={`flex flex-col items-center gap-1 px-1 py-2 rounded-xl border-2 bg-white active:scale-95 transition-all touch-manipulation ${active ? '' : 'border-transparent'}`}
+                            style={active ? { borderColor: opt.color, backgroundColor: opt.color + '12' } : undefined}
+                          >
+                            <SportOptIcon opt={opt} size={18} />
+                            <span className="text-[10px] font-semibold text-slate-600 leading-tight text-center">{opt.label}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
 
                 {/* Planned stats table */}
                 <div className="grid grid-cols-3 gap-2">
