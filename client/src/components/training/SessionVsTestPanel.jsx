@@ -36,9 +36,37 @@ import { extractLactateThresholds } from '../../utils/extractLactateThresholds';
 import { ltZoneBounds, ltZones, measuredMaxHr } from '../../utils/trainingZoneBounds';
 import { axisTick, fmtDemand, fmtDemandDelta } from '../../utils/thresholdFormat';
 
-const TEST_COLOR = '#94a3b8';
-const NOW_COLOR = '#7c3aed';
-const LACTATE_COLOR = '#db2777';
+/**
+ * Apple's semantic colours, light-mode values, for everything this panel says
+ * in its own voice: a verdict, a trend, a control.
+ *
+ * The zone hues below are deliberately NOT taken from here. They are shared
+ * with TimeInZonesBar and half a dozen other cards, and a zone that is one
+ * colour in this panel and a different one everywhere else is a worse bargain
+ * than a zone that is not quite systemBlue.
+ */
+const IOS = {
+  blue: '#007AFF',
+  green: '#34C759',
+  red: '#FF3B30',
+  orange: '#FF9500',
+  indigo: '#5856D6',
+  label: '#000000',
+  secondary: 'rgba(60,60,67,0.6)',
+  tertiary: 'rgba(60,60,67,0.3)',
+  separator: 'rgba(60,60,67,0.14)',
+  grouped: '#F2F2F7',
+};
+
+/** SF first, then whatever the platform actually has. */
+const FONT = '-apple-system, "SF Pro Text", "SF Pro Display", system-ui, sans-serif';
+
+/** A card edge, hairline. iOS draws 0.5pt, not a 1px border. */
+const HAIRLINE = { boxShadow: `0 0 0 0.5px ${IOS.separator}` };
+
+const TEST_COLOR = 'rgba(60,60,67,0.35)';
+const NOW_COLOR = IOS.indigo;
+const LACTATE_COLOR = '#FF2D55';
 
 /** Same palette as the time-in-zones bar, so a zone is one colour everywhere. */
 const ZONES = [
@@ -48,6 +76,124 @@ const ZONES = [
   { id: 'Z4', label: 'Threshold', color: '#f97316' },
   { id: 'Z5', label: 'VO₂max', color: '#ef4444' },
 ];
+
+// ── iOS shell: the grouped list, the segmented control, the disclosure ─────
+
+/**
+ * One inset-grouped section: a quiet title in the margin, content in a white
+ * card on the grouped grey. This is the whole layout idea of the redesign —
+ * the panel used to be one long white column separated by hairlines, which
+ * gives the eye nothing to stop at on a phone.
+ */
+function Section({ title, aside, children, className = '' }) {
+  return (
+    <section className={`mt-4 first:mt-0 ${className}`}>
+      {(title || aside) && (
+        <div className="mb-1.5 flex items-baseline justify-between gap-3 px-1">
+          {title && (
+            <h4 className="text-[12px] font-semibold uppercase tracking-[0.05em]" style={{ color: IOS.secondary }}>
+              {title}
+            </h4>
+          )}
+          {aside && <span className="text-[11px] tabular-nums" style={{ color: IOS.tertiary }}>{aside}</span>}
+        </div>
+      )}
+      <div className="rounded-2xl bg-white px-3.5 py-3" style={HAIRLINE}>{children}</div>
+    </section>
+  );
+}
+
+/**
+ * iOS segmented control — grey track, white pill on the selection.
+ *
+ * The two readings in this panel answer different questions on different time
+ * scales, and stacking them made the second one something almost nobody
+ * scrolled to. A segment is also the one control that fits two full labels on
+ * a 375 px screen without abbreviating either.
+ */
+function Segmented({ value, options, onChange }) {
+  return (
+    <div className="flex gap-0.5 rounded-[10px] p-0.5" style={{ background: 'rgba(118,118,128,0.12)' }} role="tablist">
+      {options.map((o) => {
+        const on = o.id === value;
+        return (
+          <button
+            key={o.id}
+            type="button"
+            role="tab"
+            aria-selected={on}
+            onClick={() => onChange(o.id)}
+            className={`min-h-[30px] flex-1 rounded-[8px] px-2 text-[13px] font-semibold transition-colors ${on ? 'bg-white' : ''}`}
+            style={on
+              ? { color: IOS.label, boxShadow: '0 1px 3px rgba(0,0,0,0.10), 0 0 0 0.5px rgba(0,0,0,0.04)' }
+              : { color: IOS.secondary }}
+          >
+            {o.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/**
+ * The fine print, folded away.
+ *
+ * Every reading here carries a caveat that matters — estimated not measured,
+ * pace not grade-adjusted, extrapolated above what the session held. Deleting
+ * them would make the panel dishonest and leaving them all open is what made
+ * it exhausting, so they collapse.
+ */
+function Note({ children, label = 'How this is read' }) {
+  const [open, setOpen] = useState(false);
+  if (!children) return null;
+  return (
+    <div className="mt-2">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="min-h-[28px] text-[12px] font-medium"
+        style={{ color: IOS.blue }}
+      >
+        {open ? 'Hide details' : label}
+      </button>
+      {open && (
+        <div className="mt-1 space-y-1 text-[12px] leading-[1.45]" style={{ color: IOS.secondary }}>
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** A row of an iOS grouped list: label left, value right, hairline between. */
+function Row({ label, value, tone, sub }) {
+  const color = tone === 'good' ? IOS.green : tone === 'bad' ? IOS.red : IOS.label;
+  return (
+    <div className="flex items-center justify-between gap-3 border-t py-2 first:border-t-0 first:pt-0"
+      style={{ borderColor: IOS.separator }}>
+      <div className="min-w-0">
+        <div className="truncate text-[15px]" style={{ color: IOS.label }}>{label}</div>
+        {sub && <div className="text-[12px]" style={{ color: IOS.secondary }}>{sub}</div>}
+      </div>
+      <div className="shrink-0 text-[15px] font-semibold tabular-nums" style={{ color }}>{value}</div>
+    </div>
+  );
+}
+
+/** The one number a section is about, at the size iOS gives a headline figure. */
+function BigStat({ label, value, delta, tone = 'default' }) {
+  const color = tone === 'good' ? IOS.green : tone === 'bad' ? IOS.red : IOS.label;
+  return (
+    <div>
+      <div className="text-[12px]" style={{ color: IOS.secondary }}>{label}</div>
+      <div className="text-[26px] font-semibold leading-tight tracking-[-0.02em] tabular-nums" style={{ color }}>
+        {value}
+      </div>
+      {delta && <div className="text-[12px] tabular-nums" style={{ color: IOS.secondary }}>{delta}</div>}
+    </div>
+  );
+}
 
 /**
  * Scatter points, sized here rather than by a ZAxis.
@@ -63,9 +209,9 @@ function Dot({ cx, cy, r, color, opacity }) {
 }
 
 const CONFIDENCE_UI = {
-  high: { label: 'Solid read', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
-  medium: { label: 'Indicative', cls: 'bg-amber-50 text-amber-700 border-amber-200' },
-  low: { label: 'Rough', cls: 'bg-gray-100 text-gray-500 border-gray-200' },
+  high: { label: 'Solid read', bg: 'rgba(52,199,89,0.14)', fg: '#248A3D' },
+  medium: { label: 'Indicative', bg: 'rgba(255,149,0,0.16)', fg: '#B25000' },
+  low: { label: 'Rough', bg: 'rgba(118,118,128,0.12)', fg: 'rgba(60,60,67,0.6)' },
 };
 
 const DRIFT_REASONS = {
@@ -112,12 +258,14 @@ function lactateSamplesFromLaps(laps, kind) {
 // ── Small pieces ───────────────────────────────────────────────────────────
 
 function StatTile({ label, value, sub, tone = 'default' }) {
-  const toneCls = tone === 'good' ? 'text-emerald-600' : tone === 'bad' ? 'text-rose-600' : 'text-gray-900';
+  const color = tone === 'good' ? IOS.green : tone === 'bad' ? IOS.red : IOS.label;
   return (
-    <div className="rounded-lg border border-gray-200 bg-white px-3 py-2">
-      <div className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">{label}</div>
-      <div className={`text-[17px] font-bold tabular-nums ${toneCls}`}>{value}</div>
-      {sub ? <div className="text-[11px] text-gray-500 tabular-nums">{sub}</div> : null}
+    <div className="rounded-xl px-3 py-2" style={{ background: IOS.grouped }}>
+      <div className="truncate text-[11px]" style={{ color: IOS.secondary }}>{label}</div>
+      <div className="text-[19px] font-semibold leading-snug tracking-[-0.01em] tabular-nums" style={{ color }}>
+        {value}
+      </div>
+      {sub ? <div className="text-[11px] tabular-nums" style={{ color: IOS.tertiary }}>{sub}</div> : null}
     </div>
   );
 }
@@ -125,7 +273,8 @@ function StatTile({ label, value, sub, tone = 'default' }) {
 function ConfidenceChip({ level }) {
   const c = CONFIDENCE_UI[level] || CONFIDENCE_UI.low;
   return (
-    <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold ${c.cls}`}>
+    <span className="shrink-0 rounded-full px-2 py-[3px] text-[11px] font-semibold"
+      style={{ background: c.bg, color: c.fg }}>
       {c.label}
     </span>
   );
@@ -157,10 +306,10 @@ function ZoneSplitBars({ agreement, kind }) {
   if (!agreement) return null;
   const { demandSec, hrSec, totalSec, agreeSec, verdict } = agreement;
 
-  const Row = ({ label, secs }) => (
-    <div className="flex items-center gap-2">
-      <span className="w-11 shrink-0 text-[10px] font-semibold uppercase tracking-wide text-gray-400">{label}</span>
-      <div className="flex h-4 flex-1 overflow-hidden rounded">
+  const Bar = ({ label, secs }) => (
+    <div className="flex items-center gap-2.5">
+      <span className="w-11 shrink-0 text-[12px]" style={{ color: IOS.secondary }}>{label}</span>
+      <div className="flex h-2.5 flex-1 overflow-hidden rounded-full">
         {ZONES.map((z, i) => {
           const pct = totalSec > 0 ? (secs[i] / totalSec) * 100 : 0;
           if (pct <= 0) return null;
@@ -168,7 +317,7 @@ function ZoneSplitBars({ agreement, kind }) {
             <div
               key={z.id}
               title={`${z.id} ${z.label} — ${fmtMinutes(secs[i])}`}
-              style={{ width: `${pct}%`, background: z.color, opacity: 0.85 }}
+              style={{ width: `${pct}%`, background: z.color }}
             />
           );
         })}
@@ -187,11 +336,11 @@ function ZoneSplitBars({ agreement, kind }) {
   };
 
   return (
-    <div className="mt-3 space-y-1.5">
-      <Row label={kind === 'bike' ? 'Power' : 'Pace'} secs={demandSec} />
-      <Row label="Heart" secs={hrSec} />
-      <p className="pt-0.5 text-[11px] leading-relaxed text-gray-500">
-        <strong className="text-gray-700">{agreePct}%</strong> of the session your heart rate was in the
+    <div className="mt-3 space-y-2 border-t pt-3" style={{ borderColor: IOS.separator }}>
+      <Bar label={kind === 'bike' ? 'Power' : 'Pace'} secs={demandSec} />
+      <Bar label="Heart" secs={hrSec} />
+      <p className="text-[13px] leading-[1.45]" style={{ color: IOS.secondary }}>
+        <strong style={{ color: IOS.label }}>{agreePct}%</strong> of the session your heart rate was in the
         same zone as your {kind === 'bike' ? 'power' : 'pace'}. {VERDICTS[verdict]}
       </p>
     </div>
@@ -223,41 +372,43 @@ function AtTheSameIntensity({ comparison, kind, storageMode }) {
   const notable = Math.abs(meanDeltaHr) >= 3;
 
   return (
-    <div className="mt-3">
-      <h4 className="mb-1 text-[13px] font-bold text-gray-900">At the same intensity</h4>
-      <ul className="space-y-1.5">
+    <Section title="At the same intensity">
+      <div>
         {blocks.map((b, i) => {
           const delta = Math.round(b.deltaHr);
-          const tone = Math.abs(delta) < 3 ? 'text-gray-500'
-            : delta < 0 ? 'text-emerald-600' : 'text-rose-600';
+          const tone = Math.abs(delta) < 3 ? 'default' : delta < 0 ? 'good' : 'bad';
           return (
             // Position, not content: two blocks of the same length at the same
             // intensity are a normal thing for a session to contain, and keying
             // on their values collides the moment it happens.
-            <li key={i} className="text-[13px] leading-relaxed text-gray-700">
-              <strong>{fmtBlock(b.sec)}</strong> at{' '}
-              <strong>{fmtDemand(b.demand, kind, storageMode)}</strong> with your heart at{' '}
-              <strong>{Math.round(b.hr)} bpm</strong> — on test day that intensity cost you{' '}
-              <strong>{Math.round(b.testHr)} bpm</strong>
-              {Math.abs(delta) >= 1 && (
-                <span className={`font-semibold ${tone}`}>
-                  {' '}({delta < 0 ? `${Math.abs(delta)} lower` : `${delta} higher`})
-                </span>
-              )}
-              .
-            </li>
+            <Row
+              key={i}
+              label={`${fmtBlock(b.sec)} at ${fmtDemand(b.demand, kind, storageMode)}`}
+              sub={`${Math.round(b.hr)} bpm today · ${Math.round(b.testHr)} bpm on test day`}
+              value={Math.abs(delta) < 1 ? 'same' : `${delta > 0 ? '+' : ''}${delta} bpm`}
+              tone={tone}
+            />
           );
         })}
-      </ul>
-      <p className="mt-1.5 text-[11px] leading-relaxed text-gray-400">
-        {fromAverage
-          ? 'Nothing held still for long enough to quote, so this is the session average.'
-          : 'Read straight off your test\u2019s stages — nothing here is extrapolated.'}
-        {notable && (lower
-          ? ' A lower heart rate for the same effort is the shape aerobic fitness improves in.'
-          : ' A higher heart rate for the same effort usually means heat, fatigue or illness before it means lost fitness.')}
-      </p>
-    </div>
+      </div>
+
+      {notable && (
+        <p className="mt-2.5 text-[13px] leading-[1.45]" style={{ color: IOS.secondary }}>
+          {lower
+            ? 'A lower heart rate for the same effort is the shape aerobic fitness improves in.'
+            : 'A higher heart rate for the same effort usually means heat, fatigue or illness before it means lost fitness.'}
+        </p>
+      )}
+
+      <Note label="Where these came from">
+        <p>
+          {fromAverage
+            ? 'Nothing held still for long enough to quote, so this is the session average.'
+            : 'Read straight off your test\u2019s stages — nothing here is extrapolated. The athlete held '
+              + 'an intensity the test measured, and the two heart rates are simply subtracted.'}
+        </p>
+      </Note>
+    </Section>
   );
 }
 
@@ -295,51 +446,61 @@ function TimeAtThresholds({ result, anchor, kind, storageMode, title, plannedTar
   const pct = (sec) => Math.round((sec / split.totalSec) * 100);
   /** Colour the row against what the session was for — never against nothing. */
   const toneOf = (key) => ({
-    good: 'text-emerald-600',
-    short: 'text-rose-600',
-    neutral: 'text-gray-900',
-  }[verdict[key]] || 'text-gray-900');
+    good: IOS.green,
+    short: IOS.red,
+    neutral: IOS.label,
+  }[verdict[key]] || IOS.label);
   const good = rows.filter((r) => verdict[r.key] === 'good').reduce((a, r) => a + r.sec, 0);
   const short = rows.filter((r) => verdict[r.key] === 'short').reduce((a, r) => a + r.sec, 0);
 
   return (
-    <div className="mt-3">
-      <h4 className="mb-1.5 text-[13px] font-bold text-gray-900">Time at your thresholds</h4>
-      <div className="flex h-4 overflow-hidden rounded">
+    <Section title="Time at your thresholds">
+      <div className="flex h-2.5 overflow-hidden rounded-full">
         {[...rows].reverse().map((r) => (
           <div key={r.key} title={`${r.label} — ${fmtBlock(r.sec)}`}
-            style={{ width: `${(r.sec / split.totalSec) * 100}%`, background: r.color, opacity: 0.85 }} />
+            style={{ width: `${(r.sec / split.totalSec) * 100}%`, background: r.color }} />
         ))}
       </div>
-      <ul className="mt-1.5 space-y-0.5">
+
+      <div className="mt-2.5">
         {rows.map((r) => (
-          <li key={r.key} className="flex items-baseline gap-2 text-[12px]">
-            <span className="inline-block h-2 w-2 shrink-0 rounded-sm" style={{ background: r.color }} />
-            <span className="flex-1 text-gray-600">{r.label}</span>
-            <span className={`tabular-nums font-semibold ${toneOf(r.key)}`}>{fmtBlock(r.sec)}</span>
-            <span className={`w-9 text-right tabular-nums ${verdict[r.key] === 'neutral' ? 'text-gray-400' : toneOf(r.key)}`}>
+          <div key={r.key}
+            className="flex items-center gap-2.5 border-t py-2 first:border-t-0 first:pt-0"
+            style={{ borderColor: IOS.separator }}
+          >
+            <span className="inline-block h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: r.color }} />
+            <span className="min-w-0 flex-1 truncate text-[15px]" style={{ color: IOS.label }}>{r.label}</span>
+            <span className="shrink-0 text-[15px] font-semibold tabular-nums" style={{ color: toneOf(r.key) }}>
+              {fmtBlock(r.sec)}
+            </span>
+            <span className="w-10 shrink-0 text-right text-[13px] tabular-nums" style={{ color: IOS.tertiary }}>
               {pct(r.sec)}%
             </span>
-          </li>
+          </div>
         ))}
-      </ul>
+      </div>
+
       {intent && (
-        <p className="mt-1.5 text-[12px] leading-relaxed text-gray-600">
+        <p className="mt-2.5 text-[13px] leading-[1.45]" style={{ color: IOS.secondary }}>
           {intent === 'easy'
-            ? <>Read as an easy session: <strong className="text-emerald-600">{fmtBlock(good)}</strong> below
-              threshold{short > 0 ? <>, <strong className="text-rose-600">{fmtBlock(short)}</strong> harder than that</> : ' throughout'}.</>
+            ? <>Read as an easy session: <strong style={{ color: IOS.green }}>{fmtBlock(good)}</strong> below
+              threshold{short > 0 ? <>, <strong style={{ color: IOS.red }}>{fmtBlock(short)}</strong> harder than that</> : ' throughout'}.</>
             : <>Read as {intent === 'lt2' ? 'a threshold' : 'an aerobic'} session:{' '}
-              <strong className="text-emerald-600">{fmtBlock(good)}</strong> in the range it was aimed at
-              {short > 0 ? <>, <strong className="text-rose-600">{fmtBlock(short)}</strong> below it</> : ''}.</>}
+              <strong style={{ color: IOS.green }}>{fmtBlock(good)}</strong> in the range it was aimed at
+              {short > 0 ? <>, <strong style={{ color: IOS.red }}>{fmtBlock(short)}</strong> below it</> : ''}.</>}
         </p>
       )}
-      <p className="mt-1 text-[11px] leading-relaxed text-gray-400">
-        &ldquo;At&rdquo; means within 3% of the threshold your test measured
-        {anchor?.lt2 ? ` — LT2 is ${fmtDemand(thresholdToDemand(anchor.lt2, { kind, storageMode }), kind, storageMode)}` : ''}
-        {anchor?.lt1 ? `, LT1 ${fmtDemand(thresholdToDemand(anchor.lt1, { kind, storageMode }), kind, storageMode)}` : ''}.
-        Measured intensities, not zones derived from them.
-      </p>
-    </div>
+
+      <Note label="What “at” means">
+        <p>
+          Within 3% of the threshold your test measured
+          {anchor?.lt2 ? ` — LT2 is ${fmtDemand(thresholdToDemand(anchor.lt2, { kind, storageMode }), kind, storageMode)}` : ''}
+          {anchor?.lt1 ? `, LT1 ${fmtDemand(thresholdToDemand(anchor.lt1, { kind, storageMode }), kind, storageMode)}` : ''}.
+          These are measured intensities, not zones derived from them: five-zone time-in-zone answers a
+          question the zone model invented, LT1 and LT2 are the two intensities this athlete had measured.
+        </p>
+      </Note>
+    </Section>
   );
 }
 
@@ -410,11 +571,16 @@ function ZoneScatter({ result, anchor, governingTest, slopeFit, kind, storageMod
   if (!chart) return null;
 
   return (
-    <>
-      <div className="mt-3 h-56 w-full">
+    <Section
+      title={kind === 'bike' ? 'Power against heart rate' : 'Pace against heart rate'}
+      aside={kind === 'bike' ? 'bpm vs W' : 'bpm vs grade-adjusted pace'}
+    >
+      {/* Shorter on a phone: at 224 px the chart pushed everything below it off
+          a 375 px screen, and this is a shape, not a table of values. */}
+      <div className="-mx-1 h-44 w-[calc(100%+0.5rem)] sm:h-56">
         <ResponsiveContainer width="100%" height="100%">
-          <ComposedChart data={chart.data} margin={{ top: 22, right: 12, bottom: 18, left: 0 }}>
-            <CartesianGrid stroke="#f1f5f9" vertical={false} />
+          <ComposedChart data={chart.data} margin={{ top: 18, right: 10, bottom: 14, left: 0 }}>
+            <CartesianGrid stroke={IOS.separator} vertical={false} />
             {/* Intensity zones run vertically, heart-rate zones horizontally, so
                 a point's position states both at once and a mismatch is visible
                 as a point sitting in two differently coloured strips. */}
@@ -423,48 +589,48 @@ function ZoneScatter({ result, anchor, governingTest, slopeFit, kind, storageMod
                 only tints, and the pair stays readable at the intersections. */}
             {chart.bands.map((b) => (
               <ReferenceArea key={`d-${b.id}`} x1={b.from} x2={b.to}
-                fill={b.color} fillOpacity={0.16} stroke="none" ifOverflow="hidden" />
+                fill={b.color} fillOpacity={0.14} stroke="none" ifOverflow="hidden" />
             ))}
             {chart.hrBands.map((b) => (
               <ReferenceArea key={`h-${b.id}`} y1={b.from} y2={b.to}
-                fill={b.color} fillOpacity={0.06} stroke="none" ifOverflow="hidden" />
+                fill={b.color} fillOpacity={0.05} stroke="none" ifOverflow="hidden" />
             ))}
             <XAxis
               type="number"
               dataKey="d"
               domain={chart.domain}
               tickFormatter={(v) => axisTick(v, kind, storageMode)}
-              tick={{ fontSize: 10, fill: '#94a3b8' }}
-              axisLine={{ stroke: '#e2e8f0' }}
+              tick={{ fontSize: 11, fill: 'rgba(60,60,67,0.6)' }}
+              axisLine={false}
               tickLine={false}
-              label={{
-                value: kind === 'bike' ? 'Power (W)' : 'Grade-adjusted pace',
-                position: 'insideBottom', offset: -12, fontSize: 10, fill: '#94a3b8',
-              }}
+              tickMargin={6}
             />
             <YAxis
               type="number"
               domain={chart.hrDomain}
               tickFormatter={(v) => Math.round(v)}
-              tick={{ fontSize: 10, fill: '#94a3b8' }}
+              tick={{ fontSize: 11, fill: 'rgba(60,60,67,0.6)' }}
               axisLine={false}
               tickLine={false}
-              width={40}
-              label={{ value: 'bpm', angle: -90, position: 'insideLeft', offset: 12, fontSize: 10, fill: '#94a3b8' }}
+              width={34}
             />
             <Tooltip
-              contentStyle={{ fontSize: 11, borderRadius: 8, border: '1px solid #e2e8f0' }}
+              cursor={{ stroke: IOS.separator }}
+              contentStyle={{
+                fontSize: 12, borderRadius: 12, border: 'none', fontFamily: FONT,
+                boxShadow: '0 4px 16px rgba(0,0,0,0.12)', padding: '6px 10px',
+              }}
               formatter={(v, name) => [`${Math.round(v)} bpm`, name === 'testHr' ? 'Test curve' : 'This session']}
               labelFormatter={(v) => `${axisTick(v, kind, storageMode)}${kind === 'bike' ? ' W' : ''}`}
             />
-            <ReferenceLine x={chart.lt2Demand} stroke={TEST_COLOR} strokeDasharray="3 3"
-              label={{ value: 'LT2', position: 'top', offset: 6, fontSize: 10, fontWeight: 600, fill: '#64748b' }} />
+            <ReferenceLine x={chart.lt2Demand} stroke={TEST_COLOR} strokeDasharray="4 4"
+              label={{ value: 'LT2', position: 'top', offset: 5, fontSize: 11, fontWeight: 600, fill: IOS.secondary }} />
             {chart.lt1Demand > 0 && (
-              <ReferenceLine x={chart.lt1Demand} stroke={TEST_COLOR} strokeDasharray="3 3"
-                label={{ value: 'LT1', position: 'top', offset: 6, fontSize: 10, fontWeight: 600, fill: '#64748b' }} />
+              <ReferenceLine x={chart.lt1Demand} stroke={TEST_COLOR} strokeDasharray="4 4"
+                label={{ value: 'LT1', position: 'top', offset: 5, fontSize: 11, fontWeight: 600, fill: IOS.secondary }} />
             )}
-            {anchor.lt2Hr > 0 && <ReferenceLine y={anchor.lt2Hr} stroke={TEST_COLOR} strokeDasharray="3 3" />}
-            <Scatter dataKey="hr" shape={<Dot r={3} color={NOW_COLOR} opacity={0.45} />} isAnimationActive={false} />
+            {anchor.lt2Hr > 0 && <ReferenceLine y={anchor.lt2Hr} stroke={TEST_COLOR} strokeDasharray="4 4" />}
+            <Scatter dataKey="hr" shape={<Dot r={3} color={NOW_COLOR} opacity={0.42} />} isAnimationActive={false} />
             {chart.line.length > 0 && (
               <Line type="monotone" dataKey="testHr" stroke={TEST_COLOR} strokeWidth={2}
                 dot={false} connectNulls isAnimationActive={false} />
@@ -473,31 +639,41 @@ function ZoneScatter({ result, anchor, governingTest, slopeFit, kind, storageMod
         </ResponsiveContainer>
       </div>
 
-      <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-gray-500">
+      <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px]" style={{ color: IOS.secondary }}>
         {ZONES.map((z) => (
           <span key={z.id} className="flex items-center gap-1">
-            <span className="inline-block h-2 w-2 rounded-sm" style={{ background: z.color, opacity: 0.55 }} />
+            <span className="inline-block h-2 w-2 rounded-full" style={{ background: z.color, opacity: 0.6 }} />
             {z.id}
           </span>
         ))}
         <span className="flex items-center gap-1">
           <span className="inline-block h-2 w-2 rounded-full" style={{ background: NOW_COLOR, opacity: 0.42 }} />
-          this session (30 s)
+          this session
         </span>
         {slopeFit && (
           <span className="flex items-center gap-1">
-            <span className="inline-block h-0.5 w-4" style={{ background: TEST_COLOR }} /> test curve
+            <span className="inline-block h-0.5 w-4 rounded-full" style={{ background: TEST_COLOR }} /> test curve
           </span>
         )}
       </div>
 
       <ZoneSplitBars agreement={chart.agreement} kind={kind} />
-    </>
+    </Section>
   );
 }
 
 // ── Layer 2: blood against the curve ───────────────────────────────────────
 
+/**
+ * Blood against the curve, said as one number and drawn as two shapes.
+ *
+ * This used to open with a paragraph and close with a five-column table, and
+ * on a phone that was a wall — the strongest, least-inferred reading in the
+ * app arriving as homework. The shift is now the headline, the chart carries
+ * the test curve and the punctures on top of it, and each sample states the
+ * one comparison that matters: the intensity the test needed for the value
+ * this session produced.
+ */
 function LactateVsCurve({ anchor, samples, kind, storageMode }) {
   const curve = useMemo(() => testLactateCurve(anchor), [anchor]);
   const shift = useMemo(() => lactateCurveShift(anchor, samples), [anchor, samples]);
@@ -513,131 +689,126 @@ function LactateVsCurve({ anchor, samples, kind, storageMode }) {
 
   const placed = shift?.samples || [];
   const improved = shift ? shift.shift > 0 : null;
+  const moved = shift ? Math.abs(shift.shiftPct) >= 2 : false;
 
   return (
-    <div className="mt-4 border-t border-gray-100 pt-3">
-      <div className="mb-1 flex items-start justify-between gap-3">
-        <h4 className="text-[13px] font-bold text-gray-900">Measured lactate vs your curve</h4>
-        {shift && <ConfidenceChip level={shift.confidence} />}
-      </div>
-
+    <Section title="Measured lactate" aside={kind === 'bike' ? 'mmol/L vs W' : 'mmol/L vs pace'}>
       {shift ? (
-        <p className="text-[13px] leading-relaxed text-gray-700">
-          {shift.n === 1 ? 'One sample places' : `${shift.n} samples place`} your curve{' '}
-          <strong className={Math.abs(shift.shiftPct) >= 2 ? (improved ? 'text-emerald-600' : 'text-rose-600') : ''}>
-            {fmtDemandDelta(shift.shift, shift.samples[0].demand, kind, storageMode)}
-          </strong>{' '}
-          {Math.abs(shift.shiftPct) < 2
-            ? 'from where the test drew it — essentially unchanged.'
-            : `${improved ? 'to the right of' : 'to the left of'} where the test drew it `
-              + `(${Math.abs(shift.shiftPct).toFixed(1)}% of LT2). `}
-          {Math.abs(shift.shiftPct) >= 2 && (improved
-            ? 'You are producing the same lactate at a higher intensity.'
-            : 'The same lactate is arriving at a lower intensity than on test day.')}
-        </p>
+        <>
+          <div className="flex items-start justify-between gap-3">
+            <BigStat
+              label={shift.n === 1 ? 'One sample places your curve' : `${shift.n} samples place your curve`}
+              value={moved
+                ? fmtDemandDelta(shift.shift, shift.samples[0].demand, kind, storageMode)
+                : 'unchanged'}
+              delta={moved
+                ? `${improved ? 'right of' : 'left of'} test day · ${Math.abs(shift.shiftPct).toFixed(1)}% of LT2`
+                : 'where the test drew it'}
+              tone={moved ? (improved ? 'good' : 'bad') : 'default'}
+            />
+            <ConfidenceChip level={shift.confidence} />
+          </div>
+          {moved && (
+            <p className="mt-1.5 text-[13px] leading-[1.45]" style={{ color: IOS.secondary }}>
+              {improved
+                ? 'You are producing the same lactate at a higher intensity.'
+                : 'The same lactate is arriving at a lower intensity than on test day.'}
+            </p>
+          )}
+        </>
       ) : (
-        <p className="text-[13px] leading-relaxed text-gray-500">
+        <p className="text-[13px] leading-[1.45]" style={{ color: IOS.secondary }}>
           {samples.length === 1 ? 'This sample sits' : 'These samples sit'} outside the range your test
           covered, so there is no point on the curve to compare against.
         </p>
       )}
 
-      <div className="mt-2 h-44 w-full">
+      <div className="-mx-1 mt-3 h-40 w-[calc(100%+0.5rem)] sm:h-44">
         <ResponsiveContainer width="100%" height="100%">
-          <ComposedChart margin={{ top: 8, right: 8, bottom: 18, left: 0 }}>
-            <CartesianGrid stroke="#f1f5f9" vertical={false} />
+          <ComposedChart margin={{ top: 8, right: 10, bottom: 12, left: 0 }}>
+            <CartesianGrid stroke={IOS.separator} vertical={false} />
             <XAxis
               type="number"
               dataKey="d"
               domain={domain}
               allowDuplicatedCategory={false}
               tickFormatter={(v) => axisTick(v, kind, storageMode)}
-              tick={{ fontSize: 10, fill: '#94a3b8' }}
-              axisLine={{ stroke: '#e2e8f0' }}
+              tick={{ fontSize: 11, fill: 'rgba(60,60,67,0.6)' }}
+              axisLine={false}
               tickLine={false}
-              label={{
-                value: kind === 'bike' ? 'Power (W)' : 'Pace',
-                position: 'insideBottom', offset: -12, fontSize: 10, fill: '#94a3b8',
-              }}
+              tickMargin={6}
             />
             <YAxis
               type="number"
               dataKey="lac"
-              tick={{ fontSize: 10, fill: '#94a3b8' }}
+              tick={{ fontSize: 11, fill: 'rgba(60,60,67,0.6)' }}
               axisLine={false}
               tickLine={false}
-              width={34}
-              label={{ value: 'mmol/L', angle: -90, position: 'insideLeft', fontSize: 10, fill: '#94a3b8' }}
+              width={28}
             />
             <Tooltip
-              contentStyle={{ fontSize: 11, borderRadius: 8, border: '1px solid #e2e8f0' }}
+              cursor={{ stroke: IOS.separator }}
+              contentStyle={{
+                fontSize: 12, borderRadius: 12, border: 'none', fontFamily: FONT,
+                boxShadow: '0 4px 16px rgba(0,0,0,0.12)', padding: '6px 10px',
+              }}
               formatter={(v) => [`${Number(v).toFixed(1)} mmol/L`, '']}
               labelFormatter={(v) => `${axisTick(v, kind, storageMode)}${kind === 'bike' ? ' W' : ''}`}
             />
             <Line data={curveData} type="monotone" dataKey="lac" stroke={TEST_COLOR} strokeWidth={2}
-              dot={{ r: 2, fill: TEST_COLOR }} />
-            <Scatter data={measured} dataKey="lac" shape={<Dot r={5} color={LACTATE_COLOR} opacity={1} />} isAnimationActive={false} />
+              dot={false} isAnimationActive={false} />
+            <Scatter data={measured} dataKey="lac" shape={<Dot r={5} color={LACTATE_COLOR} opacity={1} />}
+              isAnimationActive={false} />
           </ComposedChart>
         </ResponsiveContainer>
       </div>
 
+      <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px]" style={{ color: IOS.secondary }}>
+        <span className="flex items-center gap-1">
+          <span className="inline-block h-0.5 w-4 rounded-full" style={{ background: TEST_COLOR }} /> your test
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="inline-block h-2 w-2 rounded-full" style={{ background: LACTATE_COLOR }} /> measured today
+        </span>
+      </div>
+
+      {/* The five-column table this replaces said the same thing in a shape no
+          phone could hold. A sample is one comparison: the value you produced,
+          and the intensity the test needed to produce it. */}
       {placed.length > 0 && (
-        <div className="mt-1 overflow-x-auto">
-          <table className="w-full text-[11px] tabular-nums">
-            <thead>
-              <tr className="text-gray-400">
-                <th className="py-1 text-left font-semibold">Sample</th>
-                <th className="py-1 text-right font-semibold">Measured</th>
-                <th className="py-1 text-right font-semibold">Test said</th>
-                <th className="py-1 text-right font-semibold">Test needed</th>
-                <th className="py-1 text-right font-semibold">Shift</th>
-              </tr>
-            </thead>
-            <tbody>
-              {placed.map((s) => (
-                <tr key={s.label} className="border-t border-gray-100">
-                  <td className="py-1 text-gray-600">{s.label}</td>
-                  <td className="py-1 text-right text-gray-900">
-                    {s.lactate.toFixed(1)} @ {fmtDemand(s.demand, kind, storageMode)}
-                  </td>
-                  <td className="py-1 text-right text-gray-500">
-                    {s.expectedLactate != null ? `${s.expectedLactate.toFixed(1)} mmol` : '—'}
-                  </td>
-                  <td className="py-1 text-right text-gray-500">
-                    {fmtDemand(s.expectedDemand, kind, storageMode)}
-                  </td>
-                  <td className={`py-1 text-right font-semibold ${s.shift > 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                    {fmtDemandDelta(s.shift, s.demand, kind, storageMode)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="mt-2.5 border-t pt-1" style={{ borderColor: IOS.separator }}>
+          {placed.map((sm) => (
+            <Row
+              key={sm.label}
+              label={sm.label}
+              sub={`${sm.lactate.toFixed(1)} mmol at ${fmtDemand(sm.demand, kind, storageMode)}`
+                + ` · test needed ${fmtDemand(sm.expectedDemand, kind, storageMode)}`}
+              value={fmtDemandDelta(sm.shift, sm.demand, kind, storageMode)}
+              tone={sm.shift > 0 ? 'good' : 'bad'}
+            />
+          ))}
         </div>
       )}
 
       {kind !== 'bike' && (
-        <p className="mt-1 text-[11px] text-gray-400">
-          Lap pace is not grade-adjusted, so a hilly session reads optimistically here.
-        </p>
+        <Note label="One caveat">
+          <p>Lap pace is not grade-adjusted, so a hilly session reads optimistically here.</p>
+        </Note>
       )}
-    </div>
+    </Section>
   );
 }
 
 // ── Layer 3: the threshold re-estimated from heart rate ────────────────────
 
 function DriftFromHeartRate({ result, kind, storageMode, testDateLabel }) {
-  const [showWorking, setShowWorking] = useState(false);
-
   if (!result?.ok) {
     const why = DRIFT_REASONS[result?.reason];
     if (!why) return null;
     return (
-      <div className="mt-4 border-t border-gray-100 pt-3">
-        <h4 className="text-[13px] font-bold text-gray-900">Threshold from heart rate</h4>
-        <p className="mt-1 text-[12px] leading-relaxed text-gray-500">{why}</p>
-      </div>
+      <Section title="Threshold from heart rate">
+        <p className="text-[13px] leading-[1.45]" style={{ color: IOS.secondary }}>{why}</p>
+      </Section>
     );
   }
 
@@ -645,24 +816,21 @@ function DriftFromHeartRate({ result, kind, storageMode, testDateLabel }) {
   const meaningful = Math.abs(result.deltaPct) >= 1.5;
 
   return (
-    <div className="mt-4 border-t border-gray-100 pt-3">
-      <div className="mb-1 flex items-start justify-between gap-3">
-        <h4 className="text-[13px] font-bold text-gray-900">Threshold from heart rate</h4>
+    <Section title="Threshold from heart rate">
+      <div className="flex items-start justify-between gap-3">
+        <BigStat
+          label={`At your test LT2 heart rate of ${Math.round(result.lt2Hr)} bpm you held`}
+          value={fmtDemand(result.demandAtLt2Hr, kind, storageMode)}
+          delta={meaningful
+            ? `${fmtDemandDelta(result.deltaDemand, result.demandAtLt2Hr, kind, storageMode)} against `
+              + `${fmtDemand(result.lt2Demand, kind, storageMode)} from your test`
+            : `in line with your test${testDateLabel ? ` on ${testDateLabel}` : ''}`}
+          tone={meaningful ? (improved ? 'good' : 'bad') : 'default'}
+        />
         <ConfidenceChip level={result.confidence} />
       </div>
 
-      <p className="text-[13px] leading-relaxed text-gray-700">
-        At your test LT2 heart rate of <strong>{Math.round(result.lt2Hr)} bpm</strong> you held{' '}
-        <strong className={meaningful ? (improved ? 'text-emerald-600' : 'text-rose-600') : ''}>
-          {fmtDemand(result.demandAtLt2Hr, kind, storageMode)}
-        </strong>
-        {meaningful
-          ? <> — {fmtDemandDelta(result.deltaDemand, result.demandAtLt2Hr, kind, storageMode)} against the{' '}
-            {fmtDemand(result.lt2Demand, kind, storageMode)} from your test{testDateLabel ? ` on ${testDateLabel}` : ''}.</>
-          : <> — in line with your test{testDateLabel ? ` on ${testDateLabel}` : ''}.</>}
-      </p>
-
-      <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+      <div className="mt-3 grid grid-cols-2 gap-1.5 sm:grid-cols-4">
         <StatTile
           label={`HR at ${fmtDemand(result.lt2Demand, kind, storageMode)}`}
           value={`${Math.round(result.hrAtLt2)} bpm`}
@@ -677,8 +845,8 @@ function DriftFromHeartRate({ result, kind, storageMode, testDateLabel }) {
         />
         <StatTile
           label="Cardiac drift"
-          value={`${result.fit.drift >= 0 ? '+' : ''}${result.fit.drift.toFixed(1)} bpm/h`}
-          sub="at constant effort"
+          value={`${result.fit.drift >= 0 ? '+' : ''}${result.fit.drift.toFixed(1)}`}
+          sub="bpm/h at constant effort"
         />
         <StatTile
           label="Decoupling"
@@ -687,39 +855,30 @@ function DriftFromHeartRate({ result, kind, storageMode, testDateLabel }) {
         />
       </div>
 
-      <button
-        type="button"
-        onClick={() => setShowWorking((v) => !v)}
-        className="mt-3 text-[11px] font-semibold text-gray-400 underline decoration-dotted underline-offset-2 hover:text-gray-600"
-      >
-        {showWorking ? 'Hide how this was read' : 'How this was read'}
-      </button>
-      {showWorking && (
-        <ul className="mt-2 space-y-1 text-[11px] leading-relaxed text-gray-500">
-          <li>
-            {result.points.length} steady segments of 2.5 min, where{' '}
-            {kind === 'bike' ? 'power' : 'grade-adjusted pace'} held still and heart rate had stopped climbing.
-          </li>
-          <li>
-            Slope {result.slopeSource === 'test'
-              ? `taken from your test's own stages (r² ${(result.slopeR2 ?? 0).toFixed(2)}) — this session did not span enough intensity to fit its own.`
-              : `fitted from this session itself (r² ${result.fit.r2.toFixed(2)}).`}
-          </li>
-          <li>Heart rate shifted back {result.lagSec} s to line up with the effort that caused it.</li>
-          {result.tempAdjustBpm > 0 && (
-            <li>
-              {result.tempAdjustBpm.toFixed(1)} bpm removed for {Math.round(result.tempC)} °C — without it the
-              session would read as lost fitness.
-            </li>
-          )}
-          {result.extrapolation > 0.3 && (
-            <li className="text-amber-600">
-              This session stayed well below LT2, so the value at LT2 is extrapolated — treat it as a hint.
-            </li>
-          )}
-        </ul>
-      )}
-    </div>
+      <Note>
+        <p>
+          {result.points.length} steady segments of 2.5 min, where{' '}
+          {kind === 'bike' ? 'power' : 'grade-adjusted pace'} held still and heart rate had stopped climbing.
+        </p>
+        <p>
+          Slope {result.slopeSource === 'test'
+            ? `taken from your test\u2019s own stages (r² ${(result.slopeR2 ?? 0).toFixed(2)}) — this session did not span enough intensity to fit its own.`
+            : `fitted from this session itself (r² ${result.fit.r2.toFixed(2)}).`}
+        </p>
+        <p>Heart rate shifted back {result.lagSec} s to line up with the effort that caused it.</p>
+        {result.tempAdjustBpm > 0 && (
+          <p>
+            {result.tempAdjustBpm.toFixed(1)} bpm removed for {Math.round(result.tempC)} °C — without it the
+            session would read as lost fitness.
+          </p>
+        )}
+        {result.extrapolation > 0.3 && (
+          <p style={{ color: IOS.orange }}>
+            This session stayed well below LT2, so the value at LT2 is extrapolated — treat it as a hint.
+          </p>
+        )}
+      </Note>
+    </Section>
   );
 }
 
@@ -747,32 +906,29 @@ function ProjectedThresholds({ projection, anchor, kind, storageMode }) {
   if (!rows.length) return null;
 
   return (
-    <div className="mt-3">
-      <div className="mb-2 flex items-baseline justify-between gap-3">
-        <h4 className="text-[13px] font-bold text-gray-900">Where your thresholds sit now</h4>
-        <span className="text-[11px] text-gray-400">
-          {projection.sessions} sessions · {Math.round(projection.minutes / 60)}h read
-        </span>
-      </div>
-
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+    <Section
+      title="Where your thresholds sit now"
+      aside={`${projection.sessions} sessions · ${Math.round(projection.minutes / 60)}h`}
+    >
+      <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
         {rows.map(({ key, label, est, hr }) => {
-          const better = kind === 'bike' ? est.shift > 0 : est.shift > 0;
+          const better = est.shift > 0;
           const moved = Math.abs(est.shiftPct) >= 1.5;
+          const color = moved ? (better ? IOS.green : IOS.red) : IOS.label;
           return (
-            <div key={key} className="rounded-lg border border-gray-200 bg-white px-3 py-2">
+            <div key={key} className="rounded-xl px-3 py-2.5" style={{ background: IOS.grouped }}>
               <div className="flex items-baseline justify-between gap-2">
-                <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">
+                <span className="text-[12px] font-semibold" style={{ color: IOS.secondary }}>
                   {key} · {label}
                 </span>
                 <ConfidenceChip level={est.confidence} />
               </div>
-              <div className="mt-0.5 flex items-baseline gap-2 tabular-nums">
-                <span className="text-[13px] text-gray-400 line-through">
+              <div className="mt-1 flex items-baseline gap-2 tabular-nums">
+                <span className="text-[14px] line-through" style={{ color: IOS.tertiary }}>
                   {fmtDemand(est.fromDemand, kind, storageMode)}
                 </span>
-                <span className="text-gray-300">→</span>
-                <span className={`text-[17px] font-bold ${moved ? (better ? 'text-emerald-600' : 'text-rose-600') : 'text-gray-900'}`}>
+                <span style={{ color: IOS.tertiary }}>→</span>
+                <span className="text-[22px] font-semibold tracking-[-0.02em]" style={{ color }}>
                   {fmtDemand(est.toDemand, kind, storageMode)}
                 </span>
               </div>
@@ -780,12 +936,12 @@ function ProjectedThresholds({ projection, anchor, kind, storageMode }) {
                   intensity at which this heart rate now appears. Printing it
                   beside the watts is what makes the estimate legible. */}
               {hr ? (
-                <div className="text-[11px] tabular-nums text-gray-500">
-                  at <strong className="text-gray-700">{Math.round(hr)} bpm</strong>
-                  <span className="text-gray-400"> — unchanged, it is what this is measured against</span>
+                <div className="text-[12px] tabular-nums" style={{ color: IOS.secondary }}>
+                  at <strong style={{ color: IOS.label }}>{Math.round(hr)} bpm</strong> — unchanged, it is
+                  what this is measured against
                 </div>
               ) : null}
-              <div className="text-[11px] tabular-nums text-gray-500">
+              <div className="text-[12px] tabular-nums" style={{ color: IOS.secondary }}>
                 {moved
                   ? `${fmtDemandDelta(est.shift, est.toDemand, kind, storageMode)} (${est.shiftPct > 0 ? '+' : ''}${est.shiftPct.toFixed(1)}%) · ${est.minutes} min near ${key}`
                   : `unchanged · ${est.minutes} min near ${key}`}
@@ -795,16 +951,23 @@ function ProjectedThresholds({ projection, anchor, kind, storageMode }) {
         })}
       </div>
 
-      <p className="mt-1.5 text-[11px] leading-relaxed text-gray-400">
-        Estimated from heart rate, not measured — heat, fatigue and illness move it too. Treat a
-        change here as a reason to retest, never as a replacement for one.
-      </p>
-    </div>
+      <Note label="Why LT1 and LT2 are separate">
+        <p>
+          They move separately: a block of easy volume lifts LT1 while LT2 sits still, and one averaged
+          number would hide exactly the thing that block was for.
+        </p>
+        <p>
+          Estimated from heart rate, not measured — heat, fatigue and illness move it too. Treat a change
+          here as a reason to retest, never as a replacement for one.
+        </p>
+      </Note>
+    </Section>
   );
 }
 
-const LT1_COLOR = '#0ea5e9';
-const LT2_COLOR = '#f97316';
+/** Local to this file — nothing else keys a threshold to a colour. */
+const LT1_COLOR = IOS.blue;
+const LT2_COLOR = IOS.orange;
 
 /**
  * The curve, and where it sits now.
@@ -846,29 +1009,27 @@ function CurveShift({ anchor, projection, kind, storageMode }) {
   if (!chart) return null;
 
   return (
-    <div className="mt-3">
-      <h4 className="mb-1 text-[13px] font-bold text-gray-900">How the curve has moved</h4>
-      <div className="h-52 w-full">
+    <Section title="How the curve has moved" aside={kind === 'bike' ? 'mmol/L vs W' : 'mmol/L vs pace'}>
+      <div className="-mx-1 h-44 w-[calc(100%+0.5rem)] sm:h-52">
         <ResponsiveContainer width="100%" height="100%">
-          <ComposedChart data={chart.rows} margin={{ top: 22, right: 12, bottom: 18, left: 0 }}>
-            <CartesianGrid stroke="#f1f5f9" vertical={false} />
+          <ComposedChart data={chart.rows} margin={{ top: 18, right: 10, bottom: 14, left: 0 }}>
+            <CartesianGrid stroke={IOS.separator} vertical={false} />
             <XAxis
               type="number" dataKey="d" domain={chart.domain}
               tickFormatter={(v) => axisTick(v, kind, storageMode)}
-              tick={{ fontSize: 10, fill: '#94a3b8' }}
-              axisLine={{ stroke: '#e2e8f0' }} tickLine={false}
-              label={{
-                value: kind === 'bike' ? 'Power (W)' : 'Pace',
-                position: 'insideBottom', offset: -12, fontSize: 10, fill: '#94a3b8',
-              }}
+              tick={{ fontSize: 11, fill: 'rgba(60,60,67,0.6)' }}
+              axisLine={false} tickLine={false} tickMargin={6}
             />
             <YAxis
-              type="number" tick={{ fontSize: 10, fill: '#94a3b8' }}
-              axisLine={false} tickLine={false} width={40}
-              label={{ value: 'mmol/L', angle: -90, position: 'insideLeft', offset: 12, fontSize: 10, fill: '#94a3b8' }}
+              type="number" tick={{ fontSize: 11, fill: 'rgba(60,60,67,0.6)' }}
+              axisLine={false} tickLine={false} width={28}
             />
             <Tooltip
-              contentStyle={{ fontSize: 11, borderRadius: 8, border: '1px solid #e2e8f0' }}
+              cursor={{ stroke: IOS.separator }}
+              contentStyle={{
+                fontSize: 12, borderRadius: 12, border: 'none', fontFamily: FONT,
+                boxShadow: '0 4px 16px rgba(0,0,0,0.12)', padding: '6px 10px',
+              }}
               formatter={(v, name) => [`${Number(v).toFixed(1)} mmol/L`,
                 name === 'testLac' ? 'On test day' : 'Estimated now']}
               labelFormatter={(v) => `${axisTick(v, kind, storageMode)}${kind === 'bike' ? ' W' : ''}`}
@@ -879,42 +1040,56 @@ function CurveShift({ anchor, projection, kind, storageMode }) {
                 key={m.key}
                 x1={Math.min(m.est.fromDemand, m.est.toDemand)}
                 x2={Math.max(m.est.fromDemand, m.est.toDemand)}
-                fill={m.color} fillOpacity={0.12} stroke="none" ifOverflow="hidden"
-                label={{ value: m.key, position: 'top', offset: 6, fontSize: 10, fontWeight: 600, fill: m.color }}
+                fill={m.color} fillOpacity={0.14} stroke="none" ifOverflow="hidden"
+                label={{ value: m.key, position: 'top', offset: 5, fontSize: 11, fontWeight: 600, fill: m.color }}
               />
             ))}
             {chart.marks.map((m) => (
               <ReferenceLine key={`f-${m.key}`} x={m.est.fromDemand}
-                stroke={m.color} strokeDasharray="3 3" strokeOpacity={0.6} />
+                stroke={m.color} strokeDasharray="4 4" strokeOpacity={0.5} />
             ))}
             {chart.marks.map((m) => (
               <ReferenceLine key={`t-${m.key}`} x={m.est.toDemand} stroke={m.color} strokeWidth={2} />
             ))}
             <Line type="monotone" dataKey="testLac" stroke={TEST_COLOR} strokeWidth={2}
-              strokeDasharray="4 3" dot={{ r: 2.5, fill: TEST_COLOR }} connectNulls isAnimationActive={false} />
+              strokeDasharray="4 4" dot={false} connectNulls isAnimationActive={false} />
             <Line type="monotone" dataKey="nowLac" stroke={NOW_COLOR} strokeWidth={2.5}
-              dot={{ r: 2.5, fill: NOW_COLOR }} connectNulls isAnimationActive={false} />
+              dot={false} connectNulls isAnimationActive={false} />
           </ComposedChart>
         </ResponsiveContainer>
       </div>
 
-      <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px] text-gray-500">
+      <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px]" style={{ color: IOS.secondary }}>
         <span className="flex items-center gap-1">
           <span className="inline-block h-0 w-4 border-t-2 border-dashed" style={{ borderColor: TEST_COLOR }} />
           your test
         </span>
         <span className="flex items-center gap-1">
-          <span className="inline-block h-0.5 w-4" style={{ background: NOW_COLOR }} /> estimated now
+          <span className="inline-block h-0.5 w-4 rounded-full" style={{ background: NOW_COLOR }} /> estimated now
         </span>
+      </div>
+
+      <div className="mt-2 border-t pt-1" style={{ borderColor: IOS.separator }}>
         {chart.marks.map((m) => (
-          <span key={m.key} className="flex items-center gap-1">
-            <span className="inline-block h-2 w-3 rounded-sm" style={{ background: m.color, opacity: 0.35 }} />
-            {m.key} moved {fmtDemandDelta(m.est.shift, m.est.toDemand, kind, storageMode)}
-            {thresholdHr[m.key] ? ` at ${Math.round(thresholdHr[m.key])} bpm` : ''}
-          </span>
+          <Row
+            key={m.key}
+            label={m.key}
+            sub={thresholdHr[m.key] ? `at ${Math.round(thresholdHr[m.key])} bpm` : undefined}
+            value={fmtDemandDelta(m.est.shift, m.est.toDemand, kind, storageMode)}
+            tone={Math.abs(m.est.shiftPct) < 1.5 ? 'default' : m.est.shift > 0 ? 'good' : 'bad'}
+          />
         ))}
       </div>
-    </div>
+
+      <Note label="Why draw the whole curve">
+        <p>
+          “LT2 is 22 W lower than your test” is a fact about one point, and it reads like an accusation.
+          The curve is the object you recognise: the test curve as measured, and the same shape redrawn at
+          the intensities your training puts it at. It tilts as well as slides, because LT1 and LT2 are
+          estimated separately and genuinely move by different amounts.
+        </p>
+      </Note>
+    </Section>
   );
 }
 
@@ -968,26 +1143,29 @@ function ThresholdTimeline({ timeline, testMarkers, anchor, kind, storageMode })
   const hasLt1 = data.some((r) => Number.isFinite(r.lt1) || Number.isFinite(r.testLt1));
 
   return (
-    <div className="mt-3">
-      <h4 className="mb-1 text-[13px] font-bold text-gray-900">Across the season</h4>
-      <div className="h-44 w-full">
+    <Section title="Across the season" aside="weekly estimate">
+      <div className="-mx-1 h-40 w-[calc(100%+0.5rem)] sm:h-44">
         <ResponsiveContainer width="100%" height="100%">
-          <ComposedChart data={data} margin={{ top: 10, right: 12, bottom: 4, left: 0 }}>
-            <CartesianGrid stroke="#f1f5f9" vertical={false} />
+          <ComposedChart data={data} margin={{ top: 8, right: 10, bottom: 4, left: 0 }}>
+            <CartesianGrid stroke={IOS.separator} vertical={false} />
             <XAxis
               dataKey="ms" type="number" scale="time" domain={['dataMin', 'dataMax']}
               ticks={monthTicks}
               tickFormatter={(v) => new Date(v).toLocaleDateString(undefined, { month: 'short' })}
-              tick={{ fontSize: 10, fill: '#94a3b8' }}
-              axisLine={{ stroke: '#e2e8f0' }} tickLine={false}
+              tick={{ fontSize: 11, fill: 'rgba(60,60,67,0.6)' }}
+              axisLine={false} tickLine={false} tickMargin={6}
             />
             <YAxis
-              tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} width={46}
+              tick={{ fontSize: 11, fill: 'rgba(60,60,67,0.6)' }} axisLine={false} tickLine={false} width={42}
               domain={['dataMin - 10', 'dataMax + 10']}
               tickFormatter={(v) => fmtDemand(v, kind, storageMode)}
             />
             <Tooltip
-              contentStyle={{ fontSize: 11, borderRadius: 8, border: '1px solid #e2e8f0' }}
+              cursor={{ stroke: IOS.separator }}
+              contentStyle={{
+                fontSize: 12, borderRadius: 12, border: 'none', fontFamily: FONT,
+                boxShadow: '0 4px 16px rgba(0,0,0,0.12)', padding: '6px 10px',
+              }}
               labelFormatter={(v) => new Date(v).toLocaleDateString()}
               formatter={(v, name) => [
                 fmtDemand(v, kind, storageMode),
@@ -1005,23 +1183,32 @@ function ThresholdTimeline({ timeline, testMarkers, anchor, kind, storageMode })
           </ComposedChart>
         </ResponsiveContainer>
       </div>
-      <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px] text-gray-500">
+
+      <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px]" style={{ color: IOS.secondary }}>
         {hasLt1 && (
           <span className="flex items-center gap-1">
-            <span className="inline-block h-0.5 w-4" style={{ background: LT1_COLOR }} />
+            <span className="inline-block h-0.5 w-4 rounded-full" style={{ background: LT1_COLOR }} />
             LT1{anchor?.lt1Hr ? ` at ${Math.round(anchor.lt1Hr)} bpm` : ''}
           </span>
         )}
         <span className="flex items-center gap-1">
-          <span className="inline-block h-0.5 w-4" style={{ background: LT2_COLOR }} />
+          <span className="inline-block h-0.5 w-4 rounded-full" style={{ background: LT2_COLOR }} />
           LT2{anchor?.lt2Hr ? ` at ${Math.round(anchor.lt2Hr)} bpm` : ''}
         </span>
         <span className="flex items-center gap-1">
-          <span className="inline-block h-2 w-2 rounded-full bg-gray-400" /> a test you actually did
+          <span className="inline-block h-2 w-2 rounded-full" style={{ background: IOS.tertiary }} /> a test you did
         </span>
-        <span className="text-gray-400">estimated weekly from a trailing six weeks</span>
       </div>
-    </div>
+
+      <Note label="How the line is drawn">
+        <p>
+          Each point is re-estimated from a trailing six weeks using only sessions that had happened by
+          then, so it is what the app would have said on that date rather than a curve fitted with
+          hindsight. Where a test dot sits off the line, the line was wrong — that comparison is the
+          honest way to show what an estimate from heart rate is worth.
+        </p>
+      </Note>
+    </Section>
   );
 }
 
@@ -1073,9 +1260,9 @@ function ZoneAdvice({ advice, projection, anchor, kind, storageMode, onApplied }
   };
 
   return (
-    <div className="mt-3 rounded-lg border border-violet-200 bg-violet-50/60 px-3 py-2.5">
-      <div className="text-[13px] font-bold text-violet-900">Worth rewriting your zones</div>
-      <p className="mt-0.5 text-[12px] leading-relaxed text-violet-800">
+    <div className="mt-4 rounded-2xl px-3.5 py-3" style={{ background: 'rgba(88,86,214,0.08)' }}>
+      <div className="text-[15px] font-semibold" style={{ color: IOS.indigo }}>Worth rewriting your zones</div>
+      <p className="mt-1 text-[13px] leading-[1.45]" style={{ color: IOS.label }}>
         {advice.reason} Across {advice.sessions} sessions
         {advice.testAgeDays ? ` and ${Math.round(advice.testAgeDays / 7)} weeks since you tested` : ''},
         your {kind === 'bike' ? 'power' : 'pace'} zones would move to{' '}
@@ -1083,21 +1270,22 @@ function ZoneAdvice({ advice, projection, anchor, kind, storageMode, onApplied }
         LT2 <strong>{fmtDemand(lt2, kind, storageMode)}</strong>
         {anchor?.lt2Hr ? <> — the intensity at which you now reach {Math.round(anchor.lt2Hr)} bpm</> : null}.
       </p>
-      <p className="mt-1 text-[11px] leading-relaxed text-violet-700/80">
-        Heart-rate zones stay as the test measured them — only the intensity moved. A real test
-        beats this; treat it as a stopgap until you do one.
+      <p className="mt-1 text-[12px] leading-[1.45]" style={{ color: IOS.secondary }}>
+        Heart-rate zones stay as the test measured them — only the intensity moved. A real test beats
+        this; treat it as a stopgap until you do one.
       </p>
-      <div className="mt-2 flex items-center gap-2">
+      <div className="mt-2.5 flex flex-wrap items-center gap-2">
         <button
           type="button"
           onClick={apply}
           disabled={state === 'saving' || state === 'done'}
-          className="rounded-lg bg-violet-600 px-3 py-1.5 text-[12px] font-semibold text-white hover:bg-violet-700 disabled:bg-violet-300"
+          className="min-h-[36px] rounded-[10px] px-4 text-[15px] font-semibold text-white disabled:opacity-40"
+          style={{ background: IOS.indigo }}
         >
           {state === 'saving' ? 'Updating…' : state === 'done' ? 'Zones updated' : 'Update my zones'}
         </button>
-        {state === 'error' && <span className="text-[11px] text-rose-600">Could not save — try again.</span>}
-        {state === 'done' && <span className="text-[11px] text-violet-700">Retest when you can.</span>}
+        {state === 'error' && <span className="text-[12px]" style={{ color: IOS.red }}>Could not save — try again.</span>}
+        {state === 'done' && <span className="text-[12px]" style={{ color: IOS.secondary }}>Retest when you can.</span>}
       </div>
     </div>
   );
@@ -1121,29 +1309,31 @@ function Contributors({ contributors, athleteId, kind }) {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="text-[11px] font-semibold text-gray-400 underline decoration-dotted underline-offset-2 hover:text-gray-600"
+        className="min-h-[28px] text-[12px] font-medium"
+        style={{ color: IOS.blue }}
       >
         {open ? 'Hide the sessions this came from' : `Show the ${contributors.length} sessions this came from`}
       </button>
       {open && (
-        <ul className="mt-2 max-h-64 space-y-0.5 overflow-y-auto pr-1">
+        <ul className="mt-1 max-h-64 overflow-y-auto">
           {shown.map((c) => {
             const delta = Number.isFinite(c.meanDeltaHr) ? Math.round(c.meanDeltaHr) : null;
-            const tone = delta == null || Math.abs(delta) < 3 ? 'text-gray-400'
-              : delta < 0 ? 'text-emerald-600' : 'text-rose-600';
+            const color = delta == null || Math.abs(delta) < 3 ? IOS.tertiary
+              : delta < 0 ? IOS.green : IOS.red;
             const href = `/training-calendar/${c.id}${athleteId ? `?athleteId=${athleteId}` : ''}`;
             return (
               <li key={c.id}>
                 <a
                   href={href}
-                  className="flex items-baseline gap-2 rounded px-1.5 py-1 text-[11px] hover:bg-gray-50"
+                  className="flex min-h-[38px] items-center gap-2 border-t text-[13px]"
+                  style={{ borderColor: IOS.separator }}
                 >
-                  <span className="w-16 shrink-0 tabular-nums text-gray-400">
+                  <span className="w-14 shrink-0 tabular-nums" style={{ color: IOS.tertiary }}>
                     {new Date(c.date).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}
                   </span>
-                  <span className="flex-1 truncate text-gray-700">{c.title || 'Session'}</span>
-                  <span className="shrink-0 tabular-nums text-gray-400">{c.minutes} min</span>
-                  <span className={`w-14 shrink-0 text-right tabular-nums font-semibold ${tone}`}>
+                  <span className="min-w-0 flex-1 truncate" style={{ color: IOS.label }}>{c.title || 'Session'}</span>
+                  <span className="shrink-0 tabular-nums" style={{ color: IOS.tertiary }}>{c.minutes} min</span>
+                  <span className="w-14 shrink-0 text-right font-semibold tabular-nums" style={{ color }}>
                     {delta == null ? '—' : `${delta > 0 ? '+' : ''}${delta} bpm`}
                   </span>
                 </a>
@@ -1151,7 +1341,7 @@ function Contributors({ contributors, athleteId, kind }) {
             );
           })}
           {contributors.length > 40 && (
-            <li className="px-1.5 py-1 text-[11px] text-gray-400">
+            <li className="border-t py-2 text-[12px]" style={{ borderColor: IOS.separator, color: IOS.tertiary }}>
               …and {contributors.length - 40} more, not listed.
             </li>
           )}
@@ -1161,9 +1351,18 @@ function Contributors({ contributors, athleteId, kind }) {
   );
 }
 
-function DriftHistory({ athleteId, anchor, kind, storageMode, governingTest, tests }) {
-  const [state, setState] = useState({ loading: true, data: null });
-
+/**
+ * Everything the training since the test says about where the zones now sit.
+ *
+ * This was six sections stacked under the session's own reading, which meant
+ * the answer to "are my zones still right?" lived below five charts about one
+ * ride. It is a different question on a different time scale and it gets its
+ * own segment.
+ *
+ * The fetch lives in the panel above, not here: whether this has anything to
+ * say decides whether the segmented control is worth drawing at all.
+ */
+function AgainstYourZones({ data, athleteId, anchor, kind, storageMode, governingTest, tests }) {
   /**
    * The measured points on the season chart, computed here for the same reason
    * the anchor is: the server's threshold pipeline and the one that drew the
@@ -1184,85 +1383,82 @@ function DriftHistory({ athleteId, anchor, kind, storageMode, governingTest, tes
     .filter(Boolean)
     .sort((x, y) => new Date(x.date) - new Date(y.date)), [tests, kind]);
 
-  /**
-   * The anchor travels to the server rather than being recomputed there.
-   * Serialised so the effect does not refire on every render for an object
-   * that has not changed.
-   */
-  const anchorPayload = useMemo(() => (anchor?.lt2 > 0 && anchor?.lt2Hr > 0 ? {
-    lt1: anchor.lt1, lt2: anchor.lt2, lt1Hr: anchor.lt1Hr, lt2Hr: anchor.lt2Hr,
-    storageMode: anchor.storageMode,
-    points: (anchor.points || []).map((p) => ({ x: p.x, y: p.y, hr: p.hr })),
-  } : null), [anchor]);
+  const series = useMemo(
+    () => (data?.series || []).map((pt) => ({ ...pt, ms: new Date(pt.date).getTime() })),
+    [data],
+  );
 
-  useEffect(() => {
-    let cancelled = false;
-    setState({ loading: true, data: null });
-    getThresholdDrift(kind, athleteId, anchorPayload)
-      .then((res) => { if (!cancelled) setState({ loading: false, data: res?.data ?? res }); })
-      .catch(() => { if (!cancelled) setState({ loading: false, data: null }); });
-    return () => { cancelled = true; };
-  }, [kind, athleteId, anchorPayload]);
-
-  const { loading, data } = state;
-  if (loading) return null;
-  if (!data?.series?.length && !data?.projection && !data?.timeline?.length) return null;
-
-  const series = (data.series || []).map((p) => ({ ...p, ms: new Date(p.date).getTime() }));
+  if (!data) return null;
 
   return (
-    <div className="mt-4 border-t border-gray-100 pt-3">
-      <div className="mb-1 flex items-baseline justify-between gap-3">
-        <h4 className="text-[13px] font-bold text-gray-900">Since your test</h4>
-        <span className="text-[11px] text-gray-400">
-          {data.coverage?.compared ?? data.coverage?.read} of {data.coverage?.considered} sessions read
-        </span>
-      </div>
+    <>
+      {data.retest && (
+        <div className="mt-4 rounded-2xl px-3.5 py-3" style={{ background: 'rgba(255,149,0,0.12)' }}>
+          <div className="text-[15px] font-semibold" style={{ color: '#B25000' }}>Worth retesting</div>
+          <p className="mt-1 text-[13px] leading-[1.45]" style={{ color: IOS.label }}>
+            Across {data.retest.sessions} recent sessions your threshold reads{' '}
+            {Math.abs(data.retest.trendPct).toFixed(1)}% {data.retest.direction === 'up' ? 'above' : 'below'}{' '}
+            the {fmtDemand(thresholdToDemand(anchor?.lt2, { kind, storageMode }), kind, storageMode)} on file
+            {data.retest.testAgeDays ? `, and that test is ${Math.round(data.retest.testAgeDays / 7)} weeks old` : ''}.
+            Your zones are probably {data.retest.direction === 'up' ? 'too easy' : 'too hard'}.
+          </p>
+        </div>
+      )}
 
       <ProjectedThresholds projection={data.projection} anchor={anchor} kind={kind} storageMode={storageMode} />
-      <Contributors contributors={data.contributors} athleteId={athleteId} kind={kind} />
+
       <ZoneAdvice
         advice={zoneAdviceFor(data.projection, { testDate: governingTest?.date })}
         projection={data.projection} anchor={anchor} kind={kind} storageMode={storageMode}
       />
+
       <CurveShift anchor={anchor} projection={data.projection} kind={kind} storageMode={storageMode} />
+
       <ThresholdTimeline timeline={data.timeline} testMarkers={testMarkers}
         anchor={anchor} kind={kind} storageMode={storageMode} />
 
+      {/* One dot per session: what that ride alone implied about the threshold,
+          and the line the last 28 days of them make. This is the raw evidence
+          the two sections above are built on. */}
       {series.length > 0 && (
-      <div className="mt-3 h-36 w-full">
-        <ResponsiveContainer width="100%" height="100%">
-          <ComposedChart data={series} margin={{ top: 6, right: 8, bottom: 4, left: 0 }}>
-            <CartesianGrid stroke="#f1f5f9" vertical={false} />
-            <XAxis dataKey="ms" type="number" scale="time" domain={['dataMin', 'dataMax']}
-              tickFormatter={(v) => new Date(v).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}
-              tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={{ stroke: '#e2e8f0' }} tickLine={false} />
-            <YAxis tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} width={38}
-              tickFormatter={(v) => (kind === 'bike' ? `${v > 0 ? '+' : ''}${Math.round(v)}` : `${v > 0 ? '+' : ''}${v.toFixed(1)}`)} />
-            <Tooltip contentStyle={{ fontSize: 11, borderRadius: 8, border: '1px solid #e2e8f0' }}
-              labelFormatter={(v) => new Date(v).toLocaleDateString()}
-              formatter={(v, name) => [
-                kind === 'bike' ? `${v > 0 ? '+' : ''}${Math.round(v)} W` : `${v > 0 ? '+' : ''}${Number(v).toFixed(2)} m/s`,
-                name === 'trendDelta' ? '28-day trend' : 'That session',
-              ]} />
-            <ReferenceLine y={0} stroke={TEST_COLOR} strokeDasharray="3 3" />
-            <Scatter dataKey="deltaDemand" shape={<Dot r={3} color={NOW_COLOR} opacity={0.3} />} isAnimationActive={false} />
-            <Line type="monotone" dataKey="trendDelta" stroke={NOW_COLOR} strokeWidth={2} dot={false} />
-          </ComposedChart>
-        </ResponsiveContainer>
-      </div>
+        <Section
+          title="Session by session"
+          aside={`${data.coverage?.compared ?? data.coverage?.read} of ${data.coverage?.considered} read`}
+        >
+          <div className="-mx-1 h-32 w-[calc(100%+0.5rem)] sm:h-36">
+            <ResponsiveContainer width="100%" height="100%">
+              <ComposedChart data={series} margin={{ top: 6, right: 10, bottom: 4, left: 0 }}>
+                <CartesianGrid stroke={IOS.separator} vertical={false} />
+                <XAxis dataKey="ms" type="number" scale="time" domain={['dataMin', 'dataMax']}
+                  tickFormatter={(v) => new Date(v).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}
+                  tick={{ fontSize: 11, fill: 'rgba(60,60,67,0.6)' }}
+                  axisLine={false} tickLine={false} tickMargin={6} />
+                <YAxis tick={{ fontSize: 11, fill: 'rgba(60,60,67,0.6)' }} axisLine={false} tickLine={false} width={34}
+                  tickFormatter={(v) => (kind === 'bike' ? `${v > 0 ? '+' : ''}${Math.round(v)}` : `${v > 0 ? '+' : ''}${v.toFixed(1)}`)} />
+                <Tooltip
+                  cursor={{ stroke: IOS.separator }}
+                  contentStyle={{
+                    fontSize: 12, borderRadius: 12, border: 'none', fontFamily: FONT,
+                    boxShadow: '0 4px 16px rgba(0,0,0,0.12)', padding: '6px 10px',
+                  }}
+                  labelFormatter={(v) => new Date(v).toLocaleDateString()}
+                  formatter={(v, name) => [
+                    kind === 'bike' ? `${v > 0 ? '+' : ''}${Math.round(v)} W` : `${v > 0 ? '+' : ''}${Number(v).toFixed(2)} m/s`,
+                    name === 'trendDelta' ? '28-day trend' : 'That session',
+                  ]} />
+                <ReferenceLine y={0} stroke={TEST_COLOR} strokeDasharray="4 4" />
+                <Scatter dataKey="deltaDemand" shape={<Dot r={3} color={NOW_COLOR} opacity={0.3} />} isAnimationActive={false} />
+                <Line type="monotone" dataKey="trendDelta" stroke={NOW_COLOR} strokeWidth={2} dot={false} />
+              </ComposedChart>
+            </ResponsiveContainer>
+          </div>
+          <p className="mt-1 text-[11px]" style={{ color: IOS.secondary }}>
+            Each dot is one session against your test; the line is the 28-day trend through them.
+          </p>
+          <Contributors contributors={data.contributors} athleteId={athleteId} kind={kind} />
+        </Section>
       )}
-
-      {data.retest && (
-        <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] leading-relaxed text-amber-800">
-          <strong>Worth retesting.</strong> Across {data.retest.sessions} recent sessions your threshold reads{' '}
-          {Math.abs(data.retest.trendPct).toFixed(1)}% {data.retest.direction === 'up' ? 'above' : 'below'}{' '}
-          the {fmtDemand(thresholdToDemand(anchor?.lt2, { kind, storageMode }), kind, storageMode)} on file
-          {data.retest.testAgeDays ? `, and that test is ${Math.round(data.retest.testAgeDays / 7)} weeks old` : ''}.
-          Your zones are probably {data.retest.direction === 'up' ? 'too easy' : 'too hard'}.
-        </div>
-      )}
-    </div>
+    </>
   );
 }
 
@@ -1285,6 +1481,8 @@ export default function SessionVsTestPanel({
 }) {
   const [tests, setTests] = useState(testsProp);
   const [tempC, setTempC] = useState(tempCProp);
+  const [tab, setTab] = useState('session');
+  const [drift, setDrift] = useState({ loading: true, data: null });
   const kind = sportKind(sport);
 
   useEffect(() => {
@@ -1337,20 +1535,48 @@ export default function SessionVsTestPanel({
     [result, anchor],
   );
 
+  /**
+   * The anchor travels to the server rather than being recomputed there.
+   * Serialised so the effect does not refire on every render for an object
+   * that has not changed.
+   */
+  const anchorPayload = useMemo(() => (anchor?.lt2 > 0 && anchor?.lt2Hr > 0 ? {
+    lt1: anchor.lt1, lt2: anchor.lt2, lt1Hr: anchor.lt1Hr, lt2Hr: anchor.lt2Hr,
+    storageMode: anchor.storageMode,
+    points: (anchor.points || []).map((pt) => ({ x: pt.x, y: pt.y, hr: pt.hr })),
+  } : null), [anchor]);
+
+  /**
+   * Fetched here rather than inside the zones segment: whether that segment
+   * has anything to say is what decides if the segmented control is drawn, and
+   * a control that reveals an empty page is worse than no control.
+   */
+  useEffect(() => {
+    if (!anchorPayload) { setDrift({ loading: false, data: null }); return undefined; }
+    let cancelled = false;
+    setDrift({ loading: true, data: null });
+    getThresholdDrift(kind, athleteId, anchorPayload)
+      .then((res) => { if (!cancelled) setDrift({ loading: false, data: res?.data ?? res }); })
+      .catch(() => { if (!cancelled) setDrift({ loading: false, data: null }); });
+    return () => { cancelled = true; };
+  }, [kind, athleteId, anchorPayload]);
+
   if (kind === 'swim' || kind === 'other') return null;
   if (tests === null) {
     return (
-      <div className={`rounded-xl border border-gray-200 bg-white p-4 ${className}`}>
-        <div className="h-4 w-44 animate-pulse rounded bg-gray-100" />
+      <div className={`rounded-2xl p-4 ${className}`} style={{ background: IOS.grouped, fontFamily: FONT }}>
+        <div className="h-4 w-44 animate-pulse rounded-full" style={{ background: 'rgba(60,60,67,0.12)' }} />
       </div>
     );
   }
 
   if (!anchor || !(anchor.lt2 > 0)) {
     return (
-      <div className={`rounded-xl border border-gray-200 bg-white p-4 ${className}`}>
-        <h3 className="text-[15px] font-bold text-gray-900">Against your test</h3>
-        <p className="mt-1 text-[13px] leading-relaxed text-gray-500">
+      <div className={`rounded-2xl px-4 py-3.5 ${className}`} style={{ background: IOS.grouped, fontFamily: FONT }}>
+        <h3 className="text-[17px] font-semibold tracking-[-0.01em]" style={{ color: IOS.label }}>
+          Against your test
+        </h3>
+        <p className="mt-1 text-[13px] leading-[1.45]" style={{ color: IOS.secondary }}>
           No lactate test on file for {kind === 'bike' ? 'cycling' : 'running'} yet. A test is what turns
           these sessions into zones, and what everything here compares against.
         </p>
@@ -1364,38 +1590,67 @@ export default function SessionVsTestPanel({
     ? new Date(governingTest.date).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
     : null;
 
+  const zones = drift.data;
+  const hasZones = Boolean(zones?.series?.length || zones?.projection || zones?.timeline?.length);
+  const showing = hasZones ? tab : 'session';
+
   return (
-    <div className={`rounded-xl border border-gray-200 bg-white p-4 ${className}`}>
-      <div className="flex items-baseline justify-between gap-3">
-        <h3 className="text-[15px] font-bold text-gray-900">Against your test</h3>
-        {testDateLabel && (
-          <span className="text-[11px] text-gray-400">
-            {governingTest.title || 'Lactate test'} · {testDateLabel}
-          </span>
-        )}
+    <div className={`rounded-2xl px-3 py-3.5 sm:px-4 ${className}`}
+      style={{ background: IOS.grouped, fontFamily: FONT }}>
+      <div className="px-1">
+        <h3 className="text-[20px] font-semibold tracking-[-0.02em]" style={{ color: IOS.label }}>
+          {showing === 'zones' ? 'Against your zones' : 'Against your test'}
+        </h3>
+        <p className="mt-0.5 text-[12px]" style={{ color: IOS.secondary }}>
+          {showing === 'zones'
+            ? 'Every session since the test, and where they put your thresholds now.'
+            : 'This session, read against the physiology your test measured.'}
+          {testDateLabel && ` ${governingTest.title || 'Lactate test'} · ${testDateLabel}.`}
+        </p>
       </div>
 
-      {/* First, because it is the sentence most sessions can support. */}
-      <AtTheSameIntensity comparison={comparison} kind={kind} storageMode={storageMode} />
-      <TimeAtThresholds result={result} anchor={anchor} kind={kind} storageMode={storageMode}
-        title={sessionTitle} plannedTarget={plannedTarget} />
-
-      {hasCloud ? (
-        <ZoneScatter result={result} anchor={anchor} governingTest={governingTest}
-          slopeFit={slopeFit} kind={kind} storageMode={storageMode} />
-      ) : (
-        <p className="mt-1 text-[13px] leading-relaxed text-gray-500">
-          {result?.reason === 'no-usable-stream'
-            ? 'This activity has no second-by-second data to place against your zones.'
-            : 'No heart rate recorded on this session, so there is nothing to compare with your test.'}
-        </p>
+      {hasZones && (
+        <div className="mt-3">
+          <Segmented
+            value={showing}
+            onChange={setTab}
+            options={[
+              { id: 'session', label: 'This session' },
+              { id: 'zones', label: 'Your zones' },
+            ]}
+          />
+        </div>
       )}
 
-      <LactateVsCurve anchor={anchor} samples={lactateSamples} kind={kind} storageMode={storageMode} />
-      <DriftFromHeartRate result={result} kind={kind} storageMode={storageMode} testDateLabel={testDateLabel} />
-      <DriftHistory athleteId={athleteId} anchor={anchor} kind={kind}
-        storageMode={storageMode} governingTest={governingTest} tests={tests} />
+      <div className="mt-3">
+        {showing === 'session' ? (
+          <>
+            {/* First, because it is the sentence most sessions can support. */}
+            <AtTheSameIntensity comparison={comparison} kind={kind} storageMode={storageMode} />
+            <TimeAtThresholds result={result} anchor={anchor} kind={kind} storageMode={storageMode}
+              title={sessionTitle} plannedTarget={plannedTarget} />
+
+            {hasCloud ? (
+              <ZoneScatter result={result} anchor={anchor} governingTest={governingTest}
+                slopeFit={slopeFit} kind={kind} storageMode={storageMode} />
+            ) : (
+              <Section>
+                <p className="text-[13px] leading-[1.45]" style={{ color: IOS.secondary }}>
+                  {result?.reason === 'no-usable-stream'
+                    ? 'This activity has no second-by-second data to place against your zones.'
+                    : 'No heart rate recorded on this session, so there is nothing to compare with your test.'}
+                </p>
+              </Section>
+            )}
+
+            <LactateVsCurve anchor={anchor} samples={lactateSamples} kind={kind} storageMode={storageMode} />
+            <DriftFromHeartRate result={result} kind={kind} storageMode={storageMode} testDateLabel={testDateLabel} />
+          </>
+        ) : (
+          <AgainstYourZones data={zones} athleteId={athleteId} anchor={anchor} kind={kind}
+            storageMode={storageMode} governingTest={governingTest} tests={tests} />
+        )}
+      </div>
     </div>
   );
 }
-
