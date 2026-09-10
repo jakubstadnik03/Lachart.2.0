@@ -167,10 +167,11 @@ export default function CoachAthleteBar() {
           {/* Me */}
           <button
             onClick={() => {
-              setSelectedAthleteId(user?._id);
-              if (ATHLETE_URL_SECTIONS.includes(currentSection) || /^[a-f0-9]{24}$/.test(location.pathname.split('/')[2] || '')) {
-                followSelectionInUrl(user?._id);
-              } else navigate(`/athlete/${user?._id}`);
+              // Me is an entry in this switcher, not a shortcut out of the
+              // page. Sending it to /athlete meant a coach on the calendar
+              // looking at an athlete could not switch back to their own week
+              // without being thrown to their profile and navigating back.
+              handleSelectAthlete(user?._id);
             }}
             className={`flex-shrink-0 relative rounded-full transition-all ${isViewingSelf ? 'ring-2 ring-primary/50' : ''}`}
           >
@@ -250,12 +251,9 @@ export default function CoachAthleteBar() {
         {/* "Me" chip */}
         <button
           onClick={() => {
-            setSelectedAthleteId(user?._id);
-            if (ATHLETE_URL_SECTIONS.includes(currentSection) || /^[a-f0-9]{24}$/.test(location.pathname.split('/')[2] || '')) {
-              followSelectionInUrl(user?._id);
-            } else navigate(`/athlete/${user?._id}`);
+            handleSelectAthlete(user?._id);
           }}
-          title="Open my profile"
+          title="Show my own data"
           className={`flex-shrink-0 flex flex-col items-center gap-0.5 px-2 py-1 rounded-xl transition-all ${isViewingSelf ? 'bg-primary/10 ring-2 ring-primary/30' : 'hover:bg-gray-100'}`}
         >
           <div className="relative">
