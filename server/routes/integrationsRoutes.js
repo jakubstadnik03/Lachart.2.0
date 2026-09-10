@@ -8438,6 +8438,37 @@ router.delete('/apple-health/workouts', verifyToken, async (req, res) => {
 });
 
 /**
+ * One day of Apple Health wellness → a Mongo patch of ONLY what it carries.
+ *
+ * The absent fields must stay absent. HealthKit fills a day in over several
+ * days — the overnight low and HRV land the same morning, sleep and resting HR
+ * often a week later — so a sync whose window covers a fresh day comes back
+ * with two of the four. Writing the other two as null erased what a wider sync
+ * had already stored, and because the rolling window only ever moves forward,
+ * no later sync visited that day to put it back: one account lost sleep and
+ * resting HR for every day from 14 July to 3 September, exactly seven days
+ * behind the 90-day sync that had filled them in.
+ */
+function appleWellnessPatch(row) {
+  const patch = { source: 'apple_health' };
+  const setNumber = (key, value) => {
+    if (value == null) return;
+    const n = Number(value);
+    if (Number.isFinite(n)) patch[key] = n;
+  };
+  setNumber('restingHeartRate', row.restingHeartRate);
+  setNumber('sleepingHeartRate', row.sleepingHeartRate);
+  setNumber('sleepMinutes', row.sleepMinutes);
+  setNumber('hrvMs', row.hrvMs);
+  setNumber('respiratoryRate', row.respiratoryRate);
+  if (row.sleepStages && typeof row.sleepStages === 'object') patch.sleepStages = row.sleepStages;
+  if (Array.isArray(row.sleepSegments) && row.sleepSegments.length > 0) {
+    patch.sleepSegments = row.sleepSegments;
+  }
+  return patch;
+}
+
+/**
  * POST /api/integrations/apple-health/wellness-sync
  * Body: { wellness: [{ date, restingHeartRate?, sleepMinutes?, hrvMs? }], markConnected?: boolean }
  */
@@ -8452,16 +8483,10 @@ router.post('/apple-health/wellness-sync', verifyToken, async (req, res) => {
     let upserted = 0;
     for (const row of wellness) {
       if (!row?.date || !/^\d{4}-\d{2}-\d{2}$/.test(row.date)) continue;
-      const patch = {
-        restingHeartRate: row.restingHeartRate != null ? Number(row.restingHeartRate) : null,
-        sleepingHeartRate: row.sleepingHeartRate != null ? Number(row.sleepingHeartRate) : null,
-        sleepMinutes: row.sleepMinutes != null ? Number(row.sleepMinutes) : null,
-        sleepStages: row.sleepStages && typeof row.sleepStages === 'object' ? row.sleepStages : null,
-        sleepSegments: Array.isArray(row.sleepSegments) && row.sleepSegments.length > 0 ? row.sleepSegments : null,
-        hrvMs: row.hrvMs != null ? Number(row.hrvMs) : null,
-        respiratoryRate: row.respiratoryRate != null ? Number(row.respiratoryRate) : null,
-        source: 'apple_health',
-      };
+      const patch = appleWellnessPatch(row);
+      // `source` on its own is not a measurement — a day the payload says
+      // nothing about is left exactly as it was.
+      if (Object.keys(patch).length <= 1) continue;
       const result = await AppleHealthWellness.updateOne(
         { userId, date: row.date },
         { $set: patch },
@@ -8666,3 +8691,7 @@ module.exports.parseGarminActivityDetails = parseGarminActivityDetails;
 // per-second traces in GarminStream.
 module.exports.triggerGarminBackfillQueued = triggerGarminBackfillQueued;
 module.exports.GARMIN_BACKFILL_ENDPOINTS = GARMIN_BACKFILL_ENDPOINTS;
+
+// Exported for unit testing the wellness upsert — specifically that a day the
+// payload says nothing about is left alone rather than blanked.
+module.exports.appleWellnessPatch = appleWellnessPatch;

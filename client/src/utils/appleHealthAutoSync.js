@@ -56,7 +56,11 @@ export async function autoSyncAppleHealth({ force = false } = {}) {
 
     // HealthKit read status is opaque — skip the permission gate and try reading;
     // empty arrays simply mean no data or types disabled in Health → LaChart.
-    const wellness = syncWellness ? await collectAppleHealthWellness(7).catch(() => []) : [];
+    // Three weeks, not one. HealthKit backfills a day for a long time after it
+    // ends — the overnight low arrives the same morning, sleep and resting HR
+    // can be a week or more behind — and a day the window has passed is never
+    // revisited. Re-reading them costs one aggregate bucket each.
+    const wellness = syncWellness ? await collectAppleHealthWellness(21).catch(() => []) : [];
 
     if (wellness.length > 0) {
       await syncAppleHealthWellness({ wellness, markConnected: true }).catch(() => {});
