@@ -18,7 +18,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import ReactDOM from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence, useDragControls } from 'framer-motion';
-import { XMarkIcon, TrashIcon, BookmarkIcon, WrenchScrewdriverIcon, RectangleStackIcon, ArrowRightIcon, ArrowLeftIcon, BellIcon, CheckCircleIcon, PlayIcon, ChevronDownIcon } from '@heroicons/react/24/outline';
+import { XMarkIcon, TrashIcon, BookmarkIcon, WrenchScrewdriverIcon, RectangleStackIcon, ArrowRightIcon, ArrowLeftIcon, BellIcon, CheckCircleIcon, PlayIcon, ChevronDownIcon, CheckIcon } from '@heroicons/react/24/outline';
 import { Bike, WavesLadder, Dumbbell, PersonStanding, Repeat2, Sparkles, Waves, TestTube2, MoreHorizontal, Mountain, Snowflake } from 'lucide-react';
 import WorkoutBuilder, {
   PRESET_CATALOG, buildPresetSteps, computeEstTSS,
@@ -301,6 +301,83 @@ const LAP_LABEL = {
  * Power-based rows (avg W, IF, kJ→kcal) only make sense for bike; run/swim
  * show distance instead.
  */
+/**
+ * One control for every choice this sheet asks for: tap, read a list, pick.
+ *
+ * Sport was a grid of thirteen tiles and category a wrapping row of chips, so
+ * the same question — "which one?" — was asked two different ways within an
+ * inch of each other, and both grew as wide as the options happened to be. A
+ * closed row that names what is chosen keeps the top of the sheet the same
+ * height whether there are three categories or thirty.
+ */
+function FieldSelect({ label, value, options, onChange, placeholder = 'Select…' }) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef(null);
+
+  // Close on a tap anywhere else, or on Escape. Without the first, two of
+  // these open at once and the second reads as part of the first.
+  useEffect(() => {
+    if (!open) return undefined;
+    const onDown = (e) => { if (!wrapRef.current?.contains(e.target)) setOpen(false); };
+    const onKey = (e) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('pointerdown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('pointerdown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  const selected = options.find(o => o.key === value);
+
+  return (
+    <div ref={wrapRef} className="relative min-w-0 flex-1">
+      <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-1 block">{label}</label>
+      <button
+        type="button"
+        onClick={() => setOpen(v => !v)}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        className="w-full flex items-center gap-1.5 px-2.5 py-2 rounded-xl border border-slate-200 bg-white text-[12px] font-semibold text-left min-h-[38px] hover:border-slate-300 transition-colors"
+      >
+        {selected?.dot && <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: selected.dot }} />}
+        {selected?.icon}
+        <span className="flex-1 truncate" style={{ color: selected ? (selected.color || '#0f172a') : '#94a3b8' }}>
+          {selected ? selected.label : placeholder}
+        </span>
+        <ChevronDownIcon className={`w-3.5 h-3.5 text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+
+      {open && (
+        <ul
+          role="listbox"
+          className="absolute z-30 mt-1 w-full max-h-60 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-lg py-1"
+        >
+          {options.map(opt => {
+            const active = opt.key === value;
+            return (
+              <li key={opt.key}>
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={active}
+                  onClick={() => { onChange(opt.key); setOpen(false); }}
+                  className={`w-full flex items-center gap-2 px-3 py-2 text-[12px] font-semibold text-left min-h-[38px] transition-colors ${active ? 'bg-slate-50' : 'hover:bg-slate-50'}`}
+                >
+                  {opt.dot && <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: opt.dot }} />}
+                  {opt.icon}
+                  <span className="flex-1 truncate" style={{ color: opt.color || '#0f172a' }}>{opt.label}</span>
+                  {active && <CheckIcon className="w-3.5 h-3.5 text-primary flex-shrink-0" />}
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 export function WorkoutSummary({ steps, context, sport, estTss }) {
   const expanded = expandSteps(Array.isArray(steps) ? steps : []);
   if (!expanded.length) return null;
@@ -467,10 +544,6 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
   // 'pick' = sport selector (new workouts only), 'build' = full builder
   const [step, setStep]           = useState(isEdit ? 'build' : 'pick');
   const [sport, setSport]         = useState(workout?.sport || 'bike');
-  // Editing changes the sport in place. Sending an edit back to the 'pick'
-  // step would show it "Add a workout" over a Day theme / Race row whose
-  // buttons call onClose() — one stray tap and the edit is gone.
-  const [sportPickerOpen, setSportPickerOpen] = useState(false);
   const [title, setTitle]         = useState(workout?.title || '');
   const [desc, setDesc]           = useState(workout?.description || '');
   // The coach's notes grow to fit what is in them.
@@ -853,71 +926,38 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
 
               {/* ── Sport + planned stats row ── */}
               <div className="px-5 py-3 border-b border-slate-100">
-                {/* Sport pill + category row */}
-                <div className="flex items-center gap-2 mb-3 flex-wrap">
-                  {/* The sport was fixed once a workout existed — same pill,
-                      rendered as a plain div instead of a button — so a session
-                      planned under the wrong sport had to be deleted and typed
-                      in again. It opens the picker in both modes now. */}
-                  <button
-                    onClick={() => (isEdit ? setSportPickerOpen(v => !v) : setStep('pick'))}
-                    aria-expanded={isEdit ? sportPickerOpen : undefined}
-                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-[11px] font-bold transition-all hover:opacity-80"
-                    style={{ borderColor: selectedSportMeta?.color + '50', color: selectedSportMeta?.color, backgroundColor: selectedSportMeta?.color + '12' }}
-                  >
-                    <SportOptIcon opt={selectedSportMeta} size={13} />
-                    {selectedSportMeta?.label}
-                    <ChevronDownIcon
-                      className="w-3 h-3 transition-transform"
-                      style={{ transform: isEdit && sportPickerOpen ? 'rotate(180deg)' : undefined }}
-                    />
-                  </button>
-                  {/* Category picker */}
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    <button
-                      onClick={() => setCategory('')}
-                      className={`px-2.5 py-1.5 rounded-xl border text-[11px] font-semibold transition-all ${!category ? 'bg-slate-100 border-slate-300 text-slate-600' : 'border-slate-100 text-slate-400 hover:bg-slate-50'}`}
-                    >
-                      No category
-                    </button>
-                    {categories.map(cat => (
-                      <button
-                        key={cat.id}
-                        onClick={() => setCategory(cat.id === category ? '' : cat.id)}
-                        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-[11px] font-semibold transition-all"
-                        style={category === cat.id
-                          ? { backgroundColor: cat.color + '20', borderColor: cat.color + '60', color: cat.color }
-                          : { borderColor: 'transparent', color: '#94a3b8' }}
-                      >
-                        <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: cat.color }} />
-                        {cat.label}
-                      </button>
-                    ))}
-                  </div>
+                {/* Sport and category, asked the same way — see FieldSelect.
+                    The sport was fixed once a workout existed (the same pill,
+                    rendered as a plain div instead of a button), so a session
+                    planned under the wrong sport had to be deleted and typed in
+                    again. Both are editable now, and neither grows the sheet as
+                    the option list grows. */}
+                <div className="flex items-start gap-2 mb-3">
+                  <FieldSelect
+                    label="Sport"
+                    value={sport}
+                    onChange={(k) => { setSport(k); setPresetSport(k); }}
+                    options={SPORT_OPTIONS.map(opt => ({
+                      key: opt.key,
+                      label: opt.label,
+                      color: opt.color,
+                      icon: <SportOptIcon opt={opt} size={14} />,
+                    }))}
+                  />
+                  <FieldSelect
+                    label="Category"
+                    value={category || ''}
+                    onChange={(k) => setCategory(k)}
+                    placeholder="No category"
+                    options={[
+                      { key: '', label: 'No category' },
+                      ...categories.map(cat => ({
+                        key: cat.id, label: cat.label, color: cat.color, dot: cat.color,
+                      })),
+                    ]}
+                  />
                 </div>
 
-                {/* Inline sport picker — edit only. Same options as step 1,
-                    without leaving the form the athlete is part-way through. */}
-                {isEdit && sportPickerOpen && (
-                  <div className="mb-3 -mt-1 p-2 rounded-2xl bg-slate-50 border border-slate-100">
-                    <div className="grid grid-cols-4 sm:grid-cols-5 gap-1.5">
-                      {SPORT_OPTIONS.map(opt => {
-                        const active = opt.key === sport;
-                        return (
-                          <button
-                            key={opt.key}
-                            onClick={() => { setSport(opt.key); setPresetSport(opt.key); setSportPickerOpen(false); }}
-                            className={`flex flex-col items-center gap-1 px-1 py-2 rounded-xl border-2 bg-white active:scale-95 transition-all touch-manipulation ${active ? '' : 'border-transparent'}`}
-                            style={active ? { borderColor: opt.color, backgroundColor: opt.color + '12' } : undefined}
-                          >
-                            <SportOptIcon opt={opt} size={18} />
-                            <span className="text-[10px] font-semibold text-slate-600 leading-tight text-center">{opt.label}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
 
                 {/* Planned stats table */}
                 <div className="grid grid-cols-3 gap-2">
@@ -1000,19 +1040,22 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
 
                 <div className="flex-1 min-w-0 flex flex-col gap-4 order-1 lg:order-2">
                 {!showBuilder ? (
-                  /* Collapsed: big dashed button */
+                  /* Collapsed. This was a full-width dashed panel six lines
+                     tall, which on a phone pushed the comment and the Update
+                     button below the fold — a lot of room to advertise
+                     something most planned sessions never use. A session that
+                     was never built does not need the offer shouted at it. */
                   <button
                     onClick={() => setShowBuilder(true)}
-                    className="w-full flex flex-col items-center justify-center gap-2 py-6 border-2 border-dashed border-slate-200 rounded-2xl text-slate-400 hover:border-primary/40 hover:text-primary hover:bg-primary/5 transition-all group"
+                    className="self-start flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 text-slate-500 text-[12px] font-semibold hover:border-primary/40 hover:text-primary hover:bg-primary/5 transition-all min-h-[38px]"
                   >
-                    <svg className="w-8 h-8 opacity-50 group-hover:opacity-80" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}>
+                    <svg className="w-4 h-4 opacity-70" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
                       <rect x="2" y="16" width="4" height="6" rx="1" />
                       <rect x="7" y="11" width="4" height="11" rx="1" />
                       <rect x="12" y="7" width="4" height="15" rx="1" />
                       <rect x="17" y="3" width="4" height="19" rx="1" />
                     </svg>
-                    <span className="text-sm font-semibold">Build Workout</span>
-                    <span className="text-[11px] text-slate-300">Add intervals, warmup, cooldown…</span>
+                    Build workout
                   </button>
                 ) : (
                   /* Expanded: tabs + builder/templates */
