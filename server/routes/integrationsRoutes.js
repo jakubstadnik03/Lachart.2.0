@@ -4002,6 +4002,39 @@ function computeGarminLapsFromSamples(samples, lapMarkers, activityStartSec, act
     .sort((a, b) => a - b);
   if (starts.length === 0) return [];
 
+  // Cumulative distance belongs to the activity, not to a lap window: every
+  // sample carries metres since the start. Read it at each lap's boundaries
+  // rather than differencing the samples that happen to land inside one.
+  //
+  // Differencing inside the window was wrong twice. It lost whatever was
+  // covered between the previous lap's last sample and this lap's first, and
+  // when a lap held a single sample it took that sample's cumulative figure as
+  // the lap's own distance — so a lap late in the session reported the whole
+  // session so far.
+  //
+  // A pool swim shows both, which is where this surfaced: the counter ticks
+  // once per length, not once per second, so its laps hold few samples and
+  // often exactly one. A ride at 1 Hz hid the same bug behind a rounding
+  // error.
+  const cumulative = samples
+    .map((s) => ({ t: _num(s.startTimeInSeconds), d: _num(s.totalDistanceInMeters ?? s.distanceInMeters) }))
+    .filter((p) => p.t != null && p.d != null)
+    .sort((a, b) => a.t - b.t);
+
+  /** Metres covered by `time`, from the last reading at or before it. */
+  const cumAt = (time) => {
+    if (!cumulative.length) return null;
+    if (!Number.isFinite(time)) return cumulative[cumulative.length - 1].d;
+    let best = null;
+    for (const p of cumulative) {
+      if (p.t > time) break;
+      best = p.d;
+    }
+    // Before the first reading the athlete has covered nothing — which is the
+    // honest answer for lap one, not "unknown".
+    return best != null ? best : 0;
+  };
+
   return starts.map((start, i) => {
     const end = i + 1 < starts.length ? starts[i + 1] : (activityEndSec ?? Infinity);
     const inLap = samples.filter((s) => {
@@ -4013,8 +4046,9 @@ function computeGarminLapsFromSamples(samples, lapMarkers, activityStartSec, act
     const pw = inLap.map((s) => _num(s.powerInWatts ?? s.power));
     const cd = inLap.map((s) => _num(s.bikeCadenceInRPM ?? s.directRunCadence ?? s.stepsPerMinute ?? s.runCadence));
     const sp = inLap.map((s) => _num(s.speedMetersPerSecond ?? s.speed));
-    const dists = inLap.map((s) => _num(s.totalDistanceInMeters ?? s.distanceInMeters)).filter((v) => v != null);
-    const lapDistance = dists.length >= 2 ? dists[dists.length - 1] - dists[0] : (dists.length === 1 ? dists[0] : null);
+    const from = cumAt(start);
+    const to = cumAt(end);
+    const lapDistance = (from != null && to != null) ? Math.max(0, to - from) : null;
     const elapsed = Number.isFinite(end) ? Math.round(end - start) : null;
 
     return {
