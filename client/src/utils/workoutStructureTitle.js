@@ -10,7 +10,8 @@
  * swimmer would recognise their own session in it. So the axis is chosen per
  * session: whichever of duration and distance the reps agree on more closely
  * is the one the athlete was actually holding, with swimming defaulting to
- * distance because a pool leaves no other choice.
+ * distance because a pool leaves no other choice — and refusing to title a
+ * swim at all rather than titling it in minutes.
  *
  * Distances are rounded to what someone would have written on the plan —
  * 97.4 m of GPS drift is a 100, and 2.03 km is 2 km.
@@ -20,8 +21,22 @@ import { classifyLaps } from './lapClassify';
 const lapDurSec = (l) =>
   Number(l?.elapsed_time || l?.totalElapsedTime || l?.durationSeconds || l?.duration || l?.moving_time || 0) || 0;
 
-const lapDistM = (l) =>
-  Number(l?.distance || l?.totalDistance || l?.distanceMeters || 0) || 0;
+/**
+ * How far this lap went.
+ *
+ * Pool swims often arrive with the field empty — a pool has no GPS to sample,
+ * and Garmin's Health API ships lengths rather than metres — but the same lap
+ * still carries the speed it was swum at. Speed × time is the identical
+ * measurement written the other way round, not a guess, and without it a
+ * 6×100 came out titled in minutes.
+ */
+const lapDistM = (l) => {
+  const stated = Number(l?.distance || l?.totalDistance || l?.distanceMeters || 0) || 0;
+  if (stated > 0) return stated;
+  const mps = Number(l?.average_speed || l?.averageSpeed || l?.avgSpeed || 0) || 0;
+  const sec = lapDurSec(l);
+  return mps > 0 && sec > 0 ? mps * sec : 0;
+};
 
 /** Round a work-lap duration to a clean value so 478s reads as "8min". */
 function roundDur(s) {
@@ -106,6 +121,12 @@ export function buildStructureTitle(laps, opts = {}) {
   // measured in lengths whatever the clock says.
   const byDistance = haveDistance
     && (isSwim || cv(dists) < cv(durs) * 0.8);
+
+  // A swim we cannot measure gets no title at all. Falling back to the clock
+  // is not a lesser answer to the same question — "5×5.5min" is a set no
+  // swimmer set and none would recognise, and this title gets written onto the
+  // activity, so a wrong one is worse than none.
+  if (isSwim && !byDistance) return null;
 
   const values = byDistance
     ? dists.map((m) => roundDist(m, isSwim))

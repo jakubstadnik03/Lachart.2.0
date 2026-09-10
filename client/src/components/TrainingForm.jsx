@@ -1162,47 +1162,59 @@ const TrainingForm = ({
     };
   });
 
-  // Auto-scroll to initial lap after form data is loaded
+  // Auto-scroll to initial lap after form data is loaded. Only the selection is
+  // set here — the scrolling itself belongs to the effect below, so a lap
+  // arriving from outside and a lap tapped on the chart land in exactly the
+  // same place.
   useEffect(() => {
     if (initialSelectedLap == null || formData.results.length === 0) return;
-    const lapNum = initialSelectedLap;
-    setSelectedChartLap(lapNum);
-    // Wait for layout then scroll
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        const el = intervalRefs.current[lapNum - 1];
-        const scrollEl = scrollBodyRef.current;
-        if (el && scrollEl) {
-          const chartHeight = chartPanelRef.current?.offsetHeight || 0;
-          const elRect = el.getBoundingClientRect();
-          const containerRect = scrollEl.getBoundingClientRect();
-          const targetScroll = scrollEl.scrollTop + (elRect.top - containerRect.top) - chartHeight - 8;
-          scrollEl.scrollTo({ top: Math.max(0, targetScroll), behavior: 'smooth' });
-        }
-      });
-    });
+    setSelectedChartLap(initialSelectedLap);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialSelectedLap, formData.results.length]);
 
+  /**
+   * Bring the selected lap's card into view, just below the sticky chart.
+   *
+   * An effect and not the click handler, because selecting a lap also adds the
+   * lap summary row INSIDE that sticky chart — so the panel gets taller by the
+   * height of that row at the same moment we need to measure it. Measuring one
+   * frame after the click read the old, shorter height and parked the card
+   * that far too high, tucked behind the chart: from the athlete's side the
+   * tap simply looked like it had done nothing. An effect runs after React has
+   * committed the row, and the frame after that is when layout knows about it.
+   */
+  useEffect(() => {
+    if (selectedChartLap == null) return undefined;
+    let cancelled = false;
+    // Two frames, not one: the first lets the commit paint, the second is when
+    // the taller sticky panel has actually been laid out and can be measured.
+    let inner = 0;
+    const raf = requestAnimationFrame(() => {
+      if (cancelled) return;
+      inner = requestAnimationFrame(() => {
+        if (cancelled) return;
+        const el = intervalRefs.current[selectedChartLap - 1];
+        const scrollEl = scrollBodyRef.current;
+        if (!el || !scrollEl) return;
+        const chartHeight = chartPanelRef.current?.offsetHeight || 0;
+        const elRect = el.getBoundingClientRect();
+        const containerRect = scrollEl.getBoundingClientRect();
+        // Position the card just below the sticky chart with 8px breathing room
+        const targetScroll = scrollEl.scrollTop + (elRect.top - containerRect.top) - chartHeight - 8;
+        scrollEl.scrollTo({ top: Math.max(0, targetScroll), behavior: 'smooth' });
+      });
+    });
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(raf);
+      if (inner) cancelAnimationFrame(inner);
+    };
+  }, [selectedChartLap]);
+
   const handleChartSelect = (lapNumber) => {
-    const next = selectedChartLap === lapNumber ? null : lapNumber;
-    setSelectedChartLap(next);
-    if (next != null) {
-      const el = intervalRefs.current[next - 1];
-      const scrollEl = scrollBodyRef.current;
-      if (el && scrollEl) {
-        // Use getBoundingClientRect so the sticky chart height is automatically accounted for
-        requestAnimationFrame(() => {
-          const chartHeight = chartPanelRef.current?.offsetHeight || 0;
-          const elRect = el.getBoundingClientRect();
-          const containerRect = scrollEl.getBoundingClientRect();
-          const currentScroll = scrollEl.scrollTop;
-          // Position the card just below the sticky chart with 8px breathing room
-          const targetScroll = currentScroll + (elRect.top - containerRect.top) - chartHeight - 8;
-          scrollEl.scrollTo({ top: Math.max(0, targetScroll), behavior: 'smooth' });
-        });
-      }
-    }
+    // The chart already resolves its own toggle and hands us null on a second
+    // tap of the same bar; toggling again here would undo it.
+    setSelectedChartLap(lapNumber);
   };
 
   /** Change one interval type and keep legacy isRecovery / isSelected in sync.
