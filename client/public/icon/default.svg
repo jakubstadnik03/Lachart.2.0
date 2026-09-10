@@ -1,0 +1,17 @@
+<svg width="34" height="36" viewBox="0 0 34 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- A stopwatch: the one thing every session has, whatever the sport. Used
+       for anything the log cannot name - Garmin's "other", strength work
+       logged by hand, a session typed in without a sport. -->
+  <g stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <!-- crown -->
+    <path d="M13.5 2h7" />
+    <path d="M17 2v4" />
+    <!-- side button -->
+    <path d="M27.2 8.4l2.1-2.1" />
+    <!-- case -->
+    <circle cx="17" cy="21" r="13" />
+    <!-- hand, pointing at two o'clock -->
+    <path d="M17 21V13.5" />
+    <path d="M17 21l5 3" />
+  </g>
+</svg>
