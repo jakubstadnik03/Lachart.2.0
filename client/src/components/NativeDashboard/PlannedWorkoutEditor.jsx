@@ -118,6 +118,15 @@ export default function PlannedWorkoutEditor({
   const [plannedDist, setPlannedDist] = useState('');
   const [targetTss, setTargetTss] = useState('');
   const [description, setDescription] = useState('');
+  // Grows to fit the note, like the web editor: three rows behind a scrollbar
+  // is no way to read back a session written out in full.
+  const descRef = useRef(null);
+  useEffect(() => {
+    const el = descRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    if (el.scrollHeight > 0) el.style.height = `${el.scrollHeight}px`;
+  }, [description]);
   const [comment, setComment] = useState('');
   const [category, setCategory] = useState('');
   const [catOpen, setCatOpen]   = useState(false);
@@ -965,11 +974,12 @@ export default function PlannedWorkoutEditor({
           {/* Description / coach notes */}
           <Field label="Description / coach notes">
             <textarea
+              ref={descRef}
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="Focus, context, feel…"
               rows={3}
-              style={{ ...input, resize: 'vertical', minHeight: 64, lineHeight: 1.4, padding: '10px 12px' }}
+              style={{ ...input, resize: 'none', overflow: 'hidden', minHeight: 64, lineHeight: 1.4, padding: '10px 12px' }}
             />
           </Field>
 

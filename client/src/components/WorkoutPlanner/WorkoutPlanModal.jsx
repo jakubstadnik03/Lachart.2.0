@@ -14,7 +14,7 @@
  *  onDelete(workout)    – called when user deletes an existing workout
  *  onClose()            – close the modal
  */
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import ReactDOM from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence, useDragControls } from 'framer-motion';
@@ -469,6 +469,19 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
   const [sport, setSport]         = useState(workout?.sport || 'bike');
   const [title, setTitle]         = useState(workout?.title || '');
   const [desc, setDesc]           = useState(workout?.description || '');
+  // The coach's notes grow to fit what is in them.
+  //
+  // Two fixed rows with the overflow hidden meant a session written out in
+  // full — warm-up, the set, what to feel — was read two lines at a time
+  // through a scrollbar the size of a stamp. The panel around this already
+  // scrolls, so there is nothing to protect by keeping the box small.
+  const descRef = useRef(null);
+  useEffect(() => {
+    const el = descRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    if (el.scrollHeight > 0) el.style.height = `${el.scrollHeight}px`;
+  }, [desc]);
   const [tss, setTss]             = useState(workout?.targetTss || '');
   const [steps, setSteps]         = useState(workout?.steps || []);
   const [category, setCategory]   = useState(workout?.category || '');
@@ -946,9 +959,9 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
                   </div>
                   <div>
                     <label className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1 block">Description / Coach notes</label>
-                    <textarea rows={2} value={desc} onChange={e => setDesc(e.target.value)}
+                    <textarea ref={descRef} rows={2} value={desc} onChange={e => setDesc(e.target.value)}
                       placeholder="Focus, context, feel…"
-                      className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-primary/30 resize-none"
+                      className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-primary/30 resize-none overflow-hidden"
                     />
                   </div>
 

@@ -9781,11 +9781,14 @@ export default function CalendarView({
                                         <span className="text-sm font-bold flex-1 truncate" style={{ color: planColor }}>{pw.title || 'Planned workout'}</span>
                                         <span className="text-[11px] font-bold flex-shrink-0" style={{ color: cc.color }}>{cc.label}</span>
                                       </div>
+                                      {/* The coach's instruction, whole and unclamped.
+                                          On a planned session this is the
+                                          workout — the title is a label for it —
+                                          so two lines behind an ellipsis was
+                                          hiding the part worth reading. Line
+                                          breaks are the coach's own. */}
                                       {pw.description && (
-                                        <div
-                                          className="text-[12px] leading-snug text-gray-500"
-                                          style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}
-                                        >
+                                        <div className="text-[13px] leading-snug text-gray-700 whitespace-pre-line">
                                           {pw.description}
                                         </div>
                                       )}
@@ -9837,11 +9840,10 @@ export default function CalendarView({
                                         <span className="text-[11px] font-bold flex-shrink-0" style={{ color: '#ef4444' }}>Missed</span>
                                       )}
                                     </div>
+                                    {/* Whole, for the same reason as the paired
+                                        card above. */}
                                     {pw.description && (
-                                      <div
-                                        className="text-[12px] leading-snug text-gray-500 pl-0.5"
-                                        style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}
-                                      >
+                                      <div className="text-[13px] leading-snug text-gray-700 whitespace-pre-line pl-0.5">
                                         {pw.description}
                                       </div>
                                     )}

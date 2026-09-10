@@ -2,15 +2,14 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "client",
+      "name": "lachart-client",
       "runtimeExecutable": "npm",
       "runtimeArgs": [
         "--prefix",
-        "client",
+        "/Users/jakubstadnik/Documents/LaChart/Lachart.2.0/client",
         "start"
       ],
-      "port": 3000,
-      "autoPort": true
+      "port": 3000
     }
   ]
 }
