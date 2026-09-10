@@ -113,11 +113,33 @@ export default function CoachAthleteBar() {
   const ATHLETE_URL_SECTIONS = ['dashboard', 'training', 'testing', 'athlete'];
   const currentSection = location.pathname.split('/')[1];
 
-  const handleSelectAthlete = (athleteId) => {
-    setSelectedAthleteId(athleteId);
-    if (ATHLETE_URL_SECTIONS.includes(currentSection)) {
+  /**
+   * Point the URL at whoever is now selected, so the two cannot disagree.
+   *
+   * The allow-list above only names four sections, and the menu — along with
+   * every page that reads the athlete off the URL — believes the URL over the
+   * selection. Switching athlete anywhere else therefore moved this bar and
+   * left the URL naming the athlete just switched away from: the menu went on
+   * highlighting the old one and the panels went on showing their data. It
+   * looked intermittent because it depended entirely on which page you were
+   * standing on.
+   *
+   * A section outside the list that already carries an id in the URL has
+   * proved it accepts one, so rewriting it is safe. One that carries none is
+   * left alone — navigating there would hit the catch-all redirect.
+   */
+  const followSelectionInUrl = (athleteId) => {
+    if (!athleteId) return;
+    const seg = location.pathname.split('/')[2];
+    const urlNamesAnAthlete = seg && /^[a-f0-9]{24}$/.test(seg);
+    if (ATHLETE_URL_SECTIONS.includes(currentSection) || urlNamesAnAthlete) {
       navigate(`/${currentSection}/${athleteId}`, { replace: true });
     }
+  };
+
+  const handleSelectAthlete = (athleteId) => {
+    setSelectedAthleteId(athleteId);
+    followSelectionInUrl(athleteId);
   };
 
   const activeAthletes = athletes.filter(a => !(a.invitationPending || a.coachLinkStatus === 'pending'));
@@ -146,8 +168,9 @@ export default function CoachAthleteBar() {
           <button
             onClick={() => {
               setSelectedAthleteId(user?._id);
-              if (ATHLETE_URL_SECTIONS.includes(currentSection)) navigate(`/${currentSection}/${user?._id}`, { replace: true });
-              else navigate(`/athlete/${user?._id}`);
+              if (ATHLETE_URL_SECTIONS.includes(currentSection) || /^[a-f0-9]{24}$/.test(location.pathname.split('/')[2] || '')) {
+                followSelectionInUrl(user?._id);
+              } else navigate(`/athlete/${user?._id}`);
             }}
             className={`flex-shrink-0 relative rounded-full transition-all ${isViewingSelf ? 'ring-2 ring-primary/50' : ''}`}
           >
@@ -228,8 +251,9 @@ export default function CoachAthleteBar() {
         <button
           onClick={() => {
             setSelectedAthleteId(user?._id);
-            if (ATHLETE_URL_SECTIONS.includes(currentSection)) navigate(`/${currentSection}/${user?._id}`, { replace: true });
-            else navigate(`/athlete/${user?._id}`);
+            if (ATHLETE_URL_SECTIONS.includes(currentSection) || /^[a-f0-9]{24}$/.test(location.pathname.split('/')[2] || '')) {
+              followSelectionInUrl(user?._id);
+            } else navigate(`/athlete/${user?._id}`);
           }}
           title="Open my profile"
           className={`flex-shrink-0 flex flex-col items-center gap-0.5 px-2 py-1 rounded-xl transition-all ${isViewingSelf ? 'bg-primary/10 ring-2 ring-primary/30' : 'hover:bg-gray-100'}`}
