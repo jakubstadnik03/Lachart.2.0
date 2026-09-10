@@ -281,15 +281,6 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
       iconWhite: "/icon/dashboard-white.svg",
       showFor: ["admin"]
     },
-    {
-      // Last on purpose: it is the answer to "what else is in here", which is a
-      // question people ask after the nav has already failed them.
-      name: "What you can do",
-      path: "/guide",
-      icon: "/icon/support.svg",
-      iconWhite: "/icon/support-white.svg",
-      showFor: ["coach", "athlete", "tester", "testing", "admin"]
-    },
   ];
 
   return (
@@ -470,34 +461,10 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
                   </li>
                 ))}
 
-              {/* "Download iPhone app" — external App Store link for users
-                  on the web. Hidden inside the Capacitor native build (they
-                  already have it). The "New" badge marks launch freshness. */}
-              {!isCapacitorNative() && (
-                <li>
-                  <a
-                    href="https://apps.apple.com/cz/app/lachart/id6764768876?l=cs"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    onClick={() => {
-                      handleMenuItemClick && handleMenuItemClick();
-                      try { window.gtag && window.gtag('event', 'menu_download_app_click'); } catch {}
-                    }}
-                    className="flex items-center justify-between text-sm font-medium py-3 px-3 sm:p-3 rounded-lg text-gray-700 hover:bg-gray-100 touch-manipulation"
-                  >
-                    <span className="flex items-center">
-                      {/* Apple glyph inline so we don't need a new icon asset */}
-                      <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" className="mr-2 sm:mr-3 text-gray-700">
-                        <path d="M17.05 12.04c-.03-2.8 2.29-4.15 2.4-4.21-1.31-1.92-3.35-2.18-4.07-2.21-1.73-.17-3.38 1.02-4.26 1.02-.89 0-2.24-1-3.69-.97-1.9.03-3.65 1.1-4.62 2.8-1.97 3.42-.5 8.47 1.41 11.24.94 1.36 2.04 2.88 3.48 2.83 1.41-.06 1.94-.91 3.64-.91 1.69 0 2.18.91 3.65.88 1.51-.02 2.46-1.37 3.38-2.74 1.07-1.57 1.51-3.09 1.53-3.17-.03-.01-2.93-1.12-2.95-4.46zM14.4 4.34c.78-.95 1.31-2.28 1.17-3.59-1.13.05-2.49.75-3.29 1.7-.72.84-1.36 2.18-1.19 3.48 1.26.1 2.54-.64 3.31-1.59z"/>
-                      </svg>
-                      Download iPhone app
-                    </span>
-                    <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-pink-500 text-white">
-                      New
-                    </span>
-                  </a>
-                </li>
-              )}
+              {/* The App Store link lives in the header's "Download app" button
+                  and in the logged-out menu, where it is reaching someone who
+                  does not have the app. Signed-in athletes had already made
+                  that choice, so the sidebar no longer asks again. */}
             </ul>
           )}
         </motion.div>
