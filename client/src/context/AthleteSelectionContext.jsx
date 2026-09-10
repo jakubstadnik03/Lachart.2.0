@@ -40,6 +40,42 @@ export function athleteIdInPath(pathname) {
   return seg && OBJECT_ID.test(seg) ? seg : null;
 }
 
+/**
+ * Where selecting an athlete should take you from where you are standing.
+ *
+ * The menu's athlete list and the coach's athlete bar each carried their own
+ * version of this, and they disagreed. The bar's list named four sections and
+ * did nothing anywhere else, so on /profile — a page that is always your own,
+ * calls /user/profile with no athlete parameter and ignores the selection
+ * entirely — clicking an athlete moved the ring and left you looking at
+ * yourself. The menu's list on the same screen went to /athlete/<id>, which
+ * works. One rule now, so the two controls cannot answer differently.
+ *
+ * @returns {string|null} where to go, or null to stay put — the sections that
+ * read the selection out of this context take no id, and navigating them would
+ * hit the catch-all redirect.
+ */
+export function athleteRouteFor(pathname, athleteId, selfId = null) {
+  if (!athleteId) return null;
+  const section = String(pathname || '').split('/')[1] || '';
+  const isSelf = selfId != null && String(athleteId) === String(selfId);
+
+  if (ATHLETE_URL_SECTIONS.includes(section)) {
+    // /athlete/<id> is the coach's view OF somebody else. Pointed at yourself
+    // it asks the athlete endpoint for the coach, which is not a thing.
+    if (section === 'athlete' && isSelf) return '/profile';
+    return `/${section}/${athleteId}`;
+  }
+
+  // Neither of these can show someone else: one is always you, the other is a
+  // list. Selecting an athlete goes where an athlete can actually be shown.
+  if (section === 'profile' || section === 'athletes') {
+    return isSelf ? '/profile' : `/athlete/${athleteId}`;
+  }
+
+  return null;
+}
+
 const AthleteSelectionContext = createContext(null);
 
 /**

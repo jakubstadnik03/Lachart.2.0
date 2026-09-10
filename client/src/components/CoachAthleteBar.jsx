@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { UserPlusIcon, ChevronDownIcon, ChevronUpIcon } from '@heroicons/react/24/outline';
 import { useAuth } from '../context/AuthProvider';
-import { useAthleteSelection } from '../context/AthleteSelectionContext';
+import { athleteRouteFor, useAthleteSelection } from '../context/AthleteSelectionContext';
 import api from '../services/api';
 import { getAthleteAvatar, getAvatarBySportAndGender } from '../utils/avatarUtils';
 
@@ -105,35 +105,20 @@ export default function CoachAthleteBar() {
 
   if (!isCoach) return null;
 
-  const ATHLETE_URL_SECTIONS = ['dashboard', 'training', 'testing', 'athlete'];
-  const currentSection = location.pathname.split('/')[1];
-
   /**
    * Point the URL at whoever is now selected, so the two cannot disagree.
    *
-   * The allow-list above only names four sections, and the menu — along with
-   * every page that reads the athlete off the URL — believes the URL over the
-   * selection. Switching athlete anywhere else therefore moved this bar and
-   * left the URL naming the athlete just switched away from: the menu went on
-   * highlighting the old one and the panels went on showing their data. It
-   * looked intermittent because it depended entirely on which page you were
-   * standing on.
-   *
-   * Only the sections that genuinely take an :athleteId. It used to also
-   * rewrite any section whose second segment looked like an id, which on
-   * /training-calendar/:activityId meant replacing the activity with an
-   * athlete and navigating the coach off the session they were reading.
+   * Every page that reads the athlete off the URL believes the URL over the
+   * selection, so switching athlete without moving the URL left the menu
+   * highlighting the old one and the panels showing their data. It looked
+   * intermittent because it depended entirely on which page you were standing
+   * on. athleteRouteFor is shared with the menu's athlete list, which used to
+   * answer this question differently on the same screen.
    */
-  const followSelectionInUrl = (athleteId) => {
-    if (!athleteId) return;
-    if (ATHLETE_URL_SECTIONS.includes(currentSection)) {
-      navigate(`/${currentSection}/${athleteId}`, { replace: true });
-    }
-  };
-
   const handleSelectAthlete = (athleteId) => {
     setSelectedAthleteId(athleteId);
-    followSelectionInUrl(athleteId);
+    const to = athleteRouteFor(location.pathname, athleteId, user?._id);
+    if (to) navigate(to, { replace: true });
   };
 
   const activeAthletes = athletes.filter(a => !(a.invitationPending || a.coachLinkStatus === 'pending'));

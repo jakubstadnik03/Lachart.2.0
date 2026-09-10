@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import { BRAND_LOGO_SRC } from "../constants/brandLogo";
 import { NavLink, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from '../context/AuthProvider';
-import { athleteIdInPath, useAthleteSelection } from '../context/AthleteSelectionContext';
+import { athleteIdInPath, athleteRouteFor, useAthleteSelection } from '../context/AthleteSelectionContext';
 import api from '../services/api';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getAvatarBySportAndGender } from '../utils/avatarUtils';
@@ -149,39 +149,25 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
       // Globální volba atleta – sdílená napříč stránkami (context writes to localStorage + broadcasts)
       setGlobalAthleteId(athleteId);
 
-      // Pokud jsme na stránce athletes nebo profile, přesměrujeme na profil atleta
-      if (currentPath === 'athletes' || currentPath === 'profile') {
-        navigate(`/athlete/${athleteId}`, { replace: true });
-        return;
-      }
-
-      // Pro training-calendar: zůstaň na stránce, jen pošli event a ulož výběr
+      // FitAnalysisPage reads this key directly, so the calendar still needs
+      // its own nudge on top of the context.
       if (currentPath === 'training-calendar') {
         localStorage.setItem('trainingCalendar_selectedAthleteId', athleteId);
         window.dispatchEvent(new CustomEvent('athleteSelected', { detail: { athleteId } }));
-        // navigate to training-calendar with athlete context (without redirecting away)
-        navigate(`/training-calendar`, { replace: true });
-        return;
       }
 
-      // These take no :athleteId segment, so navigating would hit the catch-all
-      // redirect. Both read the athlete from AthleteSelectionContext, which
-      // setGlobalAthleteId above already updated - staying put is enough.
-      if (currentPath === 'health' || currentPath === 'annual-training-plan') {
-        return;
-      }
-
-      // This used to strip the athlete out of the URL when you clicked whoever
-      // was already selected — a deselect. It never deselected anything: the
-      // line above had already set this athlete as the selection, so all it did
-      // was leave the URL naming nobody while the selection named them. Half
-      // the app reads the URL, so the next click on the same athlete put the id
-      // back, the one after took it away again, and none of them changed whose
-      // data was on screen. Clicking the selected athlete now simply keeps them
-      // selected.
-
-      // Pro ostatní stránky přidáme ID atleta do URL — pages re-load via their selectedAthleteId useEffect
-      navigate(`/${currentPath}/${athleteId}`, { replace: true });
+      // One rule, shared with the coach's athlete bar, which used to answer
+      // this differently on the same screen. null means the page reads the
+      // athlete out of the context and takes no id — staying put is the whole
+      // update, and navigating would hit the catch-all redirect.
+      //
+      // Clicking whoever is already selected used to strip the id back out of
+      // the URL — a "deselect" that deselected nothing, because the line above
+      // had already selected them. Half the app reads the URL, so the next
+      // click put the id back, the one after took it away, and none of them
+      // changed whose data was on screen.
+      const to = athleteRouteFor(location.pathname, athleteId, user?._id);
+      if (to) navigate(to, { replace: true });
     } catch (error) {
       console.error('Error changing athlete:', error);
     }

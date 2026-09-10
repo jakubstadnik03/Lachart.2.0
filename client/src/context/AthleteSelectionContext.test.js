@@ -12,7 +12,9 @@ import React, { useContext } from 'react';
 import { createRoot } from 'react-dom/client';
 import { act } from 'react-dom/test-utils';
 import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
-import { AthleteSelectionProvider, useAthleteSelection, athleteIdInPath } from './AthleteSelectionContext';
+import {
+  AthleteSelectionProvider, useAthleteSelection, athleteIdInPath, athleteRouteFor,
+} from './AthleteSelectionContext';
 
 const A = 'a'.repeat(24);
 const B = 'b'.repeat(24);
@@ -170,5 +172,62 @@ describe('AthleteSelectionProvider · URL and selection', () => {
     mount(`/dashboard/${A}`);
     act(() => { window.dispatchEvent(new CustomEvent('userLoggedOut')); });
     expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
+  });
+});
+
+/**
+ * Where picking an athlete takes you.
+ *
+ * The menu's athlete list and the coach's athlete bar each had their own answer
+ * and they disagreed. On /profile the menu went to /athlete/<id> — which works
+ * — while the bar did nothing at all, leaving the ring on the athlete and the
+ * page showing the coach's own profile, because ProfilePage calls /user/profile
+ * with no athlete parameter and reads no selection.
+ */
+describe('athleteRouteFor', () => {
+  const ME = 'f'.repeat(24);
+
+  it('keeps you on a section that carries an athlete', () => {
+    expect(athleteRouteFor(`/dashboard/${A}`, B)).toBe(`/dashboard/${B}`);
+    expect(athleteRouteFor('/training', B)).toBe(`/training/${B}`);
+    expect(athleteRouteFor(`/testing/${A}`, B)).toBe(`/testing/${B}`);
+    expect(athleteRouteFor(`/athlete/${A}`, B)).toBe(`/athlete/${B}`);
+  });
+
+  it('leaves the profile page for one that can show an athlete', () => {
+    expect(athleteRouteFor('/profile', B)).toBe(`/athlete/${B}`);
+    expect(athleteRouteFor('/athletes', B)).toBe(`/athlete/${B}`);
+  });
+
+  it('sends you to your own profile when the athlete is you', () => {
+    expect(athleteRouteFor('/profile', ME, ME)).toBe('/profile');
+    expect(athleteRouteFor('/athletes', ME, ME)).toBe('/profile');
+    // /athlete/<id> is the coach's view OF someone else; aimed at yourself it
+    // asks the athlete endpoint for the coach.
+    expect(athleteRouteFor(`/athlete/${A}`, ME, ME)).toBe('/profile');
+  });
+
+  it('stays put where the page reads the selection and takes no id', () => {
+    expect(athleteRouteFor('/health', B)).toBeNull();
+    expect(athleteRouteFor('/annual-training-plan', B)).toBeNull();
+    expect(athleteRouteFor('/workout-planner', B)).toBeNull();
+    expect(athleteRouteFor('/settings', B)).toBeNull();
+  });
+
+  it('never rewrites an activity deep link as an athlete', () => {
+    expect(athleteRouteFor(`/training-calendar/${ACTIVITY}`, B)).toBeNull();
+    expect(athleteRouteFor('/training-calendar', B)).toBeNull();
+  });
+
+  it('keeps the athlete selected when you pick the one already selected', () => {
+    // Not a deselect. This used to strip the id and make every second click
+    // look dead.
+    expect(athleteRouteFor(`/dashboard/${A}`, A)).toBe(`/dashboard/${A}`);
+  });
+
+  it('answers nothing for no athlete', () => {
+    expect(athleteRouteFor('/dashboard', null)).toBeNull();
+    expect(athleteRouteFor('', B)).toBeNull();
+    expect(athleteRouteFor(null, B)).toBeNull();
   });
 });
