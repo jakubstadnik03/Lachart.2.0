@@ -3,11 +3,14 @@ import ReactDOM from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { EllipsisVerticalIcon } from "@heroicons/react/24/outline";
 import { resolveDistanceUnitSystem, formatDistance, formatPaceMMSS, paceSecondsToDisplaySeconds, paceUnitShort, parseLapDistanceToMeters } from "../../utils/unitsConverter";
-import { getStravaActivityDetail } from "../../services/api";
+import { getStravaActivityDetail, getGarminActivityDetail } from "../../services/api";
 import { useCategories } from "../../context/CategoryContext";
 import { filterWorkResults, classifyWorkLaps, getWorkLapMetricValue } from "../../utils/workLapFilter";
 import { enrichTrainingsWithCategory, normalizeCategoryKey } from "../../utils/trainingCategory";
-import { getChartIntervals, needsStravaLapFetch, resolveStravaNumericId, canChartTraining } from "../../utils/trainingChartIntervals";
+import {
+  getChartIntervals, needsStravaLapFetch, resolveStravaNumericId,
+  needsGarminLapFetch, resolveGarminNumericId, canChartTraining,
+} from "../../utils/trainingChartIntervals";
 import { sameSession } from "../../utils/dedupeTrainingRows";
 
 const CATEGORY_OPTION_PREFIX = '__category__:';
@@ -849,6 +852,9 @@ export function TrainingStats({
   // Declared up here because the picker pool below reads it: whether a session
   // is worth offering depends on whether its laps have arrived yet.
   const [stravaLapsCache, setStravaLapsCache] = useState({}); // { stravaId: [...results] }
+  // Separate map, not one shared by raw id: both services number their
+  // activities, and nothing says a Strava id and a Garmin id cannot collide.
+  const [garminLapsCache, setGarminLapsCache] = useState({}); // { garminId: [...results] }
 
   /**
    * The picker used to list every training in the category, including ones the
@@ -856,13 +862,16 @@ export function TrainingStats({
    * Training Graph go blank ("No interval data for this training"). Offering a
    * session that renders as an empty panel is worse than not offering it.
    *
-   * stravaLapsCache is a dependency, so a Strava-linked session that is kept
-   * while its laps are in flight drops out by itself once the fetch lands empty.
+   * Both lap caches are dependencies, so a session kept while its laps are in
+   * flight drops out by itself once the fetch lands empty — from either
+   * service. Garmin was missing here entirely: it had no detail fetch behind
+   * it, so every Garmin ride failed this check, never entered the pool, and
+   * could not be picked from the panel beside it.
    */
   const hasChartIntervals = useCallback((t) => {
     const sport = resolveTrainingSport(t) || normalizeSport(currentSelectedSport) || 'bike';
-    return canChartTraining(t, stravaLapsCache, sport);
-  }, [stravaLapsCache, currentSelectedSport]);
+    return canChartTraining(t, stravaLapsCache, sport, garminLapsCache);
+  }, [stravaLapsCache, garminLapsCache, currentSelectedSport]);
 
   const sportFilteredTrainings = useMemo(() => {
     return trainingsList.filter(t =>
@@ -1043,6 +1052,28 @@ export function TrainingStats({
     return () => { cancelled = true; };
   }, [filteredTrainings, stravaLapsCache, stravaLapToResult, integrationAthleteId]);
 
+  // The same for Garmin. Its laps carry the same field names Strava's do, so
+  // the mapper above reads both without knowing which it was handed.
+  useEffect(() => {
+    const garminNeeded = filteredTrainings.filter(t => needsGarminLapFetch(t, garminLapsCache));
+    if (!garminNeeded.length) return;
+    let cancelled = false;
+    garminNeeded.forEach(t => {
+      const rawId = resolveGarminNumericId(t);
+      if (!rawId) return;
+      getGarminActivityDetail(rawId, integrationAthleteId).then(raw => {
+        if (cancelled) return;
+        const laps = raw?.laps ?? [];
+        const results = laps.map(lap => stravaLapToResult(lap, t.sport));
+        setGarminLapsCache(prev => ({ ...prev, [rawId]: results }));
+      }).catch(() => {
+        // Cache the miss too, so a ride Garmin cannot detail is asked about once.
+        if (!cancelled) setGarminLapsCache(prev => ({ ...prev, [rawId]: [] }));
+      });
+    });
+    return () => { cancelled = true; };
+  }, [filteredTrainings, garminLapsCache, stravaLapToResult, integrationAthleteId]);
+
   // Enrich a training's results with fetched Strava laps when needed.
   // When "Hide warm-up & cool-down" is on, drop explicit warmup/recovery/
   // cooldown intervals AND apply a first/last-lap heuristic for raw Strava
@@ -1073,8 +1104,8 @@ export function TrainingStats({
   // "drop the first and last lap" guess.
   const getAllIntervals = useCallback((t) => {
     const sport = resolveTrainingSport(t) || normalizeSport(currentSelectedSport) || 'bike';
-    return classifyWorkLaps(getChartIntervals(t, stravaLapsCache, sport), sport);
-  }, [stravaLapsCache, currentSelectedSport]);
+    return classifyWorkLaps(getChartIntervals(t, stravaLapsCache, sport, garminLapsCache), sport);
+  }, [stravaLapsCache, garminLapsCache, currentSelectedSport]);
 
   const getResults = useCallback((t) => {
     return filterWarmCool(getAllIntervals(t));

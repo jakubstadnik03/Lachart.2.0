@@ -14,9 +14,13 @@ import {
 import { useAuth } from '../../context/AuthProvider';
 import { resolveDistanceUnitSystem } from '../../utils/unitsConverter';
 import { SearchableSelect } from '../SearchableSelect';
-import { getStravaActivityDetail } from '../../services/api';
+import { getStravaActivityDetail, getGarminActivityDetail } from '../../services/api';
 import { classifyWorkLaps } from '../../utils/workLapFilter';
-import { canChartTraining, getChartIntervals } from '../../utils/trainingChartIntervals';
+import {
+  canChartTraining, getChartIntervals,
+  isStravaBackedTraining, isGarminBackedTraining,
+  resolveStravaNumericId, resolveGarminNumericId,
+} from '../../utils/trainingChartIntervals';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend);
 
@@ -276,8 +280,10 @@ const TrainingGraph = ({
    * still waiting on that fetch counts as unknown and stays listed.
    */
   const chartable = useCallback(
-    (list, cache = {}) => (list || []).filter(
-      (t) => canChartTraining(t, cache, resolveTrainingSport(t) || normalizeSport(currentSelectedSport)),
+    (list, cache = {}, garminCache = {}) => (list || []).filter(
+      (t) => canChartTraining(
+        t, cache, resolveTrainingSport(t) || normalizeSport(currentSelectedSport), garminCache,
+      ),
     ),
     [resolveTrainingSport, normalizeSport, currentSelectedSport],
   );
@@ -292,14 +298,21 @@ const TrainingGraph = ({
   const [tooltip, setTooltip] = useState(null);
   const [ranges, setRanges] = useState({ power: { min: 0, max: 0 }, heartRate: { min: 0, max: 0 } });
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [fetchedLaps, setFetchedLaps] = useState(null); // { id, results } — lazy-loaded Strava laps
+  const [fetchedLaps, setFetchedLaps] = useState(null); // { id, source, results } — lazy-loaded laps
   const [lapsLoading, setLapsLoading] = useState(false);
 
   // This panel fetches laps one activity at a time; getChartIntervals and
-  // canChartTraining both expect the keyed cache Training History keeps. Same
-  // contents, shape they can read.
+  // canChartTraining both expect the keyed caches Training History keeps. Same
+  // contents, shape they can read. Two of them, because both services number
+  // their activities and a Strava id could collide with a Garmin one.
   const stravaLapsCache = useMemo(
-    () => (fetchedLaps?.id ? { [fetchedLaps.id]: fetchedLaps.results } : {}),
+    () => (fetchedLaps?.id && fetchedLaps.source !== 'garmin'
+      ? { [fetchedLaps.id]: fetchedLaps.results } : {}),
+    [fetchedLaps],
+  );
+  const garminLapsCache = useMemo(
+    () => (fetchedLaps?.id && fetchedLaps.source === 'garmin'
+      ? { [fetchedLaps.id]: fetchedLaps.results } : {}),
     [fetchedLaps],
   );
 
@@ -328,30 +341,36 @@ const TrainingGraph = ({
     };
   }, [normalizeSport]);
 
-  // Lazy-fetch Strava laps when selected activity has no results
+  // Lazy-fetch detail laps when the selected activity has no results — from
+  // whichever service it came from. Garmin ships the same lactate-only stubs
+  // Strava does, so without this half a Garmin ride charted as a flat row of
+  // empty laps.
   useEffect(() => {
     const t = trainingList?.find(t => matchesId(t, selectedTraining));
     if (!t) { setFetchedLaps(null); return; }
     if (Array.isArray(t.results) && t.results.length > 0) { setFetchedLaps(null); return; }
-    // Strava activities surface as { source: 'strava', stravaId, ... } from
-    // /api/integrations/activities. `t.type` on those is the activity sport
-    // (Ride/Swim/Run), not the source — checking it broke the lazy-fetch.
-    const isStrava = t.source === 'strava' || t.type === 'strava' || !!t.stravaId
-                     || String(t.id || '').startsWith('strava-');
-    const rawId = t.stravaId || (String(t.id || '').replace(/^strava-/, '')) || null;
-    if (!rawId || !isStrava) { setFetchedLaps(null); return; }
+    // Activities surface as { source: 'strava' | 'garmin', stravaId | garminId }
+    // from /api/integrations/activities. `t.type` on those is the activity
+    // sport (Ride/Swim/Run), not the source — checking it broke the lazy-fetch.
+    const strava = isStravaBackedTraining(t);
+    const garmin = !strava && isGarminBackedTraining(t);
+    if (!strava && !garmin) { setFetchedLaps(null); return; }
+    const source = garmin ? 'garmin' : 'strava';
+    const rawId = garmin ? resolveGarminNumericId(t) : resolveStravaNumericId(t);
+    if (!rawId) { setFetchedLaps(null); return; }
     // Already fetched for this activity
-    if (fetchedLaps?.id === String(rawId)) return;
+    if (fetchedLaps?.id === String(rawId) && fetchedLaps?.source === source) return;
     let cancelled = false;
     setLapsLoading(true);
     setFetchedLaps(null);
-    getStravaActivityDetail(rawId, integrationAthleteId).then(raw => {
+    const fetchDetail = garmin ? getGarminActivityDetail : getStravaActivityDetail;
+    fetchDetail(rawId, integrationAthleteId).then(raw => {
       if (cancelled) return;
       const laps = raw?.laps ?? [];
       const results = laps.map((lap, idx) => stravaLapToResult(lap, idx, t.sport));
-      setFetchedLaps({ id: String(rawId), results });
+      setFetchedLaps({ id: String(rawId), source, results });
     }).catch(() => {
-      if (!cancelled) setFetchedLaps({ id: String(rawId), results: [] });
+      if (!cancelled) setFetchedLaps({ id: String(rawId), source, results: [] });
     }).finally(() => {
       if (!cancelled) setLapsLoading(false);
     });
@@ -507,7 +526,7 @@ const TrainingGraph = ({
       // scaled to the work intervals while the chart also draws the recoveries
       // — and every rest lap lands below the floor.
       const resultsArr = classifyWorkLaps(
-        getChartIntervals(selectedData, stravaLapsCache, sport),
+        getChartIntervals(selectedData, stravaLapsCache, sport, garminLapsCache),
         sport,
       );
       if (resultsArr.length > 0) {
@@ -572,6 +591,7 @@ const TrainingGraph = ({
       ? (trainingList || [])
       : (trainingList || []).filter((t) => matchesSport(t, currentSelectedSport)),
     stravaLapsCache,
+    garminLapsCache,
   );
   const uniqueTitles = [...new Set(sportTrainings.map(t => t.title))];
 
@@ -610,7 +630,7 @@ const TrainingGraph = ({
   // instead, and the bar colours and the Work/Recovery chip do the explaining.
   const selectedTrainingSport = resolveTrainingSport(selectedTrainingData);
   const effectiveResults = classifyWorkLaps(
-    getChartIntervals(selectedTrainingData, stravaLapsCache, selectedTrainingSport),
+    getChartIntervals(selectedTrainingData, stravaLapsCache, selectedTrainingSport, garminLapsCache),
     selectedTrainingSport,
   );
 

@@ -56,6 +56,43 @@ export function isStravaActivityShape(act) {
     (act.source === 'strava' && !!act.sourceId);
 }
 
+/**
+ * The Garmin half of the same pair.
+ *
+ * Garmin ships the same lactate-only lap stubs in the list payload that Strava
+ * does, and the rides behind them have real laps. Only Strava had a detail
+ * fetch to go and get them, so every Garmin session failed canChartTraining,
+ * dropped out of the Training History pool, and could not be selected at all:
+ * the picker read "No sessions in this category" over an athlete with a
+ * season of Garmin runs, and clicking one in the Field Lactate panel beside it
+ * did nothing, because there was nothing in the pool to point at.
+ */
+export function isGarminActivityShape(act) {
+  if (!act) return false;
+  const idStr = String(act.id || act._id || '');
+  return act.type === 'garmin' ||
+    act.source === 'garmin' ||
+    !!act.garminId ||
+    /^garmin-/i.test(idStr);
+}
+
+export function isGarminBackedTraining(act) {
+  if (!act) return false;
+  if (act.sourceGarminActivityId) return true;
+  return isGarminActivityShape(act);
+}
+
+export function resolveGarminNumericId(act) {
+  if (!act) return '';
+  if (act.sourceGarminActivityId) {
+    return String(act.sourceGarminActivityId).replace(/^garmin-/i, '');
+  }
+  if (act.source === 'garmin' && act.sourceId) {
+    return String(act.sourceId).replace(/^garmin-/i, '');
+  }
+  return String(act.garminId || act.id || act._id || '').replace(/^garmin-/i, '');
+}
+
 export function mergeLapsPreserveLactate(freshLaps, stubLaps) {
   if (!Array.isArray(stubLaps) || stubLaps.length === 0) return freshLaps;
   const copyIntervalType = stubLaps.length === freshLaps.length;
@@ -186,20 +223,24 @@ export function normalizeLapsToResults(laps, sport) {
  * Prefer every lap in the session (work + recovery + warm-up), not only
  * the shorter `results[]` subset that often stores work intervals only.
  */
-export function getChartIntervals(training, stravaLapsCache = {}, sport = '') {
+export function getChartIntervals(training, stravaLapsCache = {}, sport = '', garminLapsCache = {}) {
   if (!training) return [];
 
   const results = Array.isArray(training.results) ? training.results : [];
   const lapsNorm = normalizeLapsToResults(training.laps, sport);
 
+  // Strava first, then Garmin — a row is one or the other, and asking in this
+  // order keeps a training that records both ids reading the copy it was
+  // exported from.
   let fromCache = [];
-  if (isStravaBackedTraining(training)) {
-    const rawId = resolveStravaNumericId(training);
-    const cached = rawId ? stravaLapsCache[rawId] : null;
-    if (Array.isArray(cached) && cached.length > 0) {
-      const stubLaps = Array.isArray(training.laps) ? training.laps : [];
-      fromCache = mergeLapsPreserveLactate(cached, stubLaps);
-    }
+  const cachedLaps = isStravaBackedTraining(training)
+    ? stravaLapsCache[resolveStravaNumericId(training)]
+    : isGarminBackedTraining(training)
+      ? garminLapsCache[resolveGarminNumericId(training)]
+      : null;
+  if (Array.isArray(cachedLaps) && cachedLaps.length > 0) {
+    const stubLaps = Array.isArray(training.laps) ? training.laps : [];
+    fromCache = mergeLapsPreserveLactate(cachedLaps, stubLaps);
   }
 
   const fullest = [fromCache, lapsNorm, results].reduce(
@@ -219,17 +260,23 @@ export function getChartIntervals(training, stravaLapsCache = {}, sport = '') {
  * flight is an unknown rather than a no: keep it, and let it fall out once the
  * fetch lands empty and the cache says so.
  */
-export function canChartTraining(training, stravaLapsCache = {}, sport = '') {
+export function canChartTraining(training, stravaLapsCache = {}, sport = '', garminLapsCache = {}) {
   if (!training) return false;
+  // A session whose laps are still in flight is an unknown, not a no — from
+  // either service.
   if (needsStravaLapFetch(training, stravaLapsCache)) return true;
-  return resultsHaveContent(getChartIntervals(training, stravaLapsCache, sport));
+  if (needsGarminLapFetch(training, garminLapsCache)) return true;
+  return resultsHaveContent(getChartIntervals(training, stravaLapsCache, sport, garminLapsCache));
 }
 
-/** Fetch Strava detail laps when list payload is missing or incomplete. */
-export function needsStravaLapFetch(training, stravaLapsCache = {}) {
-  if (!isStravaBackedTraining(training)) return false;
-  const rawId = resolveStravaNumericId(training);
-  if (!rawId || rawId in stravaLapsCache) return false;
+/**
+ * Is this row's lap detail worth fetching, or does it already hold enough?
+ *
+ * The two services answer identically because they ship identically: a list
+ * payload of lactate-only stubs over a ride that has real laps behind it.
+ */
+function needsLapFetch(training, cache, rawId) {
+  if (!rawId || rawId in cache) return false;
 
   const resultsLen = Array.isArray(training.results) ? training.results.length : 0;
   const lapsLen = Array.isArray(training.laps) ? training.laps.length : 0;
@@ -237,4 +284,20 @@ export function needsStravaLapFetch(training, stravaLapsCache = {}) {
   if (hasDetailedLaps(training) && lapsLen > resultsLen) return false;
   if (hasDetailedLaps(training) && resultsLen > 0 && lapsLen <= resultsLen) return false;
   return true;
+}
+
+/** Fetch Strava detail laps when list payload is missing or incomplete. */
+export function needsStravaLapFetch(training, stravaLapsCache = {}) {
+  if (!isStravaBackedTraining(training)) return false;
+  return needsLapFetch(training, stravaLapsCache, resolveStravaNumericId(training));
+}
+
+/** The same question for Garmin. */
+export function needsGarminLapFetch(training, garminLapsCache = {}) {
+  if (!training) return false;
+  // Strava wins when a row answers to both, so the two fetches cannot both
+  // claim the same session and race each other into the cache.
+  if (isStravaBackedTraining(training)) return false;
+  if (!isGarminBackedTraining(training)) return false;
+  return needsLapFetch(training, garminLapsCache, resolveGarminNumericId(training));
 }

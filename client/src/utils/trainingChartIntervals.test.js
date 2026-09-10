@@ -1,4 +1,7 @@
-import { canChartTraining, getChartIntervals } from './trainingChartIntervals';
+import {
+  canChartTraining, getChartIntervals,
+  needsStravaLapFetch, needsGarminLapFetch, resolveGarminNumericId,
+} from './trainingChartIntervals';
 
 /**
  * canChartTraining decides what the Training History picker offers. The rule it
@@ -57,6 +60,50 @@ describe('canChartTraining', () => {
     expect(canChartTraining(t, cache, 'run')).toBe(true);
   });
 
+  /**
+   * The Garmin half. It did not exist: needsStravaLapFetch answered no for a
+   * Garmin ride, getChartIntervals had no cache to read it from, so every
+   * Garmin session failed this check and never reached the Training History
+   * pool. The picker read "No sessions in this category" over a season of
+   * Garmin runs, and selecting one in the Field Lactate panel beside it did
+   * nothing, because there was nothing in the pool to point at.
+   */
+  test('garmin session with laps still in flight is kept — unknown, not no', () => {
+    const t = {
+      _id: 'g1', title: 'Olomouc Běh', sport: 'run',
+      source: 'garmin', garminId: '20482044991', results: [], laps: [{ lactate: null }],
+    };
+    expect(canChartTraining(t, {}, 'run', {})).toBe(true);
+  });
+
+  test('...and drops out once THAT fetch comes back empty', () => {
+    const t = {
+      _id: 'g1', title: 'Olomouc Běh', sport: 'run',
+      source: 'garmin', garminId: '20482044991', results: [], laps: [{ lactate: null }],
+    };
+    expect(canChartTraining(t, {}, 'run', { 20482044991: [] })).toBe(false);
+  });
+
+  test('garmin session with fetched laps is offered', () => {
+    const t = {
+      _id: 'g2', title: 'Run LT2', sport: 'run',
+      source: 'garmin', garminId: '555', results: [], laps: [{ lactate: null }],
+    };
+    const cache = { 555: [{ power: 300, durationSeconds: 240 }, { power: 310, durationSeconds: 240 }] };
+    expect(canChartTraining(t, {}, 'run', cache)).toBe(true);
+  });
+
+  test('an empty strava cache does not vouch for a garmin session', () => {
+    // Both services number their activities. Sharing one map by raw id would
+    // let a Strava miss answer for a Garmin ride that happened to match.
+    const t = {
+      _id: 'g3', title: 'Run LT2', sport: 'run',
+      source: 'garmin', garminId: '123', results: [], laps: [{ lactate: null }],
+    };
+    expect(canChartTraining(t, { 123: [] }, 'run', {})).toBe(true);
+    expect(canChartTraining(t, { 123: [] }, 'run', { 123: [] })).toBe(false);
+  });
+
   test('null training is not offered', () => {
     expect(canChartTraining(null, {}, 'bike')).toBe(false);
   });
@@ -97,5 +144,45 @@ describe('getChartIntervals — a result row lands on its own lap', () => {
     const sameLength = laps.map((_, i) => ({ interval: i + 1, lactate: i === 3 ? '4.1' : undefined }));
     const out = getChartIntervals({ laps, results: sameLength }, {}, 'bike');
     expect(out[3].lactate).toBe('4.1');
+  });
+});
+
+describe('which service a row belongs to', () => {
+  const garmin = { _id: 'x', source: 'garmin', garminId: '20482044991', laps: [{ lactate: null }] };
+  const strava = { _id: 'y', source: 'strava', stravaId: 998877, laps: [{ lactate: null }] };
+
+  test('reads a garmin id off every shape it arrives in', () => {
+    expect(resolveGarminNumericId(garmin)).toBe('20482044991');
+    expect(resolveGarminNumericId({ id: 'garmin-4242' })).toBe('4242');
+    expect(resolveGarminNumericId({ sourceGarminActivityId: 'garmin-77' })).toBe('77');
+    expect(resolveGarminNumericId({ source: 'garmin', sourceId: '88' })).toBe('88');
+    expect(resolveGarminNumericId(null)).toBe('');
+  });
+
+  test('each fetch claims only its own rows', () => {
+    expect(needsStravaLapFetch(strava, {})).toBe(true);
+    expect(needsStravaLapFetch(garmin, {})).toBe(false);
+    expect(needsGarminLapFetch(garmin, {})).toBe(true);
+    expect(needsGarminLapFetch(strava, {})).toBe(false);
+  });
+
+  test('a row that answers to both is Strava\u2019s, so the two never race', () => {
+    const both = { _id: 'z', stravaId: 1, garminId: 2, results: [], laps: [{ lactate: null }] };
+    expect(needsStravaLapFetch(both, {})).toBe(true);
+    expect(needsGarminLapFetch(both, {})).toBe(false);
+  });
+
+  test('getChartIntervals reads the garmin cache for a garmin row', () => {
+    const laps = [{ power: 300, durationSeconds: 240 }, { power: 305, durationSeconds: 240 }];
+    const out = getChartIntervals(garmin, {}, 'run', { 20482044991: laps });
+    expect(out).toHaveLength(2);
+    expect(out[0].power).toBe(300);
+  });
+
+  test('...and keeps a lactate value the stub lap carried', () => {
+    const withLactate = { ...garmin, laps: [{ lactate: 4.2 }, { lactate: null }] };
+    const laps = [{ power: 300, durationSeconds: 240 }, { power: 305, durationSeconds: 240 }];
+    const out = getChartIntervals(withLactate, {}, 'run', { 20482044991: laps });
+    expect(out[0].lactate).toBe(4.2);
   });
 });
