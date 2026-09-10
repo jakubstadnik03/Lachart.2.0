@@ -5221,7 +5221,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                   >
                     <MapInvalidator />
                     <FitBoundsToRoute positions={gpsData} />
-                    <TileLayer url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png" />
+                    <TileLayer url="https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}" />
                     <Polyline positions={gpsData} pathOptions={{ color, weight: 4, opacity: 0.9, lineCap: 'round', lineJoin: 'round' }} />
                     <CircleMarker center={gpsData[0]} radius={6} pathOptions={{ color: '#fff', weight: 2, fillColor: '#22c55e', fillOpacity: 1 }}>
                       <LeafletTooltip permanent direction="top" offset={[0, -10]}>Start</LeafletTooltip>
@@ -5992,7 +5992,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                     >
                       <MapInvalidator />
                       <FitBoundsToRoute positions={gpsData} />
-                      <TileLayer url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png" />
+                      <TileLayer url="https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}" />
                       <Polyline positions={gpsData} pathOptions={{ color, weight: 4, opacity: 0.9, lineCap: 'round', lineJoin: 'round' }} />
                       <CircleMarker center={gpsData[0]} radius={6} pathOptions={{ color: '#fff', weight: 2, fillColor: '#22c55e', fillOpacity: 1 }}>
                         <LeafletTooltip permanent direction="top" offset={[0, -10]}>Start</LeafletTooltip>
