@@ -1926,7 +1926,11 @@ export default function CalendarPeriodStats({
     <>
     <div ref={rootRef} className="w-full mt-3 space-y-4 pb-safe-area-inset-bottom">
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-3 sm:p-5">
-        {/* Header */}
+        {/* Header. On a phone the month is already named, with its own
+            arrows, in the sticky bar this summary sits under — a second
+            title with a second pair of arrows was the first of the things
+            between the athlete and the chart. */}
+        {!isMobile && (
         <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
           <div className="min-w-0">
             <h2 className="text-sm sm:text-base font-bold text-gray-900">Period summary</h2>
@@ -1969,6 +1973,7 @@ export default function CalendarPeriodStats({
             {aggregates.count} {aggregates.count === 1 ? 'activity' : 'activities'}
           </span>
         </div>
+        )}
 
         {/* Panel row — horizontally scrollable on mobile, with the picker
             pinned at its end so it does not scroll out of reach. */}

@@ -64,11 +64,11 @@ export const PMC_MAX_VIEW_DAYS = 730;
 
 /** Segmented day ranges (calendar combined chart). */
 export const PMC_VIEW_DAY_RANGES = [
-  { id: 60, label: '60d' },
-  { id: 90, label: '90d' },
-  { id: 180, label: '180d' },
-  { id: 365, label: '1y' },
-  { id: 730, label: '2y' },
+  { id: 60, label: '2M' },
+  { id: 90, label: '3M' },
+  { id: 180, label: '6M' },
+  { id: 365, label: '1Y' },
+  { id: 730, label: '2Y' },
 ];
 
 /** Dashboard Form & Fitness dropdown options. */

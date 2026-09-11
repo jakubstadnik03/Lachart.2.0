@@ -1,6 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import EChartsModule from 'echarts-for-react';
-import { ArrowPathIcon } from '@heroicons/react/24/outline';
 import api, { getTodayMetrics } from '../../services/api';
 import { getPlannedWorkouts } from '../../services/workoutPlannerApi';
 import {
@@ -17,7 +16,8 @@ import { mergeProfileZones } from '../../utils/inferThresholdsFromActivities';
 import { matchesCalendarSportFilter } from '../../utils/calendarDayOrdering';
 import { getTsbStatus } from '../../utils/formFitnessMetrics';
 import { TSS_DISPLAY_MODE_EVENT } from '../../utils/uiPrefs';
-import { pmcAxisDomainsFromPoints, PMC_COLORS, PMC_VIEW_DAY_RANGES, PMC_MAX_VIEW_DAYS, pmcDefaultZoomWindow } from '../../utils/pmcChartAxes';
+import { pmcAxisDomainsFromPoints, PMC_COLORS, PMC_VIEW_DAY_RANGES, PMC_MAX_VIEW_DAYS } from '../../utils/pmcChartAxes';
+import { buildPmcChartOption, PMC_CHROME, PMC_FONT } from '../../utils/pmcChartOption';
 import FormFitnessHelpSheet from './FormFitnessHelpSheet';
 
 const ReactECharts = EChartsModule?.default ?? EChartsModule;
@@ -32,10 +32,64 @@ const SPORT_FILTERS = [
   { id: 'swim', label: 'Swim' },
 ];
 
+const IOS = PMC_CHROME;
+const FONT = PMC_FONT;
+
 function deltaText(delta) {
   const n = Math.abs(Math.round(delta || 0));
-  if (!n) return '—';
-  return `${delta > 0 ? '↑' : '↓'} ${n} from yesterday`;
+  if (!n) return 'same as yesterday';
+  return `${delta > 0 ? '↑' : '↓'} ${n} vs yesterday`;
+}
+
+/**
+ * An iOS segmented control. `dense` is the small variant for a filter that
+ * sits beside a title rather than under a chart.
+ */
+function Segmented({ value, options, onChange, dense = false, ariaLabel }) {
+  return (
+    <div
+      className="flex gap-0.5 rounded-[9px] p-0.5"
+      style={{ background: IOS.fill, fontFamily: FONT }}
+      role="tablist"
+      aria-label={ariaLabel}
+    >
+      {options.map((o) => {
+        const on = o.id === value;
+        return (
+          <button
+            key={o.id}
+            type="button"
+            role="tab"
+            aria-selected={on}
+            onClick={() => onChange(o.id)}
+            className={`${dense ? 'min-h-[26px] px-2 text-[12px]' : 'min-h-[30px] flex-1 px-2 text-[13px]'} rounded-[7px] font-semibold transition-colors touch-manipulation ${on ? 'bg-white' : ''}`}
+            style={on
+              ? { color: IOS.label, boxShadow: '0 1px 3px rgba(0,0,0,0.10), 0 0 0 0.5px rgba(0,0,0,0.04)' }
+              : { color: IOS.secondary }}
+          >
+            {o.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/** One of the three headline numbers, coloured like its line. */
+function Stat({ label, value, sub, color }) {
+  return (
+    <div className="min-w-0">
+      <div className="text-[10.5px] font-semibold uppercase tracking-[0.06em]" style={{ color: IOS.secondary }}>
+        {label}
+      </div>
+      <div className="text-[24px] font-semibold leading-tight tracking-[-0.02em] tabular-nums" style={{ color }}>
+        {value}
+      </div>
+      <div className="text-[11px] tabular-nums truncate min-h-[15px]" style={{ color: IOS.secondary }}>
+        {sub}
+      </div>
+    </div>
+  );
 }
 
 /**
@@ -61,7 +115,7 @@ export default function PmcCombinedChart({
   const [helpOpen, setHelpOpen] = useState(false);
   const [tssTick, setTssTick] = useState(0);
   const [plannedWorkouts, setPlannedWorkouts] = useState([]);
-  const [showProjection, setShowProjection] = useState(true);
+  const chartRef = useRef(null);
   /**
    * Fitness / Form / Fatigue as the server computes them.
    *
@@ -203,7 +257,7 @@ export default function PmcCombinedChart({
   }, [pmcActivities, profile, user, tssTick, sportFilter]);
 
   const projection = useMemo(() => {
-    if (!showProjection || !fullSeries.length || !plannedWorkouts.length) return [];
+    if (!fullSeries.length || !plannedWorkouts.length) return [];
     // Filter the plan the same way as the history. A run-only Fitness line
     // projected forward on every planned session — bike and swim included —
     // would rise for training the line does not count.
@@ -213,7 +267,7 @@ export default function PmcCombinedChart({
     if (!planned.length) return [];
     const plannedTssByDate = buildPlannedTssByDate(planned);
     return computePmcProjection(fullSeries, plannedTssByDate);
-  }, [showProjection, fullSeries, plannedWorkouts, sportFilter]);
+  }, [fullSeries, plannedWorkouts, sportFilter]);
 
   const chartSeries = useMemo(() => {
     if (!fullSeries.length) return [];
@@ -255,12 +309,17 @@ export default function PmcCombinedChart({
     setZoomResetKey((k) => k + 1);
   }, [chartSeries, viewDays]);
 
+  const actualCount = useMemo(() => chartSeries.filter((d) => !d.projected).length, [chartSeries]);
+  const restIndex = actualCount > 0 ? actualCount - 1 : Math.max(0, chartSeries.length - 1);
   const displayPoint = hoverIndex >= 0 ? chartSeries[hoverIndex] : null;
+  // Scrubbing: a finger or pointer resting on any day but the last one.
+  const scrubbing = displayPoint != null && hoverIndex !== restIndex;
+
   // The server computes across every sport, so it cannot answer "my running
   // Fitness". Under a sport filter the local series is the only thing that
   // knows, and showing the all-sport headline above a run-only curve would be
   // the same two-numbers-one-metric problem this chart already had.
-  const headline = (sportFilter === 'all' ? serverMetrics : null) || todayMetrics || {
+  const restHeadline = (sportFilter === 'all' ? serverMetrics : null) || todayMetrics || {
     fitness: displayPoint?.Fitness ?? 0,
     fatigue: displayPoint?.Fatigue ?? 0,
     form: displayPoint?.Form ?? 0,
@@ -268,9 +327,18 @@ export default function PmcCombinedChart({
     fatigueChange: 0,
     formChange: 0,
   };
+  // While scrubbing, the numbers are the day under the finger — the way a
+  // Health or Stocks chart reads — and the date line says which day that is.
+  const headline = scrubbing
+    ? {
+      fitness: displayPoint.projected ? displayPoint.fitnessProj : displayPoint.Fitness,
+      fatigue: displayPoint.projected ? displayPoint.fatigueProj : displayPoint.Fatigue,
+      form: displayPoint.projected ? displayPoint.formProj : displayPoint.Form,
+    }
+    : restHeadline;
 
   const showPoint = displayPoint || (chartSeries.length ? chartSeries[chartSeries.length - 1] : null);
-  const tsbStatus = showPoint ? getTsbStatus(showPoint.Form) : null;
+  const tsbStatus = showPoint && Number.isFinite(Number(headline.form)) ? getTsbStatus(headline.form) : null;
 
   const todayKey = useMemo(() => {
     const t = new Date();
@@ -282,227 +350,10 @@ export default function PmcCombinedChart({
     [chartSeries],
   );
 
-  const chartOption = useMemo(() => {
-    if (!chartSeries.length) return null;
-
-    const labels = chartSeries.map((d) => {
-      if (d.dateLabel) return d.dateLabel;
-      const [, m, day] = d.date.split('-');
-      return `${day}.${m}.`;
-    });
-
-    const actualCount = chartSeries.filter((d) => !d.projected).length;
-    const todayLabel = actualCount > 0
-      ? labels[actualCount - 1]
-      : null;
-
-    const defaultWindow = pmcDefaultZoomWindow(viewDays, actualCount || chartSeries.length);
-    const zoomStart = chartSeries.length > defaultWindow
-      ? Math.round(((chartSeries.length - defaultWindow) / chartSeries.length) * 100)
-      : 0;
-
-    const legendItems = ['Fitness (CTL)', 'Fatigue (ATL)', 'Form (TSB)'];
-    if (hasProjection) legendItems.push('Planned (projected)');
-
-    return {
-      backgroundColor: 'transparent',
-      animation: false,
-      legend: {
-        data: legendItems,
-        top: 0,
-        left: 0,
-        itemWidth: 14,
-        itemHeight: 8,
-        textStyle: { fontSize: isMobile ? 10 : 11, color: '#6b7280' },
-      },
-      tooltip: {
-        trigger: 'axis',
-        axisPointer: { type: 'cross', crossStyle: { color: '#94a3b8' } },
-        backgroundColor: '#fff',
-        borderColor: '#e5e7eb',
-        textStyle: { fontSize: 12, color: '#111827' },
-        formatter(params) {
-          if (!Array.isArray(params) || !params[0]) return '';
-          const idx = params[0].dataIndex;
-          const d = chartSeries[idx];
-          if (!d) return '';
-          const planned = d.projected ? ' · Planned' : '';
-          let html = `<div style="font-weight:600;margin-bottom:4px">${d.date}${planned}</div>`;
-          if (d.projected) {
-            if (d.fitnessProj != null) html += `<div><span style="color:#2563eb">●</span> Fitness (CTL): <b>${d.fitnessProj}</b></div>`;
-            if (d.fatigueProj != null) html += `<div><span style="color:#db2777">●</span> Fatigue (ATL): <b>${d.fatigueProj}</b></div>`;
-            if (d.formProj != null) html += `<div><span style="color:#f97316">●</span> Form (TSB): <b>${d.formProj}</b></div>`;
-          } else {
-            if (d.Fitness != null) html += `<div><span style="color:#2563eb">●</span> Fitness (CTL): <b>${d.Fitness}</b></div>`;
-            if (d.Fatigue != null) html += `<div><span style="color:#db2777">●</span> Fatigue (ATL): <b>${d.Fatigue}</b></div>`;
-            if (d.Form != null) html += `<div><span style="color:#f97316">●</span> Form (TSB): <b>${d.Form}</b></div>`;
-          }
-          if (d.TSS > 0) {
-            html += `<div style="color:#6b7280;margin-top:2px">${d.projected ? 'Planned' : 'Daily'} TSS: ${d.TSS}</div>`;
-          }
-          return html;
-        },
-      },
-      grid: {
-        left: 48,
-        right: 44,
-        top: 36,
-        bottom: isMobile ? 56 : 48,
-        containLabel: false,
-      },
-      dataZoom: [
-        {
-          type: 'inside',
-          start: zoomStart,
-          end: 100,
-          zoomOnMouseWheel: true,
-          moveOnMouseMove: true,
-          moveOnMouseWheel: false,
-        },
-        {
-          type: 'slider',
-          start: zoomStart,
-          end: 100,
-          height: 20,
-          bottom: 4,
-          borderColor: '#e5e7eb',
-          fillerColor: 'rgba(94, 101, 144, 0.12)',
-          handleStyle: { color: '#5E6590' },
-          textStyle: { fontSize: 10, color: '#9ca3af' },
-        },
-      ],
-      xAxis: {
-        type: 'category',
-        data: labels,
-        boundaryGap: false,
-        axisLabel: { fontSize: isMobile ? 9 : 10, color: '#9ca3af', interval: 'auto' },
-        axisLine: { lineStyle: { color: '#e5e7eb' } },
-        axisTick: { show: false },
-      },
-      yAxis: [
-        {
-          type: 'value',
-          name: 'TSS/d',
-          nameLocation: 'middle',
-          nameGap: 34,
-          nameTextStyle: { fontSize: 10, color: '#9ca3af' },
-          min: 0,
-          max: axisDomains.tssMax,
-          interval: axisDomains.tssMax <= 150 ? 25 : 50,
-          position: 'left',
-          axisLabel: { fontSize: 10, color: '#9ca3af' },
-          splitLine: { lineStyle: { color: '#f3f4f6' } },
-          axisLine: { show: false },
-          axisTick: { show: false },
-        },
-        {
-          type: 'value',
-          name: 'Form (TSB)',
-          nameLocation: 'middle',
-          nameGap: 34,
-          nameTextStyle: { fontSize: 10, color: PMC_COLORS.form },
-          min: axisDomains.min,
-          max: axisDomains.max,
-          interval: axisDomains.max <= 60 ? 15 : 25,
-          position: 'right',
-          axisLabel: { fontSize: 10, color: PMC_COLORS.form },
-          splitLine: { show: false },
-          axisLine: { show: false },
-          axisTick: { show: false },
-        },
-      ],
-      series: [
-        {
-          name: 'Fitness (CTL)',
-          type: 'line',
-          yAxisIndex: 0,
-          smooth: 0.35,
-          symbol: 'none',
-          connectNulls: false,
-          lineStyle: { color: PMC_COLORS.fitness, width: 2.5 },
-          itemStyle: { color: PMC_COLORS.fitness },
-          areaStyle: { color: 'rgba(37, 99, 235, 0.15)' },
-          data: chartSeries.map((d) => (d.projected ? null : d.Fitness)),
-          z: 3,
-          markLine: todayLabel && hasProjection ? {
-            silent: true,
-            symbol: 'none',
-            lineStyle: { color: '#94a3b8', type: 'dashed' },
-            data: [{ xAxis: todayLabel, label: { formatter: 'Today', fontSize: 10, color: '#64748b' } }],
-          } : undefined,
-        },
-        {
-          name: 'Fatigue (ATL)',
-          type: 'line',
-          yAxisIndex: 0,
-          smooth: 0.35,
-          symbol: 'none',
-          connectNulls: false,
-          lineStyle: { color: PMC_COLORS.fatigue, width: 2.5 },
-          itemStyle: { color: PMC_COLORS.fatigue },
-          data: chartSeries.map((d) => (d.projected ? null : d.Fatigue)),
-          z: 2,
-        },
-        {
-          name: 'Form (TSB)',
-          type: 'line',
-          yAxisIndex: 1,
-          smooth: 0.35,
-          symbol: 'none',
-          connectNulls: false,
-          lineStyle: { color: PMC_COLORS.form, width: 2 },
-          itemStyle: { color: PMC_COLORS.form },
-          markLine: {
-            silent: true,
-            symbol: 'none',
-            lineStyle: { color: '#d1d5db', type: 'dashed' },
-            data: [{ yAxis: 0 }],
-            label: { show: false },
-          },
-          data: chartSeries.map((d) => (d.projected ? null : d.Form)),
-          z: 1,
-        },
-        ...(hasProjection ? [
-          {
-            name: 'Planned (projected)',
-            type: 'line',
-            yAxisIndex: 0,
-            smooth: 0.35,
-            symbol: 'none',
-            connectNulls: true,
-            lineStyle: { color: PMC_COLORS.fitness, width: 2, type: [6, 4] },
-            itemStyle: { color: PMC_COLORS.fitness },
-            data: chartSeries.map((d) => d.fitnessProj ?? null),
-            z: 0,
-          },
-          {
-            name: 'Planned (projected)',
-            type: 'line',
-            yAxisIndex: 0,
-            smooth: 0.35,
-            symbol: 'none',
-            connectNulls: true,
-            lineStyle: { color: PMC_COLORS.fatigue, width: 2, type: [6, 4] },
-            itemStyle: { color: PMC_COLORS.fatigue },
-            data: chartSeries.map((d) => d.fatigueProj ?? null),
-            z: 0,
-          },
-          {
-            name: 'Planned (projected)',
-            type: 'line',
-            yAxisIndex: 1,
-            smooth: 0.35,
-            symbol: 'none',
-            connectNulls: true,
-            lineStyle: { color: PMC_COLORS.form, width: 2, type: [6, 4] },
-            itemStyle: { color: PMC_COLORS.form },
-            data: chartSeries.map((d) => d.formProj ?? null),
-            z: 0,
-          },
-        ] : []),
-      ],
-    };
-  }, [chartSeries, viewDays, isMobile, hasProjection, axisDomains]);
+  const chartOption = useMemo(
+    () => buildPmcChartOption({ chartSeries, viewDays, isMobile, hasProjection, axisDomains, actualCount }),
+    [chartSeries, viewDays, isMobile, hasProjection, axisDomains, actualCount],
+  );
 
   const chartEvents = useMemo(() => ({
     updateAxisPointer: (event) => {
@@ -519,30 +370,44 @@ export default function PmcCombinedChart({
       }
       if (idx >= 0 && idx < chartSeries.length) setHoverIndex(idx);
     },
-    globalout: () => {
-      const actualCount = chartSeries.filter((d) => !d.projected).length;
-      setHoverIndex(actualCount > 0 ? actualCount - 1 : Math.max(0, chartSeries.length - 1));
-    },
-  }), [chartSeries]);
+    globalout: () => setHoverIndex(restIndex),
+  }), [chartSeries, restIndex]);
+
+  // A finger lifting off is the phone's "mouse left": the numbers go back to
+  // today, and the hairline goes with them. Without this the last touched
+  // day would stay in the headline until the next scroll.
+  const releaseScrub = useCallback(() => {
+    setHoverIndex(restIndex);
+    try { chartRef.current?.getEchartsInstance?.()?.dispatchAction({ type: 'hideTip' }); } catch { /* chart gone */ }
+  }, [restIndex]);
 
   const Chart = typeof ReactECharts === 'function' ? ReactECharts : null;
-  const chartHeight = isMobile ? 280 : 320;
+  const chartHeight = isMobile ? 230 : 320;
 
-  const dateLabel = (() => {
+  const dateLine = (() => {
     if (!showPoint) return '';
+    let when = showPoint.date;
     try {
       const d = new Date(`${showPoint.date}T12:00:00`);
-      const short = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-      if (showPoint.projected) return `${short} · Planned`;
-      return showPoint.date === todayKey ? `${short} · Today` : short;
-    } catch {
-      return showPoint.date;
-    }
+      when = d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+    } catch { /* keep the ISO date */ }
+    const parts = [];
+    if (showPoint.projected) parts.push(`${when} · Planned`);
+    else if (!scrubbing || showPoint.date === todayKey) parts.push(`Today · ${when}`);
+    else parts.push(when);
+    if (tsbStatus) parts.push(tsbStatus.label);
+    if (showPoint.TSS > 0) parts.push(`${showPoint.projected ? 'Planned' : 'Daily'} TSS ${showPoint.TSS}`);
+    return parts.join(' · ');
   })();
+
+  const fmtForm = (v) => {
+    const n = Math.round(Number(v) || 0);
+    return n > 0 ? `+${n}` : String(n);
+  };
 
   if (loadingActs) {
     return (
-      <div className="bg-gray-50 rounded-xl p-6 text-sm text-gray-400 text-center">
+      <div className="rounded-xl p-6 text-sm text-center" style={{ background: IOS.fill, color: IOS.secondary, fontFamily: FONT }}>
         Loading fitness data…
       </div>
     );
@@ -550,7 +415,7 @@ export default function PmcCombinedChart({
 
   if (!chartOption) {
     return (
-      <div className="bg-gray-50 rounded-xl p-6 text-sm text-gray-400 text-center">
+      <div className="rounded-xl p-6 text-sm text-center" style={{ background: IOS.fill, color: IOS.secondary, fontFamily: FONT }}>
         Not enough training data to show Form &amp; Fitness.
       </div>
     );
@@ -558,122 +423,74 @@ export default function PmcCombinedChart({
 
   return (
     <>
-      <div className="space-y-3">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <div className="text-sm font-bold text-gray-900">Form &amp; Fitness</div>
-            <p className="text-xs text-gray-500 mt-0.5">
-              Solid = actual · dashed = planned TSS (8 weeks ahead)
-            </p>
+      <div style={{ fontFamily: FONT }}>
+        {/* Title, the sport filter, and the one place the explanations live */}
+        <div className="flex items-center gap-2">
+          <div className="text-[15px] font-semibold tracking-[-0.01em] flex-1 min-w-0 truncate" style={{ color: IOS.label }}>
+            Form &amp; Fitness
           </div>
-          <div className="flex items-center gap-1.5 flex-wrap justify-end">
-            <button
-              type="button"
-              onClick={() => setShowProjection((v) => !v)}
-              className={`px-2.5 py-1 text-xs font-semibold rounded-lg border transition-all ${
-                showProjection
-                  ? 'bg-primary/10 border-primary/30 text-primary'
-                  : 'bg-white border-gray-200 text-gray-500'
-              }`}
-            >
-              {showProjection ? 'Projection on' : 'Projection off'}
-            </button>
-            {/* Fitness for one discipline. A triathlete's cycling CTL and
-                running CTL move independently, and the combined line hides
-                which one is actually building. computePmcFromActivities has
-                taken sportFilter all along — it was only ever pinned to 'all'
-                here. */}
-            <div className="flex bg-gray-100 rounded-lg p-0.5 gap-0.5">
-              {SPORT_FILTERS.map((s) => (
-                <button
-                  key={s.id}
-                  type="button"
-                  onClick={() => setSportFilter(s.id)}
-                  className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-all ${
-                    sportFilter === s.id ? 'bg-white shadow text-gray-900' : 'text-gray-500'
-                  }`}
-                >
-                  {s.label}
-                </button>
-              ))}
-            </div>
-            <div className="flex bg-gray-100 rounded-lg p-0.5 gap-0.5">
-              {TIME_RANGES.map((r) => (
-                <button
-                  key={r.id}
-                  type="button"
-                  onClick={() => setViewDays(r.id)}
-                  className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-all ${
-                    viewDays === r.id ? 'bg-white shadow text-gray-900' : 'text-gray-500'
-                  }`}
-                >
-                  {r.label}
-                </button>
-              ))}
-            </div>
-            <button
-              type="button"
-              onClick={() => { setZoomResetKey((k) => k + 1); reloadActivities(); }}
-              className="p-1.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-gray-500"
-              title="Reset zoom & refresh"
-              aria-label="Reset zoom and refresh"
-            >
-              <ArrowPathIcon className="w-4 h-4" />
-            </button>
-            <button
-              type="button"
-              onClick={() => setHelpOpen(true)}
-              className="text-xs font-semibold text-primary hover:underline px-1"
-            >
-              Help
-            </button>
-          </div>
+          {/* Fitness for one discipline. A triathlete's cycling CTL and
+              running CTL move independently, and the combined line hides
+              which one is actually building. */}
+          <Segmented dense value={sportFilter} options={SPORT_FILTERS} onChange={setSportFilter} ariaLabel="Sport" />
+          <button
+            type="button"
+            onClick={() => setHelpOpen(true)}
+            aria-label="What Fitness, Fatigue and Form mean"
+            className="w-[26px] h-[26px] rounded-full flex items-center justify-center text-[13px] font-semibold touch-manipulation"
+            style={{ background: IOS.fill, color: IOS.secondary }}
+          >
+            i
+          </button>
         </div>
 
-        <div className="grid grid-cols-3 gap-2">
-          <div className="bg-blue-50/60 rounded-xl px-3 py-2.5 border border-blue-100">
-            <div className="text-[11px] uppercase tracking-wide text-gray-500 font-semibold">Fitness</div>
-            <div className="text-xl font-bold text-blue-600 tabular-nums mt-0.5">
-              {Math.round(headline.fitness)}
-            </div>
-            <div className="text-[10px] text-gray-500 mt-0.5">{deltaText(headline.fitnessChange)}</div>
-          </div>
-          <div className="bg-orange-50/60 rounded-xl px-3 py-2.5 border border-orange-100">
-            <div className="text-[11px] uppercase tracking-wide text-gray-500 font-semibold">Form</div>
-            <div className={`text-xl font-bold tabular-nums mt-0.5 ${
-              headline.form < 0 ? 'text-orange-600' : 'text-orange-500'
-            }`}>
-              {headline.form > 0 ? `+${Math.round(headline.form)}` : Math.round(headline.form)}
-            </div>
-            <div className="text-[10px] text-gray-500 mt-0.5">{deltaText(headline.formChange)}</div>
-          </div>
-          <div className="bg-pink-50/60 rounded-xl px-3 py-2.5 border border-pink-100">
-            <div className="text-[11px] uppercase tracking-wide text-gray-500 font-semibold">Fatigue</div>
-            <div className="text-xl font-bold text-pink-600 tabular-nums mt-0.5">
-              {Math.round(headline.fatigue)}
-            </div>
-            <div className="text-[10px] text-gray-500 mt-0.5">{deltaText(headline.fatigueChange)}</div>
-          </div>
+        {/* The day being read, then its three numbers */}
+        <div className="mt-2.5 text-[11px] tabular-nums truncate" style={{ color: IOS.secondary }}>
+          {dateLine}
+        </div>
+        <div className="mt-1 grid grid-cols-3 gap-3">
+          <Stat
+            label="Fitness"
+            value={Math.round(headline.fitness ?? 0)}
+            sub={scrubbing ? '' : deltaText(restHeadline.fitnessChange)}
+            color={PMC_COLORS.fitness}
+          />
+          <Stat
+            label="Form"
+            value={fmtForm(headline.form)}
+            sub={scrubbing ? '' : deltaText(restHeadline.formChange)}
+            color={PMC_COLORS.form}
+          />
+          <Stat
+            label="Fatigue"
+            value={Math.round(headline.fatigue ?? 0)}
+            sub={scrubbing ? '' : deltaText(restHeadline.fatigueChange)}
+            color={PMC_COLORS.fatigue}
+          />
         </div>
 
-        <div className="bg-gray-50 rounded-xl p-3 relative">
+        {/* The chart — to the card's edge on a phone */}
+        <div
+          className={isMobile ? '-mx-3 mt-2' : 'mt-3'}
+          style={{ touchAction: 'pan-y' }}
+          onTouchEnd={releaseScrub}
+          onTouchCancel={releaseScrub}
+        >
           {Chart && (
             <Chart
-              key={zoomResetKey}
+              ref={chartRef}
+              key={isMobile ? 'pmc' : zoomResetKey}
               option={chartOption}
               style={{ height: chartHeight, width: '100%' }}
               notMerge
               onEvents={chartEvents}
             />
           )}
-          <p className="mt-1 text-[11px] text-gray-400 text-center">
-            {dateLabel}
-            {showPoint?.TSS > 0 ? ` · Daily TSS ${showPoint.TSS}` : ''}
-            {tsbStatus ? ` · ${tsbStatus.label}` : ''}
-          </p>
-          <p className="text-[10px] text-gray-400 text-center mt-0.5">
-            Scroll or drag the slider to zoom · dashed lines = future from planned workouts
-          </p>
+        </div>
+
+        {/* How far back the curve goes */}
+        <div className="mt-2">
+          <Segmented value={viewDays} options={TIME_RANGES} onChange={setViewDays} ariaLabel="Range" />
         </div>
       </div>
 
