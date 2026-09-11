@@ -619,7 +619,7 @@ export default function About() {
                         <span style={{ width: 22, height: 22, borderRadius: '50%', background: LC.primaryTint, color: LC.primary, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 13l4 4L19 7" /></svg>
                         </span>
-                        <span><b style={{ color: LC.ink }}>{f.title}</b> — {f.body}</span>
+                        <span style={{ flex: 1, minWidth: 0 }}><b style={{ color: LC.ink }}>{f.title}</b> — {f.body}</span>
                       </li>
                     ))}
                   </ul>
@@ -870,7 +870,12 @@ export default function About() {
                   grid-auto-rows: auto !important;
                   gap: 12px !important;
                 }
-                .lc-bento > article {
+                /* The hero is named as well as matched: the ≤899 rule above
+                   selects it by class and outranked the plain article rule,
+                   so it kept spanning two columns of a one-column grid and
+                   the browser invented a second, uneven column for it. */
+                .lc-bento > article,
+                .lc-bento .lc-bento-hero {
                   grid-column: span 1 !important;
                   grid-row: auto !important;
                   border-radius: 18px !important;
@@ -1853,7 +1858,7 @@ const numF = { fontVariantNumeric: 'tabular-nums' };
 
 function AthleteCompGrid() {
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 10 }}>
+    <div className="lc-comp" style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 10 }}>
       {/* Form ring */}
       <section style={{ ...gcStyle, gridColumn: 'span 6' }}>
         <span style={lblC}>Form · Today</span>
@@ -1888,7 +1893,7 @@ function AthleteCompGrid() {
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 6, alignItems: 'end', height: 88 }}>
           {[['M',78,97],['T',92,109],['W',82,101],['T',85,103],['F',74,93],['S',10,14],['S',4,null]].map(([d, h, v], i) => (
-            <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+            <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, height: '100%' }}>
               <div style={{ flex: 1, width: '100%', display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
                 <div style={{ width: 18, height: `${h}%`, background: h < 20 ? LC.border : LC.primary, borderRadius: 3 }} />
               </div>
@@ -1912,7 +1917,7 @@ function AthleteCompGrid() {
       {/* Weekly KPIs */}
       <section style={{ ...gcStyle, gridColumn: 'span 8' }}>
         <span style={lblC}>Weekly summary</span>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
+        <div className="lc-kpi4" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
           {[['Time','16h 42m'],['TSS','517'],['Distance','369 km'],['Sessions','13']].map(([l,v]) => (
             <div key={l} style={{ padding: '8px 10px', borderRadius: 10, background: '#F8FAFD', border: '1px solid ' + LC.border }}>
               <div style={{ fontSize: 9.5, color: LC.muted, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{l}</div>
@@ -1942,7 +1947,7 @@ function AthleteCompGrid() {
 
 function CoachCompGrid() {
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 10 }}>
+    <div className="lc-comp" style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 10 }}>
       {/* Athletes header */}
       <section style={{ ...gcStyle, gridColumn: 'span 6' }}>
         <span style={lblC}>Athletes · header</span>
@@ -2016,7 +2021,7 @@ function CoachCompGrid() {
       {/* Weekly KPIs */}
       <section style={{ ...gcStyle, gridColumn: 'span 8' }}>
         <span style={lblC}>Filip · this week</span>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
+        <div className="lc-kpi4" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
           {[['Time','12h 18m'],['TSS','432'],['Sessions','9'],['Lactate','5×']].map(([l,v]) => (
             <div key={l} style={{ padding: '8px 10px', borderRadius: 10, background: '#F8FAFD', border: '1px solid ' + LC.border }}>
               <div style={{ fontSize: 9.5, color: LC.muted, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{l}</div>
@@ -2048,11 +2053,11 @@ function CoachCompGrid() {
 
 function TesterCompGrid() {
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 10 }}>
+    <div className="lc-comp" style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 10 }}>
       {/* PDF hero */}
       <section style={{ ...gcStyle, gridColumn: 'span 12' }}>
         <span style={lblC}>PDF report · ready to export</span>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: 14, borderRadius: 14, background: 'linear-gradient(135deg, #fff, ' + LC.primaryTint + ')', border: '1px solid ' + LC.border }}>
+        <div className="lc-wrap-sm" style={{ display: 'flex', alignItems: 'center', gap: 14, padding: 14, borderRadius: 14, background: 'linear-gradient(135deg, #fff, ' + LC.primaryTint + ')', border: '1px solid ' + LC.border }}>
           <div style={{ width: 56, height: 70, borderRadius: 8, background: '#fff', border: '1px solid ' + LC.border, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: LC.secondary }}>
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/></svg>
             <span style={{ fontSize: 8, fontWeight: 800, marginTop: 4, letterSpacing: '0.1em' }}>PDF</span>

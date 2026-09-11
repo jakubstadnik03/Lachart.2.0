@@ -440,10 +440,23 @@ export const STYLE = `
      down hardcoded gaps, and tightens section padding via .lc-sectpad.
      Only kicks in ≤ 720 px so desktop layout is unaffected. */
   @media (max-width: 720px) {
-    /* All inline grid-template-columns → single col */
-    section [style*="grid-template-columns"] {
+    /* All inline grid-template-columns → single col.
+       Except the product collages (.lc-comp): those are 12-column mockups
+       whose inner grids — seven bars for a week, four KPIs, two numbers —
+       are the picture. Flattening them stacked the week's bars into a list
+       and pushed the LT2 card off the right edge. They get their own rules
+       below. */
+    section [style*="grid-template-columns"]:not(.lc-comp):not(.lc-comp *) {
       grid-template-columns: 1fr !important;
     }
+    .lc-comp { gap: 8px !important; }
+    .lc-comp > section { grid-column: span 12 !important; min-width: 0; }
+    .lc-comp .lc-kpi4 { grid-template-columns: repeat(2, 1fr) !important; }
+    /* A row that is icon + text + button on desktop lets the button drop
+       under the text on a phone instead of squeezing the filename. */
+    .lc-comp .lc-wrap-sm { flex-wrap: wrap; }
+    .lc-comp .lc-wrap-sm > div:nth-child(2) { flex: 1 1 180px !important; }
+    .lc-comp .lc-wrap-sm > button { margin-left: auto; }
     /* Tame large gaps coded for desktop spacing */
     section [style*="gap: 60"] { gap: 24px !important; }
     section [style*="gap: 50"] { gap: 22px !important; }
@@ -455,8 +468,10 @@ export const STYLE = `
     .lc-sectpad { padding: 36px 16px !important; }
     /* Avoid huge maxWidths on phones causing weird inner overflow */
     section [style*="max-width: 1280"] { max-width: 100% !important; }
-    /* Two-up button rows should wrap nicely instead of squashing */
-    section [style*="display: flex"][style*="gap"] { flex-wrap: wrap; }
+    /* Two-up button rows should wrap nicely instead of squashing.
+       Not list items: an icon followed by a sentence is one row, and
+       wrapping it put every checkmark on a line of its own above its text. */
+    section [style*="display: flex"][style*="gap"]:not(li):not(.lc-comp *) { flex-wrap: wrap; }
     /* Hero / huge text already uses clamp() but the inner H1 inline
        sometimes overrides. Cap font scaling on phones via attribute. */
     section h1[style*="font-size: 56"],
