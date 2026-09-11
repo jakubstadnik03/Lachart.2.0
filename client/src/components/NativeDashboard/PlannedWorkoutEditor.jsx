@@ -265,19 +265,18 @@ export default function PlannedWorkoutEditor({
     // "other" on the way in would downgrade the plan on the next save. Only
     // legacy values ("Ride", "gym") still go through the normaliser.
     const raw = String(plannedWorkout.sport || 'bike');
-    if (SPORT_OPTIONS.some(o => o.key === raw)) {
-      setSport(raw);
-    } else {
-      const ns = normSport(raw);
-      setSport(ns === 'gym' ? 'strength' : ns);
-    }
+    const ns = normSport(raw);
+    const loadedSport = SPORT_OPTIONS.some(o => o.key === raw)
+      ? raw
+      : (ns === 'gym' ? 'strength' : ns);
+    setSport(loadedSport);
     setDate(toLocalDateInput(plannedWorkout.date));
     // Prefer explicit plannedDuration; fall back to computing from steps
     const durSecs = Number(plannedWorkout.plannedDuration) || planStepSecs(plannedWorkout.steps);
     const { h, m } = secsToHM(durSecs);
     setDurH(h);
     setDurM(m);
-    const distSport = ns === 'gym' ? 'strength' : ns;
+    const distSport = loadedSport;
     const distMetres = plannedDistanceMetres(plannedWorkout);
     setPlannedDist(
       distSport === 'swim'
@@ -381,11 +380,6 @@ export default function PlannedWorkoutEditor({
     const m = Number(metres);
     if (!Number.isFinite(m) || m <= 0) return dash;
     return m < 2000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(1)} km`;
-  };
-  const plannedSummary = {
-    time: fmtHm((Number(durH) || 0) * 3600 + (Number(durM) || 0) * 60),
-    distance: fmtKm(plannedDist),
-    tss: Number(targetTss) > 0 ? String(Math.round(Number(targetTss))) : dash,
   };
   const completedSummary = {
     time: fmtHm(linkedActivity?.movingTime || linkedActivity?.elapsedTime || linkedActivity?.duration),

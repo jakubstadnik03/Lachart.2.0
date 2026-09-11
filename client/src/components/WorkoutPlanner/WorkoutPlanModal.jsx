@@ -573,7 +573,6 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
   const descRef = useRef(null);
   const commentRef = useRef(null);
   useAutoGrow(descRef, desc);
-  useAutoGrow(commentRef, comment);
   const [tss, setTss]             = useState(workout?.targetTss || '');
   const [steps, setSteps]         = useState(workout?.steps || []);
   const [category, setCategory]   = useState(workout?.category || '');
@@ -611,6 +610,9 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
   const [plannedDistStr, setPlannedDistStr] = useState(workoutDistToStr(workout));
   // Coach comment (visible note shown on calendar card)
   const [comment, setComment] = useState(workout?.comment || '');
+  // After the declaration it grows, not before: hooks run in order, and a
+  // const read above its own line is a ReferenceError at render.
+  useAutoGrow(commentRef, comment);
   // Lactate test saved notification
   const [lactateSaved, setLactateSaved] = useState(false);
 
