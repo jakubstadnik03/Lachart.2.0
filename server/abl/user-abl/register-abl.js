@@ -6,6 +6,7 @@ const { JWT_SECRET } = require("../../config/jwt.config");
 const { sendEmailVerificationEmail } = require("../../services/emailVerificationService");
 const { saveRegistrationLocation } = require("../../utils/geoip");
 const { notifyAdminNewUserRegistered } = require("../../utils/expoPushNotifications");
+const { claimPreRegisteredStub } = require("../../services/coachAthleteLinkService");
 
 class RegisterAbl {
     constructor() {
@@ -39,7 +40,11 @@ class RegisterAbl {
 
             // Kontrola, zda uživatel již neexistuje
             const existingUser = await this.userDao.findByEmail(email);
-            if (existingUser) {
+            // A coach's invitation to this address left a stub behind. The
+            // person signing up is who it was for: they take it over, coach
+            // link included, instead of being told their address is taken.
+            const claimingStub = Boolean(existingUser?.isPreRegistered);
+            if (existingUser && !claimingStub) {
                 return res.status(400).json({
                     error: "An account with this email already exists.",
                     code: "EMAIL_EXISTS"
@@ -75,7 +80,18 @@ class RegisterAbl {
                 }
             };
 
-            const newUser = await this.userDao.createUser(userData);
+            const newUser = claimingStub
+                ? await claimPreRegisteredStub(existingUser, {
+                    password: hashedPassword,
+                    signupMethod: 'email',
+                    name,
+                    surname,
+                    emailVerified: false,
+                    emailVerificationToken,
+                    emailVerificationTokenExpires,
+                    onboarding: userData.onboarding,
+                })
+                : await this.userDao.createUser(userData);
 
             // Zkontrolujeme, že heslo bylo správně uloženo
             const savedUser = await this.userDao.findByEmail(email);

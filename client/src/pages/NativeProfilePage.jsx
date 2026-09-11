@@ -70,7 +70,7 @@ export default function NativeProfilePage({ user, userInfo, calendarData = [], o
 
   // When a coach has an athlete selected via NativeAthleteBar, view that athlete.
   // Athletes always view their own profile.
-  const { selectedAthleteId } = useAthleteSelection();
+  const { selectedAthleteId, setSelectedAthleteId } = useAthleteSelection();
   const effectiveAthleteId = isCoachLike && selectedAthleteId
     ? String(selectedAthleteId)
     : myId;
@@ -89,10 +89,22 @@ export default function NativeProfilePage({ user, userInfo, calendarData = [], o
    * "It doesn't show his profile" and "nothing is wrong" looked identical.
    */
   const [athleteError, setAthleteError] = useState(null);
+  /**
+   * The invitation this athlete has not answered, when that is the reason.
+   *
+   * The server refuses the profile of an athlete who has not accepted the
+   * coach's invitation. That is not a failure to report, it is a state to
+   * show: who was invited, where, and the two things the coach can do about
+   * it. The name and address come from the coach's own athlete list, which
+   * is the one thing about a pending athlete the coach is allowed to see.
+   */
+  const [pendingInvite, setPendingInvite] = useState(null);
+  const [athleteLoadTick, setAthleteLoadTick] = useState(0);
   useEffect(() => {
-    if (!isViewingOtherAthlete) { setAthleteProfile(null); setAthleteError(null); return undefined; }
+    if (!isViewingOtherAthlete) { setAthleteProfile(null); setAthleteError(null); setPendingInvite(null); return undefined; }
     let active = true;
     setAthleteError(null);
+    setPendingInvite(null);
     // Hit the /profile variant so we receive powerZones + heartRateZones —
     // the bare /user/athlete/:id endpoint strips them, which is why FTP,
     // MAX HR and the training-zones panel read empty for coach-viewed athletes.
@@ -102,9 +114,18 @@ export default function NativeProfilePage({ user, userInfo, calendarData = [], o
         setAthleteProfile(res?.data || null);
         if (!res?.data) setAthleteError('This athlete returned no profile.');
       })
-      .catch(err => {
+      .catch(async (err) => {
         if (!active) return;
         setAthleteProfile(null);
+        if (err?.response?.status === 403 && err?.response?.data?.code === 'INVITATION_PENDING') {
+          let listed = null;
+          try {
+            const list = await api.get('/user/coach/athletes');
+            listed = (Array.isArray(list?.data) ? list.data : []).find(a => String(a._id) === String(effectiveAthleteId)) || null;
+          } catch { /* the card still renders without a name */ }
+          if (active) setPendingInvite({ athleteId: effectiveAthleteId, athlete: listed });
+          return;
+        }
         setAthleteError(
           err?.response?.data?.error
           || (err?.response?.status ? `Could not load this athlete (${err.response.status}).` : null)
@@ -112,7 +133,38 @@ export default function NativeProfilePage({ user, userInfo, calendarData = [], o
         );
       });
     return () => { active = false; };
-  }, [isViewingOtherAthlete, effectiveAthleteId]);
+  }, [isViewingOtherAthlete, effectiveAthleteId, athleteLoadTick]);
+
+  const [inviteBusy, setInviteBusy] = useState(false);
+  const resendInvitation = async () => {
+    if (!pendingInvite || inviteBusy) return;
+    setInviteBusy(true);
+    try {
+      const res = await api.post(`/user/coach/resend-invitation/${pendingInvite.athleteId}`);
+      addNotification(res?.data?.emailSent === false
+        ? 'Could not send the email — mail is not configured on the server'
+        : 'Invitation sent again', res?.data?.emailSent === false ? 'error' : 'success');
+    } catch (err) {
+      addNotification(err?.response?.data?.message || err?.response?.data?.error || 'Could not resend the invitation', 'error');
+    } finally {
+      setInviteBusy(false);
+    }
+  };
+  const withdrawInvitation = async () => {
+    if (!pendingInvite || inviteBusy) return;
+    setInviteBusy(true);
+    try {
+      await api.delete(`/user/coach/remove-athlete/${pendingInvite.athleteId}`);
+      window.dispatchEvent(new CustomEvent('coachAthletesUpdated'));
+      window.dispatchEvent(new CustomEvent('athleteListUpdated'));
+      addNotification('Invitation withdrawn', 'success');
+      setSelectedAthleteId(myId);
+    } catch (err) {
+      addNotification(err?.response?.data?.error || 'Could not withdraw the invitation', 'error');
+    } finally {
+      setInviteBusy(false);
+    }
+  };
 
   // Display profile = the loaded athlete profile (when coach is viewing other),
   // otherwise the logged-in-self info. Never the coach's data under an
@@ -211,6 +263,98 @@ export default function NativeProfilePage({ user, userInfo, calendarData = [], o
     .filter(s => stats.bySport[s].count > 0 && s !== 'other')
     .sort((a, b) => stats.bySport[b].count - stats.bySport[a].count);
 
+  // The selected athlete has not accepted the invitation: show that, and
+  // nothing of anyone else's underneath it.
+  if (isViewingOtherAthlete && pendingInvite) {
+    const a = pendingInvite.athlete || {};
+    const pendingName = formatProfileFullName(a) || 'This athlete';
+    const pendingInitials = pendingName.split(' ').map(s => s.charAt(0).toUpperCase()).slice(0, 2).join('') || '?';
+    return (
+      <>
+        <style>{NATIVE_DASHBOARD_KEYFRAMES}</style>
+        <div ref={pageRef} style={styles.page}>
+          <div style={{ ...styles.header, ...cardEntry(0) }}>
+            <div style={{ ...styles.avatar, background: 'linear-gradient(160deg,#C7CBE0,#A9AFCC)' }}>
+              {a.avatar || a.profilePicture
+                ? <img src={a.avatar || a.profilePicture} alt={pendingName} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                : <span style={{ fontSize: 22, fontWeight: 800, color: '#fff' }}>{pendingInitials}</span>}
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={styles.name}>{pendingName}</div>
+              <div style={{ ...styles.role, textTransform: 'none', color: '#B25000' }}>Invitation sent · waiting for acceptance</div>
+            </div>
+          </div>
+          <div style={styles.body}>
+            <div style={cardEntry(1)}>
+              <GlassCard>
+                <div style={{ marginBottom: 6 }}>
+                  <SectionTitle>Not on your team yet</SectionTitle>
+                </div>
+                <p style={{ margin: 0, fontSize: 13, lineHeight: 1.5, color: '#3C3C43' }}>
+                  {pendingName} already has a LaChart account, so the profile, tests and training stay theirs until
+                  they accept. We emailed the invitation{a.email ? <> to <b style={{ fontWeight: 700 }}>{a.email}</b></> : null};
+                  everything appears here the moment they confirm it.
+                </p>
+                <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
+                  <button
+                    type="button"
+                    onClick={resendInvitation}
+                    disabled={inviteBusy || !a.email}
+                    style={{
+                      ...styles.editBtn, flex: 1, padding: '10px 14px', fontSize: 13,
+                      background: '#5E6590', color: '#fff', border: '1px solid transparent',
+                      opacity: inviteBusy || !a.email ? .6 : 1,
+                    }}
+                  >
+                    {inviteBusy ? 'Sending…' : 'Send invitation again'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={withdrawInvitation}
+                    disabled={inviteBusy}
+                    style={{ ...styles.editBtn, flex: 1, padding: '10px 14px', fontSize: 13, color: '#B42318', opacity: inviteBusy ? .6 : 1 }}
+                  >
+                    Withdraw
+                  </button>
+                </div>
+              </GlassCard>
+            </div>
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  // Selected, but could not be loaded — a plain answer with a way to retry,
+  // rather than the coach's own profile under the athlete's name.
+  if (isViewingOtherAthlete && athleteError) {
+    return (
+      <>
+        <style>{NATIVE_DASHBOARD_KEYFRAMES}</style>
+        <div ref={pageRef} style={styles.page}>
+          <div style={styles.body}>
+            <div style={{ ...cardEntry(0), marginTop: 14 }}>
+              <GlassCard>
+                <div style={{ marginBottom: 6 }}>
+                  <SectionTitle>Could not open this athlete</SectionTitle>
+                </div>
+                <p style={{ margin: 0, fontSize: 13, lineHeight: 1.5, color: '#3C3C43' }}>{athleteError}</p>
+                <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
+                  <button type="button" onClick={() => setAthleteLoadTick(t => t + 1)} style={{ ...styles.editBtn, flex: 1, padding: '10px 14px', fontSize: 13 }}>
+                    Try again
+                  </button>
+                  <button type="button" onClick={() => setSelectedAthleteId(myId)} style={{ ...styles.editBtn, flex: 1, padding: '10px 14px', fontSize: 13 }}>
+                    Back to my profile
+                  </button>
+                </div>
+              </GlassCard>
+            </div>
+          </div>
+        </div>
+      </>
+    );
+  }
+
   return (
     <>
       <style>{NATIVE_DASHBOARD_KEYFRAMES}</style>
@@ -219,21 +363,17 @@ export default function NativeProfilePage({ user, userInfo, calendarData = [], o
             top NativeAthleteBar already signals which athlete you're
             looking at, so this was visual noise. */}
 
-        {/* An athlete is selected but their profile did not load. Everything
-            below is the coach's own data, and saying so is the difference
-            between a bug the athlete can report and one they cannot see. */}
+        {/* An athlete is selected and still loading. Everything below is
+            the coach's own data until it lands, and saying so is the
+            difference between a bug the athlete can report and one they
+            cannot see. Errors take the page over above instead. */}
         {showingWrongPerson && (
           <div style={{
             margin: '10px 14px 0', padding: '10px 12px', borderRadius: 14,
             background: 'rgba(255,149,0,.12)', color: '#B25000',
             fontSize: 12, fontWeight: 600, lineHeight: 1.45,
           }}>
-            {athleteError || 'Loading this athlete\u2019s profile\u2026'}
-            {athleteError && (
-              <span style={{ display: 'block', fontWeight: 500, marginTop: 2 }}>
-                Showing your own profile below.
-              </span>
-            )}
+            Loading this athlete\u2019s profile\u2026
           </div>
         )}
 

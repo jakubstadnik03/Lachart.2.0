@@ -22,6 +22,8 @@ const AcceptInvitationPage = () => {
       try {
         const res = await api.get(`/user/verify-invitation-token/${token}`);
         setInvitationInfo(res.data);
+        // A coach may have filled the name in already; start from it.
+        setForm((p) => ({ ...p, name: res.data?.name || '', surname: res.data?.surname || '' }));
         setLoading(false);
       } catch (err) {
         setError(err.response?.data?.error || 'This invitation link is invalid or has expired.');

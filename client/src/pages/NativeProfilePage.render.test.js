@@ -110,7 +110,7 @@ describe('NativeProfilePage · whose profile', () => {
     expect(urls.some(u => u.includes('coach1'))).toBe(false);
   });
 
-  it('says so when the athlete will not load, instead of quietly showing the coach', async () => {
+  it('says so when the athlete will not load, and shows nobody else in their place', async () => {
     mockSelected = ATHLETE_ID;
     const err = new Error('forbidden');
     err.response = { status: 403, data: { error: 'This athlete does not belong to your team' } };
@@ -119,7 +119,29 @@ describe('NativeProfilePage · whose profile', () => {
     await act(async () => { await Promise.resolve(); });
     const html = container.innerHTML;
     expect(html).toContain('This athlete does not belong to your team');
-    expect(html).toContain('Showing your own profile below');
+    expect(html).toContain('Try again');
+    // The coach's own profile used to render underneath the message.
+    expect(html).not.toContain('Athlete profile');
+    expect(html).not.toContain('Pavel Hradil');
+  });
+
+  it('shows the invitation, with resend and withdraw, for an athlete who has not accepted', async () => {
+    mockSelected = ATHLETE_ID;
+    const err = new Error('forbidden');
+    err.response = { status: 403, data: { error: 'Athlete invitation is pending confirmation', code: 'INVITATION_PENDING' } };
+    mockGet.mockImplementation((url) => (
+      String(url).includes('/coach/athletes')
+        ? Promise.resolve({ data: [{ _id: ATHLETE_ID, name: 'Petr', surname: 'Josefus', email: 'petr@example.com', invitationPending: true }] })
+        : Promise.reject(err)
+    ));
+    render();
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    const html = container.innerHTML;
+    expect(html).toContain('Petr Josefus');
+    expect(html).toContain('petr@example.com');
+    expect(html).toContain('Send invitation again');
+    expect(html).toContain('Withdraw');
+    expect(html).not.toContain('Athlete profile');
   });
 
   it('does not fetch when the coach has selected themselves', () => {

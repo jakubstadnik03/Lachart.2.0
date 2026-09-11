@@ -192,13 +192,22 @@ const AthletesPage = () => {
     try {
       const response = await api.post(`/user/coach/resend-invitation/${athleteId}`);
       if (response.data.success) {
-        addNotification('Invitation resent successfully', 'success');
-        // Aktualizovat stav atleta v seznamu
-        setAthletes(athletes.map(athlete => 
-          athlete._id === athleteId 
-            ? { ...athlete, isRegistrationComplete: false }
-            : athlete
-        ));
+        const { kind, emailSent } = response.data;
+        if (emailSent === false) {
+          addNotification('Could not send the email — mail is not configured on the server', 'error');
+        } else {
+          addNotification(
+            kind === 'team-invitation'
+              ? 'Invitation sent again — they will appear once they accept'
+              : 'Sent them a new link to create their account',
+            'success',
+          );
+        }
+        if (response.data.athlete) {
+          setAthletes(athletes.map(athlete => (
+            athlete._id === athleteId ? { ...athlete, ...response.data.athlete } : athlete
+          )));
+        }
         notifyAthletesUpdated();
       } else {
         addNotification('Error resending invitation: ' + response.data.message, 'error');
@@ -344,7 +353,14 @@ const AthletesPage = () => {
       if (response.data.athlete) {
         setAthletes([...athletes, response.data.athlete]);
         notifyAthletesUpdated();
-        addNotification('Athlete added to your team and invitation email sent.', 'success');
+        const { isNewUser, emailSent } = response.data;
+        addNotification(
+          isNewUser
+            ? 'Athlete added to your team. We emailed them a link to create their account — you can set up their profile meanwhile.'
+            : 'Invitation sent. They will appear on your team once they accept it.',
+          'success',
+        );
+        if (emailSent === false) addNotification('The email could not be sent — mail is not configured on the server.', 'error');
         setIsInviteModalOpen(false);
         setInviteEmail('');
       }
@@ -386,7 +402,7 @@ const AthletesPage = () => {
                   className="flex items-center gap-1.5 px-3 py-2 border border-gray-200 rounded-xl text-xs font-medium text-gray-600 hover:bg-gray-50 transition-colors"
                 >
                   <UsersIcon className="w-4 h-4" />
-                  <span className="hidden sm:inline">Existing</span>
+                  <span className="hidden sm:inline">Invite by email</span>
                 </button>
                 <button
                   onClick={() => { if (gateAthleteCreation()) setIsModalOpen(true); }}
@@ -443,13 +459,22 @@ const AthletesPage = () => {
                 )}
                 {filteredAthletes.map((athlete) => {
                   const isPending = Boolean(athlete.invitationPending || athlete.coachLinkStatus === 'pending');
+                  // A record the coach created that nobody has logged into
+                  // yet. Fully theirs to open and edit — only the login is
+                  // missing, and the link for that can be sent again.
+                  const noAccount = athlete.hasAccount === false;
+                  const canResend = Boolean(athlete.email) && (isPending || noAccount);
                   const dropdownMenu = dropdownOpen === athlete._id && (
-                    <div className="absolute right-0 mt-1 w-44 bg-white rounded-xl shadow-lg border border-gray-100 py-1 z-[100]">
+                    <div className="absolute right-0 mt-1 w-48 bg-white rounded-xl shadow-lg border border-gray-100 py-1 z-[100]">
                       <button onClick={() => handleEditAthlete(athlete)} className="block w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50">Edit Athlete</button>
-                      {!athlete.isRegistrationComplete && (
-                        <button onClick={() => handleResendInvitation(athlete._id)} className="block w-full text-left px-4 py-2.5 text-sm text-blue-600 hover:bg-gray-50">Resend Invitation</button>
+                      {canResend && (
+                        <button onClick={() => handleResendInvitation(athlete._id)} className="block w-full text-left px-4 py-2.5 text-sm text-blue-600 hover:bg-gray-50">
+                          {isPending ? 'Resend Invitation' : 'Resend Sign-up Link'}
+                        </button>
                       )}
-                      <button onClick={() => handleRemoveAthlete(athlete._id)} className="block w-full text-left px-4 py-2.5 text-sm text-red-600 hover:bg-gray-50">Remove Athlete</button>
+                      <button onClick={() => handleRemoveAthlete(athlete._id)} className="block w-full text-left px-4 py-2.5 text-sm text-red-600 hover:bg-gray-50">
+                        {isPending ? 'Withdraw Invitation' : 'Remove Athlete'}
+                      </button>
                     </div>
                   );
 
@@ -483,7 +508,10 @@ const AthletesPage = () => {
                               <span className="text-[11px] text-gray-400">{athlete.height}cm · {athlete.weight}kg</span>
                             )}
                             {isPending && (
-                              <span className="text-[11px] text-amber-600 font-medium">⏳ Waiting</span>
+                              <span className="text-[11px] text-amber-600 font-medium">⏳ Waiting for acceptance</span>
+                            )}
+                            {!isPending && noAccount && (
+                              <span className="text-[11px] text-gray-400 font-medium">No login yet</span>
                             )}
                           </div>
                         </div>
@@ -537,7 +565,8 @@ const AthletesPage = () => {
                             <h3 className="text-2xl font-bold text-gray-900 hover:text-primary-dark cursor-pointer" onClick={() => handleViewProfile(athlete._id)}>
                               {athlete.name} {athlete.surname}
                             </h3>
-                            {isPending && <p className="text-sm text-amber-700 mt-1 font-medium">Waiting for confirmation</p>}
+                            {isPending && <p className="text-sm text-amber-700 mt-1 font-medium">Waiting for them to accept</p>}
+                            {!isPending && noAccount && <p className="text-sm text-gray-400 mt-1 font-medium">No login yet — profile is yours to set up</p>}
                             <p className="text-base text-gray-500 mt-1">{athlete.email}</p>
                           </div>
                           <div className="mt-6 grid grid-cols-2 gap-4 flex-grow">
@@ -557,7 +586,7 @@ const AthletesPage = () => {
                             disabled={isPending}
                             className="w-full mt-6 bg-primary text-white py-3 rounded-xl hover:bg-primary-dark transition-colors text-lg font-semibold flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
                           >
-                            {isPending ? 'Waiting for confirmation' : 'View Profile'}
+                            {isPending ? 'Waiting for acceptance' : 'View Profile'}
                             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
                               <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
                             </svg>
@@ -735,11 +764,12 @@ const AthletesPage = () => {
       <Modal
         isOpen={isInviteModalOpen}
         onClose={() => { setIsInviteModalOpen(false); setInviteEmail(''); setInviteError(''); }}
-        title="Add Existing Athlete"
+        title="Invite Athlete by Email"
       >
         <form onSubmit={handleInviteAthlete} className="space-y-4">
           <p className="text-sm text-gray-500">
-            Enter the email of an athlete who already has a LaChart account. They'll receive an invitation to join your team.
+            If they already use LaChart, they get an invitation and join your team once they accept it.
+            If not, they join right away — you can set up their profile while they create their login from the email.
           </p>
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">

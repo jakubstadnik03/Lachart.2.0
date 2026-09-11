@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthProvider';
 import SpiderChart from './DashboardPage/SpiderChart';
 import TrainingGraph from './DashboardPage/TrainingGraph';
@@ -62,7 +62,15 @@ export default function AthleteProfile() {
         setTests(testsData.data || []);
       } catch (error) {
         console.error('Error fetching athlete data:', error);
-        setError(error.message || 'Failed to load athlete data');
+        // "Request failed with status code 403" told the coach nothing; the
+        // server's own sentence says whether this is a refusal or an outage,
+        // and a pending invitation is the one refusal that is normal.
+        const data = error?.response?.data;
+        if (error?.response?.status === 403 && data?.code === 'INVITATION_PENDING') {
+          setError({ pending: true });
+        } else {
+          setError(data?.error || data?.message || error.message || 'Failed to load athlete data');
+        }
       } finally {
         setLoading(false);
       }
@@ -176,10 +184,31 @@ export default function AthleteProfile() {
     );
   }
 
+  if (error?.pending) {
+    return (
+      <div className="min-h-[60vh] flex items-center justify-center px-4">
+        <div className="max-w-md w-full bg-white rounded-2xl border border-amber-100 shadow-sm p-6 text-center">
+          <div className="text-xs font-semibold uppercase tracking-wide text-amber-600">Invitation pending</div>
+          <h2 className="mt-2 text-lg font-bold text-gray-900">This athlete has not accepted yet</h2>
+          <p className="mt-2 text-sm text-gray-500">
+            They already have a LaChart account, so their profile, tests and training stay theirs until they
+            confirm the invitation we emailed them. Everything appears here the moment they do.
+          </p>
+          <Link
+            to="/athletes"
+            className="inline-flex mt-5 px-4 py-2.5 rounded-xl bg-primary text-white text-sm font-semibold hover:bg-primary-dark transition-colors"
+          >
+            Manage invitations
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
   if (error) {
     return (
       <div className="flex justify-center items-center h-screen text-red-600">
-        {error}
+        {String(error)}
       </div>
     );
   }
