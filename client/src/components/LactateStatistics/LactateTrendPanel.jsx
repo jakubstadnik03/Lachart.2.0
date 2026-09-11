@@ -17,6 +17,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../../services/api';
 import useElementWidth from '../../hooks/useElementWidth';
+import { fmtViewerPace } from '../../utils/viewerUnits';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -47,10 +48,7 @@ function fmtIntensity(value, unit) {
   if (value == null || !Number.isFinite(Number(value))) return null;
   const v = Number(value);
   if (unit === 'watts') return `${Math.round(v)} W`;
-  if (unit === 'secPerKm') {
-    const m = Math.floor(v / 60), s = Math.round(v % 60);
-    return `${m}:${String(s).padStart(2, '0')}/km`;
-  }
+  if (unit === 'secPerKm') return fmtViewerPace(v, 'run');
   return String(Math.round(v));
 }
 

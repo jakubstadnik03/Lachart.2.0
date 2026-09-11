@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { setViewerUnitsFromUser } from '../utils/viewerUnits';
 import { useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthProvider';
 import { trackCheckoutStarted, trackIntegrationConnected, trackPurchase } from '../utils/analytics';
@@ -961,6 +962,7 @@ const SettingsPage = () => {
       await saveUnitsToBackend(newUnits);
       // Also save to localStorage as backup
       localStorage.setItem('userUnits', JSON.stringify(newUnits));
+      setViewerUnitsFromUser({ units: newUnits });
       addNotification('Units saved successfully', 'success');
     } catch (error) {
       console.error('Error saving units:', error);

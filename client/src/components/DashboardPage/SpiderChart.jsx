@@ -7,6 +7,7 @@ import { useAuth } from "../../context/AuthProvider";
 import { hasRadar, resolveRadarSport } from "../../utils/radarSport";
 import { defaultMonthRange, monthKeysBetween, rangeEnds } from "../../utils/monthRange";
 import { SPORT_ICON_COLORS } from "../shared/SportIcon";
+import { paceToViewer, viewerPaceSuffix } from '../../utils/viewerUnits';
 
 import {
   Chart as ChartJS,
@@ -102,10 +103,13 @@ function parseDurSec(v) {
 
 function fmtPace(secPerKm) {
   if (!secPerKm || secPerKm <= 0) return '—';
-  const m = Math.floor(secPerKm / 60);
-  const s = Math.round(secPerKm % 60);
+  const v = paceToViewer(secPerKm, 'run');
+  const m = Math.floor(v / 60);
+  const s = Math.round(v % 60);
   return `${m}:${String(s).padStart(2, '0')}`;
 }
+/** "/km" or "/mi" — whatever the viewer runs in. */
+const RUN_PACE_UNIT = () => viewerPaceSuffix('run');
 
 /** Extract numeric value from allTime / compare entry (may be object or number). */
 function extractVal(v) {
@@ -790,7 +794,7 @@ export default function SpiderChart({
                 const cp = comparePeriod === '30days' ? runMetrics?.compareBest?.['30days'] : runMetrics?.compareBest?.['90days'];
                 pace = cp?.[id];
               } else if (kind === 'month') pace = runMetrics?.monthlyBests?.[mk]?.[id];
-              return pace ? `${lbl}: ${fmtPace(pace)} /km` : `${lbl}: —`;
+              return pace ? `${lbl}: ${fmtPace(pace)} ${RUN_PACE_UNIT()}` : `${lbl}: —`;
             }
           },
           afterBody: items => {
@@ -1158,10 +1162,10 @@ export default function SpiderChart({
                     // Format display values
                     const allTimeDisplay = sport === 'bike'
                       ? (hasAllTime ? `${Math.round(row.allTimeVal)} W` : '—')
-                      : (hasAllTime ? `${fmtPace(row.allTimeVal)} /km` : '—');
+                      : (hasAllTime ? `${fmtPace(row.allTimeVal)} ${RUN_PACE_UNIT()}` : '—');
                     const cmpDisplay = sport === 'bike'
                       ? (hasCmp ? `${Math.round(row.compareVal)} W` : '—')
-                      : (hasCmp ? `${fmtPace(row.compareVal)} /km` : '—');
+                      : (hasCmp ? `${fmtPace(row.compareVal)} ${RUN_PACE_UNIT()}` : '—');
 
                     // Delta: positive = improvement
                     const deltaPositive = row.delta !== null && row.delta > 0;

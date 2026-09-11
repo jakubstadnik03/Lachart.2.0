@@ -9,13 +9,17 @@
  */
 
 import React, { useMemo } from 'react';
+import { fmtViewerPace } from '../../../utils/viewerUnits';
+import { KM_PER_MILE, testRunPaceStoredPerMile } from '../../../utils/unitsConverter';
 
 const W = 1080;
 const H = 1920;
 
-function fmtPace(secPerKm) {
-  if (!secPerKm) return '—';
-  return `${Math.floor(secPerKm / 60)}:${String(Math.round(secPerKm % 60)).padStart(2, '0')}`;
+/** A test pace, in whatever unit the test was recorded, printed for the viewer. */
+function fmtPace(sec, test, sport) {
+  if (!sec) return '—';
+  const perMile = testRunPaceStoredPerMile(test, sport);
+  return fmtViewerPace(perMile ? sec / KM_PER_MILE : sec, sport);
 }
 
 export default function LactateCurveTemplate({ test = {}, thresholds = null, accent = '#7C3AED', transparent = false }) {
@@ -140,7 +144,7 @@ export default function LactateCurveTemplate({ test = {}, thresholds = null, acc
             stroke="#22c55e" strokeWidth="3" strokeDasharray="10 6" />
           <text x={px(lt1)} y={CHART_Y0 - 30} textAnchor="middle"
             style={{ fontFamily: '-apple-system, "SF Pro Display", system-ui, sans-serif', fontSize: 30, fontWeight: 800, fill: '#22c55e' }}>
-            LT1 {isPace ? fmtPace(lt1) : `${Math.round(lt1)} W`}
+            LT1 {isPace ? fmtPace(lt1, test, sport.includes('swim') ? 'swim' : 'run') : `${Math.round(lt1)} W`}
           </text>
         </g>
       )}
@@ -150,7 +154,7 @@ export default function LactateCurveTemplate({ test = {}, thresholds = null, acc
             stroke="#ef4444" strokeWidth="3" strokeDasharray="10 6" />
           <text x={px(lt2)} y={CHART_Y0 - 30} textAnchor="middle"
             style={{ fontFamily: '-apple-system, "SF Pro Display", system-ui, sans-serif', fontSize: 30, fontWeight: 800, fill: '#ef4444' }}>
-            LT2 {isPace ? fmtPace(lt2) : `${Math.round(lt2)} W`}
+            LT2 {isPace ? fmtPace(lt2, test, sport.includes('swim') ? 'swim' : 'run') : `${Math.round(lt2)} W`}
           </text>
         </g>
       )}

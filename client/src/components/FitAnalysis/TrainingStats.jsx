@@ -6,6 +6,7 @@ import { updateFitTraining, getAllTitles } from '../../services/api';
 import api from '../../services/api';
 import { formatSpeedForUser } from '../../utils/unitsConverter';
 import { useCategories } from '../../context/CategoryContext';
+import { fmtViewerPaceBare, viewerPaceSuffix } from '../../utils/viewerUnits';
 
 /** Display / edit string for training name (covers FIT + regular + model variants). */
 function getTrainingTitleString(t) {
@@ -452,12 +453,10 @@ const TrainingStats = ({ training, onDelete, onUpdate, user, isMobile: isMobileP
   // Convert speed (m/s) to pace (MM:SS/km) for running
   const formatPaceFromSpeed = (speedMps) => {
     if (!speedMps || speedMps <= 0) return null;
-    // Convert m/s to seconds per km
-    const paceSeconds = Math.round(1000 / speedMps);
-    const minutes = Math.floor(paceSeconds / 60);
-    const seconds = paceSeconds % 60;
-    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+    // m/s → the viewer's minutes per km or per mile
+    return fmtViewerPaceBare(1000 / speedMps, 'run') || null;
   };
+  const runPaceUnit = viewerPaceSuffix('run');
   
   const avgPace = training?.avgSpeed ? formatPaceFromSpeed(training.avgSpeed) : null;
   const maxPace = maxSpeed ? formatPaceFromSpeed(maxSpeed) : null;
@@ -981,7 +980,7 @@ const TrainingStats = ({ training, onDelete, onUpdate, user, isMobile: isMobileP
             { label: 'Distance', value: formatDistance(training.totalDistance, user) },
             ...(training.avgHeartRate ? [{ label: 'Avg Heart Rate', value: `${Math.round(training.avgHeartRate)} bpm`, sub: maxHeartRate ? `Max ${Math.round(maxHeartRate)}` : null }] : []),
             ...(displayPower != null && displayPower > 0 ? [{ label: isNormalizedPower ? 'Norm. Power' : 'Avg Power', value: `${Math.round(displayPower)} W`, sub: maxPower ? `Max ${Math.round(maxPower)}` : null }] : []),
-            ...(isRun && avgPace ? [{ label: 'Avg Pace', value: `${avgPace} /km`, sub: maxPace ? `Max ${maxPace}` : null }] : []),
+            ...(isRun && avgPace ? [{ label: 'Avg Pace', value: `${avgPace} ${runPaceUnit}`, sub: maxPace ? `Max ${maxPace}` : null }] : []),
             ...(!isRun && training.avgSpeed ? [{ label: 'Avg Speed', value: formatSpeedForUser(training.avgSpeed, user) }] : []),
             ...(avgCadence ? [{ label: 'Cadence', value: `${Math.round(avgCadence)} rpm` }] : []),
             ...(calculateTSS !== null ? [{ label: 'TSS', value: String(typeof calculateTSS === 'object' ? calculateTSS.value : calculateTSS), sub: calculateIF !== null ? `IF ${calculateIF}` : null }] : []),
@@ -1016,7 +1015,7 @@ const TrainingStats = ({ training, onDelete, onUpdate, user, isMobile: isMobileP
           />
         )}
         {isRun && avgPace ? (
-          <StatBox icon={<MapPinIcon className="h-3 w-3" />} iconBg="bg-greenos/10" iconColor="text-greenos" label="Avg Pace" value={`${avgPace} /km`} sub={maxPace ? `Max ${maxPace} /km` : null} />
+          <StatBox icon={<MapPinIcon className="h-3 w-3" />} iconBg="bg-greenos/10" iconColor="text-greenos" label="Avg Pace" value={`${avgPace} ${runPaceUnit}`} sub={maxPace ? `Max ${maxPace} ${runPaceUnit}` : null} />
         ) : training.avgSpeed && !isRun ? (
           <StatBox icon={<MapPinIcon className="h-3 w-3" />} iconBg="bg-greenos/10" iconColor="text-greenos" label="Avg Speed" value={formatSpeedForUser(training.avgSpeed, user)} />
         ) : null}

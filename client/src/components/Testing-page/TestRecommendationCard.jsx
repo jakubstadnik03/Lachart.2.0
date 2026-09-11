@@ -6,6 +6,7 @@
 import React, { useState, useMemo } from 'react';
 import { useAuth } from '../../context/AuthProvider';
 import { formatRunPace } from '../../utils/unitsConverter';
+import { fmtViewerPace } from '../../utils/viewerUnits';
 import {
   ClipboardDocumentListIcon,
   BeakerIcon,
@@ -36,9 +37,7 @@ const C = {
 // Components that have access to the user object should call formatRunPace(sec, user) instead.
 function fmtPaceFallback(sec) {
   if (!sec || sec <= 0) return '—';
-  const m = Math.floor(sec / 60);
-  const s = Math.round(sec % 60);
-  return `${m}:${String(s).padStart(2, '0')}/km`;
+  return fmtViewerPace(sec, 'run');
 }
 
 function daysSince(d) {

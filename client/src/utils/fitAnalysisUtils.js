@@ -3,6 +3,7 @@
  */
 
 import { formatDistance as formatDistanceWithUnits, formatSpeed as formatSpeedWithUnits, getUserUnits } from './unitsConverter';
+import { paceToViewer, viewerPaceSuffix } from './viewerUnits';
 
 export const formatDuration = (seconds) => {
   if (!seconds) return '0:00';
@@ -78,14 +79,15 @@ export const formatSpeed = (mps, user = null) => {
 
 export const formatPace = (mps) => {
   if (!mps || mps === 0) return '-';
-  const secondsPerKm = 1000 / mps;
-  const hours = Math.floor(secondsPerKm / 3600);
-  const minutes = Math.floor((secondsPerKm % 3600) / 60);
-  const seconds = Math.floor(secondsPerKm % 60);
+  const secondsPerUnit = paceToViewer(1000 / mps, 'run');
+  const hours = Math.floor(secondsPerUnit / 3600);
+  const minutes = Math.floor((secondsPerUnit % 3600) / 60);
+  const seconds = Math.floor(secondsPerUnit % 60);
+  const unit = viewerPaceSuffix('run');
   if (hours > 0) {
-    return `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}/km`;
+    return `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}${unit}`;
   }
-  return `${minutes}:${seconds.toString().padStart(2, '0')}/km`;
+  return `${minutes}:${seconds.toString().padStart(2, '0')}${unit}`;
 };
 
 /**

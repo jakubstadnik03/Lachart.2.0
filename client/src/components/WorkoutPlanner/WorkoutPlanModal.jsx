@@ -31,6 +31,7 @@ import { useCategories } from '../../context/CategoryContext';
 import { useAuth } from '../../context/AuthProvider';
 import DailyMetricsCard from '../training/DailyMetricsCard';
 import { plannedDistanceMetres } from '../../utils/plannedWorkoutDistance';
+import { viewerPaceSuffix } from '../../utils/viewerUnits';
 import {
   distanceInputUnitLabel,
   formatDistanceInputFromMetres,
@@ -461,11 +462,11 @@ export function WorkoutLapList({ steps, context, sport }) {
     if (!s.powerTarget || s.powerTarget.type === 'open') return '';
     if (isRun) {
       const p = resolveTargetPace(s.powerTarget, context);
-      return p > 0 ? `${fmtPace(p)}/km` : '';
+      return p > 0 ? `${fmtPace(p, 'run')}${viewerPaceSuffix('run')}` : '';
     }
     if (isSwim) {
       const p = resolveTargetSwimPace(s.powerTarget, context);
-      return p > 0 ? `${fmtPace(p)}/100m` : '';
+      return p > 0 ? `${fmtPace(p, 'swim')}${viewerPaceSuffix('swim')}` : '';
     }
     const w = resolveTargetWatts(s.powerTarget, context);
     return w > 0 ? `~${Math.round(w)} W` : '';

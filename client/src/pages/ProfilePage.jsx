@@ -32,6 +32,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { isCapacitorNative } from '../utils/isNativeApp';
 import NativeProfilePage from './NativeProfilePage';
 import { formatProfileFullName } from '../utils/profileName';
+import { fmtViewerPaceBare, viewerPaceSuffix } from '../utils/viewerUnits';
 
 const MAX_PROFILE_CALENDAR_ACTIVITIES = 2000;
 
@@ -155,20 +156,14 @@ const [selectedTitle, setSelectedTitle] = useState(null);
   // Get unitSystem from userInfo
   const unitSystem = userInfo?.units?.distance === 'imperial' ? 'imperial' : 'metric';
   
-  // Format pace for display (seconds to mm:ss)
-  const formatPace = (seconds) => {
+  // Stored per km / per 100 m; printed in the viewer's unit.
+  const paceSportOf = (sport) => (sport === 'swimming' ? 'swim' : 'run');
+  const formatPace = (seconds, sport = 'running') => {
     if (!seconds || seconds === 0 || isNaN(seconds)) return '0:00';
-    const minutes = Math.floor(seconds / 60);
-    const secs = Math.round(seconds % 60);
-    return `${minutes}:${secs.toString().padStart(2, '0')}`;
+    return fmtViewerPaceBare(seconds, paceSportOf(sport)) || '0:00';
   };
-  
-  const getPaceUnit = (sport) => {
-    if (sport === 'swimming') {
-      return unitSystem === 'imperial' ? '/100yd' : '/100m';
-    }
-    return unitSystem === 'imperial' ? '/mile' : '/km';
-  };
+
+  const getPaceUnit = (sport) => viewerPaceSuffix(paceSportOf(sport));
 
   const formatZoneBound = (value) => {
     if (value === Infinity || value === null || value === undefined || value === '') return '∞';
@@ -183,8 +178,8 @@ const [selectedTitle, setSelectedTitle] = useState(null);
     if (sport === 'cycling') {
       return `${formatZoneBound(min)}-${formatZoneBound(max)} W`;
     }
-    const paceMin = formatPace(min);
-    const paceMax = max === Infinity || max === null || max === undefined ? '∞' : formatPace(max);
+    const paceMin = formatPace(min, sport);
+    const paceMax = max === Infinity || max === null || max === undefined ? '∞' : formatPace(max, sport);
     return `${paceMin}-${paceMax} ${getPaceUnit(sport)}`;
   };
 
@@ -300,7 +295,7 @@ const [selectedTitle, setSelectedTitle] = useState(null);
     if (!Number.isFinite(na) || !Number.isFinite(nb)) return '-';
     const delta = na - nb;
     const sign = delta > 0 ? '+' : '-';
-    return `${sign}${formatPace(Math.abs(delta))}`;
+    return `${sign}${formatPace(Math.abs(delta), selectedZoneSport)}`;
   };
 
   // Load training calendar data (FIT, regular trainings, Strava) — same merge as Dashboard
@@ -880,8 +875,7 @@ const [selectedTitle, setSelectedTitle] = useState(null);
             const fmtMain = (val) => {
               if (val == null || val === '' || val === Infinity) return '∞';
               if (sport === 'cycling') return `${val}W`;
-              if (sport === 'swimming') return `${formatPace(val)}/100m`;
-              return `${formatPace(val)}${getPaceUnit('running')}`;
+              return `${formatPace(val, sport)}${getPaceUnit(sport)}`;
             };
 
             return (

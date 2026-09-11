@@ -8,6 +8,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import api from '../../services/api';
 import { GlassCard, SectionTitle } from './shared/Tiles';
+import { fmtViewerPace, viewerPaceSuffix } from '../../utils/viewerUnits';
 
 const C = {
   primary: '#767EB5',
@@ -19,11 +20,9 @@ const C = {
   grey: '#9CA3AF',
 };
 
-function fmtPace(sec, suffix) {
+function fmtPace(sec, sport) {
   if (!sec || sec <= 0) return '—';
-  const m = Math.floor(sec / 60);
-  const s = Math.round(sec % 60);
-  return `${m}:${String(s).padStart(2, '0')}${suffix}`;
+  return fmtViewerPace(sec, sport);
 }
 
 // Empirical percentile via quartile-based piecewise interpolation (same as web)
@@ -160,13 +159,13 @@ export default function NativeBenchmarkCard({ athleteId, sport, user }) {
     ?? (s ? Math.max(s.lt1?.count || 0, s.lt2?.count || 0) : 0);
   const av = stats?.athlete;
   const isPaceSport = sport !== 'bike';
-  const paceSuffix = sport === 'swim' ? '/100m' : '/km';
+  const paceSuffix = viewerPaceSuffix(sport === 'swim' ? 'swim' : 'run');
   const sportLabel = sport === 'bike' ? 'Cycling' : sport === 'run' ? 'Running' : 'Swimming';
 
   // Bike prefers W/kg when the population has it; falls back to absolute W.
   const useWkg = sport === 'bike' && s?.lt2Wkg?.count > 0;
   const fmtVal = isPaceSport
-    ? (v) => fmtPace(v, paceSuffix)
+    ? (v) => fmtPace(v, sport === 'swim' ? 'swim' : 'run')
     : useWkg
       ? (v) => `${Number(v).toFixed(2)} W/kg`
       : (v) => `${Math.round(v)} W`;

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
+import { maybePromptAthleteZonesSetup } from '../utils/trainingZonesSetup';
 import { useAuth } from '../context/AuthProvider';
 import SpiderChart from './DashboardPage/SpiderChart';
 import TrainingGraph from './DashboardPage/TrainingGraph';
@@ -60,6 +61,12 @@ export default function AthleteProfile() {
         setAthlete(athleteData.data);
         setTrainings(trainingsData.data || []);
         setTests(testsData.data || []);
+
+        // The bare athlete endpoint strips zones; the /profile one carries
+        // them. A coach on an athlete with none is asked for them right here.
+        api.get(`/user/athlete/${athleteId}/profile`)
+          .then((res) => { if (res?.data) maybePromptAthleteZonesSetup(user, res.data); })
+          .catch(() => {});
       } catch (error) {
         console.error('Error fetching athlete data:', error);
         // "Request failed with status code 403" told the coach nothing; the

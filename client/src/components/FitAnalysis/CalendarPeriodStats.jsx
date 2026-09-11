@@ -15,6 +15,7 @@ import { mergeProfileZones, enrichProfileForTss } from '../../utils/inferThresho
 import { getTimelineZones } from '../../services/api';
 import { useCategories } from '../../context/CategoryContext';
 import PmcCombinedChart from '../shared/PmcCombinedChart';
+import { paceToViewer, viewerPaceSuffix } from '../../utils/viewerUnits';
 import {
   resolveSportKey,
   SportGlyph,
@@ -102,15 +103,17 @@ function profileSportFromActivity(sport) {
   return null;
 }
 
-function formatZoneRangeLabel(defs, zk, unit) {
+function formatZoneRangeLabel(defs, zk, unit, paceSport = null) {
   if (!defs || !defs[zk]) return '';
   const mn = parseZoneNumber(defs[zk]?.min);
   const mxRaw = defs[zk]?.max;
   const mx = (mxRaw === undefined || mxRaw === null || mxRaw === '') ? null : parseZoneNumber(mxRaw);
   if (mn == null && mx == null) return '';
-  if (mn != null && mx != null) return `${Math.round(mn)}–${Math.round(mx)} ${unit}`;
-  if (mn != null) return `${Math.round(mn)}+ ${unit}`;
-  return `≤${Math.round(mx)} ${unit}`;
+  // A pace zone reads as m:ss in the viewer's unit, not as raw seconds per km.
+  const show = (v) => (paceSport ? fmtPaceFromSec(v, paceSport) : Math.round(v));
+  if (mn != null && mx != null) return `${show(mn)}–${show(mx)} ${unit}`;
+  if (mn != null) return `${show(mn)}+ ${unit}`;
+  return `≤${show(mx)} ${unit}`;
 }
 
 function hasZoneDefinitions(zonesObj) {
@@ -150,8 +153,8 @@ function getNormalizedPower(act) {
   return Number.isFinite(np) && np > 0 ? np : null;
 }
 
-function fmtPaceFromSec(secPerUnit) {
-  const total = Math.max(0, Math.round(secPerUnit || 0));
+function fmtPaceFromSec(secPerUnit, sport = 'run') {
+  const total = Math.max(0, Math.round(paceToViewer(secPerUnit || 0, sport)));
   const m = Math.floor(total / 60);
   const s = total % 60;
   return `${m}:${String(s).padStart(2, '0')}`;
@@ -265,10 +268,10 @@ function SportSplitTooltip({ bucket, cur, prev, prevLabel, user }) {
     }
   }
   if (bucket === 'swim' && cur.avgPace) {
-    metricRows.push({ label: 'Avg pace', value: `${fmtPaceFromSec(cur.avgPace)} /100m` });
+    metricRows.push({ label: 'Avg pace', value: `${fmtPaceFromSec(cur.avgPace, 'swim')} ${viewerPaceSuffix('swim')}` });
   }
   if (['run', 'hike', 'walk', 'ski'].includes(bucket) && cur.avgPace) {
-    metricRows.push({ label: 'Avg pace', value: `${fmtPaceFromSec(cur.avgPace)} /km` });
+    metricRows.push({ label: 'Avg pace', value: `${fmtPaceFromSec(cur.avgPace, 'run')} ${viewerPaceSuffix('run')}` });
   }
   if (cur.avgHr) metricRows.push({ label: 'Avg HR', value: `${Math.round(cur.avgHr)} bpm` });
   if (cur.tss > 0) metricRows.push({ label: 'TSS', value: String(Math.round(cur.tss)) });
@@ -309,8 +312,8 @@ function SportSplitTooltip({ bucket, cur, prev, prevLabel, user }) {
       cmpRows.push({
         label: 'Avg pace',
         value: bucket === 'swim'
-          ? `${fmtPaceFromSec(prev.avgPace)} → ${fmtPaceFromSec(cur.avgPace)} /100m`
-          : `${fmtPaceFromSec(prev.avgPace)} → ${fmtPaceFromSec(cur.avgPace)} /km`,
+          ? `${fmtPaceFromSec(prev.avgPace, 'swim')} → ${fmtPaceFromSec(cur.avgPace, 'swim')} ${viewerPaceSuffix('swim')}`
+          : `${fmtPaceFromSec(prev.avgPace, 'run')} → ${fmtPaceFromSec(cur.avgPace, 'run')} ${viewerPaceSuffix('run')}`,
         pct: -pacePct,
       });
     }
@@ -1420,7 +1423,8 @@ export default function CalendarPeriodStats({
     const secMap = zoneSecFor(donutSport, donutMetric);
     const isHr = donutMetric === 'hr';
     const names = isHr ? HR_ZONE_NAMES : POWER_ZONE_NAMES;
-    const unit = isHr ? 'bpm' : (donutSport === 'cycling' ? 'W' : '/km');
+    const donutPaceSport = !isHr && donutSport !== 'cycling' ? (donutSport === 'swimming' ? 'swim' : 'run') : null;
+    const unit = isHr ? 'bpm' : (donutSport === 'cycling' ? 'W' : viewerPaceSuffix(donutPaceSport));
     // Ranges are only meaningful for one sport — "all" mixes three zone tables.
     const zoneDefs = donutSport === 'all'
       ? null
@@ -1453,7 +1457,7 @@ export default function CalendarPeriodStats({
           const pct = params.percent != null ? Number(params.percent).toFixed(1) : '0.0';
           const timeStr = fmtZoneTotal(sec);
           const totalStr = fmtZoneTotal(total);
-          const range = formatZoneRangeLabel(zoneDefs, zk, unit);
+          const range = formatZoneRangeLabel(zoneDefs, zk, unit, donutPaceSport);
           let html = `<div style="font-weight:600;margin-bottom:4px;color:#111827">${params.name}</div>`;
           html += `<div style="color:#6b7280;font-size:10px">${sourceLabel}${range ? ` · ${range}` : ''}</div>`;
           html += `<div style="margin-top:6px"><span style="font-weight:600;color:#111827">${timeStr}</span>`;

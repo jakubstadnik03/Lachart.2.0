@@ -1,3 +1,8 @@
+import { fmtViewerPaceBare, viewerPaceSuffix } from './viewerUnits';
+
+// Test-plan paces are shown to the athlete, so they are printed in the units
+// they read — "7:15 /mi" for a runner on miles — from the stored sec/km.
+const viewerPaceText = (secPerKm) => `${fmtViewerPaceBare(secPerKm, 'run')} ${viewerPaceSuffix('run')}`;
 /**
  * HR-First Smart Lactate Test Planner
  * Estimates HRmax, LT1, LT2 from training data and generates HR-guided test protocol
@@ -357,18 +362,14 @@ export const estimateLT1 = (activities, hrMaxEst, sport = 'run', days = 42) => {
           if (velocityValues.length > 0) {
             const avgVelocity = velocityValues.reduce((a, b) => a + b, 0) / velocityValues.length; // m/s
             const paceSecPerKm = Math.round(1000 / avgVelocity);
-            const mins = Math.floor(paceSecPerKm / 60);
-            const secs = paceSecPerKm % 60;
-            pace = `${mins}:${String(secs).padStart(2, '0')} /km`;
+            pace = viewerPaceText(paceSecPerKm);
           } else {
             // Fallback to whole segment
             const allVelocityValues = segment.map(p => p.velocity).filter(v => v && v > 0);
             if (allVelocityValues.length > 0) {
               const avgVelocity = allVelocityValues.reduce((a, b) => a + b, 0) / allVelocityValues.length; // m/s
             const paceSecPerKm = Math.round(1000 / avgVelocity);
-            const mins = Math.floor(paceSecPerKm / 60);
-            const secs = paceSecPerKm % 60;
-            pace = `${mins}:${String(secs).padStart(2, '0')} /km`;
+            pace = viewerPaceText(paceSecPerKm);
             }
           }
         }
@@ -560,9 +561,7 @@ export const estimateLT2 = (activities, hrMaxEst, sport = 'run', days = 42) => {
           const avgVelocity = lastVelocityValues.reduce((a, b) => a + b, 0) / lastVelocityValues.length; // m/s
         if (sport === 'run') {
             const paceSecPerKm = Math.round(1000 / avgVelocity);
-          const mins = Math.floor(paceSecPerKm / 60);
-          const secs = paceSecPerKm % 60;
-          pace = `${mins}:${String(secs).padStart(2, '0')} /km`;
+          pace = viewerPaceText(paceSecPerKm);
           }
         }
       }
@@ -579,9 +578,7 @@ export const estimateLT2 = (activities, hrMaxEst, sport = 'run', days = 42) => {
             const avgVelocity = segmentVelocityValues.reduce((a, b) => a + b, 0) / segmentVelocityValues.length; // m/s
             if (sport === 'run') {
               const paceSecPerKm = Math.round(1000 / avgVelocity);
-              const mins = Math.floor(paceSecPerKm / 60);
-              const secs = paceSecPerKm % 60;
-              pace = `${mins}:${String(secs).padStart(2, '0')} /km`;
+              pace = viewerPaceText(paceSecPerKm);
             }
           }
         }
@@ -857,9 +854,7 @@ export const generateHRProtocol = (hrMax, lt1, lt2, sport = 'run', activities = 
         if (sport === 'run') {
           // Convert m/s to pace (sec/km)
           const paceSecPerKm = Math.round(1000 / intensity);
-          const mins = Math.floor(paceSecPerKm / 60);
-          const secs = paceSecPerKm % 60;
-          stage.suggestedPace = `${mins}:${String(secs).padStart(2, '0')} /km`;
+          stage.suggestedPace = viewerPaceText(paceSecPerKm);
         } else if (sport === 'bike' || sport === 'ride') {
           stage.suggestedPower = Math.round(intensity);
         }
@@ -1033,9 +1028,7 @@ export const generateHRTestPlan = async (activities, sport = 'run') => {
             const estimatedVelocity = model.predict(lt2.hr.value);
             if (estimatedVelocity && estimatedVelocity > 0) {
               const paceSecPerKm = Math.round(1000 / estimatedVelocity);
-              const mins = Math.floor(paceSecPerKm / 60);
-              const secs = paceSecPerKm % 60;
-              lt2.pace = `${mins}:${String(secs).padStart(2, '0')} /km`;
+              lt2.pace = viewerPaceText(paceSecPerKm);
               console.warn(`[HRTestPlan] LT2 pace adjusted using model: ${lt2.pace}`);
             }
           }
@@ -1044,9 +1037,7 @@ export const generateHRTestPlan = async (activities, sport = 'run') => {
           const estimatedVelocity = model.predict(lt2.hr.value);
           if (estimatedVelocity && estimatedVelocity > 0) {
             const paceSecPerKm = Math.round(1000 / estimatedVelocity);
-            const mins = Math.floor(paceSecPerKm / 60);
-            const secs = paceSecPerKm % 60;
-            lt2.pace = `${mins}:${String(secs).padStart(2, '0')} /km`;
+            lt2.pace = viewerPaceText(paceSecPerKm);
           }
         }
       }

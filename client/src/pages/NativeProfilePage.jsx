@@ -18,9 +18,11 @@ import {
   formatThresholdIntensity,
   isPaceLactateSport,
 } from '../utils/extractLactateThresholds';
-import { formatActivityDistance } from '../utils/unitsConverter';
+import { formatActivityDistance, formatZonesPaceForUser } from '../utils/unitsConverter';
 import { formatProfileFullName } from '../utils/profileName';
 import { ltZoneBounds, zonesFromBounds } from '../utils/trainingZoneBounds';
+import { paceToViewer, paceFromViewer, viewerPaceSuffix, viewerIsImperial } from '../utils/viewerUnits';
+import { maybePromptAthleteZonesSetup, ATHLETE_PROFILE_UPDATED_EVENT } from '../utils/trainingZonesSetup';
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -113,6 +115,9 @@ export default function NativeProfilePage({ user, userInfo, calendarData = [], o
         if (!active) return;
         setAthleteProfile(res?.data || null);
         if (!res?.data) setAthleteError('This athlete returned no profile.');
+        // A coach on an athlete who has no zones yet is asked for them here,
+        // on the profile where every card would otherwise read "not set".
+        else maybePromptAthleteZonesSetup(me, res.data);
       })
       .catch(async (err) => {
         if (!active) return;
@@ -133,7 +138,18 @@ export default function NativeProfilePage({ user, userInfo, calendarData = [], o
         );
       });
     return () => { active = false; };
+    // `me` only matters for who is asking; the request is keyed on the athlete.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isViewingOtherAthlete, effectiveAthleteId, athleteLoadTick]);
+
+  // Zones saved for this athlete from the modal — show them.
+  useEffect(() => {
+    const onSaved = (e) => {
+      if (String(e?.detail?.athleteId || '') === String(effectiveAthleteId)) setAthleteLoadTick((t) => t + 1);
+    };
+    window.addEventListener(ATHLETE_PROFILE_UPDATED_EVENT, onSaved);
+    return () => window.removeEventListener(ATHLETE_PROFILE_UPDATED_EVENT, onSaved);
+  }, [effectiveAthleteId]);
 
   const [inviteBusy, setInviteBusy] = useState(false);
   const resendInvitation = async () => {
@@ -758,9 +774,11 @@ function pickInitialThresholds(user, tests, sport) {
   return { lt1, lt2, hr1, hr2 };
 }
 
-function fmtPaceVal(sec) {
+/** Stored seconds per km / per 100 m → m:ss in the viewer's unit. */
+function fmtPaceVal(sec, sport = 'run') {
   if (!sec) return '—';
-  return `${Math.floor(sec / 60)}:${String(Math.round(sec % 60)).padStart(2, '0')}`;
+  const v = paceToViewer(sec, sport);
+  return `${Math.floor(v / 60)}:${String(Math.round(v % 60)).padStart(2, '0')}`;
 }
 
 function TrainingZonesSection({ user, tests, athleteId = null }) {
@@ -810,9 +828,11 @@ function SportZonesBlock({ sport, user, tests, athleteId = null, override, isOpe
     [latestTest],
   );
 
+  // Pace zones from a test come as "m:ss" strings in the test's own unit;
+  // they are converted to the viewer's before anything prints them.
   const zonesFromLatestTest = useMemo(
-    () => (latestTest ? calculateZonesFromTest(latestTest) : null),
-    [latestTest],
+    () => (latestTest ? formatZonesPaceForUser(calculateZonesFromTest(latestTest), latestTest, user, sport) : null),
+    [latestTest, user, sport],
   );
 
   // Prefer zones from the latest lab test when it is newer than saved profile zones.
@@ -870,7 +890,7 @@ function SportZonesBlock({ sport, user, tests, athleteId = null, override, isOpe
   const fmtLtLabel = (value) => {
     if (value == null) return '—';
     if (latestTest) return formatThresholdIntensity(value, latestTest, sport);
-    return isPace ? fmtPaceVal(value) : `${Math.round(value)} W`;
+    return isPace ? `${fmtPaceVal(value, sport)}${viewerPaceSuffix(sport)}` : `${Math.round(value)} W`;
   };
 
   const lt1Show = latestTh?.lt1 ?? display?.primary?.lt1 ?? initial.lt1;
@@ -922,8 +942,10 @@ function SportZonesBlock({ sport, user, tests, athleteId = null, override, isOpe
           {ZONE_DEFS.map((z, i) => {
             const p = display.primary?.[z.key];
             const h = display.heartRateZones?.[z.key];
+            // Profile zones are stored seconds; test zones already read "m:ss".
+            const showP = (v) => (typeof v === 'number' ? fmtPaceVal(v, sport) : v);
             const primaryStr = p
-              ? (isPace ? `${p.min}–${p.max}` : `${p.min}–${p.max} W`)
+              ? (isPace ? `${showP(p.min)}–${showP(p.max)}` : `${p.min}–${p.max} W`)
               : '—';
             const hrStr = h ? `${h.min}–${h.max} bpm` : '—';
             return (
@@ -974,19 +996,20 @@ function SportZonesBlock({ sport, user, tests, athleteId = null, override, isOpe
 
 function ZonesEditor({ sport, initial, tint, user = null, athleteId = null, onCancel, onSaved }) {
   const isPace = isPaceSport(sport);
-  // Pace inputs use MM:SS, power inputs use raw numbers
+  // Pace inputs use MM:SS in the viewer's unit and store per km / per 100 m;
+  // power inputs use raw numbers
   const fmtIn = (v) => {
     if (v == null) return '';
-    if (isPace) return fmtPaceVal(v);
+    if (isPace) return fmtPaceVal(v, sport);
     return String(Math.round(v));
   };
   const parseIn = (str) => {
     if (str == null || str === '') return null;
     if (isPace) {
       const m = String(str).trim().match(/^(\d+):(\d{1,2})$/);
-      if (m) return Number(m[1]) * 60 + Number(m[2]);
+      if (m) return Math.round(paceFromViewer(Number(m[1]) * 60 + Number(m[2]), sport));
       const n = Number(str);
-      return Number.isFinite(n) && n > 0 ? n : null;
+      return Number.isFinite(n) && n > 0 ? Math.round(paceFromViewer(n, sport)) : null;
     }
     const n = Number(str);
     return Number.isFinite(n) && n > 0 ? n : null;
@@ -1063,12 +1086,12 @@ function ZonesEditor({ sport, initial, tint, user = null, athleteId = null, onCa
     }}>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
         <div style={{ display: 'flex', flexDirection: 'column' }}>
-          <span style={labelStyle}>LT1 ({isPace ? 'MM:SS' : 'W'})</span>
-          <input value={lt1} onChange={e => setLt1(e.target.value)} placeholder={isPace ? '5:30' : '180'} style={inputStyle} inputMode={isPace ? 'text' : 'numeric'} />
+          <span style={labelStyle}>LT1 ({isPace ? `MM:SS ${viewerPaceSuffix(sport)}` : 'W'})</span>
+          <input value={lt1} onChange={e => setLt1(e.target.value)} placeholder={isPace ? (viewerIsImperial() ? '8:50' : '5:30') : '180'} style={inputStyle} inputMode={isPace ? 'text' : 'numeric'} />
         </div>
         <div style={{ display: 'flex', flexDirection: 'column' }}>
-          <span style={labelStyle}>LT2 ({isPace ? 'MM:SS' : 'W'})</span>
-          <input value={lt2} onChange={e => setLt2(e.target.value)} placeholder={isPace ? '4:30' : '250'} style={inputStyle} inputMode={isPace ? 'text' : 'numeric'} />
+          <span style={labelStyle}>LT2 ({isPace ? `MM:SS ${viewerPaceSuffix(sport)}` : 'W'})</span>
+          <input value={lt2} onChange={e => setLt2(e.target.value)} placeholder={isPace ? (viewerIsImperial() ? '7:15' : '4:30') : '250'} style={inputStyle} inputMode={isPace ? 'text' : 'numeric'} />
         </div>
         <div style={{ display: 'flex', flexDirection: 'column' }}>
           <span style={labelStyle}>LT1 HR (bpm)</span>

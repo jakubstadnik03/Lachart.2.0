@@ -4,6 +4,8 @@
  */
 import { calculateThresholds } from '../components/Testing-page/DataTable';
 import { getEffectiveLactateInputMode } from './lactateTestInputMode';
+import { fmtViewerPace, viewerUnitSystem } from './viewerUnits';
+import { KM_PER_MILE, testRunPaceStoredPerMile } from './unitsConverter';
 
 export function normLactateSport(s) {
   const v = String(s || '').toLowerCase();
@@ -31,12 +33,15 @@ export function formatThresholdIntensity(value, test, sport = normLactateSport(t
   if (sport === 'bike') return `${Math.round(n)} W`;
   const storage = getEffectiveLactateInputMode(test);
   if (storage === 'speed') {
-    const unit = sport === 'swim' ? '/100m' : ' km/h';
-    if (sport === 'swim') return `${n.toFixed(2)}${unit}`;
-    return `${n.toFixed(1)}${unit}`;
+    if (sport === 'swim') return `${n.toFixed(2)}/100m`;
+    return viewerUnitSystem() === 'imperial'
+      ? `${(n / KM_PER_MILE).toFixed(1)} mph`
+      : `${n.toFixed(1)} km/h`;
   }
-  const suffix = sport === 'swim' ? '/100m' : '/km';
-  return `${fmtPaceSec(n)}${suffix}`;
+  // A test recorded in miles keeps its pace per mile; bring it to the stored
+  // scale first, then print it the way the viewer reads.
+  const canonical = testRunPaceStoredPerMile(test, sport) ? n / KM_PER_MILE : n;
+  return fmtViewerPace(canonical, sport);
 }
 
 /**

@@ -17,6 +17,8 @@ import ReactDOM from 'react-dom';
 import api, { updateUserProfile } from '../../services/api';
 import { ltZones } from '../../utils/trainingZoneBounds';
 import { requestTrainingZonesModal } from '../../utils/trainingZonesSetup';
+import { parsePaceSeconds } from '../../utils/paceText';
+import { paceFromViewer, viewerPaceSuffix, viewerIsImperial } from '../../utils/viewerUnits';
 
 const IOS = {
   blue: '#007AFF',
@@ -29,12 +31,24 @@ const IOS = {
 };
 const FONT = '-apple-system, "SF Pro Text", "SF Pro Display", system-ui, sans-serif';
 
-/** Per sport: where the profile keeps it, what unit, which way is harder. */
+/** Per sport: where the profile keeps it, which way is harder. */
 const SPORTS = {
-  bike: { key: 'cycling', noun: 'ride', unit: 'W', pace: false, hint: ['180', '250'] },
-  run: { key: 'running', noun: 'run', unit: '/km', pace: true, hint: ['5:10', '4:20'] },
-  swim: { key: 'swimming', noun: 'swim', unit: '/100m', pace: true, hint: ['1:50', '1:35'] },
+  bike: { key: 'cycling', noun: 'ride', pace: false },
+  run: { key: 'running', noun: 'run', pace: true },
+  swim: { key: 'swimming', noun: 'swim', pace: true },
 };
+
+/**
+ * Unit and example values in the units the athlete reads. Pace is typed in
+ * the viewer's unit and stored per kilometre / per 100 m.
+ */
+function sportUnits(sportKind) {
+  const meta = SPORTS[sportKind] || SPORTS.bike;
+  if (!meta.pace) return { unit: 'W', hint: ['180', '250'] };
+  const imperial = viewerIsImperial();
+  if (sportKind === 'swim') return { unit: viewerPaceSuffix('swim'), hint: imperial ? ['1:40', '1:27'] : ['1:50', '1:35'] };
+  return { unit: viewerPaceSuffix('run'), hint: imperial ? ['8:20', '7:00'] : ['5:10', '4:20'] };
+}
 
 const DISMISS_KEY = (userId) => `zonesNudgeDismissed_${userId}`;
 
@@ -45,16 +59,7 @@ export function dismissZonesNudgeForSession(userId) {
   try { if (userId) sessionStorage.setItem(DISMISS_KEY(userId), '1'); } catch { /* ignore */ }
 }
 
-/** "4:20" → 260; "260" → 260; anything else → null. */
-export function parsePaceSeconds(text) {
-  const s = String(text || '').trim();
-  if (!s) return null;
-  if (/^\d+$/.test(s)) return Number(s);
-  const m = s.match(/^(\d{1,2})[:.](\d{1,2})$/);
-  if (!m) return null;
-  const sec = Number(m[1]) * 60 + Number(m[2]);
-  return Number(m[2]) < 60 && sec > 0 ? sec : null;
-}
+export { parsePaceSeconds };
 
 /**
  * The zone object to store for a sport, or a reason it cannot be built.
@@ -64,12 +69,15 @@ export function parsePaceSeconds(text) {
 export function buildZonesFor(sportKind, lt1Text, lt2Text) {
   const meta = SPORTS[sportKind];
   if (!meta) return { error: 'Unsupported sport' };
-  const parse = meta.pace ? parsePaceSeconds : (t) => { const n = Number(t); return Number.isFinite(n) && n > 0 ? n : null; };
+  const { unit } = sportUnits(sportKind);
+  const parse = meta.pace
+    ? (t) => { const v = parsePaceSeconds(t); return v == null ? null : paceFromViewer(v, sportKind); }
+    : (t) => { const n = Number(t); return Number.isFinite(n) && n > 0 ? n : null; };
   const lt1 = parse(lt1Text);
   const lt2 = parse(lt2Text);
   if (lt1 == null || lt2 == null) return { error: meta.pace ? 'Enter both as m:ss.' : 'Enter both in watts.' };
   if (meta.pace ? lt2 >= lt1 : lt2 <= lt1) {
-    return { error: meta.pace ? 'LT2 is faster than LT1 — fewer minutes per ' + meta.unit.slice(1) + '.' : 'LT2 is above LT1.' };
+    return { error: meta.pace ? 'LT2 is faster than LT1 — fewer minutes per ' + unit.slice(1) + '.' : 'LT2 is above LT1.' };
   }
   const zones = ltZones({ lt1, lt2, ascending: !meta.pace });
   if (!zones) return { error: 'Those two do not make a set of zones.' };
@@ -98,6 +106,7 @@ function Field({ label, unit, value, onChange, placeholder, pace }) {
 
 export default function ZonesNudgeSheet({ sport = 'bike', user, onClose, onSaved }) {
   const meta = SPORTS[sport] || SPORTS.bike;
+  const units = sportUnits(sport);
   const [lt1, setLt1] = useState('');
   const [lt2, setLt2] = useState('');
   const [error, setError] = useState(null);
@@ -163,8 +172,8 @@ export default function ZonesNudgeSheet({ sport = 'bike', user, onClose, onSaved
         </p>
 
         <div className="mt-5 flex gap-2.5">
-          <Field label="LT1 · aerobic" unit={meta.unit} value={lt1} onChange={setLt1} placeholder={meta.hint[0]} pace={meta.pace} />
-          <Field label="LT2 · threshold" unit={meta.unit} value={lt2} onChange={setLt2} placeholder={meta.hint[1]} pace={meta.pace} />
+          <Field label="LT1 · aerobic" unit={units.unit} value={lt1} onChange={setLt1} placeholder={units.hint[0]} pace={meta.pace} />
+          <Field label="LT2 · threshold" unit={units.unit} value={lt2} onChange={setLt2} placeholder={units.hint[1]} pace={meta.pace} />
         </div>
 
         {/* Live check, so the mistake is named before the button is pressed. */}

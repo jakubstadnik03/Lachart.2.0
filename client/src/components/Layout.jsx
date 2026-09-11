@@ -16,7 +16,10 @@ import {
   OPEN_TRAINING_ZONES_MODAL_EVENT,
   profileNeedsTrainingZones,
   markZonesDashboardPromptDismissed,
+  dismissAthleteZonesPromptForSession,
+  saveAthleteZones,
 } from "../utils/trainingZonesSetup";
+import { formatProfileFullName } from '../utils/profileName';
 import { setupStravaOAuthReturnListener } from "../utils/stravaOAuthReturn";
 import { nudgeStravaHistoryImport } from "../utils/stravaHistoryCatchUp";
 import { setupGarminOAuthReturnListener } from "../utils/garminOAuthReturn";
@@ -49,6 +52,8 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
   const [showBasicProfileModal, setShowBasicProfileModal] = useState(false);
   const [showUnitsPreferencesModal, setShowUnitsPreferencesModal] = useState(false);
   const [showTrainingZonesModal, setShowTrainingZonesModal] = useState(false);
+  /** A coach setting an athlete's zones: `{ athleteId, profile }`, else null (own zones). */
+  const [zonesForAthlete, setZonesForAthlete] = useState(null);
   const [showStravaModal, setShowStravaModal] = useState(false);
   const [showWalkthrough, setShowWalkthrough] = useState(false);
   const walkthroughTimerRef = useRef(null);
@@ -318,17 +323,43 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
     }
   }, [user, hasCheckedProfile, location.pathname]);
 
-  // Dashboard / charts can request the zones setup modal at any time.
+  // Dashboard / charts can request the zones setup modal at any time — for
+  // the athlete themselves, or for a coach on an athlete's profile.
   useEffect(() => {
     const onOpenZones = (e) => {
-      if (!user?._id || isCoachRole(user)) return;
-      const { force } = e?.detail || {};
+      const { force, athleteId, profile } = e?.detail || {};
+      if (!user?._id) return;
+      if (athleteId && String(athleteId) !== String(user._id)) {
+        if (!isCoachRole(user)) return;
+        setZonesForAthlete({ athleteId: String(athleteId), profile: profile || { _id: athleteId } });
+        setShowTrainingZonesModal(true);
+        return;
+      }
+      if (isCoachRole(user)) return;
       if (!force && !profileNeedsTrainingZones(user)) return;
+      setZonesForAthlete(null);
       setShowTrainingZonesModal(true);
     };
     window.addEventListener(OPEN_TRAINING_ZONES_MODAL_EVENT, onOpenZones);
     return () => window.removeEventListener(OPEN_TRAINING_ZONES_MODAL_EVENT, onOpenZones);
   }, [user]);
+
+  /** The athlete branch of the zones modal, shared by both places it renders. */
+  const closeAthleteZones = () => {
+    dismissAthleteZonesPromptForSession(zonesForAthlete?.athleteId);
+    setZonesForAthlete(null);
+    setShowTrainingZonesModal(false);
+  };
+  const submitAthleteZones = async (formData) => {
+    try {
+      await saveAthleteZones(zonesForAthlete.athleteId, formData);
+      addNotification('Training zones saved for your athlete', 'success');
+      setZonesForAthlete(null);
+      setShowTrainingZonesModal(false);
+    } catch {
+      addNotification('Error saving the athlete\u2019s training zones', 'error');
+    }
+  };
 
   // ── Strava: webhook-only sync ─────────────────────────────────────────────
   // Strava delivers new activities to /api/integrations/strava/webhook the
@@ -634,6 +665,7 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
             <TrainingZonesModal
               isOpen={showTrainingZonesModal}
               onClose={() => {
+                if (zonesForAthlete) { closeAthleteZones(); return; }
                 if (user?._id) {
                   localStorage.setItem(`trainingZonesModalDone_${user._id}`, 'true');
                   api.put('/user/edit-profile', { onboarding: { trainingZonesDone: true } })
@@ -643,6 +675,7 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
                 setShowTrainingZonesModal(false);
               }}
               onSubmit={async (formData) => {
+                if (zonesForAthlete) { await submitAthleteZones(formData); return; }
                 try {
                   const response = await api.put('/user/edit-profile', { ...formData, onboarding: { trainingZonesDone: true } });
                   if (response.data) {
@@ -654,7 +687,8 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
                   addNotification('Error updating training zones', 'error');
                 }
               }}
-              userData={user}
+              userData={zonesForAthlete?.profile || user}
+          forAthlete={zonesForAthlete ? formatProfileFullName(zonesForAthlete.profile, 'your athlete') : null}
             />
           )}
           {user && !isCoachRole(user) && (
@@ -832,6 +866,7 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
         <TrainingZonesModal
           isOpen={showTrainingZonesModal}
           onClose={() => {
+            if (zonesForAthlete) { closeAthleteZones(); return; }
             if (user?._id) {
               localStorage.setItem(`trainingZonesModalDone_${user._id}`, 'true');
               markZonesDashboardPromptDismissed(user._id);
@@ -845,6 +880,7 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
             }
           }}
           onSubmit={async (formData) => {
+            if (zonesForAthlete) { await submitAthleteZones(formData); return; }
             try {
               const response = await api.put('/user/edit-profile', { ...formData, onboarding: { trainingZonesDone: true } });
               if (response.data) {
@@ -860,7 +896,8 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
               addNotification('Error updating training zones', 'error');
             }
           }}
-          userData={user}
+          userData={zonesForAthlete?.profile || user}
+          forAthlete={zonesForAthlete ? formatProfileFullName(zonesForAthlete.profile, 'your athlete') : null}
         />
       )}
 

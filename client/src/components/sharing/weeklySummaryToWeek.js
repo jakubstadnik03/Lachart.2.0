@@ -5,6 +5,8 @@
 
 import { pickSportKey } from './templates/ShareSportGlyph';
 import { completedSecs, completedTss } from '../../utils/completedSessionStats';
+import { paceToViewer, viewerPaceSuffix } from '../../utils/viewerUnits';
+import { KM_PER_MILE, testRunPaceStoredPerMile } from '../../utils/unitsConverter';
 
 const DAY_KEYS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
 const SPORT_LABELS = {
@@ -451,10 +453,15 @@ function buildLactate(tests, monday, sunday, allTests) {
   const sport = String(test.sport || test.testType || '').toLowerCase();
   const isPace = sport.includes('run') || sport.includes('swim');
   const sportKey = pickSportKey(sport);
+  // Pace steps are recorded per km or — for a test taken in miles — per mile;
+  // the story prints them in the viewer's unit.
+  const paceSport = sport.includes('swim') ? 'swim' : 'run';
+  const perMile = isPace && testRunPaceStoredPerMile(test, paceSport);
+  const toViewerX = (x) => (isPace && Number.isFinite(x) ? paceToViewer(perMile ? x / KM_PER_MILE : x, paceSport) : x);
 
   const steps = results
     .map((r) => {
-      const x = parseStepX(r, isPace);
+      const x = toViewerX(parseStepX(r, isPace));
       const lac = Number(String(r?.lactate ?? r?.lactateValue ?? r?.mmol ?? '').replace(',', '.'));
       const hr = Number(String(r?.heartRate ?? r?.hr ?? '').replace(',', '.'));
       if (!Number.isFinite(x) || !Number.isFinite(lac)) return null;
@@ -466,8 +473,8 @@ function buildLactate(tests, monday, sunday, allTests) {
   if (steps.length < 2) return null;
 
   const ov = test.thresholdOverrides || {};
-  const lt1X = Number(ov.LTP1 ?? ov.lt1 ?? 0) || null;
-  const lt2X = Number(ov.LTP2 ?? ov.lt2 ?? 0) || null;
+  const lt1X = toViewerX(Number(ov.LTP1 ?? ov.lt1 ?? 0) || null);
+  const lt2X = toViewerX(Number(ov.LTP2 ?? ov.lt2 ?? 0) || null);
   const lt1Lac = Number(ov.LTP1_lactate ?? 0) || 1.4;
   const lt2Lac = Number(ov.LTP2_lactate ?? 0) || 4.0;
   const lt1Hr = Number(ov.LTP1_hr ?? 0) || 0;
@@ -483,10 +490,10 @@ function buildLactate(tests, monday, sunday, allTests) {
     .filter((t) => new Date(t.date || t.testDate || 0) < testDay)
     .sort((a, b) => new Date(b.date || b.testDate) - new Date(a.date || a.testDate))[0];
   if (prev && lt2X) {
-    const prevLt2 = Number(prev.thresholdOverrides?.LTP2 ?? prev.thresholdOverrides?.lt2 ?? 0);
+    const prevLt2 = toViewerX(Number(prev.thresholdOverrides?.LTP2 ?? prev.thresholdOverrides?.lt2 ?? 0));
     if (prevLt2 > 0) {
       const diff = Math.round(lt2X - prevLt2);
-      if (diff !== 0) deltaLt2 = `${diff > 0 ? '+' : ''}${diff} ${isPace ? 's/km' : 'W'}`;
+      if (diff !== 0) deltaLt2 = `${diff > 0 ? '+' : ''}${diff} ${isPace ? `s${viewerPaceSuffix(paceSport)}` : 'W'}`;
     }
   }
 
@@ -495,7 +502,7 @@ function buildLactate(tests, monday, sunday, allTests) {
     dayKey,
     sport: sportKey,
     protocol: test.protocol || test.notes || (isPace ? 'Step test' : '4-min steps'),
-    xUnit: isPace ? 's/km' : 'W',
+    xUnit: isPace ? `s${viewerPaceSuffix(paceSport)}` : 'W',
     xLabel: isPace ? 'Pace' : 'Power',
     steps,
     lt1: {

@@ -1,3 +1,4 @@
+import { fmtViewerPace } from '../../utils/viewerUnits';
 /**
  * Critical Power (CP) calculator.
  *
@@ -117,11 +118,7 @@ export function predictAtDuration(durationSec, fit, sport = 'bike') {
 export function formatCpValue(value, sport = 'bike') {
   if (value == null || !Number.isFinite(value)) return '—';
   if (sport === 'bike') return `${Math.round(value)} W`;
-  const sec = Math.max(0, Math.round(value));
-  const m = Math.floor(sec / 60);
-  const s = sec % 60;
-  const unit = sport === 'swim' ? '/100m' : '/km';
-  return `${m}:${String(s).padStart(2, '0')} ${unit}`;
+  return fmtViewerPace(Math.max(0, value), sport === 'swim' ? 'swim' : 'run');
 }
 
 /**

@@ -12,6 +12,7 @@ import {
   userWithPremiumPreviewApplied,
 } from '../utils/premiumPreview';
 import { syncTssDisplayModeFromUser } from '../utils/uiPrefs';
+import { setViewerUnitsFromUser } from '../utils/viewerUnits';
 
 const AuthContext = createContext(null);
 
@@ -21,6 +22,8 @@ export const AuthProvider = ({ children }) => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [loading, setLoading] = useState(true);
   const [showWelcome, setShowWelcome] = useState(false);
+  // Whoever is signed in is who every pace on screen is printed for.
+  useEffect(() => { setViewerUnitsFromUser(user); }, [user]);
   /** UI-only: pretend the account has no premium (localStorage, this browser only). */
   const [premiumPreviewNoAccess, setPremiumPreviewNoAccessState] = useState(readPremiumPreviewNoAccess);
   const navigate = useNavigate();

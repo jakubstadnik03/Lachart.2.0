@@ -8,6 +8,19 @@
  * session panel and the insight that mentions it.
  */
 
+import { paceToViewer, viewerPaceSuffix, viewerPaceUnitLabel, viewerUnitSystem } from './viewerUnits';
+
+/**
+ * Pace leaves the engine as seconds per kilometre. The viewer may read in
+ * miles; every printed pace below goes through this one conversion so an
+ * athlete on miles never sees a kilometre figure under a mile header.
+ */
+const KM_PER_MILE = 1.609344;
+const viewerPaceSec = (secPerKm) => paceToViewer(secPerKm, 'run');
+const viewerSpeed = (mps) => (viewerUnitSystem() === 'imperial'
+  ? `${(mps * 3.6 / KM_PER_MILE).toFixed(1)} mph`
+  : `${(mps * 3.6).toFixed(1)} km/h`);
+
 export function fmtPaceSec(sec) {
   if (!Number.isFinite(sec) || sec <= 0) return '—';
   // Round to the whole second FIRST. Taking the remainder of an unrounded
@@ -19,12 +32,12 @@ export function fmtPaceSec(sec) {
   return `${m}:${String(s).padStart(2, '0')}`;
 }
 
-/** An intensity: "265 W", "4:12/km", "31.4 km/h". */
+/** An intensity: "265 W", "4:12/km" (or "6:46/mi"), "31.4 km/h". */
 export function fmtDemand(demand, kind, storageMode) {
   if (!Number.isFinite(demand) || demand <= 0) return '—';
   if (kind === 'bike') return `${Math.round(demand)} W`;
-  if (storageMode === 'speed') return `${(demand * 3.6).toFixed(1)} km/h`;
-  return `${fmtPaceSec(1000 / demand)}/km`;
+  if (storageMode === 'speed') return viewerSpeed(demand);
+  return `${fmtPaceSec(viewerPaceSec(1000 / demand))}${viewerPaceSuffix('run')}`;
 }
 
 /**
@@ -39,11 +52,14 @@ export function fmtDemand(demand, kind, storageMode) {
 export function fmtDemandDelta(delta, demandNow, kind, storageMode) {
   if (!Number.isFinite(delta)) return '—';
   if (kind === 'bike') return `${delta > 0 ? '+' : ''}${Math.round(delta)} W`;
-  if (storageMode === 'speed') return `${delta > 0 ? '+' : ''}${(delta * 3.6).toFixed(1)} km/h`;
+  if (storageMode === 'speed') {
+    const v = viewerUnitSystem() === 'imperial' ? delta * 3.6 / KM_PER_MILE : delta * 3.6;
+    return `${delta > 0 ? '+' : ''}${v.toFixed(1)} ${viewerUnitSystem() === 'imperial' ? 'mph' : 'km/h'}`;
+  }
   const before = 1000 / (demandNow - delta);
   const after = 1000 / demandNow;
-  const secs = Math.round(before - after);
-  return `${secs > 0 ? '+' : ''}${secs} s/km`;
+  const secs = Math.round(viewerPaceSec(before - after));
+  return `${secs > 0 ? '+' : ''}${secs} s${viewerPaceSuffix('run')}`;
 }
 
 /** The same, unsigned — for sentences that already say which way it went. */
@@ -55,15 +71,15 @@ export function fmtDemandMagnitude(delta, demandNow, kind, storageMode) {
 /** Bare number for a chart axis — no unit, the axis label carries that. */
 export function axisTick(demand, kind, storageMode) {
   if (kind === 'bike') return Math.round(demand);
-  if (storageMode === 'speed') return (demand * 3.6).toFixed(1);
-  return fmtPaceSec(1000 / demand);
+  if (storageMode === 'speed') return viewerSpeed(demand).replace(/ .*$/, '');
+  return fmtPaceSec(viewerPaceSec(1000 / demand));
 }
 
 /** What the demand axis is measuring, for the axis label. */
 export function demandUnitLabel(kind, storageMode) {
   if (kind === 'bike') return 'Watts';
-  if (storageMode === 'speed') return 'km/h';
-  return 'Pace (min/km)';
+  if (storageMode === 'speed') return viewerUnitSystem() === 'imperial' ? 'mph' : 'km/h';
+  return `Pace (${viewerPaceUnitLabel('run')})`;
 }
 
 export function fmtHours(sec) {

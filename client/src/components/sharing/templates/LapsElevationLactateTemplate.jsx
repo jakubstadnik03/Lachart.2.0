@@ -4,6 +4,7 @@
  */
 
 import React, { useMemo } from 'react';
+import { fmtViewerPace } from '../../../utils/viewerUnits';
 import {
   ACT_W as W,
   ACT_H as H,
@@ -44,8 +45,7 @@ function fmtSwimPace(mps) {
 }
 function fmtRunPace(mps) {
   if (!mps) return '—';
-  const secPerKm = 1000 / mps;
-  return `${Math.floor(secPerKm / 60)}:${String(Math.round(secPerKm % 60)).padStart(2, '0')}/km`;
+  return fmtViewerPace(1000 / mps, 'run');
 }
 function lapAvgPower(lap) {
   return Number(lap?.average_watts ?? lap?.avgPower ?? lap?.average_power ?? 0);

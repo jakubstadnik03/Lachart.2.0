@@ -13,6 +13,7 @@
  */
 
 import React, { useMemo, useState, useEffect } from 'react';
+import { paceToViewer, viewerPaceSuffix } from '../../utils/viewerUnits';
 
 const ZONE_DEFS = [
   { id: 'Z1', label: 'Recovery',  color: '#60a5fa' },
@@ -238,8 +239,8 @@ export default function TimeInZonesBar({ records, sport, authUser }) {
     if (!reference) return null;
     if (metric === 'power') return `FTP ${Math.round(reference)} W`;
     if (metric === 'hr')    return `LT2 HR ${Math.round(reference)} bpm`;
-    const unit = sportKey(sport) === 'swimming' ? '/100m' : '/km';
-    return `LT2 ${fmtPace(reference)}${unit}`;
+    const paceSport = sportKey(sport) === 'swimming' ? 'swim' : 'run';
+    return `LT2 ${fmtPace(paceToViewer(reference, paceSport))}${viewerPaceSuffix(paceSport)}`;
   })();
 
   const METRIC_LABELS = { power: 'Power', hr: 'HR', pace: 'Pace' };

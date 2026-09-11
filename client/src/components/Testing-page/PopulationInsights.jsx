@@ -26,6 +26,7 @@ import {
 } from '@heroicons/react/24/outline';
 import api from '../../services/api';
 import { useAuth } from '../../context/AuthProvider';
+import { fmtViewerPace, viewerPaceSuffix } from '../../utils/viewerUnits';
 
 // ─── App palette ──────────────────────────────────────────────────────────────
 const C = {
@@ -40,11 +41,9 @@ const C = {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function fmtPace(sec, suffix = '/km') {
+function fmtPace(sec, sport = 'run') {
   if (!sec || sec <= 0) return '—';
-  const m = Math.floor(sec / 60);
-  const s = Math.round(sec % 60);
-  return `${m}:${String(s).padStart(2, '0')}${suffix}`;
+  return fmtViewerPace(sec, sport);
 }
 
 function fmtBike(v, type) {
@@ -303,7 +302,8 @@ const PopulationInsights = ({ athleteProfile, selectedSport = 'bike' }) => {
     lt1Wkg: av.lt1Wkg, lt2Wkg: av.lt2Wkg,
   } : zoneCv;
 
-  const paceSuffix = sport === 'swim' ? '/100m' : '/km';
+  const paceSport = sport === 'swim' ? 'swim' : 'run';
+  const paceSuffix = viewerPaceSuffix(paceSport);
   const sportLabel = sport === 'bike' ? 'Cycling' : sport === 'run' ? 'Running' : 'Swimming';
   const genderLabel = gender === 'all' ? '' : gender === 'male' ? 'male ' : 'female ';
 
@@ -502,9 +502,9 @@ const PopulationInsights = ({ athleteProfile, selectedSport = 'bike' }) => {
                     subtitle="First lactate threshold pace"
                     data={histPoints(sportStats.lt1)}
                     xLabel={`sec${paceSuffix}`}
-                    xFmt={v => fmtPace(v, paceSuffix)}
+                    xFmt={v => fmtPace(v, paceSport)}
                     refX={cv?.lt1 ?? null}
-                    refLabel={cv?.lt1 ? fmtPace(cv.lt1, paceSuffix) : null}
+                    refLabel={cv?.lt1 ? fmtPace(cv.lt1, paceSport) : null}
                     stat={sportStats.lt1}
                     lowerIsBetter
                   />
@@ -515,9 +515,9 @@ const PopulationInsights = ({ athleteProfile, selectedSport = 'bike' }) => {
                     subtitle="Second lactate threshold pace"
                     data={histPoints(sportStats.lt2)}
                     xLabel={`sec${paceSuffix}`}
-                    xFmt={v => fmtPace(v, paceSuffix)}
+                    xFmt={v => fmtPace(v, paceSport)}
                     refX={cv?.lt2 ?? null}
-                    refLabel={cv?.lt2 ? fmtPace(cv.lt2, paceSuffix) : null}
+                    refLabel={cv?.lt2 ? fmtPace(cv.lt2, paceSport) : null}
                     stat={sportStats.lt2}
                     lowerIsBetter
                   />

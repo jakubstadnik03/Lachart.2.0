@@ -16,6 +16,7 @@
  *  - buildPresetSteps(key) – returns step array for a given preset key
  */
 import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
+import { paceToViewer, paceFromViewer, viewerPaceSuffix } from '../../utils/viewerUnits';
 import { PlusIcon, TrashIcon, ChevronDownIcon, ChevronUpIcon,
          ArrowPathIcon, XMarkIcon, Bars3Icon } from '@heroicons/react/24/outline';
 
@@ -675,11 +676,12 @@ export function resolveTargetSwimPace(target, context) {
   return null;
 }
 
-/** Format sec/km → "M:SS" */
-export function fmtPace(sec) {
+/** Stored sec/km (or sec/100 m) → "M:SS" in the viewer's unit. */
+export function fmtPace(sec, sport = 'run') {
   if (!sec || sec <= 0) return '--:--';
-  const m = Math.floor(sec / 60);
-  const s = Math.round(sec % 60);
+  const v = paceToViewer(sec, sport);
+  const m = Math.floor(v / 60);
+  const s = Math.round(v % 60);
   return `${m}:${String(s).padStart(2,'0')}`;
 }
 
@@ -710,11 +712,11 @@ export function resolvePaceForSport(target, context) {
   const sport = context.sport;
   if (sport === 'run') {
     const p = resolveTargetPace(target, context);
-    return p ? { pace: p, unit: '/km', label: fmtPace(p) } : null;
+    return p ? { pace: p, unit: viewerPaceSuffix('run'), label: fmtPace(p, 'run') } : null;
   }
   if (sport === 'swim') {
     const p = resolveTargetSwimPace(target, context);
-    return p ? { pace: p, unit: '/100m', label: fmtPace(p) } : null;
+    return p ? { pace: p, unit: viewerPaceSuffix('swim'), label: fmtPace(p, 'swim') } : null;
   }
   return null;
 }
@@ -1972,12 +1974,17 @@ function InlinePowerEditor({ value = {}, onChange, onClose, context }) {
   const set = (k, v) => onChange({ ...t, [k]: v });
   const isSwim = context.sport === 'swim';
   const isRun  = context.sport === 'run';
+  // Pace targets are stored per km / per 100 m and edited in the viewer's unit.
+  const paceKind = isSwim ? 'swim' : 'run';
+  const paceView = (sec) => (isSwim || isRun ? Math.round(paceToViewer(sec, paceKind)) : sec);
+  const paceStore = (sec) => (isSwim || isRun ? Math.round(paceFromViewer(sec, paceKind)) : sec);
+  const unitLabel = isSwim || isRun ? viewerPaceSuffix(paceKind) : 'W';
 
   // Override: for zone/lt1/lt2 the user can pin a custom value (pace or watts)
   const isOverridable = t.type === 'zone' || t.type === 'lt1' || t.type === 'lt2';
   const [overrideInput, setOverrideInput] = useState(() => {
     if (t.override == null) return '';
-    if (isSwim || isRun) return fmtPace(t.override);
+    if (isSwim || isRun) return fmtPace(t.override, isSwim ? 'swim' : 'run');
     return String(Math.round(t.override));
   });
 
@@ -1987,10 +1994,10 @@ function InlinePowerEditor({ value = {}, onChange, onClose, context }) {
     // Accept mm:ss as pace, or plain number as watts
     if (s.includes(':')) {
       const secs = parseDuration(s);
-      if (secs > 0) { onChange({ ...t, override: secs }); return; }
+      if (secs > 0) { onChange({ ...t, override: paceStore(secs) }); return; }
     }
     const num = parseFloat(s);
-    if (!isNaN(num) && num > 0) onChange({ ...t, override: num });
+    if (!isNaN(num) && num > 0) onChange({ ...t, override: isSwim || isRun ? paceStore(num) : num });
     else { const n = { ...t }; delete n.override; onChange(n); }
   };
 
@@ -2026,16 +2033,16 @@ function InlinePowerEditor({ value = {}, onChange, onClose, context }) {
         <div className="flex items-center gap-1.5">
           {t.useRange ? (
             <>
-              <input type="number" autoFocus value={t.rangeMin||''} onChange={e=>set('rangeMin',Number(e.target.value))}
+              <input type="number" autoFocus value={t.rangeMin ? paceView(t.rangeMin) : ''} onChange={e=>set('rangeMin',paceStore(Number(e.target.value)))}
                 className="w-14 text-xs text-center border border-slate-200 rounded-lg px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-primary bg-white" placeholder="min"/>
               <span className="text-slate-400 text-xs">-</span>
-              <input type="number" value={t.rangeMax||''} onChange={e=>set('rangeMax',Number(e.target.value))}
+              <input type="number" value={t.rangeMax ? paceView(t.rangeMax) : ''} onChange={e=>set('rangeMax',paceStore(Number(e.target.value)))}
                 className="w-14 text-xs text-center border border-slate-200 rounded-lg px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-primary bg-white" placeholder="max"/>
               <span className="text-xs text-slate-400">%</span>
             </>
           ) : (
             <>
-              <input type="number" autoFocus value={t.value||''} onChange={e=>set('value',Number(e.target.value))}
+              <input type="number" autoFocus value={t.value ? paceView(t.value) : ''} onChange={e=>set('value',paceStore(Number(e.target.value)))}
                 className="w-16 text-xs text-center border border-slate-200 rounded-lg px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-primary bg-white" placeholder="%"/>
               <span className="text-xs text-slate-400">%</span>
             </>
@@ -2052,21 +2059,21 @@ function InlinePowerEditor({ value = {}, onChange, onClose, context }) {
         <div className="flex items-center gap-1.5">
           {t.useRange ? (
             <>
-              <input type="number" autoFocus value={t.rangeMin||''} onChange={e=>set('rangeMin',Number(e.target.value))}
+              <input type="number" autoFocus value={t.rangeMin ? paceView(t.rangeMin) : ''} onChange={e=>set('rangeMin',paceStore(Number(e.target.value)))}
                 className="w-16 text-xs text-center border border-slate-200 rounded-lg px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-primary bg-white"
                 placeholder={isSwim || isRun ? 'fast' : 'min W'}/>
               <span className="text-slate-400 text-xs">-</span>
-              <input type="number" value={t.rangeMax||''} onChange={e=>set('rangeMax',Number(e.target.value))}
+              <input type="number" value={t.rangeMax ? paceView(t.rangeMax) : ''} onChange={e=>set('rangeMax',paceStore(Number(e.target.value)))}
                 className="w-16 text-xs text-center border border-slate-200 rounded-lg px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-primary bg-white"
                 placeholder={isSwim || isRun ? 'slow' : 'max W'}/>
-              <span className="text-xs text-slate-400">{isSwim ? '/100m' : isRun ? '/km' : 'W'}</span>
+              <span className="text-xs text-slate-400">{unitLabel}</span>
             </>
           ) : (
             <>
-              <input type="number" autoFocus value={t.value||''} onChange={e=>set('value',Number(e.target.value))}
+              <input type="number" autoFocus value={t.value ? paceView(t.value) : ''} onChange={e=>set('value',paceStore(Number(e.target.value)))}
                 className="w-20 text-xs text-center border border-slate-200 rounded-lg px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-primary bg-white"
                 placeholder={isSwim || isRun ? 'mm:ss' : 'watts'}/>
-              <span className="text-xs text-slate-400">{isSwim ? '/100m' : isRun ? '/km' : 'W'}</span>
+              <span className="text-xs text-slate-400">{unitLabel}</span>
             </>
           )}
           <button onClick={()=>set('useRange',!t.useRange)}
@@ -2089,7 +2096,7 @@ function InlinePowerEditor({ value = {}, onChange, onClose, context }) {
             placeholder={isSwim || isRun ? 'mm:ss' : 'W'}
             className="w-16 text-xs text-center border border-primary/30 rounded-lg px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-primary bg-white"
           />
-          <span className="text-[10px] text-slate-400">{isSwim ? '/100m' : isRun ? '/km' : 'W'}</span>
+          <span className="text-[10px] text-slate-400">{unitLabel}</span>
           {t.override != null && (
             <button onClick={() => { const n={...t}; delete n.override; onChange(n); setOverrideInput(''); }}
               className="text-[10px] text-slate-400 hover:text-red-400 leading-none" title="Reset to auto">×</button>

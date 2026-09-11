@@ -1,3 +1,4 @@
+import { paceToViewer, viewerPaceSuffix } from './viewerUnits';
 import {
   SPORT_LABELS,
   SPORT_ICON_COLORS,
@@ -35,7 +36,7 @@ export function pickZoneDef(defs, zoneNum) {
  * Human-readable zone boundary for charts.
  * Z1 includes everything from 0 (or slowest pace); Z5 has no upper cap for power/HR.
  */
-export function formatZoneBoundaryLabel(zoneNum, zoneDef, allDefs, type, { paceUnit = '/km' } = {}) {
+export function formatZoneBoundaryLabel(zoneNum, zoneDef, allDefs, type, { paceUnit: paceUnitHint = '/km', sport = null } = {}) {
   if (!zoneDef) return '';
 
   const z1 = pickZoneDef(allDefs, 1);
@@ -43,10 +44,14 @@ export function formatZoneBoundaryLabel(zoneNum, zoneDef, allDefs, type, { paceU
   const z5 = pickZoneDef(allDefs, 5);
 
   if (type === 'pace') {
+    // Boundaries arrive in stored seconds; the label is in the viewer's unit.
+    const paceSport = sport || (String(paceUnitHint).includes('100') ? 'swim' : 'run');
+    const paceUnit = viewerPaceSuffix(paceSport);
     const fmtPace = (s) => {
       if (!s || s <= 0 || !Number.isFinite(s)) return '∞';
-      const mn = Math.floor(s / 60);
-      const sc = Math.round(s % 60);
+      const v = paceToViewer(s, paceSport);
+      const mn = Math.floor(v / 60);
+      const sc = Math.round(v % 60);
       return `${mn}:${String(sc).padStart(2, '0')}`;
     };
     const z1Min = parseZoneBoundaryNum(z1?.min);

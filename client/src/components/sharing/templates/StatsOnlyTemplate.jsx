@@ -4,6 +4,7 @@
  */
 
 import React from 'react';
+import { fmtViewerPace, viewerIsImperial } from '../../../utils/viewerUnits';
 import {
   ACT_W,
   ACT_H,
@@ -20,16 +21,12 @@ function fmtDur(s) {
   const m = Math.floor((s % 3600) / 60);
   return h === 0 ? `${m} min` : `${h}h ${m}min`;
 }
-function fmtSpeed(mps) { return mps ? `${(mps * 3.6).toFixed(1)} km/h` : '—'; }
-function fmtPace(secPerKm) {
-  if (!secPerKm) return '—';
-  return `${Math.floor(secPerKm / 60)}:${String(Math.round(secPerKm % 60)).padStart(2, '0')}/km`;
-}
-function fmtSwimPace(mps) {
+function fmtSpeed(mps) {
   if (!mps) return '—';
-  const sec = 100 / mps;
-  return `${Math.floor(sec / 60)}:${String(Math.round(sec % 60)).padStart(2, '0')}/100m`;
+  return viewerIsImperial() ? `${(mps * 2.2369363).toFixed(1)} mph` : `${(mps * 3.6).toFixed(1)} km/h`;
 }
+function fmtPace(secPerKm) { return secPerKm ? fmtViewerPace(secPerKm, 'run') : '—'; }
+function fmtSwimPace(mps) { return mps ? fmtViewerPace(100 / mps, 'swim') : '—'; }
 function fmtKcal(k) { return k ? `${Math.round(k).toLocaleString('en')} kcal` : '—'; }
 function fmtCad(c, isRun) { return c ? `${Math.round(c)} ${isRun ? 'spm' : 'rpm'}` : '—'; }
 

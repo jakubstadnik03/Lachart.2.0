@@ -35,7 +35,10 @@ import {
   OPEN_TRAINING_ZONES_MODAL_EVENT,
   profileNeedsTrainingZones,
   markZonesDashboardPromptDismissed,
+  dismissAthleteZonesPromptForSession,
+  saveAthleteZones,
 } from '../../utils/trainingZonesSetup';
+import { formatProfileFullName } from '../../utils/profileName';
 
 const TrainingZonesModal = lazy(() => import('../Profile/TrainingZonesModal'));
 
@@ -781,6 +784,8 @@ const NativeLayout = ({ athletes = [], athleteStatuses = {}, effectiveAthleteId,
   const [showProfile, setShowProfile] = useState(false);
   const [showNotifs, setShowNotifs] = useState(false);
   const [showTrainingZonesModal, setShowTrainingZonesModal] = useState(false);
+  /** A coach setting an athlete's zones: `{ athleteId, profile }`, else null (own zones). */
+  const [zonesForAthlete, setZonesForAthlete] = useState(null);
   const [notifs, setNotifs]     = useState([]);
   const [notifsLoading, setNotifsLoading] = useState(false);
 
@@ -788,9 +793,18 @@ const NativeLayout = ({ athletes = [], athleteStatuses = {}, effectiveAthleteId,
 
   useEffect(() => {
     const onOpenZones = (e) => {
-      if (!user?._id || isCoachRole(user)) return;
-      const { force } = e?.detail || {};
+      const { force, athleteId, profile } = e?.detail || {};
+      if (!user?._id) return;
+      // A coach on an athlete's profile sets that athlete's zones.
+      if (athleteId && String(athleteId) !== String(user._id)) {
+        if (!isCoachRole(user)) return;
+        setZonesForAthlete({ athleteId: String(athleteId), profile: profile || { _id: athleteId } });
+        setShowTrainingZonesModal(true);
+        return;
+      }
+      if (isCoachRole(user)) return;
       if (!force && !profileNeedsTrainingZones(user)) return;
+      setZonesForAthlete(null);
       setShowTrainingZonesModal(true);
     };
     window.addEventListener(OPEN_TRAINING_ZONES_MODAL_EVENT, onOpenZones);
@@ -1150,6 +1164,12 @@ const NativeLayout = ({ athletes = [], athleteStatuses = {}, effectiveAthleteId,
           <TrainingZonesModal
             isOpen={showTrainingZonesModal}
             onClose={() => {
+              if (zonesForAthlete) {
+                dismissAthleteZonesPromptForSession(zonesForAthlete.athleteId);
+                setZonesForAthlete(null);
+                setShowTrainingZonesModal(false);
+                return;
+              }
               if (user?._id) {
                 markZonesDashboardPromptDismissed(user._id);
                 localStorage.setItem(`trainingZonesModalDone_${user._id}`, 'true');
@@ -1160,6 +1180,17 @@ const NativeLayout = ({ athletes = [], athleteStatuses = {}, effectiveAthleteId,
               setShowTrainingZonesModal(false);
             }}
             onSubmit={async (formData) => {
+              if (zonesForAthlete) {
+                try {
+                  await saveAthleteZones(zonesForAthlete.athleteId, formData);
+                  addNotification('Training zones saved for your athlete', 'success');
+                  setZonesForAthlete(null);
+                  setShowTrainingZonesModal(false);
+                } catch {
+                  addNotification('Error saving the athlete\u2019s training zones', 'error');
+                }
+                return;
+              }
               try {
                 const response = await api.put('/user/edit-profile', {
                   ...formData,
@@ -1174,7 +1205,8 @@ const NativeLayout = ({ athletes = [], athleteStatuses = {}, effectiveAthleteId,
                 addNotification('Error updating training zones', 'error');
               }
             }}
-            userData={user}
+            userData={zonesForAthlete?.profile || user}
+          forAthlete={zonesForAthlete ? formatProfileFullName(zonesForAthlete.profile, 'your athlete') : null}
           />
         </Suspense>
       )}

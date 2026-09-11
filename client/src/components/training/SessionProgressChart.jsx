@@ -22,6 +22,7 @@
 import React, { useState, useMemo } from 'react';
 import useElementWidth from '../../hooks/useElementWidth';
 import { classifyLaps } from '../../utils/lapClassify';
+import { fmtViewerPace } from '../../utils/viewerUnits';
 
 // ─── helpers (mirrored from NativeTrainingPage) ───────────────────────────────
 
@@ -144,9 +145,7 @@ function intervalLactate(item) {
 
 export function fmtPace(secPerKm) {
   if (!secPerKm || !Number.isFinite(secPerKm)) return '—';
-  const m = Math.floor(secPerKm / 60);
-  const s = Math.round(secPerKm % 60);
-  return `${m}:${String(s).padStart(2, '0')}/km`;
+  return fmtViewerPace(secPerKm, 'run');
 }
 
 function intervalPaceSec(item, sport) {

@@ -32,6 +32,7 @@
  */
 
 import { modelledLactateCurve, sportKind, thresholdToDemand } from './hrPowerProfile';
+import { fmtViewerPace } from './viewerUnits';
 
 /** Best-20-minute power to FTP, and FTP is close enough to LT2 for this purpose. */
 const P20_TO_LT2 = 0.95;
@@ -157,7 +158,7 @@ function fromBestRun(activities, kind, now) {
     value: Math.round(pace * BEST_RUN_PACE_TO_LT2),
     hr: null,
     label: 'your fastest long run',
-    detail: `${Math.floor(pace / 60)}:${String(Math.round(pace % 60)).padStart(2, '0')}/km `
+    detail: `${fmtViewerPace(pace, 'run')} `
       + 'averaged over 20 minutes or more, slowed a little to threshold',
     confidence: 'low',
   };

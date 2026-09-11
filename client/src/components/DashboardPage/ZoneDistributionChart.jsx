@@ -8,6 +8,7 @@ import {
 } from '../../utils/lapZoneSpans';
 import { activityCalendarDateKey, localCalendarDateKey } from '../../utils/calendarDateKeys';
 import { useAuth } from '../../context/AuthProvider';
+import { paceToViewer, viewerPaceSuffix } from '../../utils/viewerUnits';
 import {
   getSportsWithZoneData,
   formatZoneBoundaryLabel,
@@ -173,11 +174,12 @@ function fmtDur(secs) {
   return `${m}m`;
 }
 
-/** Format seconds/km → "4:32" pace string. */
-function fmtPace(sPerKm) {
+/** Stored seconds per km (or per 100 m) → "4:32" in the viewer's unit. */
+function fmtPace(sPerKm, sport = 'run') {
   if (!sPerKm || sPerKm <= 0 || !isFinite(sPerKm)) return '∞';
-  const mn = Math.floor(sPerKm / 60);
-  const sc = Math.round(sPerKm % 60);
+  const v = paceToViewer(sPerKm, sport);
+  const mn = Math.floor(v / 60);
+  const sc = Math.round(v % 60);
   return `${mn}:${String(sc).padStart(2, '0')}`;
 }
 
@@ -672,7 +674,7 @@ export default function ZoneDistributionChart({ selectedAthleteId = null, activi
     const def = pickZoneDef(zoneDefs, zoneNum);
     if (!def) return '';
     return formatZoneBoundaryLabel(zoneNum, def, zoneDefs, metric, {
-      paceUnit: sport === 'swim' ? '/100m' : '/km',
+      sport: sport === 'swim' ? 'swim' : 'run',
     });
   };
 
@@ -681,7 +683,7 @@ export default function ZoneDistributionChart({ selectedAthleteId = null, activi
     if (avg == null || !isFinite(avg)) return '—';
     if (metric === 'power') return `${Math.round(avg)} W`;
     if (metric === 'hr')    return `${Math.round(avg)} bpm`;
-    if (metric === 'pace')  return `${fmtPace(avg)}/km`;
+    if (metric === 'pace')  return `${fmtPace(avg, sport === 'swim' ? 'swim' : 'run')}${viewerPaceSuffix(sport === 'swim' ? 'swim' : 'run')}`;
     return String(Math.round(avg));
   };
 

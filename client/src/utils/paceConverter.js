@@ -1,15 +1,13 @@
+import { fmtViewerPace } from './viewerUnits';
 export const convertPowerToPace = (power, sport) => {
   if (!power) return '';
   if (sport === 'bike') return `${power}W`;
   
-  // Pro běh a plavání převádíme sekundy na formát mm:ss
+  // Pro běh a plavání převádíme sekundy na formát mm:ss — v jednotkách,
+  // ve kterých se dívá uživatel.
   const seconds = parseInt(power);
   if (isNaN(seconds)) return power;
-  
-  const minutes = Math.floor(seconds / 60);
-  const remainingSeconds = seconds % 60;
-  
-  return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}/km`;
+  return fmtViewerPace(seconds, sport === 'swim' ? 'swim' : 'run');
 };
 
 // Pomocná funkce pro seřazení dat pro osu X

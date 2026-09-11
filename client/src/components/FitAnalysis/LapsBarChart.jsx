@@ -1,4 +1,5 @@
 import React, { useMemo, useRef, useEffect, useState } from 'react';
+import { fmtViewerPace, viewerIsImperial } from '../../utils/viewerUnits';
 
 /**
  * LapsBarChart — Garmin Connect–style laps bar chart.
@@ -147,21 +148,13 @@ export default function LapsBarChart({ laps = [], selectedLapNumber = null, onSe
     if (entry.metric === 'pace') {
       const { speedMps } = entry;
       if (!speedMps) return '';
-      const secPer100m = 100 / speedMps;
-      const min = Math.floor(secPer100m / 60);
-      const sec = Math.round(secPer100m % 60);
-      return `${min}:${String(sec).padStart(2, '0')}/100m`;
+      return fmtViewerPace(100 / speedMps, 'swim');
     }
     if (entry.metric === 'speed') {
       const { speedMps } = entry;
       if (!speedMps) return '';
-      if (isRun) {
-        const secPerKm = 1000 / speedMps;
-        const min = Math.floor(secPerKm / 60);
-        const sec = Math.round(secPerKm % 60);
-        return `${min}:${String(sec).padStart(2, '0')}/km`;
-      }
-      return `${(speedMps * 3.6).toFixed(1)} km/h`;
+      if (isRun) return fmtViewerPace(1000 / speedMps, 'run');
+      return viewerIsImperial() ? `${(speedMps * 2.2369363).toFixed(1)} mph` : `${(speedMps * 3.6).toFixed(1)} km/h`;
     }
     return `${Math.round(entry.hr)} bpm`;
   };

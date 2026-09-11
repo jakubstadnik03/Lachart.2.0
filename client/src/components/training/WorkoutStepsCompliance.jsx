@@ -19,6 +19,7 @@
  */
 
 import React, { useMemo } from 'react';
+import { paceToViewer, viewerPaceSuffix } from '../../utils/viewerUnits';
 import {
   expandSteps, resolveTargetWatts, resolveTargetPace, resolveTargetSwimPace,
 } from '../WorkoutPlanner/WorkoutBuilder';
@@ -41,11 +42,12 @@ const fmtClock = (s) => {
     : `${m}:${String(sec).padStart(2, '0')}`;
 };
 
-/** Pace in sec/km as m:ss. */
-const fmtPace = (secPerKm) => {
+/** Pace in stored sec/km (or sec/100 m) as m:ss in the viewer's unit. */
+const fmtPace = (secPerKm, kind = 'run') => {
   if (!(secPerKm > 0) || !Number.isFinite(secPerKm)) return null;
-  const m = Math.floor(secPerKm / 60);
-  const s = Math.round(secPerKm % 60);
+  const v = paceToViewer(secPerKm, kind);
+  const m = Math.floor(v / 60);
+  const s = Math.round(v % 60);
   return `${m}:${String(s).padStart(2, '0')}`;
 };
 
@@ -86,8 +88,8 @@ function targetBand(step, kind, context) {
   const resolve = kind === 'swim' ? resolveTargetSwimPace : resolveTargetPace;
   const mid = resolve(t, context);
   if (!(mid > 0)) return null;
-  const unit = kind === 'swim' ? '/100m' : '/km';
-  return { lo: mid * 0.96, hi: mid * 1.04, mid, unit, lowerIsHarder: true, fmt: (v) => fmtPace(v) };
+  const unit = viewerPaceSuffix(kind);
+  return { lo: mid * 0.96, hi: mid * 1.04, mid, unit, lowerIsHarder: true, fmt: (v) => fmtPace(v, kind) };
 }
 
 /** Seconds each record covers, ignoring pauses. */
@@ -200,8 +202,8 @@ export default function WorkoutStepsCompliance({ steps, records, sport, context,
     const band = targetBand(step, kind, context);
     const actual = actualFor(windows);
     const v = verdict(band, actual);
-    const unit = band?.unit || (kind === 'bike' ? 'W' : kind === 'swim' ? '/100m' : '/km');
-    const fmtValue = band?.fmt || (kind === 'bike' ? (x) => `${Math.round(x)}` : fmtPace);
+    const unit = band?.unit || (kind === 'bike' ? 'W' : viewerPaceSuffix(kind));
+    const fmtValue = band?.fmt || (kind === 'bike' ? (x) => `${Math.round(x)}` : (x) => fmtPace(x, kind));
 
     return (
       <div key={step.clientId || `${step.stepType}-${windows[0]?.[0]}`} className="flex items-center gap-2 py-1.5">

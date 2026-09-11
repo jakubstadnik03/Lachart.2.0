@@ -18,6 +18,7 @@ import {
   recordSpeed,
 } from '../../utils/activityPeaks';
 import { formatPaceMMSS } from '../../utils/unitsConverter';
+import { paceToViewer, viewerPaceSuffix } from '../../utils/viewerUnits';
 
 const POWER_COLOR = '#7c3aed';
 const HR_COLOR = '#ef4444';
@@ -407,7 +408,10 @@ export default function ActivityPeaksTab({
   const [selected, setSelected] = useState(null);
   const isBike = sportIsBike(sport);
   const isSwim = sportIsSwim(sport);
-  const formatPaceVal = (sec) => formatPaceMMSS(Math.round(sec));
+  // Peaks are computed per km / per 100 m; the athlete reads them in their unit.
+  const paceSport = isSwim ? 'swim' : 'run';
+  const paceSuffix = viewerPaceSuffix(paceSport);
+  const formatPaceVal = (sec) => formatPaceMMSS(Math.round(paceToViewer(sec, paceSport)));
 
   const powerZones = useMemo(
     () => (isBike ? computeZonesBreakdown(records, sport, authUser, 'power') : null),
@@ -528,11 +532,11 @@ export default function ActivityPeaksTab({
       {hasPace && (
         <PeakCurveSection
           title="Peak Pace"
-          yLabel={isSwim ? 'SEC/100M' : 'MIN/KM'}
+          yLabel={`${isSwim ? 'SEC' : 'MIN'}${paceSuffix.toUpperCase()}`}
           color={PACE_COLOR}
           peaks={peaks}
           metric="pace"
-          unit={isSwim ? '/100m' : '/km'}
+          unit={paceSuffix}
           records={records}
           invertY
           formatValue={formatPaceVal}

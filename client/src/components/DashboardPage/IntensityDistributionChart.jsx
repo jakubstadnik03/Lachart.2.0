@@ -11,6 +11,7 @@ import {
 } from 'recharts';
 import { motion } from 'framer-motion';
 import api from '../../services/api';
+import { paceToViewer, viewerPaceSuffix, viewerPaceUnitLabel } from '../../utils/viewerUnits';
 
 const STORAGE_PRESET = 'intensityDistribution_windowPreset';
 const STORAGE_SPORT = 'intensityDistribution_sportMode';
@@ -319,8 +320,9 @@ function formatHoursPerWeek(totalSec, windowDays) {
 
 function formatPaceTick(sec) {
   if (!Number.isFinite(sec) || sec <= 0) return '';
-  const m = Math.floor(sec / 60);
-  const s = Math.round(sec % 60);
+  const v = paceToViewer(sec, 'run');
+  const m = Math.floor(v / 60);
+  const s = Math.round(v % 60);
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
@@ -329,7 +331,7 @@ function CustomTooltip({ active, payload, label, sportMode }) {
   const head =
     sportMode === 'bike'
       ? `~${Math.round(label)} W`
-      : `~${formatPaceTick(label)} /km`;
+      : `~${formatPaceTick(label)} ${viewerPaceSuffix('run')}`;
   return (
     <div className="rounded-lg border border-gray-100 bg-white px-3 py-2 text-xs shadow-md">
       <div className="mb-1 font-semibold text-gray-800">{head}</div>
@@ -618,7 +620,7 @@ export default function IntensityDistributionChart({ athleteId, activities = [],
     };
   }, [activities, ltProfile.lt1, ltProfile.lt2, activePreset, sportMode, streamHist, histToken]);
 
-  const xAxisLabel = sportMode === 'bike' ? 'Power (W)' : 'Pace (min/km), slow to fast';
+  const xAxisLabel = sportMode === 'bike' ? 'Power (W)' : `Pace (${viewerPaceUnitLabel('run')}), slow to fast`;
   const noLtHint =
     sportMode === 'bike'
       ? 'Set LT1/LT2 (W) in Profile → Zones for reference lines.'

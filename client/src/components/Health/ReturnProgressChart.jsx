@@ -18,6 +18,7 @@ import {
   ResponsiveContainer, ReferenceLine, ReferenceArea,
 } from 'recharts';
 import { fetchProgress } from '../../services/healthApi';
+import { paceToViewer, viewerPaceSuffix } from '../../utils/viewerUnits';
 
 const COLORS = {
   ok: '#2563EB',
@@ -44,10 +45,12 @@ function paceSecPerKm(mps) {
 
 function fmtPaceSec(sec) {
   if (!(sec > 0) || !Number.isFinite(sec)) return '-';
-  const m = Math.floor(sec / 60);
-  const s = Math.round(sec % 60);
+  const v = paceToViewer(sec, 'run');
+  const m = Math.floor(v / 60);
+  const s = Math.round(v % 60);
   return `${m}:${String(s).padStart(2, '0')}`;
 }
+const PACE_UNIT = () => viewerPaceSuffix('run');
 
 function ChartTooltip({ active, payload, mode }) {
   if (!active || !payload?.length) return null;
@@ -82,14 +85,14 @@ function ChartTooltip({ active, payload, mode }) {
       ) : (
         <div className="mt-1.5 space-y-0.5">
           <div className="text-gray-700">
-            {row.avgPaceSec != null ? `${fmtPaceSec(row.avgPaceSec)} /km average` : 'no pace recorded'}
+            {row.avgPaceSec != null ? `${fmtPaceSec(row.avgPaceSec)} ${PACE_UNIT()} average` : 'no pace recorded'}
           </div>
           {row.fastestPaceSec != null && (
-            <div className="text-gray-500">{fmtPaceSec(row.fastestPaceSec)} /km fastest session</div>
+            <div className="text-gray-500">{fmtPaceSec(row.fastestPaceSec)} {PACE_UNIT()} fastest session</div>
           )}
           {row.capPaceSec != null && (
             <div style={{ color: row.breachedSpeed ? COLORS.breach : '#6B7280' }}>
-              Speed ceiling {fmtPaceSec(row.capPaceSec)} /km
+              Speed ceiling {fmtPaceSec(row.capPaceSec)} {PACE_UNIT()}
               {row.breachedSpeed ? ' - went faster' : ''}
             </div>
           )}
