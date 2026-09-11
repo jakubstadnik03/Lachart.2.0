@@ -56,6 +56,8 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
   const [zonesForAthlete, setZonesForAthlete] = useState(null);
   /** The sport tab the modal should open on, when the caller knows it. */
   const [zonesSport, setZonesSport] = useState(null);
+  /** Numbers to start the editor with — an estimate the athlete is reviewing. */
+  const [zonesPrefill, setZonesPrefill] = useState(null);
   const [showStravaModal, setShowStravaModal] = useState(false);
   const [showWalkthrough, setShowWalkthrough] = useState(false);
   const walkthroughTimerRef = useRef(null);
@@ -329,9 +331,10 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
   // the athlete themselves, or for a coach on an athlete's profile.
   useEffect(() => {
     const onOpenZones = (e) => {
-      const { force, athleteId, profile, sport } = e?.detail || {};
+      const { force, athleteId, profile, sport, prefill } = e?.detail || {};
       if (!user?._id) return;
       setZonesSport(sport || null);
+      setZonesPrefill(prefill || null);
       if (athleteId && String(athleteId) !== String(user._id)) {
         if (!isCoachRole(user)) return;
         setZonesForAthlete({ athleteId: String(athleteId), profile: profile || { _id: athleteId } });
@@ -353,8 +356,9 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
   // every render.
   const zonesUserData = useMemo(() => {
     const base = zonesForAthlete?.profile || user;
-    return zonesSport && base ? { ...base, _selectedSport: zonesSport } : base;
-  }, [zonesForAthlete, user, zonesSport]);
+    if (!base || (!zonesSport && !zonesPrefill)) return base;
+    return { ...base, ...(zonesSport ? { _selectedSport: zonesSport } : {}), ...(zonesPrefill ? { _prefill: zonesPrefill } : {}) };
+  }, [zonesForAthlete, user, zonesSport, zonesPrefill]);
 
   /** The athlete branch of the zones modal, shared by both places it renders. */
   const closeAthleteZones = () => {

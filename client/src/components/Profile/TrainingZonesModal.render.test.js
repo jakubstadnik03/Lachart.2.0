@@ -55,3 +55,20 @@ test('names the athlete when a coach is setting someone else’s zones', () => {
   expect(container.querySelector('h3').textContent).toBe('Training zones · Vojtěch Jarolím');
   expect(container.innerHTML).toContain('saved to Vojtěch Jarolím');
 });
+
+test('an estimate handed in for review fills the thresholds and draws its zones, in the viewer’s units', () => {
+  setViewerUnitSystem('imperial');
+  const onSubmit = jest.fn();
+  // LT2 estimated at 5:27/km (327 s), LT1 at 6:00/km — the profile had 4:00/km.
+  render({ onSubmit, userData: { ...USER, _selectedSport: 'running', _prefill: { lt1: 360, lt2: 327, note: 'Estimated from 47 sessions.' } } });
+  expect(container.querySelector('input[aria-label="LT2"]').value).toBe('8:46');
+  expect(container.querySelector('input[aria-label="LT1"]').value).toBe('9:39');
+  expect(container.innerHTML).toContain('Estimated from 47 sessions.');
+  // Zones were derived from the estimate, not left at the profile's.
+  expect(container.querySelector('input[aria-label="Zone 3 pace min"]').value).toBe('9:39');
+  expect(container.querySelector('input[aria-label="Zone 3 pace max"]').value).toBe('8:46');
+  act(() => { container.querySelector('form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })); });
+  const saved = onSubmit.mock.calls[0][0];
+  expect(saved.powerZones.running.lt2).toBe(327);
+  expect(saved.powerZones.running.zone3).toMatchObject({ min: 360, max: 327 });
+});

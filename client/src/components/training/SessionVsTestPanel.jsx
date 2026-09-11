@@ -26,15 +26,16 @@ import {
   CartesianGrid, ComposedChart, Line, ReferenceArea, ReferenceLine,
   ResponsiveContainer, Scatter, Tooltip, XAxis, YAxis,
 } from 'recharts';
-import api, { getActivityWeather, getThresholdDrift, updateUserProfile } from '../../services/api';
+import api, { getActivityWeather, getThresholdDrift } from '../../services/api';
 import {
   analyseSession, compareToTestCurve, lactateCurveShift, shiftedLactateCurve,
   judgeThresholdSplit, sessionIntent, sportKind, testHrSlope, testLactateCurve,
   thresholdToDemand, timeAtThresholds, zoneAdviceFor, zoneAgreement,
 } from '../../utils/hrPowerProfile';
 import { extractLactateThresholds } from '../../utils/extractLactateThresholds';
-import { ltZoneBounds, ltZones, measuredMaxHr } from '../../utils/trainingZoneBounds';
+import { ltZoneBounds, measuredMaxHr } from '../../utils/trainingZoneBounds';
 import { axisTick, fmtDemand, fmtDemandDelta } from '../../utils/thresholdFormat';
+import { requestTrainingZonesModal } from '../../utils/trainingZonesSetup';
 
 /**
  * Apple's semantic colours, light-mode values, for everything this panel says
@@ -1227,36 +1228,37 @@ const ZONE_KEY = { bike: 'cycling', run: 'running', swim: 'swimming' };
  * anchored to the test, never to the profile — so accepting the advice cannot
  * make the next estimate agree with itself.
  */
-function ZoneAdvice({ advice, projection, anchor, kind, storageMode, onApplied }) {  // eslint-disable-line no-unused-vars
-  const [state, setState] = useState('idle');
-
+function ZoneAdvice({ advice, projection, anchor, kind, storageMode, athleteId = null }) {
   if (!advice) return null;
 
   const lt1 = advice.thresholds.lt1 ?? projection.lt1?.fromDemand ?? null;
   const lt2 = advice.thresholds.lt2 ?? projection.lt2?.fromDemand ?? null;
   if (!(lt2 > 0)) return null;
 
-  const apply = async () => {
-    setState('saving');
-    try {
-      const key = ZONE_KEY[kind];
-      const powerBounds = ltZones({ lt1, lt2, ascending: true });
-      // Heart-rate zones are left exactly as the test measured them. Only the
-      // intensity moved; the heart rates at the thresholds are the anchor this
-      // whole estimate is built on, and rewriting them would erase it.
-      const profile = (await api.get('/user/profile')).data || {};
-      const powerZones = { ...(profile.powerZones || {}), [key]: powerBounds };
-      await updateUserProfile({
-        ...profile,
-        powerZones,
-        zonesSource: 'estimate',
-        zonesNote: `estimated from ${advice.sessions} sessions since the test`,
-      });
-      setState('done');
-      onApplied?.();
-    } catch {
-      setState('error');
-    }
+  // Demand is the engine's unit — watts, or metres per second. The profile
+  // keeps watts, seconds per kilometre, seconds per 100 m. (The old apply
+  // wrote the metres-per-second figure straight into a runner's pace zones.)
+  const toProfile = (demand) => {
+    if (!(demand > 0)) return null;
+    if (kind === 'bike') return Math.round(demand);
+    return Math.round(kind === 'swim' ? 100 / demand : 1000 / demand);
+  };
+
+  // Open the zone editor with these numbers already in it. The athlete sees
+  // the zones they would get, in their own units, and decides; nothing is
+  // written until they press Save. Heart-rate zones are left to the test.
+  const review = () => {
+    requestTrainingZonesModal({
+      source: 'estimate',
+      force: true,
+      sport: ZONE_KEY[kind],
+      prefill: {
+        lt1: toProfile(lt1),
+        lt2: toProfile(lt2),
+        note: `Estimated from ${advice.sessions} sessions since your test — review, then save.`,
+      },
+      ...(athleteId ? { athleteId: String(athleteId) } : {}),
+    });
   };
 
   return (
@@ -1277,15 +1279,13 @@ function ZoneAdvice({ advice, projection, anchor, kind, storageMode, onApplied }
       <div className="mt-2.5 flex flex-wrap items-center gap-2">
         <button
           type="button"
-          onClick={apply}
-          disabled={state === 'saving' || state === 'done'}
-          className="min-h-[36px] rounded-[10px] px-4 text-[15px] font-semibold text-white disabled:opacity-40"
+          onClick={review}
+          className="min-h-[36px] rounded-[10px] px-4 text-[15px] font-semibold text-white"
           style={{ background: IOS.indigo }}
         >
-          {state === 'saving' ? 'Updating…' : state === 'done' ? 'Zones updated' : 'Update my zones'}
+          Update my zones
         </button>
-        {state === 'error' && <span className="text-[12px]" style={{ color: IOS.red }}>Could not save — try again.</span>}
-        {state === 'done' && <span className="text-[12px]" style={{ color: IOS.secondary }}>Retest when you can.</span>}
+        <span className="text-[12px]" style={{ color: IOS.secondary }}>Opens the editor with these numbers filled in.</span>
       </div>
     </div>
   );
@@ -1410,6 +1410,7 @@ function AgainstYourZones({ data, athleteId, anchor, kind, storageMode, governin
       <ZoneAdvice
         advice={zoneAdviceFor(data.projection, { testDate: governingTest?.date })}
         projection={data.projection} anchor={anchor} kind={kind} storageMode={storageMode}
+        athleteId={athleteId}
       />
 
       <CurveShift anchor={anchor} projection={data.projection} kind={kind} storageMode={storageMode} />

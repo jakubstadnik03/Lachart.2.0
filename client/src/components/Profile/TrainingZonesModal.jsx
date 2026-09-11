@@ -223,18 +223,41 @@ const TrainingZonesModal = ({ isOpen, onClose, onSubmit, userData, forAthlete = 
   const [formData, setFormData] = useState({});
   const [error, setError] = useState('');
   const [selectedSport, setSelectedSport] = useState('cycling');
+  /** Where the numbers in the fields came from, when not from the profile. */
+  const [prefillNote, setPrefillNote] = useState(null);
 
   useEffect(() => {
     if (!userData) return;
-    if (userData._selectedSport && SPORT_IDS.includes(userData._selectedSport)) {
-      setSelectedSport(userData._selectedSport);
-    }
+    const sportId = userData._selectedSport && SPORT_IDS.includes(userData._selectedSport) ? userData._selectedSport : null;
+    if (sportId) setSelectedSport(sportId);
     const powerZones = {};
     const heartRateZones = {};
     SPORT_IDS.forEach((id) => {
       powerZones[id] = readPowerSport(userData.powerZones?.[id]);
       heartRateZones[id] = readHrSport(userData.heartRateZones?.[id]);
     });
+
+    // An estimate handed in for review: the thresholds go into the fields
+    // and the zones they imply are drawn at once, so what the athlete sees is
+    // exactly what Save would keep. Heart-rate zones are left alone.
+    const prefill = userData._prefill;
+    if (prefill && sportId) {
+      const sp = powerZones[sportId];
+      if (prefill.lt1 > 0) sp.lt1 = String(Math.round(prefill.lt1));
+      if (prefill.lt2 > 0) sp.lt2 = String(Math.round(prefill.lt2));
+      const lt1 = Number(sp.lt1);
+      const lt2 = Number(sp.lt2);
+      const pace = sportId !== 'cycling';
+      if (lt1 > 0 && lt2 > 0 && (pace ? lt2 < lt1 : lt2 > lt1)) {
+        const zones = withDescriptions(ltZones({ lt1, lt2, ascending: !pace, floorFactor: 0.50, topFactor: 1.30 }));
+        if (zones) {
+          ZONES.forEach(({ key }) => {
+            sp[key] = { ...zones[key], lactate: sp[key]?.lactate || { min: '', max: '' } };
+          });
+        }
+      }
+    }
+    setPrefillNote(prefill?.note || null);
     setFormData({ powerZones, heartRateZones });
   }, [userData]);
 
@@ -411,8 +434,8 @@ const TrainingZonesModal = ({ isOpen, onClose, onSubmit, userData, forAthlete = 
             </label>
           </div>
           <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <div className="text-[12px] min-h-[16px]" style={{ color: error ? IOS.red : IOS.tertiary }} role={error ? 'alert' : undefined}>
-              {error || (sport.pace ? `Pace as m:ss per ${paceUnit.slice(1)} — ${paceHint[1]}, not seconds.` : 'Watts at LT1 and LT2 from your last test.')}
+            <div className="text-[12px] min-h-[16px]" style={{ color: error ? IOS.red : (prefillNote ? '#5856D6' : IOS.tertiary) }} role={error ? 'alert' : undefined}>
+              {error || prefillNote || (sport.pace ? `Pace as m:ss per ${paceUnit.slice(1)} — ${paceHint[1]}, not seconds.` : 'Watts at LT1 and LT2 from your last test.')}
             </div>
             <button
               type="button"

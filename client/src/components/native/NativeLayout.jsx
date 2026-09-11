@@ -788,10 +788,13 @@ const NativeLayout = ({ athletes = [], athleteStatuses = {}, effectiveAthleteId,
   const [zonesForAthlete, setZonesForAthlete] = useState(null);
   /** The sport tab the modal should open on, when the caller knows it. */
   const [zonesSport, setZonesSport] = useState(null);
+  /** Numbers to start the editor with — an estimate the athlete is reviewing. */
+  const [zonesPrefill, setZonesPrefill] = useState(null);
   const zonesUserData = useMemo(() => {
     const base = zonesForAthlete?.profile || user;
-    return zonesSport && base ? { ...base, _selectedSport: zonesSport } : base;
-  }, [zonesForAthlete, user, zonesSport]);
+    if (!base || (!zonesSport && !zonesPrefill)) return base;
+    return { ...base, ...(zonesSport ? { _selectedSport: zonesSport } : {}), ...(zonesPrefill ? { _prefill: zonesPrefill } : {}) };
+  }, [zonesForAthlete, user, zonesSport, zonesPrefill]);
   const [notifs, setNotifs]     = useState([]);
   const [notifsLoading, setNotifsLoading] = useState(false);
 
@@ -799,9 +802,10 @@ const NativeLayout = ({ athletes = [], athleteStatuses = {}, effectiveAthleteId,
 
   useEffect(() => {
     const onOpenZones = (e) => {
-      const { force, athleteId, profile, sport } = e?.detail || {};
+      const { force, athleteId, profile, sport, prefill } = e?.detail || {};
       if (!user?._id) return;
       setZonesSport(sport || null);
+      setZonesPrefill(prefill || null);
       // A coach on an athlete's profile sets that athlete's zones.
       if (athleteId && String(athleteId) !== String(user._id)) {
         if (!isCoachRole(user)) return;
