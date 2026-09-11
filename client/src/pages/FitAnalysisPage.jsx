@@ -24,6 +24,7 @@ import { mirrorLactateToSource } from '../utils/mirrorLactateToSource';
 import api from '../services/api';
 import { getPlannedWorkouts, createPlannedWorkout, updatePlannedWorkout, deletePlannedWorkout, reorderPlannedWorkouts, getWorkoutTemplates, getDayPlans, setDayPlan as apiSetDayPlan, deleteDayPlan as apiDeleteDayPlan, getPeriods, savePeriod as apiSavePeriod, deletePeriod as apiDeletePeriod } from '../services/workoutPlannerApi';
 import WorkoutPlanModal from '../components/WorkoutPlanner/WorkoutPlanModal';
+import PlannedWorkoutEditor from '../components/NativeDashboard/PlannedWorkoutEditor';
 import WorkoutCompareModal from '../components/WorkoutPlanner/WorkoutCompareModal';
 import TrainingStats from '../components/FitAnalysis/TrainingStats';
 import CalendarPeriodStats from '../components/FitAnalysis/CalendarPeriodStats';
@@ -4463,8 +4464,31 @@ const FitAnalysisPage = () => {
           onApplied={() => { loadExternalActivities(); }}
         />
       )}
-      {/* Workout plan modal — portal to body, opens when clicking a day or a planned card */}
-      {planModal && (
+      {/* Editing a planned workout in the native app opens the same sheet the
+          Home tab's weekly calendar opens — PlannedWorkoutEditor. The Calendar
+          tab used to open the web WorkoutPlanModal instead, so the same
+          session edited from two tabs of one app looked like two different
+          products. Creating a new one from an empty day stays on
+          WorkoutPlanModal: that is the sport picker, the templates and the
+          builder, and the native editor has no create path. */}
+      {planModal && isCapacitorNative() && planModal.workout?._id ? (
+        <PlannedWorkoutEditor
+          plannedWorkout={planModal.workout}
+          linkedActivity={null}
+          athleteId={selectedAthleteId || user?._id || user?.id}
+          user={user}
+          onClose={() => setPlanModal(null)}
+          onOpenLinkedActivity={(act) => { setPlanModal(null); handleCalendarActivitySelect(act); }}
+          onSaved={(updated) => {
+            setPlannedWorkoutsCalendar(prev => upsertPlannedWorkoutList(prev, updated));
+            notifyPlannedWorkoutUpdated(updated);
+          }}
+          onDeleted={(id) => {
+            setPlannedWorkoutsCalendar(prev => removePlannedWorkoutFromList(prev, id));
+            notifyPlannedWorkoutDeleted(id);
+          }}
+        />
+      ) : planModal && (
         <WorkoutPlanModal
           date={planModal.date}
           workout={planModal.workout}
