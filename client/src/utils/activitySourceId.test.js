@@ -32,6 +32,20 @@ describe('resolveActivitySource', () => {
     expect(resolveActivitySource({ type: 'fit', _id: 'f1' })).toEqual({ kind: 'fit', id: 'f1', linked: false });
   });
 
+  it('knows a Garmin activity by the name it actually carries', () => {
+    // The shape /activities returns: garminId, source, sourceId, a Mongo _id —
+    // and no garminActivityId, which is what this used to look for. It fell
+    // through to "regular", and the modal opened the ride as a Summary with
+    // no Laps tab and no chart.
+    expect(resolveActivitySource({ _id: '68c0a1b2c3d4e5f6a7b8c9d0', garminId: '20482044991', source: 'garmin', sourceId: '20482044991' }))
+      .toEqual({ kind: 'garmin', id: '20482044991', linked: false });
+    // The calendar mapper's shape, id-only.
+    expect(resolveActivitySource({ source: 'garmin', sourceId: 'garmin-555' }))
+      .toEqual({ kind: 'garmin', id: '555', linked: false });
+    // Its own record beats a link to another one.
+    expect(resolveActivitySource({ garminId: '1', sourceGarminActivityId: '2' }).id).toBe('1');
+  });
+
   it('strips a prefix that is already on the id', () => {
     expect(resolveActivitySource({ stravaId: 'strava-42' }).id).toBe('42');
   });

@@ -27,9 +27,18 @@ export function resolveActivitySource(t) {
     return { kind: 'strava', id: strava, linked: !t.stravaId && !!t.sourceStravaActivityId };
   }
 
-  const garmin = clean(t.garminActivityId || t.sourceGarminActivityId, 'garmin');
+  // A Garmin activity names itself `garminId` — the field GarminActivity
+  // stores and /activities spreads — with `sourceId` beside it when it came
+  // through the calendar mapper. This looked for `garminActivityId`, which no
+  // model has ever had, so every Garmin row resolved to "regular" and the
+  // modal asked the Training collection for it: a 404, then a Summary with
+  // no Laps tab and no chart under it, while the same ride opened from the
+  // calendar had both.
+  const ownGarmin = clean(t.garminId || (t.source === 'garmin' ? t.sourceId : ''), 'garmin');
+  const linkedGarmin = clean(t.sourceGarminActivityId, 'garmin');
+  const garmin = ownGarmin || linkedGarmin;
   if (garmin) {
-    return { kind: 'garmin', id: garmin, linked: !t.garminActivityId && !!t.sourceGarminActivityId };
+    return { kind: 'garmin', id: garmin, linked: !ownGarmin && !!linkedGarmin };
   }
 
   if (t.type === 'fit') {
