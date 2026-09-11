@@ -95,6 +95,16 @@ function plannedPaceReadout({ sport, metres, seconds, unitSystem, user }) {
   return null;
 }
 
+/** A textarea that is as tall as its text. */
+function useAutoGrow(ref, value) {
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    if (el.scrollHeight > 0) el.style.height = `${el.scrollHeight}px`;
+  }, [ref, value]);
+}
+
 export default function PlannedWorkoutEditor({
   plannedWorkout,
   linkedActivity,
@@ -118,16 +128,14 @@ export default function PlannedWorkoutEditor({
   const [plannedDist, setPlannedDist] = useState('');
   const [targetTss, setTargetTss] = useState('');
   const [description, setDescription] = useState('');
-  // Grows to fit the note, like the web editor: three rows behind a scrollbar
-  // is no way to read back a session written out in full.
-  const descRef = useRef(null);
-  useEffect(() => {
-    const el = descRef.current;
-    if (!el) return;
-    el.style.height = 'auto';
-    if (el.scrollHeight > 0) el.style.height = `${el.scrollHeight}px`;
-  }, [description]);
   const [comment, setComment] = useState('');
+  // Both notes grow to fit what is in them, like the web editor: a few rows
+  // behind a scrollbar is no way to write a session out in full, and the
+  // comment did not grow at all. They open at four rows and follow the text.
+  const descRef = useRef(null);
+  const commentRef = useRef(null);
+  useAutoGrow(descRef, description);
+  useAutoGrow(commentRef, comment);
   const [category, setCategory] = useState('');
   const [catOpen, setCatOpen]   = useState(false);
   const { categories, getCategory, getCategoryStyle } = useCategories();
@@ -963,11 +971,12 @@ export default function PlannedWorkoutEditor({
           {/* Comment — short note shown on the calendar card */}
           <Field label="Comment · shown on calendar card">
             <textarea
+              ref={commentRef}
               value={comment}
               onChange={(e) => setComment(e.target.value)}
               placeholder="e.g. 3×30 LT1"
-              rows={2}
-              style={{ ...input, resize: 'vertical', minHeight: 52, lineHeight: 1.4, padding: '10px 12px' }}
+              rows={4}
+              style={{ ...input, resize: 'none', overflow: 'hidden', minHeight: 96, lineHeight: 1.5, padding: '10px 12px' }}
             />
           </Field>
 
@@ -978,8 +987,8 @@ export default function PlannedWorkoutEditor({
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="Focus, context, feel…"
-              rows={3}
-              style={{ ...input, resize: 'none', overflow: 'hidden', minHeight: 64, lineHeight: 1.4, padding: '10px 12px' }}
+              rows={4}
+              style={{ ...input, resize: 'none', overflow: 'hidden', minHeight: 96, lineHeight: 1.5, padding: '10px 12px' }}
             />
           </Field>
 

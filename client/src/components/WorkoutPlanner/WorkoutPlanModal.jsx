@@ -310,6 +310,24 @@ const LAP_LABEL = {
  * closed row that names what is chosen keeps the top of the sheet the same
  * height whether there are three categories or thirty.
  */
+/**
+ * A textarea that is as tall as what is in it.
+ *
+ * Both note fields opened at two rows and the description clipped whatever
+ * did not fit, so a coach writing more than a sentence was doing it through
+ * a slot the size of a stamp. The sheet around them already scrolls, so there
+ * is nothing to protect by keeping them small: they start at four rows and
+ * follow the text from there.
+ */
+function useAutoGrow(ref, value) {
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    if (el.scrollHeight > 0) el.style.height = `${el.scrollHeight}px`;
+  }, [ref, value]);
+}
+
 function FieldSelect({ label, value, options, onChange, placeholder = 'Select…' }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef(null);
@@ -553,12 +571,9 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
   // through a scrollbar the size of a stamp. The panel around this already
   // scrolls, so there is nothing to protect by keeping the box small.
   const descRef = useRef(null);
-  useEffect(() => {
-    const el = descRef.current;
-    if (!el) return;
-    el.style.height = 'auto';
-    if (el.scrollHeight > 0) el.style.height = `${el.scrollHeight}px`;
-  }, [desc]);
+  const commentRef = useRef(null);
+  useAutoGrow(descRef, desc);
+  useAutoGrow(commentRef, comment);
   const [tss, setTss]             = useState(workout?.targetTss || '');
   const [steps, setSteps]         = useState(workout?.steps || []);
   const [category, setCategory]   = useState(workout?.category || '');
@@ -1020,16 +1035,16 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
                       Comment <span className="normal-case font-normal text-slate-300">· shown on calendar card</span>
                     </label>
                     <textarea
-                      rows={2} value={comment} onChange={e => setComment(e.target.value)}
+                      ref={commentRef} rows={4} value={comment} onChange={e => setComment(e.target.value)}
                       placeholder="Short note shown on the calendar card…"
-                      className="w-full text-sm border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-primary/30 resize-none"
+                      className="w-full text-sm leading-relaxed border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-primary/30 resize-none overflow-hidden"
                     />
                   </div>
                   <div>
                     <label className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1 block">Description / Coach notes</label>
-                    <textarea ref={descRef} rows={2} value={desc} onChange={e => setDesc(e.target.value)}
+                    <textarea ref={descRef} rows={4} value={desc} onChange={e => setDesc(e.target.value)}
                       placeholder="Focus, context, feel…"
-                      className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-primary/30 resize-none overflow-hidden"
+                      className="w-full text-sm leading-relaxed border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-primary/30 resize-none overflow-hidden"
                     />
                   </div>
 
