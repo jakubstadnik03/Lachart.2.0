@@ -21,8 +21,8 @@ import {
 import { formatActivityDistance, formatZonesPaceForUser } from '../utils/unitsConverter';
 import { formatProfileFullName } from '../utils/profileName';
 import { ltZoneBounds, zonesFromBounds } from '../utils/trainingZoneBounds';
-import { paceToViewer, paceFromViewer, viewerPaceSuffix, viewerIsImperial } from '../utils/viewerUnits';
-import { maybePromptAthleteZonesSetup, ATHLETE_PROFILE_UPDATED_EVENT } from '../utils/trainingZonesSetup';
+import { paceToViewer, viewerPaceSuffix } from '../utils/viewerUnits';
+import { maybePromptAthleteZonesSetup, requestTrainingZonesModal, ATHLETE_PROFILE_UPDATED_EVENT } from '../utils/trainingZonesSetup';
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -49,11 +49,22 @@ export default function NativeProfilePage({ user, userInfo, calendarData = [], o
   const [isEditOpen, setIsEditOpen] = useState(false);
   const handleProfileUpdate = async (updatedData) => {
     try {
-      await updateUserProfile({
+      const payload = {
         ...updatedData,
         name: updatedData.name?.trim() || '',
         surname: updatedData.surname?.trim() || '',
-      });
+      };
+      if (isViewingOtherAthlete) {
+        // A coach editing an athlete: the coach endpoint, then the page
+        // re-reads the athlete so the header and cards show the change.
+        await updateAthleteProfile(effectiveAthleteId, payload);
+        addNotification('Athlete profile updated', 'success');
+        setIsEditOpen(false);
+        setAthleteLoadTick((t) => t + 1);
+        window.dispatchEvent(new CustomEvent('coachAthletesUpdated'));
+        return;
+      }
+      await updateUserProfile(payload);
       addNotification('Profile updated', 'success');
       setIsEditOpen(false);
       onProfileUpdated?.();
@@ -412,8 +423,8 @@ export default function NativeProfilePage({ user, userInfo, calendarData = [], o
               </div>
             )}
           </div>
-          {/* Edit button only on own profile (coaches edit athletes elsewhere) */}
-          {!isViewingOtherAthlete && (
+          {/* Edit — one's own profile, or an athlete's when a coach is looking */}
+          {(!isViewingOtherAthlete || (isCoachLike && athleteProfile)) && (
             <button
               onClick={() => setIsEditOpen(true)}
               onMouseDown={(e) => { e.currentTarget.style.transform = 'scale(.94)'; }}
@@ -781,9 +792,51 @@ function fmtPaceVal(sec, sport = 'run') {
   return `${Math.floor(v / 60)}:${String(Math.round(v % 60)).padStart(2, '0')}`;
 }
 
+const ZONE_PROFILE_KEY = { bike: 'cycling', run: 'running', swim: 'swimming' };
+
 function TrainingZonesSection({ user, tests, athleteId = null }) {
-  const [openSport, setOpenSport] = useState(null); // 'bike' | 'run' | 'swim' | null
-  const [overrides, setOverrides] = useState({});  // { bike: {primary, heartRateZones}, ... } — applied locally after save
+  // { bike: {primary, heartRateZones}, ... } — what the modal just saved,
+  // shown at once rather than after the next profile fetch.
+  const [overrides, setOverrides] = useState({});
+
+  // The same editor everywhere: Edit opens the zones modal on this sport,
+  // for the athlete being viewed (a coach saves to their profile) or for
+  // oneself. The inline form it replaces is gone with it.
+  const openEditor = (sport) => {
+    requestTrainingZonesModal({
+      source: 'profile',
+      force: true,
+      sport: ZONE_PROFILE_KEY[sport],
+      ...(athleteId ? { athleteId: String(athleteId), profile: user } : {}),
+    });
+  };
+
+  // What the modal saved comes back as the whole profile — take the zones.
+  useEffect(() => {
+    const apply = (profile) => {
+      if (!profile) return;
+      setOverrides((prev) => {
+        const next = { ...prev };
+        Object.entries(ZONE_PROFILE_KEY).forEach(([sport, key]) => {
+          const primary = profile.powerZones?.[key];
+          const hr = profile.heartRateZones?.[key];
+          if (primary || hr) next[sport] = { primary: primary || null, heartRateZones: hr || null };
+        });
+        return next;
+      });
+    };
+    const onSelf = (e) => { if (!athleteId) apply(e?.detail); };
+    const onAthlete = (e) => {
+      if (athleteId && String(e?.detail?.athleteId || '') === String(athleteId)) apply(e?.detail?.profile);
+    };
+    window.addEventListener('userUpdated', onSelf);
+    window.addEventListener(ATHLETE_PROFILE_UPDATED_EVENT, onAthlete);
+    return () => {
+      window.removeEventListener('userUpdated', onSelf);
+      window.removeEventListener(ATHLETE_PROFILE_UPDATED_EVENT, onAthlete);
+    };
+  }, [athleteId]);
+
   return (
     <GlassCard>
       <div style={{ marginBottom: 9 }}>
@@ -798,12 +851,7 @@ function TrainingZonesSection({ user, tests, athleteId = null }) {
             tests={tests}
             athleteId={athleteId}
             override={overrides[sport]}
-            isOpen={openSport === sport}
-            onToggle={() => setOpenSport(prev => (prev === sport ? null : sport))}
-            onSaved={(zones) => {
-              setOverrides(prev => ({ ...prev, [sport]: zones }));
-              setOpenSport(null);
-            }}
+            onEdit={() => openEditor(sport)}
           />
         ))}
       </div>
@@ -811,7 +859,7 @@ function TrainingZonesSection({ user, tests, athleteId = null }) {
   );
 }
 
-function SportZonesBlock({ sport, user, tests, athleteId = null, override, isOpen, onToggle, onSaved }) {
+function SportZonesBlock({ sport, user, tests, athleteId = null, override, onEdit }) {
   const isPace = isPaceSport(sport);
   const tint = SPORT_TINT[sport];
   const initial = useMemo(() => pickInitialThresholds(user, tests, sport), [user, tests, sport]);
@@ -922,17 +970,17 @@ function SportZonesBlock({ sport, user, tests, athleteId = null, override, isOpe
           </div>
         </div>
         <button
-          onClick={onToggle}
+          onClick={onEdit}
           style={{
             padding: '4px 10px', borderRadius: 9999,
-            background: isOpen ? tint : `${tint}1f`,
-            color: isOpen ? '#fff' : tint,
+            background: `${tint}1f`,
+            color: tint,
             border: 'none', fontFamily: 'inherit',
             fontSize: 10.5, fontWeight: 800, cursor: 'pointer',
             WebkitTapHighlightColor: 'transparent', touchAction: 'manipulation',
           }}
         >
-          {isOpen ? 'Cancel' : 'Edit'}
+          Edit
         </button>
       </div>
 
@@ -978,160 +1026,6 @@ function SportZonesBlock({ sport, user, tests, athleteId = null, override, isOpe
         </div>
       )}
 
-      {/* Edit form */}
-      {isOpen && (
-        <ZonesEditor
-          sport={sport}
-          initial={initial}
-          tint={tint}
-          user={user}
-          athleteId={athleteId}
-          onCancel={onToggle}
-          onSaved={onSaved}
-        />
-      )}
-    </div>
-  );
-}
-
-function ZonesEditor({ sport, initial, tint, user = null, athleteId = null, onCancel, onSaved }) {
-  const isPace = isPaceSport(sport);
-  // Pace inputs use MM:SS in the viewer's unit and store per km / per 100 m;
-  // power inputs use raw numbers
-  const fmtIn = (v) => {
-    if (v == null) return '';
-    if (isPace) return fmtPaceVal(v, sport);
-    return String(Math.round(v));
-  };
-  const parseIn = (str) => {
-    if (str == null || str === '') return null;
-    if (isPace) {
-      const m = String(str).trim().match(/^(\d+):(\d{1,2})$/);
-      if (m) return Math.round(paceFromViewer(Number(m[1]) * 60 + Number(m[2]), sport));
-      const n = Number(str);
-      return Number.isFinite(n) && n > 0 ? Math.round(paceFromViewer(n, sport)) : null;
-    }
-    const n = Number(str);
-    return Number.isFinite(n) && n > 0 ? n : null;
-  };
-
-  const [lt1, setLt1] = useState(fmtIn(initial.lt1));
-  const [lt2, setLt2] = useState(fmtIn(initial.lt2));
-  const [hr1, setHr1] = useState(initial.hr1 ? String(Math.round(initial.hr1)) : '');
-  const [hr2, setHr2] = useState(initial.hr2 ? String(Math.round(initial.hr2)) : '');
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState(null);
-
-  const save = async () => {
-    setBusy(true);
-    setErr(null);
-    try {
-      const lt1v = parseIn(lt1);
-      const lt2v = parseIn(lt2);
-      const hr1v = Number(hr1) || null;
-      const hr2v = Number(hr2) || null;
-      const computed = computeZonesFromThresholds({ sport, lt1: lt1v, lt2: lt2v, hr1: hr1v, hr2: hr2v });
-      const longKey = SHORT_TO_LONG[sport];
-      // Merge with the *existing* zones for the other sports so we don't
-      // overwrite them — both endpoints replace the whole `powerZones` /
-      // `heartRateZones` object, and previously editing the bike block would
-      // wipe the run + swim zones for that user.
-      const existingPZ = user?.powerZones || {};
-      const existingHR = user?.heartRateZones || {};
-      const payload = {
-        powerZones: {
-          ...existingPZ,
-          [longKey]: { ...(computed.primary || {}), lastUpdated: new Date() },
-        },
-        heartRateZones: {
-          ...existingHR,
-          [longKey]: { ...(computed.heartRateZones || {}), lastUpdated: new Date() },
-        },
-        zonesSource: 'profile-mobile',
-      };
-      if (athleteId) {
-        await updateAthleteProfile(athleteId, payload);
-      } else {
-        await updateUserProfile(payload);
-      }
-      onSaved(computed);
-    } catch (e) {
-      setErr(e?.response?.data?.message || e?.message || 'Save failed');
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const inputStyle = {
-    flex: 1, minWidth: 0,
-    padding: '6px 9px', borderRadius: 8,
-    border: '1px solid rgba(118,126,181,.25)', background: '#fff',
-    fontFamily: 'inherit', fontSize: 12, fontWeight: 700, color: '#0A0E1A',
-    fontVariantNumeric: 'tabular-nums',
-    outline: 'none',
-    WebkitAppearance: 'none',
-  };
-  const labelStyle = {
-    fontSize: 9, fontWeight: 800, color: '#6B7280',
-    letterSpacing: '0.06em', textTransform: 'uppercase',
-    marginBottom: 3,
-  };
-
-  return (
-    <div style={{
-      padding: '10px 11px 12px',
-      borderTop: '1px solid rgba(118,126,181,.12)',
-      background: 'rgba(118,126,181,.05)',
-      display: 'flex', flexDirection: 'column', gap: 8,
-    }}>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-        <div style={{ display: 'flex', flexDirection: 'column' }}>
-          <span style={labelStyle}>LT1 ({isPace ? `MM:SS ${viewerPaceSuffix(sport)}` : 'W'})</span>
-          <input value={lt1} onChange={e => setLt1(e.target.value)} placeholder={isPace ? (viewerIsImperial() ? '8:50' : '5:30') : '180'} style={inputStyle} inputMode={isPace ? 'text' : 'numeric'} />
-        </div>
-        <div style={{ display: 'flex', flexDirection: 'column' }}>
-          <span style={labelStyle}>LT2 ({isPace ? `MM:SS ${viewerPaceSuffix(sport)}` : 'W'})</span>
-          <input value={lt2} onChange={e => setLt2(e.target.value)} placeholder={isPace ? (viewerIsImperial() ? '7:15' : '4:30') : '250'} style={inputStyle} inputMode={isPace ? 'text' : 'numeric'} />
-        </div>
-        <div style={{ display: 'flex', flexDirection: 'column' }}>
-          <span style={labelStyle}>LT1 HR (bpm)</span>
-          <input value={hr1} onChange={e => setHr1(e.target.value)} placeholder="140" style={inputStyle} inputMode="numeric" />
-        </div>
-        <div style={{ display: 'flex', flexDirection: 'column' }}>
-          <span style={labelStyle}>LT2 HR (bpm)</span>
-          <input value={hr2} onChange={e => setHr2(e.target.value)} placeholder="170" style={inputStyle} inputMode="numeric" />
-        </div>
-      </div>
-      {err && (
-        <div style={{ fontSize: 10.5, color: '#B84238', fontWeight: 700 }}>{err}</div>
-      )}
-      <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
-        <button
-          onClick={onCancel}
-          disabled={busy}
-          style={{
-            padding: '6px 12px', borderRadius: 8,
-            background: 'rgba(118,126,181,.12)', color: '#5E6590',
-            border: 'none', fontFamily: 'inherit',
-            fontSize: 11, fontWeight: 800, cursor: busy ? 'not-allowed' : 'pointer',
-            opacity: busy ? 0.5 : 1,
-            WebkitTapHighlightColor: 'transparent',
-          }}
-        >Cancel</button>
-        <button
-          onClick={save}
-          disabled={busy}
-          style={{
-            padding: '6px 14px', borderRadius: 8,
-            background: tint, color: '#fff',
-            border: 'none', fontFamily: 'inherit',
-            fontSize: 11, fontWeight: 800, cursor: busy ? 'wait' : 'pointer',
-            opacity: busy ? 0.7 : 1,
-            boxShadow: `0 2px 6px -1px ${tint}66`,
-            WebkitTapHighlightColor: 'transparent',
-          }}
-        >{busy ? 'Saving…' : 'Save zones'}</button>
-      </div>
     </div>
   );
 }

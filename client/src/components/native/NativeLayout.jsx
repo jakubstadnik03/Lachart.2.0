@@ -12,7 +12,7 @@
  *   └─ NativeBottomTabBar   (shrink-0, paddingBottom = safe-area-bottom)
  */
 
-import React, { useEffect, useState, useCallback, useRef, lazy, Suspense } from 'react';
+import React, { useEffect, useState, useCallback, useMemo, useRef, lazy, Suspense } from 'react';
 import { BRAND_LOGO_SRC } from '../../constants/brandLogo';
 import { NavLink, useLocation, useNavigate, Outlet } from 'react-router-dom';
 import { AnimatePresence, motion, useMotionValue, useTransform, animate } from 'framer-motion';
@@ -786,6 +786,12 @@ const NativeLayout = ({ athletes = [], athleteStatuses = {}, effectiveAthleteId,
   const [showTrainingZonesModal, setShowTrainingZonesModal] = useState(false);
   /** A coach setting an athlete's zones: `{ athleteId, profile }`, else null (own zones). */
   const [zonesForAthlete, setZonesForAthlete] = useState(null);
+  /** The sport tab the modal should open on, when the caller knows it. */
+  const [zonesSport, setZonesSport] = useState(null);
+  const zonesUserData = useMemo(() => {
+    const base = zonesForAthlete?.profile || user;
+    return zonesSport && base ? { ...base, _selectedSport: zonesSport } : base;
+  }, [zonesForAthlete, user, zonesSport]);
   const [notifs, setNotifs]     = useState([]);
   const [notifsLoading, setNotifsLoading] = useState(false);
 
@@ -793,8 +799,9 @@ const NativeLayout = ({ athletes = [], athleteStatuses = {}, effectiveAthleteId,
 
   useEffect(() => {
     const onOpenZones = (e) => {
-      const { force, athleteId, profile } = e?.detail || {};
+      const { force, athleteId, profile, sport } = e?.detail || {};
       if (!user?._id) return;
+      setZonesSport(sport || null);
       // A coach on an athlete's profile sets that athlete's zones.
       if (athleteId && String(athleteId) !== String(user._id)) {
         if (!isCoachRole(user)) return;
@@ -802,7 +809,8 @@ const NativeLayout = ({ athletes = [], athleteStatuses = {}, effectiveAthleteId,
         setShowTrainingZonesModal(true);
         return;
       }
-      if (isCoachRole(user)) return;
+      // A coach is not nudged about their own zones, but may ask (Edit).
+      if (isCoachRole(user) && !force) return;
       if (!force && !profileNeedsTrainingZones(user)) return;
       setZonesForAthlete(null);
       setShowTrainingZonesModal(true);
@@ -1205,7 +1213,7 @@ const NativeLayout = ({ athletes = [], athleteStatuses = {}, effectiveAthleteId,
                 addNotification('Error updating training zones', 'error');
               }
             }}
-            userData={zonesForAthlete?.profile || user}
+            userData={zonesUserData}
           forAthlete={zonesForAthlete ? formatProfileFullName(zonesForAthlete.profile, 'your athlete') : null}
           />
         </Suspense>

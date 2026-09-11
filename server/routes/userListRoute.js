@@ -1208,7 +1208,11 @@ router.put("/coach/edit-athlete/:athleteId", verifyToken, async (req, res) => {
             sport: updatedAthlete.sport,
             specialization: updatedAthlete.specialization,
             gender: updatedAthlete.gender || 'male',
-            bio: updatedAthlete.bio
+            bio: updatedAthlete.bio,
+            // The zones a coach just set, so the page can show them without
+            // a second round trip.
+            powerZones: updatedAthlete.powerZones,
+            heartRateZones: updatedAthlete.heartRateZones
         };
 
         res.status(200).json({

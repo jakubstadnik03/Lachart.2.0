@@ -54,6 +54,8 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
   const [showTrainingZonesModal, setShowTrainingZonesModal] = useState(false);
   /** A coach setting an athlete's zones: `{ athleteId, profile }`, else null (own zones). */
   const [zonesForAthlete, setZonesForAthlete] = useState(null);
+  /** The sport tab the modal should open on, when the caller knows it. */
+  const [zonesSport, setZonesSport] = useState(null);
   const [showStravaModal, setShowStravaModal] = useState(false);
   const [showWalkthrough, setShowWalkthrough] = useState(false);
   const walkthroughTimerRef = useRef(null);
@@ -327,15 +329,17 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
   // the athlete themselves, or for a coach on an athlete's profile.
   useEffect(() => {
     const onOpenZones = (e) => {
-      const { force, athleteId, profile } = e?.detail || {};
+      const { force, athleteId, profile, sport } = e?.detail || {};
       if (!user?._id) return;
+      setZonesSport(sport || null);
       if (athleteId && String(athleteId) !== String(user._id)) {
         if (!isCoachRole(user)) return;
         setZonesForAthlete({ athleteId: String(athleteId), profile: profile || { _id: athleteId } });
         setShowTrainingZonesModal(true);
         return;
       }
-      if (isCoachRole(user)) return;
+      // A coach is not nudged about their own zones, but may ask (Edit).
+      if (isCoachRole(user) && !force) return;
       if (!force && !profileNeedsTrainingZones(user)) return;
       setZonesForAthlete(null);
       setShowTrainingZonesModal(true);
@@ -343,6 +347,14 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
     window.addEventListener(OPEN_TRAINING_ZONES_MODAL_EVENT, onOpenZones);
     return () => window.removeEventListener(OPEN_TRAINING_ZONES_MODAL_EVENT, onOpenZones);
   }, [user]);
+
+  // One object per (target, sport): the modal re-reads its form from
+  // userData whenever the reference changes, so this must not be rebuilt on
+  // every render.
+  const zonesUserData = useMemo(() => {
+    const base = zonesForAthlete?.profile || user;
+    return zonesSport && base ? { ...base, _selectedSport: zonesSport } : base;
+  }, [zonesForAthlete, user, zonesSport]);
 
   /** The athlete branch of the zones modal, shared by both places it renders. */
   const closeAthleteZones = () => {
@@ -687,7 +699,7 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
                   addNotification('Error updating training zones', 'error');
                 }
               }}
-              userData={zonesForAthlete?.profile || user}
+              userData={zonesUserData}
           forAthlete={zonesForAthlete ? formatProfileFullName(zonesForAthlete.profile, 'your athlete') : null}
             />
           )}
@@ -896,7 +908,7 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
               addNotification('Error updating training zones', 'error');
             }
           }}
-          userData={zonesForAthlete?.profile || user}
+          userData={zonesUserData}
           forAthlete={zonesForAthlete ? formatProfileFullName(zonesForAthlete.profile, 'your athlete') : null}
         />
       )}

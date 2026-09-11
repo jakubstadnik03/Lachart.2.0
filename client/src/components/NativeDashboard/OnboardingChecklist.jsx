@@ -2,14 +2,16 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { GlassCard } from '../native/shared/Tiles';
 import api, { getIntegrationStatus } from '../../services/api';
+import { profileNeedsTrainingZones, requestTrainingZonesModal } from '../../utils/trainingZonesSetup';
 
 const DISMISS_KEY = 'onboardingChecklistDismissed';
 
 /**
  * Getting-started checklist for the home dashboard. Drives the features that
- * data shows are under-discovered — connect a source (15%), run a test (66%),
- * plan a workout (2%), and (coaches) invite an athlete. Auto-hides once every
- * step is done; dismissible with a persistent flag.
+ * data shows are under-discovered — connect a source (15%), set zones (the
+ * two numbers that turn every session into time in zones and a TSS), plan a
+ * workout (2%), and (coaches) invite an athlete. Auto-hides once every step
+ * is done; dismissible with a persistent flag.
  *
  * Props:
  *   user, tests[], plannedWorkouts[], stravaConnected
@@ -31,7 +33,17 @@ export default function OnboardingChecklist({
   const [dismissed, setDismissed] = useState(() => {
     try { return localStorage.getItem(DISMISS_KEY) === '1'; } catch { return false; }
   });
-  const [connected, setConnected] = useState(Boolean(stravaConnected));
+  // What the profile already says, so the step never reads "Connect" at
+  // someone whose Strava has been syncing for days while the status request
+  // is still on its way — or has failed.
+  // /user/profile ships `garmin` only while a token exists, and `strava`
+  // with its athleteId; either is the connection itself.
+  const connectedOnProfile = Boolean(
+    user?.strava?.athleteId || user?.strava?.accessToken
+    || (user?.garmin && (user.garmin.connected || user.garmin.athleteId || user.garmin.accessToken))
+    || user?.appleHealth?.connectedAt,
+  );
+  const [connected, setConnected] = useState(Boolean(stravaConnected) || connectedOnProfile);
   const [hasAthlete, setHasAthlete] = useState(null); // null = unknown yet
   // getIntegrationStatus is async, so `connected` starts false even for people
   // who connected long ago. Rendering before it answers flashed a "Connect a
@@ -47,7 +59,7 @@ export default function OnboardingChecklist({
       getIntegrationStatus()
         .then((s) => {
           if (cancelled) return;
-          setConnected(Boolean(s?.stravaConnected || s?.garminConnected || s?.appleHealthConnected));
+          setConnected(Boolean(s?.stravaConnected || s?.garminConnected || s?.appleHealthConnected) || connectedOnProfile);
           setIntegrationChecked(true);
         })
         // Mark checked on failure too — otherwise an offline start hides the
@@ -71,7 +83,10 @@ export default function OnboardingChecklist({
       window.removeEventListener('appleHealth:synced', check);
       window.removeEventListener('garmin:synced', check);
     };
-  }, [isCoach]);
+    // Re-asked when the signed-in user changes (sign in as someone else), not
+    // only on mount — the answer is theirs, not the component's.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isCoach, user?._id]);
 
   const steps = useMemo(() => {
     const base = [
@@ -84,12 +99,12 @@ export default function OnboardingChecklist({
         action: () => onConnect?.(),
       },
       {
-        key: 'test',
-        label: 'Run your first lactate test',
-        desc: 'Get your curve and thresholds',
-        done: (tests?.length || 0) > 0,
-        cta: 'Test',
-        action: () => navigate('/testing'),
+        key: 'zones',
+        label: 'Set your training zones',
+        desc: 'LT1, LT2 and max HR — from a test or by hand',
+        done: Boolean(user) && !profileNeedsTrainingZones(user),
+        cta: 'Set zones',
+        action: () => requestTrainingZonesModal({ source: 'checklist', force: true }),
       },
       {
         key: 'plan',
@@ -111,7 +126,7 @@ export default function OnboardingChecklist({
       });
     }
     return base;
-  }, [connected, tests, plannedWorkouts, isCoach, hasAthlete, navigate, onConnect, onPlanWorkout]);
+  }, [connected, user, plannedWorkouts, isCoach, hasAthlete, navigate, onConnect, onPlanWorkout]);
 
   const doneCount = steps.filter((s) => s.done).length;
   const allDone = doneCount === steps.length;
