@@ -74,6 +74,8 @@ import WellnessDetailSheet from '../shared/WellnessDetailSheet';
 import DailyMetricsCard from '../training/DailyMetricsCard';
 import { localCalendarDateKey } from '../../utils/calendarDateKeys';
 import { useAuth } from '../../context/AuthProvider';
+import ZonesNudgeSheet, { zonesNudgeDismissedThisSession } from '../training/ZonesNudgeSheet';
+import { profileNeedsTrainingZones } from '../../utils/trainingZonesSetup';
 import { useCategories, hexToRgba } from '../../context/CategoryContext';
 import { activityAccentColor } from '../../utils/activityAccentColor';
 import { DAY_THEME_PRESETS, dayThemePresetColor, PERIOD_TYPES, periodColor, buildPeriodsByDate } from '../../utils/calendarThemes';
@@ -2856,6 +2858,29 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
   const isSwim = sport.includes('swim');
   const isBike = sport.includes('ride') || sport.includes('cycl') || sport.includes('bike') || sport === 'cycling';
   const { user: authUser } = useAuth() || {};
+
+  /**
+   * Ask for zones the moment an activity opens without them.
+   *
+   * Everything below — time in zones, TSS, the read against the test — is
+   * blank until the profile has LT1 and LT2, and an athlete looking at a blank
+   * panel does not know that two numbers would fill it. So the question is
+   * asked here, on the session they just opened, in that session's sport.
+   * Not for a coach looking at someone else's ride: those zones are not
+   * theirs to set. Not for a sport the zone model does not cover.
+   */
+  const zoneSport = isSwim ? 'swim' : isRun ? 'run' : isBike ? 'bike' : null;
+  const viewingSomeoneElse = !!athleteId && String(athleteId) !== String(authUser?._id || '');
+  const [showZonesNudge, setShowZonesNudge] = useState(false);
+  useEffect(() => {
+    if (!authUser?._id || !zoneSport || viewingSomeoneElse) return;
+    if (!profileNeedsTrainingZones(authUser)) return;
+    if (zonesNudgeDismissedThisSession(authUser._id)) return;
+    setShowZonesNudge(true);
+    // Once per opened activity — the athlete's decision on it lasts the session.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authUser?._id]);
+
   const [detailLoading, setDetailLoading] = useState(true);
   const [streams, setStreams] = useState(null);
   const [streamsRefreshing, setStreamsRefreshing] = useState(false);
@@ -6368,6 +6393,13 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
   // tab, normalising the compare-result shape to the expected activity shape.
   return <>
     {desktopPortal}
+    {showZonesNudge && zoneSport && (
+      <ZonesNudgeSheet
+        sport={zoneSport}
+        user={authUser}
+        onClose={() => setShowZonesNudge(false)}
+      />
+    )}
     <ActivityShareSheet
       open={shareOpen}
       onClose={() => setShareOpen(false)}
