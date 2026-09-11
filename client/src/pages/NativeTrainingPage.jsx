@@ -11,7 +11,6 @@
 
 import React, { useState, useEffect, useMemo, useRef, useCallback, lazy, Suspense } from 'react';
 import ReactDOM from 'react-dom';
-import { useNavigate } from 'react-router-dom';
 import useNativeTabScrollToTop from '../hooks/useNativeTabScrollToTop';
 import PremiumLock from '../components/PremiumLock';
 import { dominantRadarSport, hasRadar } from '../utils/radarSport';
@@ -1651,7 +1650,6 @@ export default function NativeTrainingPage({
   onPlannedWorkoutChanged,
   onTrainingsChanged,
 }) {
-  const navigate = useNavigate();
   useNativeTabScrollToTop('training');
   const unitSystem = resolveDistanceUnitSystem(user);
   const { categories } = useCategories();

@@ -538,7 +538,7 @@ const TrainingGraph = ({
     const handleClickOutside = (e) => { if (settingsRef.current && !settingsRef.current.contains(e.target)) setIsSettingsOpen(false); };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [selectedTraining, trainingList, stravaLapsCache, normalizeSport, matchesId, computeRanges, resolveTrainingSport]);
+  }, [selectedTraining, trainingList, stravaLapsCache, garminLapsCache, normalizeSport, matchesId, computeRanges, resolveTrainingSport]);
 
   // ── Shared header button ────────────────────────────────────────────────
   const SettingsButton = () => (
