@@ -7,10 +7,9 @@ import { useNavigate } from 'react-router-dom';
 import { updatePlannedWorkout, deletePlannedWorkout, exportPlannedWorkout } from '../../services/workoutPlannerApi';
 import { notifyPlannedWorkoutUpdated, notifyPlannedWorkoutDeleted } from '../../utils/activityEventPatches';
 import { SportTile, SPORT_TINT, normSport } from '../native/shared/Tiles';
-import { SportGlyph } from '../shared/SportIcon';
 import { useCategories } from '../../context/CategoryContext';
 import { WorkoutChart, computeEstTSS } from '../WorkoutPlanner/WorkoutBuilder';
-import { WorkoutSummary, WorkoutLapList } from '../WorkoutPlanner/WorkoutPlanModal';
+import { WorkoutSummary, WorkoutLapList, FieldSelect, SPORT_OPTIONS, SportOptIcon } from '../WorkoutPlanner/WorkoutPlanModal';
 import api from '../../services/api';
 import TrainingComments from '../TrainingComments';
 import { plannedDistanceMetres } from '../../utils/plannedWorkoutDistance';
@@ -137,8 +136,7 @@ export default function PlannedWorkoutEditor({
   useAutoGrow(descRef, description);
   useAutoGrow(commentRef, comment);
   const [category, setCategory] = useState('');
-  const [catOpen, setCatOpen]   = useState(false);
-  const { categories, getCategory, getCategoryStyle } = useCategories();
+  const { categories } = useCategories();
   const [saving, setSaving]     = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError]       = useState(null);
@@ -262,8 +260,17 @@ export default function PlannedWorkoutEditor({
   useEffect(() => {
     if (!plannedWorkout) return;
     setTitle(plannedWorkout.title || plannedWorkout.name || '');
-    const ns = normSport(plannedWorkout.sport || 'bike');
-    setSport(ns === 'gym' ? 'strength' : ns);
+    // Keep the planner's own key when it is one — the picker now offers the
+    // same twelve sports the other planner does, and normalising "brick" to
+    // "other" on the way in would downgrade the plan on the next save. Only
+    // legacy values ("Ride", "gym") still go through the normaliser.
+    const raw = String(plannedWorkout.sport || 'bike');
+    if (SPORT_OPTIONS.some(o => o.key === raw)) {
+      setSport(raw);
+    } else {
+      const ns = normSport(raw);
+      setSport(ns === 'gym' ? 'strength' : ns);
+    }
     setDate(toLocalDateInput(plannedWorkout.date));
     // Prefer explicit plannedDuration; fall back to computing from steps
     const durSecs = Number(plannedWorkout.plannedDuration) || planStepSecs(plannedWorkout.steps);
@@ -612,11 +619,24 @@ export default function PlannedWorkoutEditor({
             and quietly skew TSS. */}
         <div style={{ padding: '0 18px 10px' }}>
           <div style={{ display: 'flex', gap: 8 }}>
+            {/* The plan is edited here, in the card that shows it. It used to
+                be shown here and edited in three more fields further down —
+                Duration, Planned distance, Target TSS — so the same three
+                numbers sat on the sheet twice and the sheet was a screen
+                longer for it. */}
             <div style={{ flex: 1, padding: '10px 12px', borderRadius: 12, background: '#f8fafc', border: '1px solid #eef2f7' }}>
               <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: .6, color: '#94a3b8', textTransform: 'uppercase', marginBottom: 6 }}>Planned</div>
-              <PvcRow label="Time" value={plannedSummary.time} />
-              <PvcRow label="Distance" value={plannedSummary.distance} />
-              <PvcRow label="TSS" value={plannedSummary.tss} />
+              <DoneRow label="Time">
+                <DoneInput value={durH} onChange={setDurH} suffix="h" width={34} />
+                <DoneInput value={durM} onChange={setDurM} suffix="m" width={34} />
+              </DoneRow>
+              <DoneRow label="Dist">
+                <DoneInput value={plannedDist} onChange={setPlannedDist} decimal
+                  suffix={distanceInputUnitLabel(unitSystem, sport === 'swim')} width={62} />
+              </DoneRow>
+              <DoneRow label="TSS">
+                <DoneInput value={targetTss} onChange={setTargetTss} width={44} />
+              </DoneRow>
             </div>
             <div style={{
               flex: 1, padding: '10px 12px', borderRadius: 12,
@@ -776,37 +796,33 @@ export default function PlannedWorkoutEditor({
             />
           </Field>
 
-          {/* Sport pills */}
-          <Field label="Sport">
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              {['bike', 'run', 'swim', 'gym'].map(sp => {
-                const on = sport === sp || (sp === 'gym' && (sport === 'strength' || sport === 'gym'));
-                const t = SPORT_TINT[sp] || SPORT_TINT.other;
-                const label = sp === 'gym' ? 'Gym' : sp.charAt(0).toUpperCase() + sp.slice(1);
-                return (
-                  <button
-                    key={sp}
-                    type="button"
-                    onClick={() => setSport(sp === 'gym' ? 'strength' : sp)}
-                    style={{
-                      display: 'inline-flex', alignItems: 'center', gap: 5,
-                      padding: '7px 14px 7px 10px', borderRadius: 9999,
-                      border: on ? `1.5px solid ${t}` : '1px solid rgba(118,126,181,.2)',
-                      background: on ? t : 'rgba(255,255,255,.6)',
-                      color: on ? '#fff' : '#6B7280',
-                      fontFamily: 'inherit', fontSize: 12, fontWeight: 700,
-                      cursor: 'pointer',
-                      WebkitTapHighlightColor: 'transparent', touchAction: 'manipulation',
-                      transition: 'background .2s ease, color .2s ease, border-color .2s ease',
-                    }}
-                  >
-                    <SportGlyph sport={sp} size={14} color={on ? '#fff' : t} />
-                    {label}
-                  </button>
-                );
-              })}
-            </div>
-          </Field>
+          {/* Sport and category, the same control the other planner uses —
+              tap, read a list, pick. This was four sport pills and a
+              hand-rolled category dropdown, so the two planners asked the
+              same question two different ways. */}
+          <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+            <FieldSelect
+              label="Sport"
+              value={sport === 'gym' ? 'strength' : sport}
+              onChange={(k) => setSport(k)}
+              options={SPORT_OPTIONS.filter(o => !o.isTest).map(opt => ({
+                key: opt.key,
+                label: opt.label,
+                color: opt.color,
+                icon: <SportOptIcon opt={opt} size={14} />,
+              }))}
+            />
+            <FieldSelect
+              label="Category"
+              value={category || ''}
+              onChange={(k) => setCategory(k)}
+              placeholder="No category"
+              options={[
+                { key: '', label: 'No category' },
+                ...categories.map(c => ({ key: c.id, label: c.label, color: c.color, dot: c.color })),
+              ]}
+            />
+          </div>
 
           {/* Date */}
           <Field label="Date">
@@ -818,57 +834,10 @@ export default function PlannedWorkoutEditor({
             />
           </Field>
 
-          {/* Duration (h + m) + planned distance */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-            <Field label="Duration">
-              <div style={{ display: 'flex', gap: 6 }}>
-                <div style={{ flex: 1, position: 'relative' }}>
-                  <input
-                    type="number"
-                    inputMode="numeric"
-                    min="0"
-                    placeholder="0"
-                    value={durH}
-                    onChange={(e) => setDurH(e.target.value)}
-                    style={input}
-                  />
-                  <span style={inputUnit}>h</span>
-                </div>
-                <div style={{ flex: 1, position: 'relative' }}>
-                  <input
-                    type="number"
-                    inputMode="numeric"
-                    min="0"
-                    max="59"
-                    placeholder="0"
-                    value={durM}
-                    onChange={(e) => setDurM(e.target.value)}
-                    style={input}
-                  />
-                  <span style={inputUnit}>m</span>
-                </div>
-              </div>
-            </Field>
-
-            <Field label="Planned distance">
-              <div style={{ position: 'relative' }}>
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  placeholder="—"
-                  value={plannedDist}
-                  onChange={(e) => setPlannedDist(e.target.value)}
-                  style={input}
-                />
-                <span style={inputUnit}>{distanceInputUnitLabel(unitSystem, sport === 'swim')}</span>
-              </div>
-            </Field>
-          </div>
-
-          {/* Derived planned intensity — pace for run/swim, speed for bike */}
+          {/* Derived planned intensity — pace for run/swim, speed for bike.
+              The numbers it is derived from live in the Planned card above. */}
           {paceReadout && (
             <div style={{
-              marginTop: -4,
               display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
               padding: '9px 12px', borderRadius: 10,
               background: `${tint}12`,
@@ -888,85 +857,6 @@ export default function PlannedWorkoutEditor({
               </span>
             </div>
           )}
-
-          <Field label="Target TSS">
-            <input
-              type="number"
-              inputMode="numeric"
-              min="0"
-              placeholder="—"
-              value={targetTss}
-              onChange={(e) => setTargetTss(e.target.value)}
-              style={input}
-            />
-          </Field>
-
-          {/* Category */}
-          <Field label="Category">
-            <div style={{ position: 'relative' }}>
-              <button
-                type="button"
-                onClick={() => setCatOpen(v => !v)}
-                style={{
-                  ...input,
-                  display: 'flex', alignItems: 'center', gap: 8,
-                  cursor: 'pointer', textAlign: 'left',
-                  ...(category ? (() => { const s = getCategoryStyle(category); return { backgroundColor: s.backgroundColor, color: s.color, borderColor: s.borderColor }; })() : {}),
-                }}
-              >
-                {category ? (
-                  <>
-                    <span style={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: getCategory(category)?.color, flexShrink: 0 }} />
-                    <span style={{ fontWeight: 700 }}>{getCategory(category)?.label || category}</span>
-                  </>
-                ) : (
-                  <span style={{ color: '#9aa0b8' }}>No category</span>
-                )}
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" style={{ marginLeft: 'auto', opacity: 0.6 }}>
-                  <polyline points="6 9 12 15 18 9" />
-                </svg>
-              </button>
-              {catOpen && (
-                <div style={{
-                  position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0, zIndex: 5,
-                  background: '#fff', borderRadius: 10, border: '1px solid rgba(118,126,181,.2)',
-                  boxShadow: '0 10px 24px -8px rgba(10,14,26,.18)', overflow: 'hidden',
-                  maxHeight: 240, overflowY: 'auto',
-                }}>
-                  <button
-                    type="button"
-                    onClick={() => { setCategory(''); setCatOpen(false); }}
-                    style={{
-                      width: '100%', padding: '10px 12px', textAlign: 'left',
-                      background: !category ? 'rgba(118,126,181,.08)' : 'transparent',
-                      border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13,
-                      display: 'flex', alignItems: 'center', gap: 8, color: '#5E6590',
-                    }}
-                  >
-                    <span style={{ width: 10, height: 10, borderRadius: '50%', border: '1px solid #d1d5db', flexShrink: 0 }} />
-                    <span>No category</span>
-                  </button>
-                  {categories.map(c => (
-                    <button
-                      key={c.id}
-                      type="button"
-                      onClick={() => { setCategory(c.id); setCatOpen(false); }}
-                      style={{
-                        width: '100%', padding: '10px 12px', textAlign: 'left',
-                        background: category === c.id ? 'rgba(118,126,181,.08)' : 'transparent',
-                        border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13,
-                        display: 'flex', alignItems: 'center', gap: 8,
-                        fontWeight: category === c.id ? 700 : 500,
-                      }}
-                    >
-                      <span style={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: c.color, flexShrink: 0 }} />
-                      <span style={{ color: c.color }}>{c.label}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          </Field>
 
           {/* Comment — short note shown on the calendar card */}
           <Field label="Comment · shown on calendar card">
@@ -1173,13 +1063,17 @@ function DoneRow({ label, children }) {
   );
 }
 
-function DoneInput({ value, onChange, suffix = null, width = 44 }) {
+function DoneInput({ value, onChange, suffix = null, width = 44, decimal = false }) {
+  // Distances carry a decimal point; hours, minutes and TSS do not.
+  const clean = decimal
+    ? (v) => v.replace(/[^\d.,]/g, '').replace(',', '.').replace(/(\..*)\./g, '$1')
+    : (v) => v.replace(/[^\d]/g, '');
   return (
     <span style={{ display: 'inline-flex', alignItems: 'baseline', gap: 2 }}>
       <input
         value={value}
-        onChange={(e) => onChange(e.target.value.replace(/[^\d]/g, ''))}
-        inputMode="numeric"
+        onChange={(e) => onChange(clean(e.target.value))}
+        inputMode={decimal ? 'decimal' : 'numeric'}
         style={{
           width, padding: '2px 5px', borderRadius: 7, border: '1px solid #cbd5e1',
           background: '#fff', color: '#0f172a', fontFamily: 'inherit',
@@ -1237,8 +1131,3 @@ const input = {
   transition: 'border-color .15s ease, background .15s ease',
 };
 
-const inputUnit = {
-  position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)',
-  fontSize: 11, fontWeight: 700, color: '#9CA3AF',
-  pointerEvents: 'none', letterSpacing: '0.04em', textTransform: 'uppercase',
-};

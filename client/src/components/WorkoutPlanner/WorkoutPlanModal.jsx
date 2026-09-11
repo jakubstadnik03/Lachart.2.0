@@ -78,7 +78,7 @@ const SportSVG = ({ name, color = 'currentColor', size = 22 }) => {
 export { SportSVG };
 
 // ─── Sport picker options ────────────────────────────────────────────────────
-const SPORT_OPTIONS = [
+export const SPORT_OPTIONS = [
   { key: 'bike',       label: 'Bike',         color: '#767EB5', svgName: 'bike' },
   { key: 'run',        label: 'Run',          color: '#f97316', svgName: 'run' },
   { key: 'swim',       label: 'Swim',         color: '#38bdf8', svgName: 'swim' },
@@ -148,7 +148,7 @@ export function PlannerSportIcon({ sport, size = 14, color }) {
 }
 
 // Helper: render sport icon (img or svg)
-function SportOptIcon({ opt, size = 22, className = '' }) {
+export function SportOptIcon({ opt, size = 22, className = '' }) {
   if (opt?.img) return <img src={opt.img} alt={opt.label} style={{ width: size, height: size }} className={className} />;
   if (opt?.svgName) return <SportSVG name={opt.svgName} color={opt.color} size={size} />;
   return null;
@@ -328,7 +328,7 @@ function useAutoGrow(ref, value) {
   }, [ref, value]);
 }
 
-function FieldSelect({ label, value, options, onChange, placeholder = 'Select…' }) {
+export function FieldSelect({ label, value, options, onChange, placeholder = 'Select…' }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef(null);
 
