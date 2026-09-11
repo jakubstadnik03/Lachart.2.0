@@ -15,6 +15,11 @@ export const DEFAULT_CATEGORIES = [
   { id: 'zone2',     label: 'Zone 2',    color: '#22c55e', builtIn: true, skipFromTitle: false },
   { id: 'vo2max',    label: 'VO₂max',    color: '#ef4444', builtIn: true, skipFromTitle: false },
   { id: 'hills',     label: 'Hills',     color: '#f59e0b', builtIn: true, skipFromTitle: false },
+  // The one that is not a training intensity at all. A race day planned as
+  // "VO₂max" because that was the nearest chip is what athletes were doing,
+  // and it graded the race against an interval session. Reaches existing
+  // installs through the merge below, which is built from this list.
+  { id: 'race',      label: 'Race',      color: '#ec4899', builtIn: true, skipFromTitle: false },
 ];
 
 /** Preset color palette for the color picker (matches LacTrace-style grid). */
