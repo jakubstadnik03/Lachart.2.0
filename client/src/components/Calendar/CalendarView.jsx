@@ -2882,6 +2882,16 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
   }, [authUser?._id]);
 
   const [detailLoading, setDetailLoading] = useState(true);
+  /**
+   * Why the session behind this activity did not load, when it did not.
+   *
+   * The fetch used to fail into a console.warn and nothing else, so a 403
+   * or a dropped connection produced a Summary with no Laps, no Map and no
+   * chart — indistinguishable from an activity that simply has none. That
+   * is how a coach's athletes looked "broken in the app" for a week.
+   */
+  const [detailError, setDetailError] = useState(null);
+  const [detailRetry, setDetailRetry] = useState(0);
   const [streams, setStreams] = useState(null);
   const [streamsRefreshing, setStreamsRefreshing] = useState(false);
 
@@ -2890,6 +2900,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
     // Reset streams immediately so stale data from a previous activity
     // doesn't bleed into the new one while the async fetch runs.
     setStreams(null);
+    setDetailError(null);
     const load = async () => {
       setDetailLoading(true);
       try {
@@ -2973,13 +2984,37 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
         if (!cancelled) setDetail(data);
       } catch (e) {
         console.warn('ActivityFullModal: failed to load detail', e);
+        if (!cancelled) {
+          const status = e?.response?.status;
+          setDetailError(
+            e?.response?.data?.error
+            || e?.response?.data?.message
+            || (status ? `The server answered ${status}.` : null)
+            || (e?.message === 'Network Error' ? 'No connection.' : null)
+            || 'Could not load it.'
+          );
+        }
       } finally {
         if (!cancelled) setDetailLoading(false);
       }
     };
     load();
     return () => { cancelled = true; };
-  }, [a.id, a._id, athleteId]);
+  }, [a.id, a._id, athleteId, detailRetry]);
+
+  /** The one line both layouts show when the session did not come. */
+  const detailErrorNote = detailError && !detailLoading ? (
+    <div className="mx-4 mt-3 rounded-xl px-3 py-2.5 text-xs leading-snug" style={{ background: 'rgba(255,149,0,.12)', color: '#B25000' }}>
+      <span className="font-semibold">Laps, map and charts are missing:</span> {detailError}
+      <button
+        type="button"
+        onClick={() => setDetailRetry((n) => n + 1)}
+        className="ml-2 font-bold underline underline-offset-2"
+      >
+        Try again
+      </button>
+    </div>
+  ) : null;
 
   // Force-refresh Strava streams from Strava API (bypass DB cache)
   const refreshStreams = useCallback(async () => {
@@ -4880,6 +4915,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
         {/* ── SUMMARY TAB ── */}
         {mobileView === 'summary' && (
           <div className="flex-1 min-h-0 overflow-y-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
+            {detailErrorNote}
 
             {/* Stats — TrainingPeaks-style Planned | Completed comparison */}
             <div className="px-4 pt-3 pb-3 space-y-3 border-b border-gray-50">
@@ -5844,6 +5880,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
             touchAction: 'pan-y',
           }}
         >
+          {detailErrorNote}
           {/* Two columns once there is room for them: what the session was
               on the left — its numbers, its instructions, where it went, what
               was said about it — and what it looked like on the right. The

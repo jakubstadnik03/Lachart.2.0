@@ -5697,14 +5697,17 @@ router.delete('/strava/activities/:id', verifyToken, async (req, res) => {
     }
 
     // Determine target user — same logic as the detail GET handler.
+    // The link lives on the athlete as coachId / coachIds; there has never
+    // been a `coaches` field, and reading one refused every coach who was
+    // not also an admin — an athlete's Garmin ride opened as a Summary with
+    // no laps and no map, because the detail behind it had been a 403.
     let targetUserId = requester._id;
     const athleteIdParam = req.query.athleteId;
     if (athleteIdParam && isCoachLike) {
       // Verify coach-athlete link before letting a coach delete.
-      const athlete = await User.findById(athleteIdParam).select('coaches').lean();
+      const athlete = await User.findById(athleteIdParam).select('coachId coachIds').lean();
       if (!athlete) return res.status(404).json({ error: 'Athlete not found' });
-      const isLinkedCoach = Array.isArray(athlete.coaches) &&
-        athlete.coaches.some((c) => String(c) === String(requester._id));
+      const isLinkedCoach = athleteHasCoachUser(athlete, requester._id);
       if (!isLinkedCoach && !isAdminUser(requester)) {
         return res.status(403).json({ error: 'Not authorised to manage this athlete' });
       }
@@ -5759,10 +5762,9 @@ router.delete('/garmin/activities/:id', verifyToken, async (req, res) => {
     let targetUserId = requester._id;
     const athleteIdParam = req.query.athleteId;
     if (athleteIdParam && isCoachLike) {
-      const athlete = await User.findById(athleteIdParam).select('coaches').lean();
+      const athlete = await User.findById(athleteIdParam).select('coachId coachIds').lean();
       if (!athlete) return res.status(404).json({ error: 'Athlete not found' });
-      const isLinkedCoach = Array.isArray(athlete.coaches) &&
-        athlete.coaches.some((c) => String(c) === String(requester._id));
+      const isLinkedCoach = athleteHasCoachUser(athlete, requester._id);
       if (!isLinkedCoach && !isAdminUser(requester)) {
         return res.status(403).json({ error: 'Not authorised to manage this athlete' });
       }
@@ -6378,10 +6380,9 @@ router.put('/strava/activities/:id', verifyToken, async (req, res) => {
     const athleteIdParam = req.query.athleteId;
     if (athleteIdParam && isCoachLike) {
       if (String(athleteIdParam) !== String(requester._id)) {
-        const athlete = await User.findById(athleteIdParam).select('coaches').lean();
+        const athlete = await User.findById(athleteIdParam).select('coachId coachIds').lean();
         if (!athlete) return res.status(404).json({ error: 'Athlete not found' });
-        const isLinkedCoach = Array.isArray(athlete.coaches) &&
-          athlete.coaches.some((c) => String(c) === String(requester._id));
+        const isLinkedCoach = athleteHasCoachUser(athlete, requester._id);
         if (!isLinkedCoach && !isAdminUser(requester)) {
           return res.status(403).json({ error: 'Not authorised to manage this athlete' });
         }
@@ -6564,10 +6565,9 @@ router.get('/garmin/activities/:id', verifyToken, async (req, res) => {
     let targetUserId = requester._id;
     const athleteIdParam = req.query.athleteId;
     if (athleteIdParam && isCoachLike && String(athleteIdParam) !== String(requester._id)) {
-      const athlete = await User.findById(athleteIdParam).select('coaches').lean();
+      const athlete = await User.findById(athleteIdParam).select('coachId coachIds').lean();
       if (!athlete) return res.status(404).json({ error: 'Athlete not found' });
-      const isLinkedCoach = Array.isArray(athlete.coaches) &&
-        athlete.coaches.some((c) => String(c) === String(requester._id));
+      const isLinkedCoach = athleteHasCoachUser(athlete, requester._id);
       if (!isLinkedCoach && !isAdminUser(requester)) {
         return res.status(403).json({ error: 'Not authorised to view this athlete' });
       }
@@ -6628,10 +6628,9 @@ router.put('/garmin/activities/:id', verifyToken, async (req, res) => {
     const athleteIdParam = req.query.athleteId;
     if (athleteIdParam && isCoachLike) {
       if (String(athleteIdParam) !== String(requester._id)) {
-        const athlete = await User.findById(athleteIdParam).select('coaches').lean();
+        const athlete = await User.findById(athleteIdParam).select('coachId coachIds').lean();
         if (!athlete) return res.status(404).json({ error: 'Athlete not found' });
-        const isLinkedCoach = Array.isArray(athlete.coaches) &&
-          athlete.coaches.some((c) => String(c) === String(requester._id));
+        const isLinkedCoach = athleteHasCoachUser(athlete, requester._id);
         if (!isLinkedCoach && !isAdminUser(requester)) {
           return res.status(403).json({ error: 'Not authorised to manage this athlete' });
         }
