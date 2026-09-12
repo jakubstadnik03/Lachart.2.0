@@ -14,12 +14,19 @@ import ReactDOM from 'react-dom';
 import { AnimatePresence, motion, useDragControls } from 'framer-motion';
 import {
   AdjustmentsHorizontalIcon,
+  Battery0Icon,
+  Battery50Icon,
+  Battery100Icon,
+  BoltIcon,
   ChevronDownIcon,
+  ChevronRightIcon,
   ChevronUpIcon,
+  ExclamationTriangleIcon,
+  FireIcon,
   LightBulbIcon,
   MinusIcon,
 } from '@heroicons/react/24/outline';
-import { buildDailyCard } from '../../utils/dailyCoachCard';
+import { buildDailyCard, HARD_TSS_PER_HOUR } from '../../utils/dailyCoachCard';
 import { fetchWellness } from '../../services/wellnessData';
 import { SportGlyph } from '../shared/SportIcon';
 import RpeCapture from '../training/RpeCapture';
@@ -36,6 +43,65 @@ import {
   saveDailyCardPrefs,
   setCardExpanded,
 } from '../../utils/dailyCardPrefs';
+
+/** One glyph per readiness band, so the collapsed card reads at a glance. */
+const READINESS_ICON = {
+  veryFresh: Battery100Icon,
+  fresh: BoltIcon,
+  neutral: Battery50Icon,
+  productive: FireIcon,
+  strained: Battery0Icon,
+};
+
+/**
+ * The state, in colour, with the numbers behind it — what the collapsed card
+ * shows so "how ready am I" is answered without opening it. The body's
+ * verdict joins it when a wearable disagrees with the load model.
+ */
+function ReadinessChips({ readiness, recovery }) {
+  const Icon = READINESS_ICON[readiness.state] || Battery50Icon;
+  const bodyWorried = recovery && recovery.level !== 'ok';
+  return (
+    <div className="flex items-center gap-1.5 flex-wrap">
+      <span
+        className="inline-flex items-center gap-1 pl-1.5 pr-2 py-0.5 rounded-full text-[10px] font-bold"
+        style={{ background: readiness.bg, color: readiness.color, border: `1px solid ${readiness.border}` }}
+      >
+        <Icon className="w-3.5 h-3.5" aria-hidden="true" />
+        {readiness.label}
+      </span>
+      <span className="text-[10px] font-semibold text-gray-500 tabular-nums">
+        Form {readiness.form > 0 ? '+' : ''}{readiness.form}
+        <span className="text-gray-400 font-medium"> · Fitness {readiness.fitness}</span>
+      </span>
+      {bodyWorried ? (
+        <span
+          className="inline-flex items-center gap-1 pl-1.5 pr-2 py-0.5 rounded-full text-[10px] font-bold"
+          style={{ background: `${recovery.hex}14`, color: recovery.hex, border: `1px solid ${recovery.hex}55` }}
+        >
+          <ExclamationTriangleIcon className="w-3.5 h-3.5" aria-hidden="true" />
+          {recovery.label}
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
+/** Today's sessions as sport glyphs; a dot marks the hard ones. */
+function PlannedGlyphs({ items }) {
+  if (!items.length) return <span className="text-[10px] font-semibold text-gray-400">Rest day</span>;
+  return (
+    <span className="inline-flex items-center gap-1.5" aria-label={items.map((i) => i.title).join(', ')}>
+      {items.slice(0, 4).map((it) => (
+        <span key={it.id} className="relative inline-flex" title={it.title}>
+          <SportGlyph sport={it.sport} size={15} />
+          {it.hard ? <span className="absolute -top-0.5 -right-1 w-1.5 h-1.5 rounded-full bg-orange-500" /> : null}
+        </span>
+      ))}
+      {items.length > 4 ? <span className="text-[10px] font-semibold text-gray-400">+{items.length - 4}</span> : null}
+    </span>
+  );
+}
 
 /** Form gauge: the five readiness bands laid out left (strained) → right (very fresh). */
 function ReadinessGauge({ readiness, compact }) {
@@ -195,9 +261,9 @@ function FeltVsDataLine({ activity, userProfile }) {
 
 const isNerdStyle = (id) => id === 'nerd';
 
-function SessionRow({ item, muted = false, prefix = null }) {
-  return (
-    <div className="flex items-start gap-2.5 py-1.5">
+function SessionRow({ item, muted = false, prefix = null, onOpen = null }) {
+  const body = (
+    <>
       <span className="shrink-0 mt-0.5" aria-hidden="true">
         <SportGlyph sport={item.sport} size={16} />
       </span>
@@ -213,6 +279,28 @@ function SessionRow({ item, muted = false, prefix = null }) {
         </div>
         {item.detail ? <div className="text-xs text-gray-500 truncate">{item.detail}</div> : null}
       </div>
+    </>
+  );
+  if (!onOpen) return <div className="flex items-start gap-2.5 py-1.5">{body}</div>;
+  // The row opens the session. The card used to name it and stop there.
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className="w-full flex items-start gap-2.5 py-1.5 -mx-1.5 px-1.5 rounded-lg text-left hover:bg-gray-50 active:bg-gray-100"
+    >
+      {body}
+      <ChevronRightIcon className="w-4 h-4 text-gray-300 shrink-0 mt-0.5" aria-hidden="true" />
+    </button>
+  );
+}
+
+/** What the badge means, said once, where the badges are. */
+function HardLegend({ items }) {
+  if (!items.some((i) => i?.hard)) return null;
+  return (
+    <div className="text-[10px] text-gray-400 leading-snug mt-1">
+      <span className="font-bold text-orange-600">HARD</span> — threshold work or above, or a plan of {HARD_TSS_PER_HOUR}+ TSS an hour.
     </div>
   );
 }
@@ -268,6 +356,10 @@ export default function DailyCoachCard({
   compact = false,
   /** Coaches viewing an athlete get the facts without the second-person voice. */
   readOnly = false,
+  /** Tap on a planned session — receives the raw planned workout. */
+  onOpenPlanned = null,
+  /** Tap on a done session — receives the raw activity. */
+  onOpenActivity = null,
 }) {
   const [prefs, setPrefs] = useState(() => readDailyCardPrefs(user));
   const [showSettings, setShowSettings] = useState(false);
@@ -344,6 +436,25 @@ export default function DailyCoachCard({
     setCardExpanded(athleteId, card.dateKey, true);
   }, [athleteId, card.dateKey]);
 
+  // The sheet sits above everything; whatever it opens must not land
+  // underneath it, so it folds away first.
+  const openPlannedItem = onOpenPlanned
+    ? (item) => {
+        const pw = (plannedWorkouts || []).find((p) => String(p?._id || p?.id) === String(item.id));
+        if (!pw) return;
+        minimise();
+        onOpenPlanned(pw);
+      }
+    : null;
+  const openActivityItem = onOpenActivity
+    ? (item, raw = null) => {
+        const act = raw || (activities || []).find((a) => String(a?.id || a?._id) === String(item.id));
+        if (!act) return;
+        minimise();
+        onOpenActivity(act);
+      }
+    : null;
+
   if (loading) {
     return (
       <div className="bg-white rounded-2xl p-4 sm:p-5 shadow-lg animate-pulse">
@@ -371,14 +482,20 @@ export default function DailyCoachCard({
         style={{ borderLeft: `3px solid ${card.readiness.color}` }}
       >
         <div className="min-w-0 flex-1">
-          <div className="text-[10px] font-bold uppercase tracking-wider" style={{ color: card.readiness.color }}>
-            Today
+          <div className="flex items-center justify-between gap-2">
+            <div className="text-[10px] font-bold uppercase tracking-wider" style={{ color: card.readiness.color }}>
+              Today
+            </div>
+            <PlannedGlyphs items={card.todayPlanned} />
           </div>
           <div className="text-sm font-bold text-gray-900 truncate">{card.headline}</div>
           {/* Two lines, then it stops — the rest is behind the tap. */}
           <p className="text-xs text-gray-600 leading-snug line-clamp-2 mt-0.5">
             {isNerdStyle(prefs.style) ? card.readiness.readout : card.directive}
           </p>
+          <div className="mt-2">
+            <ReadinessChips readiness={card.readiness} recovery={card.recovery} />
+          </div>
         </div>
         <ChevronDownIcon className="w-4 h-4 text-gray-300 shrink-0 mt-1" />
       </motion.button>
@@ -535,9 +652,13 @@ export default function DailyCoachCard({
         <div className="mt-4 pt-3.5 border-t border-gray-100 space-y-3">
           <Section title="Today">
             {card.todayPlanned.length ? (
-              card.todayPlanned.map((p) => <SessionRow key={p.id} item={p} />)
+              card.todayPlanned.map((p) => (
+                <SessionRow key={p.id} item={p} onOpen={openPlannedItem ? () => openPlannedItem(p) : null} />
+              ))
             ) : card.todayCompleted.length ? (
-              card.todayCompleted.map((a) => <SessionRow key={a.id} item={a} prefix="Done —" />)
+              card.todayCompleted.map((a) => (
+                <SessionRow key={a.id} item={a} prefix="Done —" onOpen={openActivityItem ? () => openActivityItem(a) : null} />
+              ))
             ) : (
               <div className="text-sm text-gray-500 py-1.5">Nothing planned</div>
             )}
@@ -546,6 +667,7 @@ export default function DailyCoachCard({
                 {card.todayCompleted.length} already logged today
               </div>
             ) : null}
+            <HardLegend items={[...card.todayPlanned, ...card.tomorrowPlanned]} />
           </Section>
 
           <AnimatePresence initial={false}>
@@ -558,7 +680,11 @@ export default function DailyCoachCard({
               >
                 {card.yesterday ? (
                   <Section title="Yesterday">
-                    <SessionRow item={card.yesterday} muted />
+                    <SessionRow
+                      item={card.yesterday}
+                      muted
+                      onOpen={openActivityItem ? () => openActivityItem(card.yesterday, card.yesterdayActivity) : null}
+                    />
                     {/* The morning after is the one moment an athlete will
                         actually rate a session, so the prompt lives here rather
                         than behind a tap on the session detail page. */}
@@ -580,7 +706,9 @@ export default function DailyCoachCard({
 
                 {card.tomorrowPlanned.length ? (
                   <Section title="Tomorrow">
-                    {card.tomorrowPlanned.map((p) => <SessionRow key={p.id} item={p} muted />)}
+                    {card.tomorrowPlanned.map((p) => (
+                      <SessionRow key={p.id} item={p} muted onOpen={openPlannedItem ? () => openPlannedItem(p) : null} />
+                    ))}
                   </Section>
                 ) : null}
 

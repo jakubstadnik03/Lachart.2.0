@@ -1,4 +1,4 @@
-import { buildDailyCard } from './dailyCoachCard';
+import { isHardPlan, buildDailyCard } from './dailyCoachCard';
 import { readinessStateFrom, formGaugePosition } from '../constants/coachingStyles';
 import { getDailyLesson, DAILY_LESSONS } from '../content/dailyLessons';
 
@@ -292,5 +292,26 @@ describe('wellness — what the body says', () => {
       (styleId) => build({ styleId, todayMetrics: { fitness: 62, fatigue: 50, form: 12 }, wellness }).directive,
     );
     expect(new Set(lines).size).toBe(lines.length);
+  });
+});
+
+describe('isHardPlan — what earns the HARD badge', () => {
+  const plan = (over) => ({ _id: 'x', date: dayKey(NOW), sport: 'bike', status: 'planned', ...over });
+
+  it('is intensity, not size: a long easy ride is not hard, a short brick is', () => {
+    expect(isHardPlan(plan({ title: 'Bike long + heat', targetTss: 120, plannedDuration: 4 * 3600 }))).toBe(false);
+    expect(isHardPlan(plan({ title: 'Run brick', targetTss: 60, plannedDuration: 40 * 60 }))).toBe(true);
+    expect(isHardPlan(plan({ title: 'Swim endurance', targetTss: 80, plannedDuration: 80 * 60 }))).toBe(false);
+  });
+
+  it('reads the title — including threshold typed in a hurry, and RP for race pace', () => {
+    expect(isHardPlan(plan({ title: 'Swim treshold', targetTss: 40, plannedDuration: 70 * 60 }))).toBe(true);
+    expect(isHardPlan(plan({ title: 'Bike RP', targetTss: 100, plannedDuration: 140 * 60 }))).toBe(true);
+    expect(isHardPlan(plan({ title: 'Warp drive', targetTss: 30, plannedDuration: 3600 }))).toBe(false);
+  });
+
+  it('falls back to the plain number when there is no duration to judge by', () => {
+    expect(isHardPlan(plan({ title: 'Ride', targetTss: 85 }))).toBe(true);
+    expect(isHardPlan(plan({ title: 'Ride', targetTss: 50 }))).toBe(false);
   });
 });

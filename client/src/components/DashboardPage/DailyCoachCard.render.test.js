@@ -70,13 +70,30 @@ describe('DailyCoachCard renders', () => {
     const html = renderCard();
     expect(html).toContain('Deep in the work');
     expect(html).toContain('line-clamp-2');
-    // Detail belongs behind the tap, not in the banner.
-    expect(html).not.toContain('Productive fatigue');
+    // The rest of the detail belongs behind the tap, not in the banner.
     expect(html).not.toContain('How did it feel?');
   });
 
-  it('carries the readiness colour so the state reads at a glance', () => {
-    expect(renderCard()).toContain('#B45309'); // productive fatigue
+  it('says how ready you are, in colour, with the numbers behind it', () => {
+    const html = renderCard();
+    expect(html).toContain('#B45309'); // productive fatigue
+    expect(html).toContain('Productive fatigue');
+    expect(html).toContain('Form -16');
+    expect(html).toContain('Fitness 62');
+  });
+
+  it('marks the day’s hard session among the sport glyphs, and says Rest day when there is none', () => {
+    expect(renderCard()).toContain('bg-orange-500');
+    expect(renderCard({ plannedWorkouts: [] })).toContain('Rest day');
+  });
+
+  it('adds the body’s verdict when a wearable disagrees with the load model', () => {
+    const days = Array.from({ length: 7 }, (_, i) => ({
+      date: dayKey(offset(i - 6)), restingHeartRate: i === 6 ? 58 : 50, hrvMs: i === 6 ? 40 : 60, sleepMinutes: 420,
+    }));
+    const html = renderCard({ wellnessDays: days, todayMetrics: { fitness: 62, fatigue: 50, form: 12 } });
+    expect(html).toContain('Fresh');
+    expect(html).toMatch(/Overreaching|Watch recovery/);
   });
 
   it('shows a skeleton while loading rather than a banner of zeroes', () => {
@@ -95,6 +112,67 @@ describe('DailyCoachCard renders', () => {
   it('still speaks the chosen voice in the banner', () => {
     const html = renderCard({ user: { ...USER, notifications: { dailyCardStyle: 'dark' } } });
     expect(html).toContain('This is the part that counts');
+  });
+});
+
+describe('DailyCoachCard opens what it names', () => {
+  // The sheet is a portal, so these need a real (jsdom) render.
+  const { createRoot } = require('react-dom/client');
+  const { act } = require('react-dom/test-utils');
+  let container;
+  let root;
+
+  beforeEach(() => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+  });
+  afterEach(() => {
+    act(() => root?.unmount());
+    container.remove();
+  });
+
+  const mount = (props) => {
+    root = createRoot(container);
+    act(() => {
+      root.render(
+        <DailyCoachCard
+          athleteId="u1"
+          user={USER}
+          todayMetrics={{ fitness: 62, fatigue: 78, form: -16 }}
+          plannedWorkouts={PLANNED}
+          activities={ACTIVITIES}
+          userProfile={PROFILE}
+          {...props}
+        />,
+      );
+    });
+  };
+  const click = (el) => act(() => { el.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+  const buttonWithText = (text) => [...document.querySelectorAll('button')].find((b) => b.textContent.includes(text));
+
+  it('a tap on today’s session hands the planned workout back and folds the sheet away', () => {
+    const onOpenPlanned = jest.fn();
+    mount({ onOpenPlanned });
+    click(buttonWithText('Deep in the work'));
+    expect(document.body.textContent).toContain('HARD — threshold work or above');
+    click(buttonWithText('4x8min VO2max'));
+    expect(onOpenPlanned).toHaveBeenCalledWith(PLANNED[0]);
+    expect(document.body.textContent).not.toContain('How did it feel?');
+  });
+
+  it('yesterday opens the activity itself', () => {
+    const onOpenActivity = jest.fn();
+    mount({ onOpenActivity });
+    click(buttonWithText('Deep in the work'));
+    click(buttonWithText('Yesterday, tomorrow & load'));
+    click(buttonWithText('Easy run'));
+    expect(onOpenActivity).toHaveBeenCalledWith(ACTIVITIES[0]);
+  });
+
+  it('without a handler the rows are plain text', () => {
+    mount({});
+    click(buttonWithText('Deep in the work'));
+    expect(buttonWithText('4x8min VO2max')).toBeUndefined();
   });
 });
 

@@ -27,8 +27,19 @@ const SPORT_LABEL = {
   rowing: 'Row', lactate: 'Lactate test', other: 'Session',
 };
 
-/** Planned sessions whose title/category says "this is a hard one". */
-const HARD_HINT = /vo2|v̇o2|threshold|lt2|interval|tempo|race|hard|sprint|hill|\d+\s*[x×]\s*\d+/i;
+/**
+ * Planned sessions whose title/category says "this is a hard one". "tresh"
+ * because that is how threshold gets typed in a hurry, "rp" for race pace.
+ */
+const HARD_HINT = /vo2|v̇o2|thresh|tresh|lt2|interval|tempo|race|\brp\b|hard|sprint|hill|\d+\s*[x×]\s*\d+/i;
+
+/**
+ * Planned load per hour above which a session counts as hard: 65 TSS/h is an
+ * intensity factor of about 0.8, the bottom of tempo. Used instead of a flat
+ * TSS floor — a four-hour endurance ride at 120 TSS is not a hard day, a
+ * forty-minute brick at 60 is.
+ */
+export const HARD_TSS_PER_HOUR = 65;
 
 function dayKeyOffset(days, ref = new Date()) {
   const d = new Date(ref);
@@ -80,11 +91,16 @@ function plannedSeconds(pw) {
   return total;
 }
 
-function isHardPlan(pw) {
+export function isHardPlan(pw) {
   if (!pw) return false;
   if (HARD_HINT.test(String(pw.title || ''))) return true;
   if (HARD_HINT.test(String(pw.category || ''))) return true;
-  return Number(pw.targetTss || 0) >= 80;
+  const tss = Number(pw.targetTss || 0);
+  if (tss <= 0) return false;
+  const secs = plannedSeconds(pw);
+  // No duration to judge the intensity by — a big number is all there is.
+  if (secs <= 0) return tss >= 80;
+  return tss / (secs / 3600) >= HARD_TSS_PER_HOUR;
 }
 
 function describePlanned(pw) {

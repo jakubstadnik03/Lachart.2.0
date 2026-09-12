@@ -50,7 +50,7 @@ import WorkoutPlanModal from "../components/WorkoutPlanner/WorkoutPlanModal";
 import { getPlannedWorkouts, createPlannedWorkout, updatePlannedWorkout, deletePlannedWorkout, getDayPlans, setDayPlan as apiSetDayPlan, deleteDayPlan as apiDeleteDayPlan, getPeriods, savePeriod as apiSavePeriod, deletePeriod as apiDeletePeriod } from '../services/workoutPlannerApi';
 import DashboardEmptyWelcome from "../components/DashboardPage/DashboardEmptyWelcome";
 import { Skeleton } from "../components/common/Skeleton";
-import { buildActivityMatcher, metricsPatchFromDetail, patchCalendarCache, upsertPlannedWorkoutList, removePlannedWorkoutFromList, notifyPlannedWorkoutUpdated, notifyPlannedWorkoutDeleted } from '../utils/activityEventPatches';
+import { buildActivityMatcher, getActivityAppId, metricsPatchFromDetail, patchCalendarCache, upsertPlannedWorkoutList, removePlannedWorkoutFromList, notifyPlannedWorkoutUpdated, notifyPlannedWorkoutDeleted } from '../utils/activityEventPatches';
 import { TSS_DISPLAY_MODE_EVENT, clearFormFitnessCache } from '../utils/uiPrefs';
 import { syncDailyTrainingReminder } from '../utils/dailyTrainingReminder';
 import { syncDailyCoachCardNotification } from '../utils/dailyCoachCardNotification';
@@ -2876,6 +2876,15 @@ export default function DashboardPage() {
               userProfile={fitnessProfile}
               loading={dashboardFitnessLoading || formMetricsLoading}
               readOnly={isCoachViewingOtherAthlete}
+              onOpenActivity={(act) => {
+                const qs = dashboardDataAthleteId ? `?athleteId=${dashboardDataAthleteId}` : '';
+                navigate(`/training-calendar/${encodeURIComponent(getActivityAppId(act) || String(act?.id || act?._id || ''))}${qs}`);
+              }}
+              onOpenPlanned={() => {
+                // The calendar has no deep link to one plan; the week it sits in is the next best thing.
+                const qs = dashboardDataAthleteId ? `?athleteId=${dashboardDataAthleteId}` : '';
+                navigate(`/training-calendar${qs}`);
+              }}
             />
           </div>
         )}
