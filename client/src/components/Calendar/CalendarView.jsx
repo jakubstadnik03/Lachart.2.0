@@ -5,6 +5,7 @@ import { assessMoveCost } from '../../utils/moveCost';
 import ReactDOM from 'react-dom';
 import TrainingFormComponent from '../TrainingForm';
 import SessionProgressChart from '../training/SessionProgressChart';
+import CompareSessionsMenu from '../training/CompareSessionsMenu';
 import TimeInZonesBar from '../training/TimeInZonesBar';
 import PeakValuesChart, { readPower, readHeartRate } from '../training/PeakValuesChart';
 import WorkoutStepsCompliance from '../training/WorkoutStepsCompliance';
@@ -2263,6 +2264,20 @@ function CompareContent({ merged, athleteId, onOpen }) {
   };
   const fmtDist = m => (!m || m <= 0) ? '—' : formatDistance(m, unitSystem).formatted;
   const fmtDate = d => { if (!d) return '—'; const dt = new Date(d); return `${dt.getDate()}. ${dt.getMonth()+1}. ${dt.getFullYear()}`; };
+  // "1:32:10 · 48.2 km · 231 W" — this session and the compared ones store
+  // their numbers under different names.
+  const describeSession = (s) => {
+    const dur  = Number(s?.duration || s?.elapsed_time || s?.totalElapsedTime || 0);
+    const dist = Number(s?.distance || s?.totalDistance || 0);
+    const pow  = Number(s?.avgPower || s?.average_watts || 0);
+    const hr   = Number(s?.avgHr || s?.average_heartrate || s?.avgHeartRate || 0);
+    return [
+      dur > 0 ? fmtSec(dur) : null,
+      dist > 0 ? fmtDist(dist) : null,
+      isBike && pow > 0 ? `${Math.round(pow)} W` : null,
+      hr > 0 ? `${Math.round(hr)} bpm` : null,
+    ].filter(Boolean).join(' · ');
+  };
 
   const getLapValue = (lap, b, r, s) => {
     const dur  = Number(lap.elapsed_time || lap.totalElapsedTime || lap.duration || 0);
@@ -2487,82 +2502,28 @@ function CompareContent({ merged, athleteId, onOpen }) {
               workOnly={workOnly}
             />
           </div>
-          {/* Session legend pills */}
-          <div className="flex flex-wrap gap-1.5 px-3 pb-2.5">
-            {allSessions.map((s, i) => {
-              const total = allSessions.length;
-              const t = total <= 1 ? 1 : i / (total - 1);
-              const lerp = (a, b) => Math.round(a + (b - a) * t);
-              const color = `rgb(${lerp(196,109)},${lerp(181,88)},${lerp(253,217)})`;
-              const sid = String(s.id || s._id || '');
-              const isRef = sid === String(merged?.id || merged?._id || '__current');
-              const isHidden = hiddenSessions.has(sid);
-              const isHighlighted = highlightId === sid;
-              const d = new Date(s.date || s.startDate || s.start_date || 0);
-              const label = isRef ? 'This session' : d.toLocaleDateString('en', { day: 'numeric', month: 'short', year: '2-digit' });
-              return (
-                <span key={i} className="flex items-center rounded-full border text-[10px] font-bold transition-all overflow-hidden"
-                  style={{
-                    borderColor: color,
-                    opacity: isHidden ? 0.4 : 1,
-                    background: isHighlighted && !isHidden ? color : 'transparent',
-                  }}
-                >
-                  {/* Highlight toggle */}
-                  <button
-                    onClick={() => {
-                      if (isHidden) return;
-                      setHighlightId(h => h === sid ? null : sid);
-                    }}
-                    className="flex items-center gap-1 px-2 py-0.5"
-                    style={{ color: isHighlighted && !isHidden ? '#fff' : color }}
-                  >
-                    <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: isHighlighted && !isHidden ? '#fff' : color }} />
-                    {label}
-                  </button>
-                  {/* × close button (non-reference sessions only) */}
-                  {!isRef && (
-                    <button
-                      onClick={() => {
-                        setHiddenSessions(prev => {
-                          const next = new Set(prev);
-                          if (next.has(sid)) next.delete(sid);
-                          else next.add(sid);
-                          return next;
-                        });
-                        // Clear highlight if hiding
-                        if (!hiddenSessions.has(sid) && highlightId === sid) setHighlightId(null);
-                      }}
-                      className="pr-1.5 pl-0.5 py-0.5 flex items-center"
-                      style={{ color: isHighlighted && !isHidden ? '#fff' : color }}
-                      title={isHidden ? 'Show session' : 'Hide session'}
-                    >
-                      {isHidden ? (
-                        // Eye-slash → show again
-                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" />
-                          <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" />
-                          <line x1="1" y1="1" x2="23" y2="23" />
-                        </svg>
-                      ) : (
-                        // × close
-                        <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round">
-                          <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-                        </svg>
-                      )}
-                    </button>
-                  )}
-                </span>
-              );
-            })}
-            {/* Reset hidden if any are hidden */}
-            {hiddenSessions.size > 0 && (
-              <button onClick={() => setHiddenSessions(new Set())}
-                className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border border-gray-300 text-gray-400 hover:text-gray-600 hover:border-gray-400 transition-colors">
-                Show all
-              </button>
-            )}
-          </div>
+          {/* Which sessions are in the chart — one button, the list behind it */}
+          <CompareSessionsMenu
+            sessions={allSessions}
+            currentId={currentSession?.id || '__current'}
+            hidden={hiddenSessions}
+            highlightId={highlightId}
+            describe={describeSession}
+            onToggleHidden={(sid) => {
+              setHiddenSessions((prev) => {
+                const next = new Set(prev);
+                if (next.has(sid)) next.delete(sid); else next.add(sid);
+                return next;
+              });
+              if (highlightId === sid) setHighlightId(null);
+            }}
+            onShowAll={() => setHiddenSessions(new Set())}
+            onHideOthers={() => {
+              setHiddenSessions(new Set(results.map((r) => String(r.id || r._id || ''))));
+              setHighlightId(null);
+            }}
+            onHighlight={setHighlightId}
+          />
         </div>
       )}
 
