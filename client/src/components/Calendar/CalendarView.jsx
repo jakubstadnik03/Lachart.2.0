@@ -1943,6 +1943,7 @@ function CompareLapTable({ laps, isBike, isRun, isSwim, workOnly, unitSystem = '
 }
 
 export function WorkLapCompareTable({ currentLaps, results, isBike, isRun, isSwim, unitSystem = 'metric' }) {
+  const [showAllRows, setShowAllRows] = useState(false);
   const sessions = [
     { label: 'This', laps: currentLaps, isRef: true },
     ...results.map(r => ({
@@ -1983,6 +1984,12 @@ export function WorkLapCompareTable({ currentLaps, results, isBike, isRun, isSwi
                  .filter(({ type }) => type === 'work');
   });
   const maxWork = Math.max(...sessWorkLaps.map(w => w.length), 0);
+  // The rows this session has are the comparison; a compared ride's extra
+  // laps are rows of dashes and used to run to the bottom of the screen.
+  // They stay behind "Show more", as does anything past ten laps.
+  const thisCount = sessWorkLaps[0].length;
+  const defaultRows = Math.min(maxWork, Math.max(1, Math.min(thisCount || 5, 10)));
+  const rowCount = showAllRows ? maxWork : defaultRows;
   if (maxWork === 0) return null;
 
   // How each lap compares with the same lap of this session: a small signed
@@ -2018,17 +2025,12 @@ export function WorkLapCompareTable({ currentLaps, results, isBike, isRun, isSwi
             </tr>
           </thead>
           <tbody>
-            {Array.from({ length: maxWork }, (_, wi) => {
+            {Array.from({ length: rowCount }, (_, wi) => {
               const ref = sessWorkLaps[0][wi] ? primary(sessWorkLaps[0][wi].lap) : null;
               return (
                 <tr key={wi} className="border-b border-gray-50 last:border-0">
                   <td className="sticky left-0 z-10 bg-white py-2 pl-3 pr-2 align-top">
                     <div className="font-semibold text-gray-800 tabular-nums">{wi + 1}</div>
-                    {sessWorkLaps[0][wi] && (
-                      <div className="text-[9.5px] text-gray-400 tabular-nums whitespace-nowrap">
-                        {[fmtTime(sessWorkLaps[0][wi].lap), (isRun || isSwim) ? fmtDist(sessWorkLaps[0][wi].lap) : null].filter(Boolean).join(' · ')}
-                      </div>
-                    )}
                   </td>
                   {sessWorkLaps.map((workLaps, si) => {
                     const entry = workLaps[wi];
@@ -2037,6 +2039,8 @@ export function WorkLapCompareTable({ currentLaps, results, isBike, isRun, isSwi
                     const hr = fmtHr(entry.lap);
                     const isRef = sessions[si].isRef;
                     const d  = isRef ? null : delta(p, ref);
+                    // Each lap's own clock: the same lap is rarely the same length in two sessions.
+                    const when = [fmtTime(entry.lap), (isRun || isSwim) ? fmtDist(entry.lap) : null].filter(Boolean).join(' · ');
                     return (
                       <td key={si} className="text-right py-2 px-2 align-top whitespace-nowrap">
                         <div className={`text-[12px] font-semibold tabular-nums ${isRef ? 'text-blue-700' : 'text-gray-800'}`}>{p ? p.text : '—'}</div>
@@ -2046,6 +2050,7 @@ export function WorkLapCompareTable({ currentLaps, results, isBike, isRun, isSwi
                           {d && hr ? ' · ' : ''}
                           {hr ? `${hr} bpm` : ''}
                         </div>
+                        {when ? <div className="text-[9.5px] tabular-nums text-gray-400">{when}</div> : null}
                       </td>
                     );
                   })}
@@ -2055,6 +2060,15 @@ export function WorkLapCompareTable({ currentLaps, results, isBike, isRun, isSwi
           </tbody>
         </table>
       </div>
+      {maxWork > defaultRows && (
+        <button
+          type="button"
+          onClick={() => setShowAllRows((v) => !v)}
+          className="w-full py-2 text-[11px] font-semibold text-blue-600 border-t border-gray-50 active:bg-gray-50"
+        >
+          {showAllRows ? 'Show fewer laps' : `Show ${maxWork - defaultRows} more lap${maxWork - defaultRows === 1 ? '' : 's'}`}
+        </button>
+      )}
     </div>
   );
 }
