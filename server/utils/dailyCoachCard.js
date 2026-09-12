@@ -81,18 +81,18 @@ const STYLES = {
     label: 'Gentle',
     greeting: (n) => (n ? `Morning, ${n}.` : 'Morning.'),
     headline: {
-      veryFresh: "You're well rested",
-      fresh: 'You’re in a good place today',
-      neutral: 'Steady as you go',
-      productive: 'You’ve been working hard',
-      strained: 'Your body is asking for a break',
+      veryFresh: ['You\'re well rested', 'Plenty in the tank', 'Rested, and then some'],
+      fresh: ['You’re in a good place today', 'The legs feel willing today', 'A good day to be you'],
+      neutral: ['Steady as you go', 'Ticking along nicely', 'All in balance'],
+      productive: ['You’ve been working hard', 'The work is showing', 'Tired in the right way'],
+      strained: ['Your body is asking for a break', 'Time to be gentle with yourself', 'Enough for now'],
     },
     frame: {
-      veryFresh: 'Whenever you feel ready, something easy will bring the rhythm back.',
-      fresh: 'If you fancy the hard session, today is a kind day for it.',
-      neutral: 'Nothing dramatic needed — just do what’s on the plan and enjoy it.',
-      productive: 'This tiredness is earned and normal. Be a little kind to yourself.',
-      strained: 'Please take the easy option today. The fitness will still be there tomorrow.',
+      veryFresh: ['Whenever you feel ready, something easy will bring the rhythm back.', 'No rush — an easy session will wake the legs up when you want it.'],
+      fresh: ['If you fancy the hard session, today is a kind day for it.', 'If there’s a hard one on the list, today would carry it kindly.'],
+      neutral: ['Nothing dramatic needed — just do what’s on the plan and enjoy it.', 'A plain, good day of training. Nothing to force, nothing to skip.'],
+      productive: ['This tiredness is earned and normal. Be a little kind to yourself.', 'Heavy legs after a week like this are the plan working, not you failing.'],
+      strained: ['Please take the easy option today. The fitness will still be there tomorrow.', 'The kindest thing today is less. The work you’ve done is already yours.'],
     },
     hardOnTired: {
       strained: (t) => `${t} is on the plan, but your legs are asking for less today. Moving it wouldn’t be a failure.`,
@@ -102,24 +102,24 @@ const STYLES = {
       high: (r) => `${r}. That’s your body asking for a quiet day, and it’s worth listening to — whatever the plan says.`,
       watch: (r, t) => `${r}. ${t} is on the plan, but there’s no harm in keeping today gentle instead.`,
     },
-    restLine: 'Nothing planned today — rest is part of the work.',
+    restLine: ['Nothing planned today — rest is part of the work.', 'A quiet day. Let the last few sessions settle in.', 'Nothing on the plan — that’s the plan.'],
   },
   supportive: {
     label: 'Supportive',
     greeting: (n) => (n ? `Good morning, ${n}!` : 'Good morning!'),
     headline: {
-      veryFresh: 'Rested and ready',
-      fresh: 'Green light',
-      neutral: 'Solid ground',
-      productive: 'Deep in the work',
-      strained: 'Time to back off',
+      veryFresh: ['Rested and ready', 'Fully charged', 'Fresh legs, open road'],
+      fresh: ['Green light', 'Good day for it', 'The window is open'],
+      neutral: ['Solid ground', 'On track', 'Steady build'],
+      productive: ['Deep in the work', 'Building, and it shows', 'This is the grind that counts'],
+      strained: ['Time to back off', 'Your body has voted', 'Recovery is the session today'],
     },
     frame: {
-      veryFresh: 'Ease back in — a session or two and you’ll feel sharp again.',
-      fresh: 'Good day to ask something of yourself.',
-      neutral: 'Follow the plan. Consistency is what’s building here.',
-      productive: 'This is what progress feels like from the inside. Keep the easy days easy.',
-      strained: 'Take the recovery. You’ll come back stronger for it — that’s not a cliché, it’s the physiology.',
+      veryFresh: ['Ease back in — a session or two and you’ll feel sharp again.', 'You’ve banked the rest. Now put some work back in and feel it come alive.'],
+      fresh: ['Good day to ask something of yourself.', 'Legs like this don’t come every day — spend them on something that matters.'],
+      neutral: ['Follow the plan. Consistency is what’s building here.', 'Nothing to fix. Show up, do the work, and let the weeks add up.'],
+      productive: ['This is what progress feels like from the inside. Keep the easy days easy.', 'Tired is what a good block feels like from the inside. Keep the easy days honest.'],
+      strained: ['Take the recovery. You’ll come back stronger for it — that’s not a cliché, it’s the physiology.', 'Give it a day. Fitness doesn’t leave in twenty-four hours, but fatigue can.'],
     },
     hardOnTired: {
       strained: (t) => `${t} is planned, but you’re deep in the red. Move it a day and you’ll get far more out of it.`,
@@ -129,24 +129,24 @@ const STYLES = {
       high: (r) => `${r}. Your recovery markers are asking for a day back — take it, and the next block will thank you.`,
       watch: (r, t) => `${r}. ${t} can still happen, but take the intensity down a notch and see how it feels.`,
     },
-    restLine: 'Rest day. Take it properly — that’s where the adaptation happens.',
+    restLine: ['Rest day. Take it properly — that’s where the adaptation happens.', 'Nothing planned. Rest well — that’s where the training turns into fitness.', 'Day off. Sleep, eat, and let the body catch up with the work.'],
   },
   straight: {
     label: 'Straight',
     greeting: (n) => (n ? `${n} —` : 'Today —'),
     headline: {
-      veryFresh: 'Very fresh',
-      fresh: 'Fresh',
-      neutral: 'Neutral',
-      productive: 'Carrying fatigue',
-      strained: 'Overreached',
+      veryFresh: ['Very fresh', 'Freshness is high', 'Rested — load is low'],
+      fresh: ['Fresh', 'Ready for intensity', 'Form positive'],
+      neutral: ['Neutral', 'In balance', 'Load and recovery even'],
+      productive: ['Carrying fatigue', 'Fatigue is building', 'In a loading phase'],
+      strained: ['Overreached', 'Fatigue is high', 'Load exceeds recovery'],
     },
     frame: {
-      veryFresh: 'Fitness is decaying. Add load if you want to hold it.',
-      fresh: 'Good window for intensity.',
-      neutral: 'Train as planned.',
-      productive: 'Normal for a build block. Protect the easy days.',
-      strained: 'Reduce load. Recovery, not intensity.',
+      veryFresh: ['Fitness is decaying. Add load if you want to hold it.', 'Form this high means load has dropped. Reintroduce it.'],
+      fresh: ['Good window for intensity.', 'Intensity will land well today. Schedule it.'],
+      neutral: ['Train as planned.', 'No adjustment needed.'],
+      productive: ['Normal for a build block. Protect the easy days.', 'Expected for the block. Keep recovery sessions genuinely easy.'],
+      strained: ['Reduce load. Recovery, not intensity.', 'Cut load until Form recovers. Intensity now is wasted.'],
     },
     hardOnTired: {
       strained: (t) => `${t} planned on strained legs. Move it or cut it — the quality won’t be there.`,
@@ -156,24 +156,24 @@ const STYLES = {
       high: (r) => `${r}. Recovery day — the markers matter more than the plan here.`,
       watch: (r, t) => `${r}. Reduce the intensity of ${t} or move it.`,
     },
-    restLine: 'No session planned.',
+    restLine: ['No session planned.', 'Rest day.', 'No load today.'],
   },
   direct: {
     label: 'Direct',
     greeting: () => 'Right.',
     headline: {
-      veryFresh: 'Too fresh',
-      fresh: 'Use it',
-      neutral: 'Get on with it',
-      productive: 'Hold the line',
-      strained: 'Stop',
+      veryFresh: ['Too fresh', 'Rested enough', 'Time to load'],
+      fresh: ['Use it', 'Go hard today', 'Spend the freshness'],
+      neutral: ['Get on with it', 'Do the session', 'Nothing to overthink'],
+      productive: ['Hold the line', 'Stay on it', 'Tired is the plan'],
+      strained: ['Stop', 'Back off. Now.', 'Rest, or pay for it'],
     },
     frame: {
-      veryFresh: 'You’ve rested enough. Put work back in.',
-      fresh: 'Fresh legs are for hard sessions, not easy ones. Use them.',
-      neutral: 'Nothing to decide. Do the session.',
-      productive: 'Tired is the point. Easy days easy, hard days hard, no blurring.',
-      strained: 'You’re digging. Take the day off or go genuinely easy — pick one.',
+      veryFresh: ['You’ve rested enough. Put work back in.', 'Rest is done. Load, or the fitness goes.'],
+      fresh: ['Fresh legs are for hard sessions, not easy ones. Use them.', 'Good legs. Don’t waste them on an easy spin.'],
+      neutral: ['Nothing to decide. Do the session.', 'Plan says train. Train.'],
+      productive: ['Tired is the point. Easy days easy, hard days hard, no blurring.', 'Fatigue is the price. Pay it, keep the easy days easy.'],
+      strained: ['You’re digging. Take the day off or go genuinely easy — pick one.', 'Take the day. Or go so easy it barely counts. No middle.'],
     },
     hardOnTired: {
       strained: (t) => `${t} is planned. Don’t do it today. Move it.`,
@@ -183,24 +183,24 @@ const STYLES = {
       high: (r) => `${r}. Not today. Rest.`,
       watch: (r, t) => `${r}. Keep ${t} easy, or don’t bother doing it at all.`,
     },
-    restLine: 'Nothing on. Rest, properly.',
+    restLine: ['Nothing on. Rest, properly.', 'No session. Rest means rest.', 'Day off. Take it, don’t half-take it.'],
   },
   dark: {
     label: 'Dark Night',
     greeting: () => 'Well.',
     headline: {
-      veryFresh: 'Rested. Now what?',
-      fresh: 'No excuses today',
-      neutral: 'Average is a choice',
-      productive: 'This is the part that counts',
-      strained: 'You went too far',
+      veryFresh: ['Rested. Now what?', 'Fresh, and unspent', 'Comfortable is a warning'],
+      fresh: ['No excuses today', 'The body is ready. Are you?', 'Nothing left to blame'],
+      neutral: ['Average is a choice', 'Nothing special, unless you make it', 'Middle of the road'],
+      productive: ['This is the part that counts', 'Everyone else quit here', 'Tired is where it’s decided'],
+      strained: ['You went too far', 'The bill has arrived', 'Ego wrote a cheque'],
     },
     frame: {
-      veryFresh: 'Freshness you don’t spend is just fitness you lost slowly.',
-      fresh: 'The legs are there. If today is easy, that was your decision, not your body’s.',
-      neutral: 'Nobody is coming to make this session more interesting. Do it anyway.',
-      productive: 'Everyone trains when it feels good. This is the week that separates you.',
-      strained: 'Pushing now is ego, not training. Back off before your body makes the choice for you.',
+      veryFresh: ['Freshness you don’t spend is just fitness you lost slowly.', 'Rest without work is just decay with a nicer name.'],
+      fresh: ['The legs are there. If today is easy, that was your decision, not your body’s.', 'Today the only limit is what you decide to do with it.'],
+      neutral: ['Nobody is coming to make this session more interesting. Do it anyway.', 'Nobody remembers the average days. Make this one count anyway.'],
+      productive: ['Everyone trains when it feels good. This is the week that separates you.', 'Feeling tired and doing it anyway is the whole sport.'],
+      strained: ['Pushing now is ego, not training. Back off before your body makes the choice for you.', 'Push through this and you’ll lose the week, not just the day.'],
     },
     hardOnTired: {
       strained: (t) => `${t} is on the plan and you’re in no state to do it justice. Doing it anyway is ego, not training.`,
@@ -210,24 +210,24 @@ const STYLES = {
       high: (r) => `${r}. Train through this and you’ll lose a week instead of a day.`,
       watch: (r, t) => `${r}. Force ${t} today and you’ll pay for it on Thursday.`,
     },
-    restLine: 'No session today. Rest is not a reward, it’s a requirement.',
+    restLine: ['No session today. Rest is not a reward, it’s a requirement.', 'Nothing today. Rest is a requirement, not a reward.', 'No session. If that bothers you, good — save it for tomorrow.'],
   },
   nerd: {
     label: 'Nerd',
     greeting: () => '',
     headline: {
-      veryFresh: 'TSB high',
-      fresh: 'TSB positive',
-      neutral: 'TSB neutral',
-      productive: 'TSB negative',
-      strained: 'TSB deep negative',
+      veryFresh: ['TSB high', 'TSB > +20', 'Freshness peak'],
+      fresh: ['TSB positive', 'TSB +5 to +20', 'ATL < CTL'],
+      neutral: ['TSB neutral', 'TSB −10 to +5', 'ATL ≈ CTL'],
+      productive: ['TSB negative', 'ATL > CTL', 'Loading phase'],
+      strained: ['TSB deep negative', 'ATL ≫ CTL', 'Overreach threshold crossed'],
     },
     frame: {
-      veryFresh: 'CTL decay exceeds ATL decay; net fitness declining.',
-      fresh: 'ATL below CTL. Intensity tolerance elevated.',
-      neutral: 'ATL ≈ CTL. No meaningful freshness signal either way.',
-      productive: 'ATL above CTL, CTL stable or rising. Expected during load accumulation.',
-      strained: 'ATL well above CTL. Marginal fitness return per additional TSS approaching zero.',
+      veryFresh: ['CTL decay exceeds ATL decay; net fitness declining.', 'Sustained positive TSB with falling CTL: detraining, not peaking.'],
+      fresh: ['ATL below CTL. Intensity tolerance elevated.', 'Supercompensation window. Expect above-baseline output at target intensity.'],
+      neutral: ['ATL ≈ CTL. No meaningful freshness signal either way.', 'Acute and chronic load in balance; no adjustment indicated.'],
+      productive: ['ATL above CTL, CTL stable or rising. Expected during load accumulation.', 'Overload phase. Monitor sleep and RHR; keep Z1/Z2 sessions in Z1/Z2.'],
+      strained: ['ATL well above CTL. Marginal fitness return per additional TSS approaching zero.', 'Functional overreaching range. Recovery days needed to restore TSB above −20.'],
     },
     hardOnTired: {
       strained: (t) => `${t} scheduled below the strained TSB threshold. Expect reduced output and elevated RPE at target intensity.`,
@@ -237,7 +237,7 @@ const STYLES = {
       high: (r) => `${r}. Autonomic markers and training load both negative — recovery indicated.`,
       watch: (r, t) => `${r}. Reduce prescribed intensity for ${t} until markers return to baseline.`,
     },
-    restLine: 'Planned TSS today: 0.',
+    restLine: ['Planned TSS today: 0.', 'Planned TSS today: 0. ATL will decay.', 'No load scheduled. TSB rises.'],
   },
 };
 
@@ -245,6 +245,27 @@ const DEFAULT_STYLE = 'supportive';
 
 function getStyle(id) {
   return STYLES[id] || STYLES[DEFAULT_STYLE];
+}
+
+/**
+ * A voice's lines for one day — mirrors voiceForDay()/voiceSeed() in
+ * client/src/constants/coachingStyles.js. Headlines, frames and the rest
+ * line come in two or three versions; the day and the athlete pick one, so
+ * the push and the card in the app say the same thing.
+ */
+function voiceForDay(style, seed = 0) {
+  const n = Math.abs(Math.floor(Number(seed) || 0));
+  const pick = (v) => (Array.isArray(v) ? v[n % v.length] : v);
+  const pickMap = (m) => Object.fromEntries(Object.entries(m || {}).map(([k, v]) => [k, pick(v)]));
+  return { ...style, headline: pickMap(style.headline), frame: pickMap(style.frame), restLine: pick(style.restLine) };
+}
+
+function voiceSeed(now = new Date(), userId = '') {
+  const start = new Date(now.getFullYear(), 0, 0);
+  const dayOfYear = Math.floor((now - start) / 86400000);
+  let h = 0;
+  for (const ch of String(userId || '')) h = (h * 31 + ch.charCodeAt(0)) % 997;
+  return dayOfYear + h;
 }
 
 // ── Lessons ────────────────────────────────────────────────────────
@@ -410,37 +431,46 @@ async function loadSessions(athleteId, start, end, profile) {
 
 /**
  * Recovery readiness from wearable rows — mirrors client/src/utils/recovery.js
- * assessReadiness(), including its thresholds (RHR +5%, HRV −10%, sleep < 6h).
- * Change one, change the other.
+ * assessReadiness(): two markers scored 0–2 against the athlete's own
+ * baseline (mild at RHR +7% / HRV −15%, strong at +12% / −30%, widened to
+ * one and two standard deviations when the athlete's own nights are noisier
+ * than that), sleep under six hours, and Form. Change one, change the other.
  */
+const READINESS_BASELINE_DAYS = 28;
+const MARKER_RULES = {
+  restingHeartRate: { direction: 'up',   mild: 0.07, strong: 0.12 },
+  hrvMs:            { direction: 'down', mild: 0.15, strong: 0.30 },
+};
+
+function baselineStats(days, key) {
+  const pool = days.map((d) => d[key]).filter((v) => v != null && v > 0).slice(0, -1);
+  if (!pool.length) return { mean: null, cv: 0, n: 0 };
+  const mean = pool.reduce((a, b) => a + b, 0) / pool.length;
+  if (pool.length < 5) return { mean, cv: 0, n: pool.length };
+  const sd = Math.sqrt(pool.reduce((a, b) => a + (b - mean) ** 2, 0) / pool.length);
+  return { mean, cv: mean > 0 ? sd / mean : 0, n: pool.length };
+}
+
+function markerScore(value, stats, rule) {
+  const v = Number(value);
+  if (!stats.mean || !(v > 0)) return { pct: null, score: 0 };
+  const delta = (v - stats.mean) / stats.mean;
+  const dev = rule.direction === 'up' ? delta : -delta;
+  const cv = Number(stats.cv) || 0;
+  const mildAt = Math.max(rule.mild, cv);
+  const strongAt = Math.max(rule.strong, 2 * cv);
+  return { pct: Math.round(delta * 100), score: dev >= strongAt ? 2 : dev >= mildAt ? 1 : 0 };
+}
+
 function assessReadiness(days, tsb) {
   const latest = days.length ? days[days.length - 1] : null;
   if (!latest && tsb == null) return null;
 
-  const mean = (key) => {
-    const vals = days.map((d) => d[key]).filter((v) => v != null && v > 0).slice(0, -1);
-    if (!vals.length) return null;
-    return vals.reduce((a, b) => a + b, 0) / vals.length;
-  };
-
-  const rhrBase = mean('restingHeartRate');
-  const hrvBase = mean('hrvMs');
+  const rhr = markerScore(latest && latest.restingHeartRate, baselineStats(days, 'restingHeartRate'), MARKER_RULES.restingHeartRate);
+  const hrv = markerScore(latest && latest.hrvMs, baselineStats(days, 'hrvMs'), MARKER_RULES.hrvMs);
   const reasons = [];
-  let rhrFlag = false;
-  let hrvFlag = false;
-  let rhrPct = null;
-  let hrvPct = null;
-
-  if (rhrBase && latest && latest.restingHeartRate > 0) {
-    const delta = (latest.restingHeartRate - rhrBase) / rhrBase;
-    rhrPct = Math.round(delta * 100);
-    if (delta > 0.05) { rhrFlag = true; reasons.push(`resting HR ${rhrPct}% above baseline`); }
-  }
-  if (hrvBase && latest && latest.hrvMs > 0) {
-    const delta = (latest.hrvMs - hrvBase) / hrvBase;
-    hrvPct = Math.round(delta * 100);
-    if (delta < -0.10) { hrvFlag = true; reasons.push(`HRV ${Math.abs(hrvPct)}% below baseline`); }
-  }
+  if (rhr.score > 0) reasons.push(`resting HR ${Math.abs(rhr.pct)}% above your usual`);
+  if (hrv.score > 0) reasons.push(`HRV ${Math.abs(hrv.pct)}% below your usual`);
 
   const sleepLow = latest && latest.sleepMinutes > 0 && latest.sleepMinutes < 360;
   if (sleepLow) reasons.push('short sleep');
@@ -450,10 +480,10 @@ function assessReadiness(days, tsb) {
   if (deepFatigue) reasons.push(`very negative Form (TSB ${Math.round(tsb)})`);
   else if (someFatigue) reasons.push(`negative Form (TSB ${Math.round(tsb)})`);
 
-  const recoveryFlag = rhrFlag || hrvFlag;
+  const markers = rhr.score + hrv.score;
   let level;
-  if ((rhrFlag && hrvFlag) || (recoveryFlag && deepFatigue)) level = 'high';
-  else if (recoveryFlag || sleepLow || deepFatigue) level = 'watch';
+  if (markers >= 3 || (markers >= 2 && deepFatigue)) level = 'high';
+  else if (markers >= 1 || sleepLow || deepFatigue) level = 'watch';
   else level = 'ok';
 
   const LABELS = { high: 'Overreaching', watch: 'Watch recovery', ok: 'Recovered' };
@@ -466,14 +496,14 @@ function assessReadiness(days, tsb) {
     reasons,
     sleepMinutes: latest ? latest.sleepMinutes : null,
     restingHeartRate: latest ? latest.restingHeartRate : null,
-    restingHeartRateDeltaPct: rhrPct,
+    restingHeartRateDeltaPct: rhr.pct,
     hrvMs: latest ? latest.hrvMs : null,
-    hrvDeltaPct: hrvPct,
+    hrvDeltaPct: hrv.pct,
   };
 }
 
 /** Apple Health and Garmin merged per day — Apple first, Garmin fills the gaps. */
-async function loadWellness(athleteId, days = 7) {
+async function loadWellness(athleteId, days = READINESS_BASELINE_DAYS) {
   const since = new Date();
   since.setDate(since.getDate() - days);
   const sinceKey = localDayKey(since);
@@ -550,7 +580,7 @@ function buildDirective({ state, todayPlanned, yesterday, style, load, recovery 
 async function buildDailyCardForUser(user, now = new Date()) {
   const athleteId = String(user._id);
   const notifs = user.notifications || {};
-  const style = getStyle(notifs.dailyCardStyle);
+  const style = voiceForDay(getStyle(notifs.dailyCardStyle), voiceSeed(now, athleteId));
   const profile = buildUserProfile(user);
 
   const today = dayBounds(now, 0);
@@ -571,7 +601,7 @@ async function buildDailyCardForUser(user, now = new Date()) {
     // makes every Sunday look like a big week and every Monday like a rest week.
     loadSessions(athleteId, weekAgo, today.end, profile),
     loadSessions(athleteId, twoWeeksAgo, weekAgo, profile),
-    loadWellness(athleteId, 7),
+    loadWellness(athleteId),
   ]);
 
   const fitness = Math.round(Number(metrics.fitness) || 0);
@@ -669,6 +699,9 @@ module.exports = {
   readinessStateFrom,
   formGaugePosition,
   lessonIndexFor,
+  assessReadiness,
+  voiceForDay,
+  voiceSeed,
   READINESS_META,
   STYLES,
 };

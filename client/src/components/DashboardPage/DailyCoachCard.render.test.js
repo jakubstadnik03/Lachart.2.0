@@ -27,6 +27,12 @@ jest.mock('../../services/api', () => ({
 import DailyCoachCard from './DailyCoachCard';
 // eslint-disable-next-line import/first
 import ComparisonVerdict from '../Training-log/ComparisonVerdict';
+// eslint-disable-next-line import/first
+import { COACHING_STYLES } from '../../constants/coachingStyles';
+
+// The day picks one of a voice's lines, so a test asks for any of them.
+const voice = (id) => COACHING_STYLES.find((v) => v.id === id);
+const containsOneOf = (html, variants) => variants.some((v) => html.includes(v.replace(/'/g, '&#x27;')) || html.includes(v));
 
 const NOW = new Date();
 const dayKey = (d) =>
@@ -68,18 +74,18 @@ describe('DailyCoachCard renders', () => {
 
   it('leads with the headline and two lines of the directive', () => {
     const html = renderCard();
-    expect(html).toContain('Deep in the work');
+    expect(containsOneOf(html, voice('supportive').headline.productive)).toBe(true);
     expect(html).toContain('line-clamp-2');
     // The rest of the detail belongs behind the tap, not in the banner.
     expect(html).not.toContain('How did it feel?');
   });
 
-  it('says how ready you are, in colour, with the numbers behind it', () => {
+  it('says how ready you are, in colour, on the first line — and nothing more', () => {
     const html = renderCard();
     expect(html).toContain('#B45309'); // productive fatigue
     expect(html).toContain('Productive fatigue');
-    expect(html).toContain('Form -16');
-    expect(html).toContain('Fitness 62');
+    expect(html).not.toContain('Fitness 62');
+    expect(html).not.toContain('Form -16');
   });
 
   it('marks the day’s hard session among the sport glyphs, and says Rest day when there is none', () => {
@@ -92,8 +98,9 @@ describe('DailyCoachCard renders', () => {
       date: dayKey(offset(i - 6)), restingHeartRate: i === 6 ? 58 : 50, hrvMs: i === 6 ? 40 : 60, sleepMinutes: 420,
     }));
     const html = renderCard({ wellnessDays: days, todayMetrics: { fitness: 62, fatigue: 50, form: 12 } });
-    expect(html).toContain('Fresh');
+    // The body's verdict is the chip, in place of the load model's.
     expect(html).toMatch(/Overreaching|Watch recovery/);
+    expect(html).not.toContain('>Fresh<');
   });
 
   it('shows a skeleton while loading rather than a banner of zeroes', () => {
@@ -111,7 +118,7 @@ describe('DailyCoachCard renders', () => {
 
   it('still speaks the chosen voice in the banner', () => {
     const html = renderCard({ user: { ...USER, notifications: { dailyCardStyle: 'dark' } } });
-    expect(html).toContain('This is the part that counts');
+    expect(containsOneOf(html, voice('dark').headline.productive)).toBe(true);
   });
 });
 
@@ -149,21 +156,44 @@ describe('DailyCoachCard opens what it names', () => {
   };
   const click = (el) => act(() => { el.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
   const buttonWithText = (text) => [...document.querySelectorAll('button')].find((b) => b.textContent.includes(text));
+  const openSheet = () => click(container.querySelector('button')); // the collapsed card
 
   it('a tap on today’s session hands the planned workout back and folds the sheet away', () => {
     const onOpenPlanned = jest.fn();
     mount({ onOpenPlanned });
-    click(buttonWithText('Deep in the work'));
+    openSheet();
     expect(document.body.textContent).toContain('HARD — threshold work or above');
     click(buttonWithText('4x8min VO2max'));
     expect(onOpenPlanned).toHaveBeenCalledWith(PLANNED[0]);
     expect(document.body.textContent).not.toContain('How did it feel?');
   });
 
+  it('a plan already ridden opens the ride, with the plan alongside', () => {
+    const onOpenPlanned = jest.fn();
+    const onOpenActivity = jest.fn();
+    const ride = { id: 'strava-9', date: NOW, sport: 'Ride', title: 'Morning Ride', totalTime: 5400, distance: 60000, tss: 90 };
+    mount({ onOpenPlanned, onOpenActivity, activities: [...ACTIVITIES, ride] });
+    openSheet();
+    expect(document.body.textContent).toContain('Done · 4x8min VO2max');
+    click(buttonWithText('4x8min VO2max'));
+    expect(onOpenActivity).toHaveBeenCalledWith(ride, PLANNED[0]);
+    expect(onOpenPlanned).not.toHaveBeenCalled();
+  });
+
+  it('a session nothing planned accounts for is listed as done, and opens', () => {
+    const onOpenActivity = jest.fn();
+    const swim = { id: 'strava-8', date: NOW, sport: 'Swim', title: 'Lunch Swim', totalTime: 2400, distance: 2000, tss: 40 };
+    mount({ onOpenActivity, activities: [...ACTIVITIES, swim] });
+    openSheet();
+    expect(document.body.textContent).toContain('Done · Lunch Swim');
+    click(buttonWithText('Lunch Swim'));
+    expect(onOpenActivity).toHaveBeenCalledWith(swim);
+  });
+
   it('yesterday opens the activity itself', () => {
     const onOpenActivity = jest.fn();
     mount({ onOpenActivity });
-    click(buttonWithText('Deep in the work'));
+    openSheet();
     click(buttonWithText('Yesterday, tomorrow & load'));
     click(buttonWithText('Easy run'));
     expect(onOpenActivity).toHaveBeenCalledWith(ACTIVITIES[0]);
@@ -171,7 +201,7 @@ describe('DailyCoachCard opens what it names', () => {
 
   it('without a handler the rows are plain text', () => {
     mount({});
-    click(buttonWithText('Deep in the work'));
+    openSheet();
     expect(buttonWithText('4x8min VO2max')).toBeUndefined();
   });
 });

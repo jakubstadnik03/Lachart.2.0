@@ -327,8 +327,9 @@ export default function SessionProgressChart({
   // Draw into a viewBox whose width equals the chart's real pixel width so the
   // bars / line fill the full width without horizontal stretch on iPad.
   const [wrapRef, measuredW] = useElementWidth(320);
-  // Wider left gutter so pace labels ("1:29/100m") and 3-digit power fit.
-  const H = 230, padLeft = 46, padRight = 14, padTop = 14, padBottom = 28;
+  // Left gutter sized to its labels: "1:29/100m" needs more than "329".
+  const H = 230, padRight = 14, padTop = 14, padBottom = 28;
+  const padLeft = sport === 'swim' ? 58 : 46;
   const padX = padLeft; // clusters/time still start at the left gutter
   const W = measuredW > 0 ? measuredW : 320;
   const sportIsPace = sport === 'run' || sport === 'swim';
@@ -418,12 +419,16 @@ export default function SessionProgressChart({
   const MAX_VISIBLE = 4;
   const slots = Math.min(MAX_VISIBLE, Math.max(data.length, sessions.length > 1 ? 2 : 1));
   const slotW = (innerW - (slots - 1) * sessionGap) / slots;
-  const sessionWs = data.map(() => slotW);
   const lapGap     = 0.8;
-  const scrollable = xMode === 'laps' && data.length > MAX_VISIBLE;
-  const chartW = scrollable
-    ? padLeft + data.length * slotW + (data.length - 1) * sessionGap + padRight
-    : W;
+  // A session with more laps than its slot has pixels for gets a wider slot:
+  // three pixels a bar, or a 25-lap swim spilled across its neighbours. It
+  // costs that session part of a screen, never its legibility.
+  const minBarW = 3;
+  const slotFor = (n) => Math.max(slotW, n * minBarW + Math.max(0, n - 1) * lapGap);
+  const sessionWs = data.map((s) => slotFor(s.laps.length));
+  const plotW = sessionWs.reduce((a, w) => a + w, 0) + (data.length - 1) * sessionGap;
+  const scrollable = xMode === 'laps' && plotW > innerW + 0.5;
+  const chartW = scrollable ? padLeft + plotW + padRight : W;
 
   const ticks = [yLo, yLo + (yHi - yLo) / 2, yHi];
   // Slots are wide enough to date every one of them.
@@ -446,7 +451,7 @@ export default function SessionProgressChart({
     <div style={{ position: 'relative', width: '100%' }}
       onClick={(e) => { if (e.target.tagName !== 'rect' && e.target.tagName !== 'circle') clearSelection(); }}
     >
-      <ScrollToHighlighted scrollRef={scrollRef} highlightId={highlightId} data={data} slotW={slotW} sessionGap={sessionGap} padLeft={padLeft} enabled={scrollable} />
+      <ScrollToHighlighted scrollRef={scrollRef} highlightId={highlightId} data={data} sessionWs={sessionWs} sessionGap={sessionGap} padLeft={padLeft} enabled={scrollable} />
       <SelectedLapInfo
         selected={selected}
         onOpen={() => { if (!selected) return; clearSelection(); onSessionTap && onSessionTap(selected.session); }}
@@ -596,13 +601,19 @@ export default function SessionProgressChart({
             const lapDurs  = s.laps.map(l => l.durationSec || 1);
             const lapTotal = lapDurs.reduce((a, b) => a + b, 0) || 1;
             const minLap   = 2;
-            let lapWs = lapDurs.map(d => ((sessionW - (s.laps.length - 1) * lapGap) * d) / lapTotal);
+            const availW   = sessionW - (s.laps.length - 1) * lapGap;
+            let lapWs = lapDurs.map(d => (availW * d) / lapTotal);
             const undersized = lapWs.filter(w => w < minLap).length;
             if (undersized > 0) {
               const deficit  = lapWs.reduce((acc, w) => acc + Math.max(0, minLap - w), 0);
               const sumLarge = lapWs.reduce((acc, w) => acc + (w >= minLap ? w : 0), 0) || 1;
               lapWs = lapWs.map(w => w < minLap ? minLap : Math.max(minLap, w - deficit * (w / sumLarge)));
             }
+            // Whatever the minimum widths added, the cluster ends where its
+            // slot ends. Clamping at the minimum used to let the sum grow past
+            // the slot, and the last bars ran under the next session.
+            const lapSum = lapWs.reduce((a, b) => a + b, 0);
+            if (lapSum > availW && lapSum > 0) lapWs = lapWs.map(w => (w * availW) / lapSum);
             const isHighlight = highlightId && s.id === highlightId;
             const dimmed      = highlightId && !isHighlight;
             // Pre-compute per-lap geometry (used by both bars and line modes).
@@ -728,15 +739,19 @@ export default function SessionProgressChart({
  * session that may sit off to the right of a scrolling chart; without this
  * the highlight happened where the athlete could not see it.
  */
-function ScrollToHighlighted({ scrollRef, highlightId, data, slotW, sessionGap, padLeft, enabled }) {
+function ScrollToHighlighted({ scrollRef, highlightId, data, sessionWs, sessionGap, padLeft, enabled }) {
+  // The widths arrive as a fresh array every render; only their values matter.
+  const layoutKey = sessionWs.join('|');
   useEffect(() => {
     if (!enabled || !highlightId || !scrollRef.current) return;
     const idx = data.findIndex((s) => s.id === highlightId);
     if (idx < 0) return;
-    const x = padLeft + idx * (slotW + sessionGap);
+    const before = sessionWs.slice(0, idx).reduce((a, w) => a + w + sessionGap, 0);
+    const x = padLeft + before;
     const el = scrollRef.current;
-    const left = Math.max(0, x - padLeft - (el.clientWidth - padLeft - slotW) / 2);
+    const left = Math.max(0, x - padLeft - (el.clientWidth - padLeft - sessionWs[idx]) / 2);
     try { el.scrollTo({ left, behavior: 'smooth' }); } catch { el.scrollLeft = left; }
-  }, [enabled, highlightId, data, slotW, sessionGap, padLeft, scrollRef]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enabled, highlightId, data, layoutKey, sessionGap, padLeft, scrollRef]);
   return null;
 }

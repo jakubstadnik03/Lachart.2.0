@@ -4,7 +4,7 @@ import { HeartIcon, MoonIcon, BoltIcon, ChevronLeftIcon, ChevronRightIcon } from
 import { useAuth } from '../../context/AuthProvider';
 import { getTodayMetrics } from '../../services/api';
 import { fetchWellness } from '../../services/wellnessData';
-import { assessReadiness, baseline, metricDayStatus, READINESS_COLORS } from '../../utils/recovery';
+import { assessReadiness, baseline, metricDayStatus, READINESS_COLORS, READINESS_BASELINE_DAYS } from '../../utils/recovery';
 import { TSS_DISPLAY_MODE_EVENT } from '../../utils/uiPrefs';
 import WellnessDetailSheet from '../shared/WellnessDetailSheet';
 
@@ -123,7 +123,9 @@ export default function WellnessCard({ athleteId = null }) {
   // Readiness & trends always reflect the recent week, not the browsed day.
   const recentDays = useMemo(() => days.slice(-7), [days]);
   const sparkDays = useMemo(() => days.slice(-14), [days]);
-  const readiness = useMemo(() => assessReadiness(recentDays, { tsb }), [recentDays, tsb]);
+  // The verdict reads against four weeks, like the daily card — one answer.
+  const baselineDays = useMemo(() => days.slice(-READINESS_BASELINE_DAYS), [days]);
+  const readiness = useMemo(() => assessReadiness(baselineDays, { tsb }), [baselineDays, tsb]);
 
   const trend = useCallback((key, lowerIsBetter) => {
     if (!viewingLatest) return null;

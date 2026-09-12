@@ -19,6 +19,8 @@ import {
   getCoachingStyle,
   readinessStateFrom,
   formGaugePosition,
+  voiceForDay,
+  voiceSeed,
 } from '../constants/coachingStyles';
 
 const SPORT_LABEL = {
@@ -53,6 +55,31 @@ function planDateKey(pw) {
 
 function sportLabel(sport) {
   return SPORT_LABEL[String(sport || '').toLowerCase()] || 'Session';
+}
+
+/**
+ * The calendar's plan ↔ session pairing, reduced to what this file needs.
+ * calendarDayOrdering has the full version, but it reaches the icon set
+ * and this module must stay free of React and the DOM.
+ */
+function sportBucket(sport) {
+  const s = String(sport || '').toLowerCase();
+  if (/bike|ride|cycl|virtual/.test(s)) return 'bike';
+  if (s.includes('swim')) return 'swim';
+  if (/hike|walk/.test(s)) return 'walk';
+  if (/run|trail/.test(s)) return 'run';
+  if (/gym|weight|strength|workout|crossfit|yoga|fitness/.test(s)) return 'gym';
+  return 'other';
+}
+
+function planMatchesSession(pwSport, actSport) {
+  const p = String(pwSport || '').toLowerCase();
+  const a = sportBucket(actSport);
+  if (p === 'brick') return a === 'bike' || a === 'run';
+  if (p === 'mtbike' || p === 'mtb') return a === 'bike';
+  if (p === 'strength' || p === 'crosstrain') return a === 'gym';
+  const pb = sportBucket(p);
+  return pb !== 'other' && pb === a;
 }
 
 function formatDuration(seconds) {
@@ -291,7 +318,7 @@ export function buildDailyCard({
   wellness = [],
   now = new Date(),
 } = {}) {
-  const style = getCoachingStyle(styleId);
+  const style = voiceForDay(getCoachingStyle(styleId), voiceSeed(now, user?._id || userProfile?._id || ''));
   const acts = Array.isArray(activities) ? activities : [];
   const plans = Array.isArray(plannedWorkouts) ? plannedWorkouts : [];
 
@@ -332,9 +359,22 @@ export function buildDailyCard({
   // Biggest session of the day is the one worth reporting back.
   const yesterday = yesterdayRaw ? describeActivity(yesterdayRaw, tssCtx, useMiles) : null;
 
-  const todayCompleted = acts
-    .filter((a) => activityCalendarDateKey(a) === todayKey)
-    .map((a) => describeActivity(a, tssCtx, useMiles));
+  const todayActs = acts.filter((a) => activityCalendarDateKey(a) === todayKey);
+  const todayCompleted = todayActs.map((a) => describeActivity(a, tssCtx, useMiles));
+
+  // A plan whose sport already has a session logged today is done, whatever
+  // its status says — the calendar pairs the same way. The row then opens
+  // the session, and the "already logged" list only carries what nothing
+  // planned accounts for.
+  const claimed = new Set();
+  todayPlanned.forEach((p) => {
+    const match = todayActs.find((a) => !claimed.has(a) && planMatchesSession(p.sport, a.sport || a.type || ''));
+    if (match) {
+      claimed.add(match);
+      p.doneId = String(match.id || match._id || '');
+    }
+  });
+  const todayUnplanned = todayCompleted.filter((c) => !todayActs.some((a) => claimed.has(a) && String(a.id || a._id || '') === String(c.id)));
 
   const load = rollingLoad(acts, tssCtx, now);
 
@@ -410,6 +450,8 @@ export function buildDailyCard({
     load,
     todayPlanned,
     todayCompleted,
+    /** Today's sessions that no plan accounts for. */
+    todayUnplanned,
     tomorrowPlanned,
     yesterday,
     /** Raw activity behind `yesterday`, so the card can offer to rate it. */

@@ -9,9 +9,9 @@
  * the same card model drives the native shell, the Expo app and the morning
  * push, and none of them can drift from each other.
  */
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ReactDOM from 'react-dom';
-import { AnimatePresence, motion, useDragControls } from 'framer-motion';
+import { AnimatePresence, animate, motion, useDragControls, useMotionValue } from 'framer-motion';
 import {
   AdjustmentsHorizontalIcon,
   Battery0Icon,
@@ -28,6 +28,7 @@ import {
 } from '@heroicons/react/24/outline';
 import { buildDailyCard, HARD_TSS_PER_HOUR } from '../../utils/dailyCoachCard';
 import { fetchWellness } from '../../services/wellnessData';
+import { READINESS_BASELINE_DAYS } from '../../utils/recovery';
 import { SportGlyph } from '../shared/SportIcon';
 import RpeCapture from '../training/RpeCapture';
 import { assessFeltVsData } from '../../utils/feltVsData';
@@ -54,36 +55,33 @@ const READINESS_ICON = {
 };
 
 /**
- * The state, in colour, with the numbers behind it — what the collapsed card
- * shows so "how ready am I" is answered without opening it. The body's
- * verdict joins it when a wearable disagrees with the load model.
+ * The state, in colour, on the collapsed card — one chip, so "how ready am
+ * I" is answered without opening it. When a wearable disagrees with the
+ * load model the body's verdict is the chip, because that is what decided
+ * the headline.
  */
-function ReadinessChips({ readiness, recovery }) {
-  const Icon = READINESS_ICON[readiness.state] || Battery50Icon;
+function ReadinessChip({ readiness, recovery }) {
   const bodyWorried = recovery && recovery.level !== 'ok';
-  return (
-    <div className="flex items-center gap-1.5 flex-wrap">
+  if (bodyWorried) {
+    return (
       <span
-        className="inline-flex items-center gap-1 pl-1.5 pr-2 py-0.5 rounded-full text-[10px] font-bold"
-        style={{ background: readiness.bg, color: readiness.color, border: `1px solid ${readiness.border}` }}
+        className="inline-flex items-center gap-1 pl-1.5 pr-2 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap"
+        style={{ background: `${recovery.hex}14`, color: recovery.hex, border: `1px solid ${recovery.hex}55` }}
       >
-        <Icon className="w-3.5 h-3.5" aria-hidden="true" />
-        {readiness.label}
+        <ExclamationTriangleIcon className="w-3.5 h-3.5" aria-hidden="true" />
+        {recovery.label}
       </span>
-      <span className="text-[10px] font-semibold text-gray-500 tabular-nums">
-        Form {readiness.form > 0 ? '+' : ''}{readiness.form}
-        <span className="text-gray-400 font-medium"> · Fitness {readiness.fitness}</span>
-      </span>
-      {bodyWorried ? (
-        <span
-          className="inline-flex items-center gap-1 pl-1.5 pr-2 py-0.5 rounded-full text-[10px] font-bold"
-          style={{ background: `${recovery.hex}14`, color: recovery.hex, border: `1px solid ${recovery.hex}55` }}
-        >
-          <ExclamationTriangleIcon className="w-3.5 h-3.5" aria-hidden="true" />
-          {recovery.label}
-        </span>
-      ) : null}
-    </div>
+    );
+  }
+  const Icon = READINESS_ICON[readiness.state] || Battery50Icon;
+  return (
+    <span
+      className="inline-flex items-center gap-1 pl-1.5 pr-2 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap"
+      style={{ background: readiness.bg, color: readiness.color, border: `1px solid ${readiness.border}` }}
+    >
+      <Icon className="w-3.5 h-3.5" aria-hidden="true" />
+      {readiness.label}
+    </span>
   );
 }
 
@@ -261,15 +259,17 @@ function FeltVsDataLine({ activity, userProfile }) {
 
 const isNerdStyle = (id) => id === 'nerd';
 
-function SessionRow({ item, muted = false, prefix = null, onOpen = null }) {
+function SessionRow({ item, muted = false, prefix = null, done = false, onOpen = null }) {
   const body = (
     <>
-      <span className="shrink-0 mt-0.5" aria-hidden="true">
+      <span className="shrink-0 mt-0.5 relative" aria-hidden="true">
         <SportGlyph sport={item.sport} size={16} />
+        {done ? <span className="absolute -right-1 -bottom-0.5 w-2 h-2 rounded-full bg-green-500 ring-2 ring-white" /> : null}
       </span>
       <div className="min-w-0 flex-1">
         <div className={`text-sm font-semibold truncate ${muted ? 'text-gray-600' : 'text-gray-900'}`}>
           {prefix ? <span className="text-gray-400 font-medium">{prefix} </span> : null}
+          {done ? <span className="text-green-700 font-medium">Done · </span> : null}
           {item.title}
           {item.hard ? (
             <span className="ml-1.5 align-middle inline-block px-1.5 py-0.5 rounded text-[9px] font-bold bg-orange-100 text-orange-700">
@@ -366,6 +366,9 @@ export default function DailyCoachCard({
   const [showMore, setShowMore] = useState(false);
   // Drag is started by the grab handle alone — see the sheet below for why.
   const dragControls = useDragControls();
+  // The sheet's own offset, so a pull on the content can move it too.
+  const sheetY = useMotionValue(0);
+  const scrollRef = useRef(null);
   // Starts collapsed, before the stored state is read — otherwise the sheet
   // flashes open on every mount and closes itself a frame later.
   const [minimised, setMinimised] = useState(true);
@@ -381,7 +384,7 @@ export default function DailyCoachCard({
     if (wellnessDays !== undefined) { setWellness(wellnessDays); return undefined; }
     if (!athleteId) return undefined;
     let cancelled = false;
-    fetchWellness(7, athleteId)
+    fetchWellness(READINESS_BASELINE_DAYS, athleteId)
       .then((data) => { if (!cancelled) setWellness(data.days || []); })
       .catch(() => { if (!cancelled) setWellness([]); });
     return () => { cancelled = true; };
@@ -436,12 +439,57 @@ export default function DailyCoachCard({
     setCardExpanded(athleteId, card.dateKey, true);
   }, [athleteId, card.dateKey]);
 
+  // Pull the content down from its top and the sheet follows; let go past
+  // ninety pixels and it closes. The grab handle alone was too small a
+  // target, and a swipe down on the list — the gesture every sheet on the
+  // phone answers to — did nothing here, or fought the scroll.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (minimised || !el) return undefined;
+    const pull = { startY: 0, active: false, dy: 0 };
+    const onStart = (e) => {
+      const t = e.touches && e.touches[0];
+      if (!t) return;
+      pull.startY = t.clientY;
+      pull.dy = 0;
+      pull.active = el.scrollTop <= 0;
+    };
+    const onMove = (e) => {
+      if (!pull.active) return;
+      const t = e.touches && e.touches[0];
+      if (!t) return;
+      const dy = t.clientY - pull.startY;
+      if (dy <= 0 || el.scrollTop > 0) { pull.dy = 0; sheetY.set(0); if (dy < 0) pull.active = false; return; }
+      pull.dy = dy;
+      sheetY.set(dy * 0.6);
+      if (e.cancelable) e.preventDefault();
+    };
+    const onEnd = () => {
+      if (pull.active && pull.dy > 90) { pull.active = false; minimise(); return; }
+      pull.active = false;
+      animate(sheetY, 0, { type: 'spring', stiffness: 320, damping: 32 });
+    };
+    el.addEventListener('touchstart', onStart, { passive: true });
+    el.addEventListener('touchmove', onMove, { passive: false });
+    el.addEventListener('touchend', onEnd);
+    el.addEventListener('touchcancel', onEnd);
+    return () => {
+      el.removeEventListener('touchstart', onStart);
+      el.removeEventListener('touchmove', onMove);
+      el.removeEventListener('touchend', onEnd);
+      el.removeEventListener('touchcancel', onEnd);
+    };
+  }, [minimised, minimise, sheetY]);
+
   // The sheet sits above everything; whatever it opens must not land
   // underneath it, so it folds away first.
-  const openPlannedItem = onOpenPlanned
+  const openPlannedItem = onOpenPlanned || onOpenActivity
     ? (item) => {
         const pw = (plannedWorkouts || []).find((p) => String(p?._id || p?.id) === String(item.id));
-        if (!pw) return;
+        // Done already: the session is the more useful thing to open.
+        const done = item.doneId ? (activities || []).find((a) => String(a?.id || a?._id) === String(item.doneId)) : null;
+        if (done && onOpenActivity) { minimise(); onOpenActivity(done, pw || null); return; }
+        if (!pw || !onOpenPlanned) return;
         minimise();
         onOpenPlanned(pw);
       }
@@ -483,19 +531,19 @@ export default function DailyCoachCard({
       >
         <div className="min-w-0 flex-1">
           <div className="flex items-center justify-between gap-2">
-            <div className="text-[10px] font-bold uppercase tracking-wider" style={{ color: card.readiness.color }}>
-              Today
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="text-[10px] font-bold uppercase tracking-wider" style={{ color: card.readiness.color }}>
+                Today
+              </div>
+              <ReadinessChip readiness={card.readiness} recovery={card.recovery} />
             </div>
             <PlannedGlyphs items={card.todayPlanned} />
           </div>
-          <div className="text-sm font-bold text-gray-900 truncate">{card.headline}</div>
+          <div className="text-sm font-bold text-gray-900 truncate mt-1">{card.headline}</div>
           {/* Two lines, then it stops — the rest is behind the tap. */}
           <p className="text-xs text-gray-600 leading-snug line-clamp-2 mt-0.5">
             {isNerdStyle(prefs.style) ? card.readiness.readout : card.directive}
           </p>
-          <div className="mt-2">
-            <ReadinessChips readiness={card.readiness} recovery={card.recovery} />
-          </div>
         </div>
         <ChevronDownIcon className="w-4 h-4 text-gray-300 shrink-0 mt-1" />
       </motion.button>
@@ -532,7 +580,7 @@ export default function DailyCoachCard({
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         className="bg-white rounded-t-2xl shadow-2xl max-h-[88vh] flex flex-col"
-        style={{ borderTop: `3px solid ${card.readiness.color}` }}
+        style={{ borderTop: `3px solid ${card.readiness.color}`, y: sheetY }}
     >
       {/* Grab handle — the affordance that says this drags away, and now the
           only thing that does. touch-action: none keeps iOS from treating the
@@ -545,6 +593,7 @@ export default function DailyCoachCard({
         <div className="w-9 h-1 rounded-full bg-gray-300" />
       </div>
       <div
+        ref={scrollRef}
         className="overflow-y-auto overscroll-contain flex-1 min-h-0"
         style={{
           WebkitOverflowScrolling: 'touch',
@@ -651,21 +700,14 @@ export default function DailyCoachCard({
         {/* Today / yesterday / weather */}
         <div className="mt-4 pt-3.5 border-t border-gray-100 space-y-3">
           <Section title="Today">
-            {card.todayPlanned.length ? (
-              card.todayPlanned.map((p) => (
-                <SessionRow key={p.id} item={p} onOpen={openPlannedItem ? () => openPlannedItem(p) : null} />
-              ))
-            ) : card.todayCompleted.length ? (
-              card.todayCompleted.map((a) => (
-                <SessionRow key={a.id} item={a} prefix="Done —" onOpen={openActivityItem ? () => openActivityItem(a) : null} />
-              ))
-            ) : (
+            {card.todayPlanned.map((p) => (
+              <SessionRow key={p.id} item={p} done={!!p.doneId} onOpen={openPlannedItem ? () => openPlannedItem(p) : null} />
+            ))}
+            {(card.todayPlanned.length ? card.todayUnplanned : card.todayCompleted).map((a) => (
+              <SessionRow key={a.id} item={a} done onOpen={openActivityItem ? () => openActivityItem(a) : null} />
+            ))}
+            {!card.todayPlanned.length && !card.todayCompleted.length ? (
               <div className="text-sm text-gray-500 py-1.5">Nothing planned</div>
-            )}
-            {card.todayPlanned.length && card.todayCompleted.length ? (
-              <div className="text-[11px] text-green-700 font-medium">
-                {card.todayCompleted.length} already logged today
-              </div>
             ) : null}
             <HardLegend items={[...card.todayPlanned, ...card.tomorrowPlanned]} />
           </Section>

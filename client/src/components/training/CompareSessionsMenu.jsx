@@ -147,8 +147,12 @@ export default function CompareSessionsMenu({
     </div>
   );
 
+  // The activity modal on the phone lives in #app-modal-root (z 99999), so
+  // a sheet sent to document.body opened underneath it — the button looked
+  // dead. Same root, later sibling: it stacks on top.
+  const portalRoot = (typeof document !== 'undefined' && document.getElementById('app-modal-root')) || document.body;
   const portal = !open ? null : isPhone ? ReactDOM.createPortal(
-    <div className="fixed inset-0 z-[10000] flex flex-col justify-end">
+    <div className="fixed inset-0 z-[10000] flex flex-col justify-end" style={{ pointerEvents: 'auto' }}>
       <div className="absolute inset-0 bg-black/40" onClick={() => setOpen(false)} />
       <div ref={panelRef} className="relative bg-white rounded-t-2xl shadow-2xl flex flex-col min-h-0" style={{ maxHeight: '80vh' }}>
         <div className="flex justify-center pt-2.5 pb-0.5"><div className="w-10 h-1 rounded-full bg-gray-300" /></div>
@@ -156,14 +160,14 @@ export default function CompareSessionsMenu({
         <div style={{ paddingBottom: 'env(safe-area-inset-bottom)' }} />
       </div>
     </div>,
-    document.body,
+    portalRoot,
   ) : ReactDOM.createPortal(
     <div ref={panelRef}
       className="fixed z-[10000] bg-white rounded-2xl shadow-2xl border border-gray-100 flex flex-col min-h-0"
-      style={{ left: anchor?.left ?? 16, top: anchor?.top ?? 80, width: anchor?.width ?? 340, maxHeight: anchor?.maxHeight ?? 420 }}>
+      style={{ left: anchor?.left ?? 16, top: anchor?.top ?? 80, width: anchor?.width ?? 340, maxHeight: anchor?.maxHeight ?? 420, pointerEvents: 'auto' }}>
       {list}
     </div>,
-    document.body,
+    portalRoot,
   );
 
   return (

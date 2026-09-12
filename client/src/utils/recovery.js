@@ -23,41 +23,99 @@ export const READINESS_COLORS = {
 };
 
 /**
+ * How many days of wearable rows the readiness call wants. The baseline is
+ * the mean of the days before the latest one, and a six-day mean of HRV is
+ * mostly noise: one good night moves it by a fifth. Four weeks settles it.
+ */
+export const READINESS_BASELINE_DAYS = 28;
+
+/**
+ * Where a marker has to sit, relative to the athlete's own usual, before it
+ * says anything. Fractions of the baseline. `mild` earns a mention, `strong`
+ * earns the day.
+ *
+ * These are deliberately wide. Resting HR moves 2–3 bpm night to night and
+ * HRV moves by ten to twenty percent for no reason at all, so the earlier
+ * +5% / −10% lines fired on ordinary mornings — an athlete at +6% and −20%
+ * was told to back off when nothing was wrong. When the athlete's own history
+ * is noisier than these numbers, the lines widen to one and two standard
+ * deviations of it.
+ */
+export const MARKER_RULES = {
+  restingHeartRate: { direction: 'up',   mild: 0.07, strong: 0.12 },
+  hrvMs:            { direction: 'down', mild: 0.15, strong: 0.30 },
+};
+
+/** Mean and spread of the days before the latest one. */
+export function baselineStats(days, key, excludeLast = true) {
+  const vals = (days || []).map((d) => d?.[key]).filter((v) => v != null && v > 0);
+  const pool = excludeLast ? vals.slice(0, -1) : vals;
+  if (pool.length === 0) return { mean: null, cv: 0, n: 0 };
+  const mean = pool.reduce((a, b) => a + b, 0) / pool.length;
+  // Fewer than five nights say nothing reliable about spread.
+  if (pool.length < 5) return { mean, cv: 0, n: pool.length };
+  const sd = Math.sqrt(pool.reduce((a, b) => a + (b - mean) ** 2, 0) / pool.length);
+  return { mean, cv: mean > 0 ? sd / mean : 0, n: pool.length };
+}
+
+/**
+ * One marker against its baseline: the signed percentage the reader sees,
+ * and a score — 0 within normal, 1 past the mild line, 2 past the strong one.
+ */
+export function markerScore(value, stats, rule) {
+  const v = Number(value);
+  if (!stats?.mean || !(v > 0)) return { pct: null, score: 0 };
+  const delta = (v - stats.mean) / stats.mean;
+  const dev = rule.direction === 'up' ? delta : -delta;
+  const cv = Number(stats.cv) || 0;
+  const mildAt = Math.max(rule.mild, cv);
+  const strongAt = Math.max(rule.strong, 2 * cv);
+  return {
+    pct: Math.round(delta * 100),
+    score: dev >= strongAt ? 2 : dev >= mildAt ? 1 : 0,
+  };
+}
+
+/** The wording of a flagged marker — the same in every place it is shown. */
+function markerReason(key, pct) {
+  if (key === 'restingHeartRate') return `resting HR ${Math.abs(pct)}% above your usual`;
+  return `HRV ${Math.abs(pct)}% below your usual`;
+}
+
+/**
  * Assess overall readiness from the recovery trend + (optional) current TSB.
- * @param {Array} days wellness rows (chronological)
+ *
+ * Two markers, each scored 0–2 against the athlete's own baseline. One
+ * marker past its mild line is worth watching; the day is only called
+ * overreaching when the two together reach three — one clearly out and the
+ * other leaning the same way — or when two mild flags land on deep fatigue.
+ *
+ * @param {Array} days wellness rows (chronological), ideally READINESS_BASELINE_DAYS of them
  * @param {{ tsb?: number|null }} [opts]
- * @returns {{ level:'high'|'watch'|'ok', label:string, color:string, hex:string, reasons:string[] } | null}
+ * @returns {{ level:'high'|'watch'|'ok', label:string, color:string, hex:string, reasons:string[], metrics:object } | null}
  */
 export function assessReadiness(days, { tsb = null } = {}) {
   const latest = days?.length ? days[days.length - 1] : null;
   if (!latest && tsb == null) return null;
 
-  const rhrBase = baseline(days, 'restingHeartRate');
-  const hrvBase = baseline(days, 'hrvMs');
+  const rhrStats = baselineStats(days, 'restingHeartRate');
+  const hrvStats = baselineStats(days, 'hrvMs');
+  const rhr = markerScore(latest?.restingHeartRate, rhrStats, MARKER_RULES.restingHeartRate);
+  const hrv = markerScore(latest?.hrvMs, hrvStats, MARKER_RULES.hrvMs);
 
-  let rhrFlag = false;
-  let hrvFlag = false;
   const reasons = [];
+  if (rhr.score > 0) reasons.push(markerReason('restingHeartRate', rhr.pct));
+  if (hrv.score > 0) reasons.push(markerReason('hrvMs', hrv.pct));
+
   // Numbers, not just sentences: the UI draws meters from these, and a
   // percentage the reader can see is far easier to act on than a label.
   const metrics = {
-    rhrPct: null, hrvPct: null,
-    rhrNow: latest?.restingHeartRate ?? null, rhrBase: rhrBase ?? null,
-    hrvNow: latest?.hrvMs ?? null, hrvBase: hrvBase ?? null,
+    rhrPct: rhr.pct, hrvPct: hrv.pct,
+    rhrNow: latest?.restingHeartRate ?? null, rhrBase: rhrStats.mean ?? null,
+    hrvNow: latest?.hrvMs ?? null, hrvBase: hrvStats.mean ?? null,
     sleepMinutes: latest?.sleepMinutes ?? null,
     tsb: tsb ?? null,
   };
-
-  if (rhrBase && latest?.restingHeartRate > 0) {
-    const delta = (latest.restingHeartRate - rhrBase) / rhrBase;
-    metrics.rhrPct = Math.round(delta * 100);
-    if (delta > 0.05) { rhrFlag = true; reasons.push(`resting HR ${Math.round(delta * 100)}% above baseline`); }
-  }
-  if (hrvBase && latest?.hrvMs > 0) {
-    const delta = (latest.hrvMs - hrvBase) / hrvBase;
-    metrics.hrvPct = Math.round(delta * 100);
-    if (delta < -0.10) { hrvFlag = true; reasons.push(`HRV ${Math.round(Math.abs(delta) * 100)}% below baseline`); }
-  }
 
   const sleepLow = latest?.sleepMinutes > 0 && latest.sleepMinutes < 360; // < 6h
   if (sleepLow) reasons.push('short sleep');
@@ -68,18 +126,11 @@ export function assessReadiness(days, { tsb = null } = {}) {
   if (deepFatigue) reasons.push(`very negative Form (TSB ${Math.round(tsb)})`);
   else if (someFatigue) reasons.push(`negative Form (TSB ${Math.round(tsb)})`);
 
-  const recoveryFlag = rhrFlag || hrvFlag;
-
+  const markers = rhr.score + hrv.score;
   let level;
-  if ((rhrFlag && hrvFlag) || (recoveryFlag && deepFatigue)) {
-    level = 'high';
-  } else if (recoveryFlag || sleepLow || deepFatigue) {
-    level = 'watch';
-  } else if (someFatigue && (sleepLow || recoveryFlag)) {
-    level = 'watch';
-  } else {
-    level = 'ok';
-  }
+  if (markers >= 3 || (markers >= 2 && deepFatigue)) level = 'high';
+  else if (markers >= 1 || sleepLow || deepFatigue) level = 'watch';
+  else level = 'ok';
 
   const c = READINESS_COLORS[level];
   return { level, label: c.label, color: c.key, hex: c.hex, reasons, metrics };
@@ -118,15 +169,15 @@ export function dayRecoveryStatus(day, rhrBase, hrvBase) {
   const hasData = day.restingHeartRate > 0 || day.hrvMs > 0 || day.sleepMinutes > 0;
   if (!hasData) return null;
 
-  let rhrFlag = false;
-  let hrvFlag = false;
-  if (rhrBase && day.restingHeartRate > 0 && (day.restingHeartRate - rhrBase) / rhrBase > 0.05) rhrFlag = true;
-  if (hrvBase && day.hrvMs > 0 && (day.hrvMs - hrvBase) / hrvBase < -0.10) hrvFlag = true;
+  // Same lines as assessReadiness, without the spread — a badge has no room
+  // to be subtler than that.
+  const rhr = markerScore(day.restingHeartRate, { mean: rhrBase, cv: 0 }, MARKER_RULES.restingHeartRate);
+  const hrv = markerScore(day.hrvMs, { mean: hrvBase, cv: 0 }, MARKER_RULES.hrvMs);
   const sleepLow = day.sleepMinutes > 0 && day.sleepMinutes < 360;
 
   let level = 'ok';
-  if (rhrFlag && hrvFlag) level = 'high';
-  else if (rhrFlag || hrvFlag || sleepLow) level = 'watch';
+  if (rhr.score + hrv.score >= 3) level = 'high';
+  else if (rhr.score + hrv.score >= 1 || sleepLow) level = 'watch';
 
   return { level, hex: READINESS_COLORS[level].hex };
 }
