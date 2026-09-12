@@ -2474,13 +2474,6 @@ function CompareContent({ merged, athleteId, onOpen }) {
             Similar lactate
           </button>
         )}
-        {(currentLaps.length > 0 || results.some(r => r.laps?.length)) && (
-          <button onClick={() => setWorkOnly(w => !w)}
-            className={`ml-auto px-3 py-1.5 rounded-full text-xs font-bold border transition-colors flex items-center gap-1 ${workOnly ? 'bg-[#767EB5] text-white border-[#767EB5]' : 'bg-white text-gray-500 border-gray-200'}`}>
-            <BoltIcon className="w-3 h-3" />
-            Work only
-          </button>
-        )}
       </div>
 
       {/* ── SessionProgressChart — all sessions overlaid ── */}
@@ -2495,13 +2488,21 @@ function CompareContent({ merged, athleteId, onOpen }) {
               { id: 'RPE',       label: 'RPE' },
             ].map(m => (
               <button key={m.id} onClick={() => setMetric(m.id)}
-                className={`px-3 py-1.5 text-[11px] font-bold border-b-2 transition-colors -mb-px ${metric === m.id ? 'border-[#767EB5] text-[#767EB5]' : 'border-transparent text-gray-400 hover:text-gray-600'}`}>
+                className={`px-2.5 py-1.5 text-[11px] font-bold border-b-2 transition-colors -mb-px shrink-0 ${metric === m.id ? 'border-[#767EB5] text-[#767EB5]' : 'border-transparent text-gray-400 hover:text-gray-600'}`}>
                 {m.label}
               </button>
             ))}
-            <div className="ml-auto flex items-center gap-1 pr-1">
+            <div className="ml-auto flex items-center gap-1 pr-1 shrink-0">
+              {/* Both lap filters sit together: they decide what the chart and the tables show. */}
+              {(currentLaps.length > 0 || results.some(r => r.laps?.length)) && (
+                <button onClick={() => setWorkOnly(w => !w)}
+                  className={`flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold border transition-colors whitespace-nowrap ${workOnly ? 'bg-[#767EB5] text-white border-[#767EB5]' : 'bg-white text-gray-400 border-gray-200'}`}>
+                  <BoltIcon className="w-3 h-3" />
+                  Work only
+                </button>
+              )}
               <button onClick={() => setHideWarmCool(h => !h)}
-                className={`flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold border transition-colors ${hideWarmCool ? 'bg-gray-700 text-white border-gray-700' : 'bg-white text-gray-400 border-gray-200'}`}>
+                className={`flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold border transition-colors whitespace-nowrap ${hideWarmCool ? 'bg-gray-700 text-white border-gray-700' : 'bg-white text-gray-400 border-gray-200'}`}>
                 {hideWarmCool ? 'WU/CD off' : 'WU/CD'}
               </button>
             </div>
