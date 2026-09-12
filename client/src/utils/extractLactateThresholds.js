@@ -19,13 +19,6 @@ export function isPaceLactateSport(sport) {
   return sport === 'run' || sport === 'swim';
 }
 
-function fmtPaceSec(sec) {
-  if (!sec || !Number.isFinite(sec) || sec <= 0) return '—';
-  const m = Math.floor(sec / 60);
-  const s = Math.round(sec % 60);
-  return `${m}:${String(s).padStart(2, '0')}`;
-}
-
 /** Format threshold intensity for UI chips (W, pace, or km/h for speed tests). */
 export function formatThresholdIntensity(value, test, sport = normLactateSport(test?.sport)) {
   if (value == null || !Number.isFinite(Number(value))) return '—';

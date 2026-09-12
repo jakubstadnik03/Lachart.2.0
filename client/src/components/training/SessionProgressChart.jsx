@@ -19,10 +19,11 @@
  *   hideWarmCool  – boolean — strip warm-up / cool-down laps from chart
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import useElementWidth from '../../hooks/useElementWidth';
 import { classifyLaps } from '../../utils/lapClassify';
-import { fmtViewerPace } from '../../utils/viewerUnits';
+import { fmtViewerPace, viewerUnitSystem } from '../../utils/viewerUnits';
+import { formatDistance } from '../../utils/unitsConverter';
 
 // ─── helpers (mirrored from NativeTrainingPage) ───────────────────────────────
 
@@ -143,9 +144,9 @@ function intervalLactate(item) {
   return v != null && Number.isFinite(Number(v)) ? Number(v) : null;
 }
 
-export function fmtPace(secPerKm) {
-  if (!secPerKm || !Number.isFinite(secPerKm)) return '—';
-  return fmtViewerPace(secPerKm, 'run');
+export function fmtPace(secPerUnit, sport = 'run') {
+  if (!secPerUnit || !Number.isFinite(secPerUnit)) return '—';
+  return fmtViewerPace(secPerUnit, sport);
 }
 
 function intervalPaceSec(item, sport) {
@@ -248,7 +249,7 @@ function SelectedLapInfo({ selected, onOpen, onEdit, onClear, formatValue }) {
             {/* Primary value = the selected metric; the metrics below never repeat it. */}
             <span style={{ fontSize: 12, fontWeight: 800, color: selected.sessionColor }}>{formatValue(selected.value)}</span>
             {selected.dist > 0 && (
-              <Metric label="DIST" value={selected.dist >= 1000 ? `${(selected.dist / 1000).toFixed(2)} km` : `${Math.round(selected.dist)} m`} />
+              <Metric label="DIST" value={formatDistance(selected.dist, viewerUnitSystem()).formatted} />
             )}
             {selected.durationSec > 0 && (
               <Metric label="TIME" value={selected.durationSec >= 60
@@ -256,7 +257,7 @@ function SelectedLapInfo({ selected, onOpen, onEdit, onClear, formatValue }) {
                 : `${Math.round(selected.durationSec)}s`} />
             )}
             {selected.pace > 0 && selected.sport !== 'bike' && !selected.isPace && (
-              <Metric label="PACE" value={`${Math.floor(selected.pace / 60)}:${String(Math.round(selected.pace % 60)).padStart(2, '0')}/${selected.sport === 'swim' ? '100m' : 'km'}`} />
+              <Metric label="PACE" value={fmtViewerPace(selected.pace, selected.sport)} />
             )}
             {selected.power > 0 && selected.metric !== 'power' && (
               <Metric label="PWR" value={`${Math.round(selected.power)} W`} />
@@ -336,6 +337,7 @@ export default function SessionProgressChart({
   const [selected, setSelected] = useState(null);
   const [chartType, setChartType] = useState('bars'); // 'bars' | 'line'
   const [xMode, setXMode] = useState('laps'); // 'laps' (clusters) | 'time' (overlaid on shared time axis)
+  const scrollRef = useRef(null);
   const clearSelection = () => setSelected(null);
   const metricStroke = metricColor(isPace ? 'power' : metric);
 
@@ -368,8 +370,15 @@ export default function SessionProgressChart({
     }).filter(s => s.laps.length > 0);
   }, [sessions, metric, isPace, sport, hideWarmCool, workOnly]);
 
+  // A pick outlives the session it was made in when the set changes (a
+  // hidden session, a new filter) — every bar then stayed dimmed for a lap
+  // nobody could see.
+  useEffect(() => {
+    if (selected && !data.some((s) => s.id === selected.sessionId)) setSelected(null);
+  }, [data, selected]);
+
   const fmtTooltipValue = (v) => {
-    if (isPace) return fmtPace(v);
+    if (isPace) return fmtPace(v, sport);
     const unit = metric === 'power' ? 'W' : metric === 'heartRate' ? 'bpm' : metric === 'lactate' ? 'mmol' : '';
     return `${Math.round(v)}${unit ? ' ' + unit : ''}`;
   };
@@ -400,30 +409,26 @@ export default function SessionProgressChart({
 
   const innerW     = W - padLeft - padRight;
   const sessionGap = 8;
-  const totalGaps  = sessionGap * (data.length - 1);
-  const sessionTotals = data.map(s => {
-    const sum = s.laps.reduce((a, l) => a + (l.durationSec || 0), 0);
-    return sum > 0 ? sum : s.laps.length;
-  });
-  const grandTotal = sessionTotals.reduce((a, b) => a + b, 0) || 1;
 
-  // When only ONE session ends up with usable lap data — common when the
-  // comparison list pulled in older trainings that had no per-lap power /
-  // pace records — that one session would otherwise consume the entire
-  // chart width and look like a giant block. Cap it to a reasonable slice
-  // (≈ 1/N of the original session count or 35 % of the chart, whichever is
-  // smaller) so the single bar reads as "one session" instead of "deformed
-  // chart". Leftover space stays empty.
-  const lonelyBarMode = data.length === 1 && sessions.length > 1;
-  const sessionWs = lonelyBarMode
-    ? [Math.min(innerW * 0.35, innerW / Math.max(2, sessions.length))]
-    : sessionTotals.map(d => (innerW - totalGaps) * (d / grandTotal));
+  // Every session gets the same slot, and at most four slots share the
+  // width; beyond that the chart grows and scrolls sideways. Twelve sessions
+  // used to be squeezed into one screen, each a sliver of bars nobody could
+  // read or tap. A lone session still takes half the width, not all of it,
+  // so it reads as one session rather than a wall.
+  const MAX_VISIBLE = 4;
+  const slots = Math.min(MAX_VISIBLE, Math.max(data.length, sessions.length > 1 ? 2 : 1));
+  const slotW = (innerW - (slots - 1) * sessionGap) / slots;
+  const sessionWs = data.map(() => slotW);
   const lapGap     = 0.8;
+  const scrollable = xMode === 'laps' && data.length > MAX_VISIBLE;
+  const chartW = scrollable
+    ? padLeft + data.length * slotW + (data.length - 1) * sessionGap + padRight
+    : W;
 
   const ticks = [yLo, yLo + (yHi - yLo) / 2, yHi];
-  const labelStep = Math.max(1, Math.ceil(data.length / 3));
-  const labeledIdxs = data.map((_, i) => i).filter(i => i === 0 || i === data.length - 1 || i % labelStep === 0);
-  const fmtY = (v) => isPace ? fmtPace(v) : Math.round(v).toString();
+  // Slots are wide enough to date every one of them.
+  const labeledIdxs = data.map((_, i) => i);
+  const fmtY = (v) => isPace ? fmtPace(v, sport) : Math.round(v).toString();
 
   // Time mode — shared elapsed-time X axis (0 → longest visible session), so
   // sessions overlay and you compare the metric minute-by-minute.
@@ -441,53 +446,7 @@ export default function SessionProgressChart({
     <div style={{ position: 'relative', width: '100%' }}
       onClick={(e) => { if (e.target.tagName !== 'rect' && e.target.tagName !== 'circle') clearSelection(); }}
     >
-      {/* X-axis mode toggle (per-lap clusters ↔ shared time axis) */}
-      <div style={{ position: 'absolute', top: 54, left: 6, zIndex: 2, display: 'flex', gap: 2,
-        padding: 2, borderRadius: 7, background: 'rgba(118,126,181,.08)', border: '1px solid rgba(118,126,181,.14)' }}>
-        {[{ k: 'laps', label: 'Laps' }, { k: 'time', label: 'Time' }].map(opt => {
-          const active = xMode === opt.k;
-          return (
-            <button key={opt.k} onClick={(e) => { e.stopPropagation(); setXMode(opt.k); clearSelection(); }}
-              style={{
-                padding: '3px 7px', borderRadius: 5, border: 'none', cursor: 'pointer',
-                fontSize: 9.5, fontWeight: 700, fontFamily: 'inherit',
-                background: active ? '#fff' : 'transparent',
-                color: active ? metricStroke : '#9CA3AF',
-                boxShadow: active ? '0 1px 2px rgba(10,14,26,.10)' : 'none',
-                WebkitTapHighlightColor: 'transparent',
-              }}>
-              {opt.label}
-            </button>
-          );
-        })}
-      </div>
-      {/* Chart-type toggle (bars ↔ line) — laps mode only */}
-      {xMode === 'laps' && (
-      <div style={{ position: 'absolute', top: 54, right: 6, zIndex: 2, display: 'flex', gap: 2,
-        padding: 2, borderRadius: 7, background: 'rgba(118,126,181,.08)', border: '1px solid rgba(118,126,181,.14)' }}>
-        {[
-          { k: 'bars', label: 'Bars', d: 'M3 18V9 M9 18V4 M15 18V11 M21 18V7' },
-          { k: 'line', label: 'Line', d: 'M3 16 L9 9 L14 13 L21 5' },
-        ].map(opt => {
-          const active = chartType === opt.k;
-          return (
-            <button key={opt.k} onClick={(e) => { e.stopPropagation(); setChartType(opt.k); clearSelection(); }}
-              title={opt.label}
-              style={{
-                padding: '3px 6px', borderRadius: 5, border: 'none', cursor: 'pointer',
-                background: active ? '#fff' : 'transparent',
-                color: active ? metricStroke : '#9CA3AF',
-                boxShadow: active ? '0 1px 2px rgba(10,14,26,.10)' : 'none',
-                display: 'flex', alignItems: 'center', WebkitTapHighlightColor: 'transparent',
-              }}>
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-                <path d={opt.d} />
-              </svg>
-            </button>
-          );
-        })}
-      </div>
-      )}
+      <ScrollToHighlighted scrollRef={scrollRef} highlightId={highlightId} data={data} slotW={slotW} sessionGap={sessionGap} padLeft={padLeft} enabled={scrollable} />
       <SelectedLapInfo
         selected={selected}
         onOpen={() => { if (!selected) return; clearSelection(); onSessionTap && onSessionTap(selected.session); }}
@@ -495,21 +454,76 @@ export default function SessionProgressChart({
         onClear={clearSelection}
         formatValue={fmtTooltipValue}
       />
-      <div ref={wrapRef} style={{ width: '100%' }}>
-      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none"
-        style={{ width: '100%', height: H, display: 'block' }}>
+      {/* Controls get their own row. They used to float over the plot and
+          sat on the top tick label. */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, margin: '0 0 6px' }}>
+        {/* X-axis mode toggle (per-lap clusters ↔ shared time axis) */}
+        <div style={{ display: 'flex', gap: 2,
+          padding: 2, borderRadius: 7, background: 'rgba(118,126,181,.08)', border: '1px solid rgba(118,126,181,.14)' }}>
+          {[{ k: 'laps', label: 'Laps' }, { k: 'time', label: 'Time' }].map(opt => {
+            const active = xMode === opt.k;
+            return (
+              <button key={opt.k} onClick={(e) => { e.stopPropagation(); setXMode(opt.k); clearSelection(); }}
+                style={{
+                  padding: '3px 7px', borderRadius: 5, border: 'none', cursor: 'pointer',
+                  fontSize: 9.5, fontWeight: 700, fontFamily: 'inherit',
+                  background: active ? '#fff' : 'transparent',
+                  color: active ? metricStroke : '#9CA3AF',
+                  boxShadow: active ? '0 1px 2px rgba(10,14,26,.10)' : 'none',
+                  WebkitTapHighlightColor: 'transparent',
+                }}>
+                {opt.label}
+              </button>
+            );
+          })}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+          {scrollable && (
+            <span style={{ fontSize: 9.5, fontWeight: 700, color: '#9CA3AF', whiteSpace: 'nowrap' }}>
+              {data.length} sessions · swipe →
+            </span>
+          )}
+          {/* Chart-type toggle (bars ↔ line) — laps mode only */}
+          {xMode === 'laps' && (
+          <div style={{ display: 'flex', gap: 2,
+            padding: 2, borderRadius: 7, background: 'rgba(118,126,181,.08)', border: '1px solid rgba(118,126,181,.14)' }}>
+            {[
+              { k: 'bars', label: 'Bars', d: 'M3 18V9 M9 18V4 M15 18V11 M21 18V7' },
+              { k: 'line', label: 'Line', d: 'M3 16 L9 9 L14 13 L21 5' },
+            ].map(opt => {
+              const active = chartType === opt.k;
+              return (
+                <button key={opt.k} onClick={(e) => { e.stopPropagation(); setChartType(opt.k); clearSelection(); }}
+                  title={opt.label}
+                  style={{
+                    padding: '3px 6px', borderRadius: 5, border: 'none', cursor: 'pointer',
+                    background: active ? '#fff' : 'transparent',
+                    color: active ? metricStroke : '#9CA3AF',
+                    boxShadow: active ? '0 1px 2px rgba(10,14,26,.10)' : 'none',
+                    display: 'flex', alignItems: 'center', WebkitTapHighlightColor: 'transparent',
+                  }}>
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                    <path d={opt.d} />
+                  </svg>
+                </button>
+              );
+            })}
+          </div>
+          )}
+        </div>
+      </div>
+      <div ref={wrapRef} style={{ width: '100%', position: 'relative' }}>
+      {/* The plot scrolls; the axis does not. The axis is a second SVG laid
+          over the left gutter, so bars slide underneath it. */}
+      <div ref={scrollRef} style={{ overflowX: scrollable ? 'auto' : 'hidden', overflowY: 'hidden', WebkitOverflowScrolling: 'touch', overscrollBehaviorX: 'contain' }}>
+      <svg viewBox={`0 0 ${chartW} ${H}`} preserveAspectRatio="none"
+        style={{ width: scrollable ? chartW : '100%', height: H, display: 'block' }}>
         {/* Y grid */}
         {ticks.map((t, i) => (
-          <g key={`y-${i}`}>
-            <line x1={padLeft} y1={py(t)} x2={W - padRight} y2={py(t)} stroke="rgba(118,126,181,.08)" strokeDasharray="2 4" />
-            <text x={padX - 4} y={py(t)} dy="3" textAnchor="end"
-              style={{ fontSize: 8.5, fill: '#9CA3AF', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
-              {fmtY(t)}
-            </text>
-          </g>
+          <line key={`y-${i}`} x1={padLeft} y1={py(t)} x2={chartW - padRight} y2={py(t)} stroke="rgba(118,126,181,.08)" strokeDasharray="2 4" />
         ))}
         {/* Baseline */}
-        <line x1={padLeft} y1={H - padBottom} x2={W - padRight} y2={H - padBottom} stroke="rgba(118,126,181,.18)" />
+        <line x1={padLeft} y1={H - padBottom} x2={chartW - padRight} y2={H - padBottom} stroke="rgba(118,126,181,.18)" />
 
         {/* ── TIME MODE — sessions overlaid on a shared elapsed-time axis ── */}
         {xMode === 'time' && (
@@ -682,6 +696,47 @@ export default function SessionProgressChart({
         })()}
       </svg>
       </div>
+      {/* Pinned Y axis */}
+      <svg viewBox={`0 0 ${padLeft} ${H}`} preserveAspectRatio="none"
+        style={{ position: 'absolute', left: 0, top: 0, width: padLeft, height: H, pointerEvents: 'none' }}>
+        {scrollable && (
+          <>
+            <rect x={0} y={0} width={padLeft - 6} height={H} fill="#fff" />
+            <rect x={padLeft - 6} y={0} width={6} height={H} fill="url(#spc-axis-fade)" />
+            <defs>
+              <linearGradient id="spc-axis-fade" x1="0" x2="1" y1="0" y2="0">
+                <stop offset="0" stopColor="#fff" stopOpacity="1" />
+                <stop offset="1" stopColor="#fff" stopOpacity="0" />
+              </linearGradient>
+            </defs>
+          </>
+        )}
+        {ticks.map((t, i) => (
+          <text key={`yl-${i}`} x={padX - 4} y={py(t)} dy="3" textAnchor="end"
+            style={{ fontSize: 8.5, fill: '#9CA3AF', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
+            {fmtY(t)}
+          </text>
+        ))}
+      </svg>
+    </div>
     </div>
   );
+}
+
+/**
+ * Bring the highlighted session into view. A tap on a legend pill names a
+ * session that may sit off to the right of a scrolling chart; without this
+ * the highlight happened where the athlete could not see it.
+ */
+function ScrollToHighlighted({ scrollRef, highlightId, data, slotW, sessionGap, padLeft, enabled }) {
+  useEffect(() => {
+    if (!enabled || !highlightId || !scrollRef.current) return;
+    const idx = data.findIndex((s) => s.id === highlightId);
+    if (idx < 0) return;
+    const x = padLeft + idx * (slotW + sessionGap);
+    const el = scrollRef.current;
+    const left = Math.max(0, x - padLeft - (el.clientWidth - padLeft - slotW) / 2);
+    try { el.scrollTo({ left, behavior: 'smooth' }); } catch { el.scrollLeft = left; }
+  }, [enabled, highlightId, data, slotW, sessionGap, padLeft, scrollRef]);
+  return null;
 }

@@ -153,9 +153,6 @@ const [selectedTitle, setSelectedTitle] = useState(null);
     }
   };
 
-  // Get unitSystem from userInfo
-  const unitSystem = userInfo?.units?.distance === 'imperial' ? 'imperial' : 'metric';
-  
   // Stored per km / per 100 m; printed in the viewer's unit.
   const paceSportOf = (sport) => (sport === 'swimming' ? 'swim' : 'run');
   const formatPace = (seconds, sport = 'running') => {

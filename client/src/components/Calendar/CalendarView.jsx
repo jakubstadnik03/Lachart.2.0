@@ -47,8 +47,10 @@ import {
   formatPaceFromDistanceAndDuration,
   formatPaceFromSpeedMps,
   formatPaceMMSS,
+  formatPaceSeconds,
   formatSpeed,
   parseDistanceInputToMetres,
+  paceSecondsFromDistanceAndDuration,
   paceSecondsToDisplaySeconds,
   paceUnitShort,
 } from '../../utils/unitsConverter';
@@ -1938,11 +1940,12 @@ function CompareLapTable({ laps, isBike, isRun, isSwim, workOnly, unitSystem = '
   );
 }
 
-function WorkLapCompareTable({ currentLaps, results, isBike, isRun, isSwim, unitSystem = 'metric' }) {
+export function WorkLapCompareTable({ currentLaps, results, isBike, isRun, isSwim, unitSystem = 'metric' }) {
   const sessions = [
-    { label: 'Tento', laps: currentLaps, isRef: true },
+    { label: 'This', laps: currentLaps, isRef: true },
     ...results.map(r => ({
-      label: r.date ? (() => { const d = new Date(r.date); return `${d.getDate()}.${d.getMonth()+1}.${String(d.getFullYear()).slice(-2)}`; })() : '?',
+      label: r.date ? new Date(r.date).toLocaleDateString('en', { day: 'numeric', month: 'short' }) : '?',
+      year: r.date ? new Date(r.date).toLocaleDateString('en', { year: '2-digit' }) : '',
       laps: Array.isArray(r.laps) ? r.laps : [], isRef: false, id: r.id,
     })),
   ];
@@ -1956,13 +1959,17 @@ function WorkLapCompareTable({ currentLaps, results, isBike, isRun, isSwim, unit
     if (!d) return null;
     return formatDistance(d, unitSystem).formatted;
   };
-  const fmtPace = (lap) => {
+  // The number the row is about: watts, or the pace in the athlete's unit.
+  // `raw` is kept comparable across sessions (W, or seconds per unit).
+  const primary = (lap) => {
     const dur  = lapMovingSecs(lap);
     const dist = Number(lap.distance || lap.totalDistance || 0);
     const pow  = Number(lap.average_watts || lap.avgPower || 0);
-    if (isBike) return pow > 0 ? `${Math.round(pow)} W` : null;
-    if (isRun && dist > 0 && dur > 0) return formatPaceFromDistanceAndDuration(dist, dur, unitSystem, 'run');
-    if (isSwim && dist > 0 && dur > 0) return formatPaceFromDistanceAndDuration(dist, dur, unitSystem, 'swim');
+    if (isBike) return pow > 0 ? { text: `${Math.round(pow)} W`, raw: pow, lowerIsBetter: false } : null;
+    if ((isRun || isSwim) && dist > 0 && dur > 0) {
+      const sec = paceSecondsFromDistanceAndDuration(dist, dur, unitSystem, isSwim ? 'swim' : 'run');
+      return sec ? { text: formatPaceSeconds(sec, unitSystem, isSwim ? 'swim' : 'run'), raw: sec, lowerIsBetter: true } : null;
+    }
     return null;
   };
   const fmtHr = lap => { const h = Number(lap.average_heartrate || lap.avgHeartRate || lap.heartRate || 0); return h > 0 ? `${Math.round(h)}` : null; };
@@ -1976,51 +1983,73 @@ function WorkLapCompareTable({ currentLaps, results, isBike, isRun, isSwim, unit
   const maxWork = Math.max(...sessWorkLaps.map(w => w.length), 0);
   if (maxWork === 0) return null;
 
+  // How each lap compares with the same lap of this session: a small signed
+  // difference, green when it is the better of the two.
+  const delta = (mine, ref) => {
+    if (!mine || !ref) return null;
+    const d = mine.raw - ref.raw;
+    if (Math.abs(d) < (isBike ? 1 : 1)) return { text: '=', good: null };
+    const good = mine.lowerIsBetter ? d < 0 : d > 0;
+    const text = isBike
+      ? `${d > 0 ? '+' : '−'}${Math.round(Math.abs(d))} W`
+      : `${d > 0 ? '+' : '−'}${Math.round(Math.abs(d))} s`;
+    return { text, good };
+  };
+
   return (
-    <div className="mt-3 rounded-xl border border-purple-100 bg-white overflow-hidden">
-      <div className="px-3 py-2 bg-purple-50 border-b border-purple-100 flex items-center gap-2">
-        <span className="w-2 h-2 rounded-full bg-[#767EB5]" />
-        <span className="text-[10px] font-bold text-purple-700 uppercase tracking-wide">Work Lap Comparison</span>
+    <div className="mt-3 rounded-2xl bg-white overflow-hidden" style={{ boxShadow: '0 0 0 0.5px rgba(60,60,67,0.14)' }}>
+      <div className="px-3 py-2.5 flex items-baseline justify-between gap-2">
+        <span className="text-[13px] font-semibold text-gray-900">Work laps, side by side</span>
+        <span className="text-[10.5px] text-gray-400">{isBike ? 'watts' : 'pace'} · difference vs this · bpm</span>
       </div>
-      <div className="overflow-x-auto">
-        <table className="w-full text-[10px] border-collapse min-w-[320px]">
+      <div className="overflow-x-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
+        <table className="border-collapse text-[11px]" style={{ minWidth: '100%' }}>
           <thead>
-            <tr className="border-b border-gray-100 bg-gray-50">
-              <th className="text-center font-bold text-gray-400 py-1.5 px-2 w-6">W#</th>
-              {sessions.map((s, si) => (
-                <th key={si} className={`text-center font-bold py-1.5 px-2 ${s.isRef ? 'text-blue-600' : 'text-gray-500'}`}>
-                  {s.isRef ? 'This' : s.label}
+            <tr className="border-b border-gray-100">
+              <th className="sticky left-0 z-10 bg-white text-left font-semibold text-gray-400 py-1.5 pl-3 pr-2 text-[10px] uppercase tracking-wide">Lap</th>
+              {sessions.map((sess, si) => (
+                <th key={si} className={`text-right font-semibold py-1.5 px-2 whitespace-nowrap ${sess.isRef ? 'text-blue-600' : 'text-gray-600'}`} style={{ minWidth: 76 }}>
+                  <div>{sess.label}</div>
+                  {!sess.isRef && <div className="text-[9px] font-medium text-gray-400">{sess.year ? `’${sess.year}` : ''}</div>}
                 </th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {Array.from({ length: maxWork }, (_, wi) => (
-              <tr key={wi} className="border-b border-gray-50" style={{ backgroundColor: wi % 2 === 0 ? '#eef0fa' : '#f5f6fc' }}>
-                <td className="text-center font-bold text-[#767EB5] py-1.5 px-2">{wi + 1}</td>
-                {sessWorkLaps.map((workLaps, si) => {
-                  const entry = workLaps[wi];
-                  if (!entry) return <td key={si} className="text-center text-gray-300 py-1.5 px-2">—</td>;
-                  const time = fmtTime(entry.lap);
-                  const dist = (isRun || isSwim) ? fmtDist(entry.lap) : null;
-                  const pace = fmtPace(entry.lap);
-                  const hr   = fmtHr(entry.lap);
-                  const isRef = sessions[si].isRef;
-                  return (
-                    <td key={si} className="text-center py-1.5 px-2">
-                      {/* time */}
-                      {time && <div className="text-gray-500 tabular-nums text-[9px]">{time}</div>}
-                      {/* distance (run/swim only) */}
-                      {dist && <div className="text-gray-400 tabular-nums text-[9px]">{dist}</div>}
-                      {/* pace / power — primary metric */}
-                      {pace && <div className={`font-bold tabular-nums ${isRef ? 'text-blue-700' : 'text-gray-700'}`}>{pace}</div>}
-                      {/* HR */}
-                      {hr && <div className="text-gray-400 tabular-nums flex items-center justify-center gap-0.5">{hr}<HeartIcon className="w-2.5 h-2.5 inline" /></div>}
-                    </td>
-                  );
-                })}
-              </tr>
-            ))}
+            {Array.from({ length: maxWork }, (_, wi) => {
+              const ref = sessWorkLaps[0][wi] ? primary(sessWorkLaps[0][wi].lap) : null;
+              return (
+                <tr key={wi} className="border-b border-gray-50 last:border-0">
+                  <td className="sticky left-0 z-10 bg-white py-2 pl-3 pr-2 align-top">
+                    <div className="font-semibold text-gray-800 tabular-nums">{wi + 1}</div>
+                    {sessWorkLaps[0][wi] && (
+                      <div className="text-[9.5px] text-gray-400 tabular-nums whitespace-nowrap">
+                        {[fmtTime(sessWorkLaps[0][wi].lap), (isRun || isSwim) ? fmtDist(sessWorkLaps[0][wi].lap) : null].filter(Boolean).join(' · ')}
+                      </div>
+                    )}
+                  </td>
+                  {sessWorkLaps.map((workLaps, si) => {
+                    const entry = workLaps[wi];
+                    if (!entry) return <td key={si} className="text-right text-gray-300 py-2 px-2 align-top">—</td>;
+                    const p  = primary(entry.lap);
+                    const hr = fmtHr(entry.lap);
+                    const isRef = sessions[si].isRef;
+                    const d  = isRef ? null : delta(p, ref);
+                    return (
+                      <td key={si} className="text-right py-2 px-2 align-top whitespace-nowrap">
+                        <div className={`text-[12px] font-semibold tabular-nums ${isRef ? 'text-blue-700' : 'text-gray-800'}`}>{p ? p.text : '—'}</div>
+                        {/* The difference sits right under the number it belongs to; heart rate follows. */}
+                        <div className="text-[10px] tabular-nums text-gray-400">
+                          {d ? <span className={`font-semibold ${d.good == null ? 'text-gray-400' : d.good ? 'text-emerald-600' : 'text-rose-500'}`}>{d.text}</span> : null}
+                          {d && hr ? ' · ' : ''}
+                          {hr ? `${hr} bpm` : ''}
+                        </div>
+                      </td>
+                    );
+                  })}
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -2057,6 +2086,16 @@ function CompareContent({ merged, athleteId, onOpen }) {
   const [error,   setError]   = useState(null);
   const [workOnly, setWorkOnly] = useState(true); // hide rest/recovery by default
   const [expandedCards, setExpandedCards] = useState({});
+  // Which lap is picked in which card's chart — LapChart shows the lap's
+  // numbers in its header once one is. Cards used to swallow the tap.
+  const [pickedLaps, setPickedLaps] = useState({});
+  const pickLap = (cardId, idx) => setPickedLaps((prev) => ({ ...prev, [cardId]: idx }));
+  // One stable scroll ref per card, so a zoomed chart can centre the lap.
+  const lapScrollRefs = useRef({});
+  const lapScrollRef = (cardId) => {
+    if (!lapScrollRefs.current[cardId]) lapScrollRefs.current[cardId] = { current: null };
+    return lapScrollRefs.current[cardId];
+  };
   // Session-progress chart state
   const [metric, setMetric]           = useState('power');
   const [hideWarmCool, setHideWarmCool] = useState(false);
@@ -2531,7 +2570,7 @@ function CompareContent({ merged, athleteId, onOpen }) {
       {!loading && !error && results.length > 0 && (
         <WorkLapCompareTable
           currentLaps={currentLaps}
-          results={results}
+          results={results.filter(r => !hiddenSessions.has(String(r.id || r._id || '')))}
           isBike={isBike} isRun={isRun} isSwim={isSwim}
           unitSystem={unitSystem}
         />
@@ -2578,7 +2617,8 @@ function CompareContent({ merged, athleteId, onOpen }) {
             {Number(merged?.lactate) > 0 && <span className="text-[10px] font-bold" style={{ color:'#7c3aed' }}>{Number(merged.lactate).toFixed(1)} mmol</span>}
           </div>
           <LapChart laps={currentLaps} color={sportColor} isBike={isBike} isRun={isRun} isSwim={isSwim} unitSystem={unitSystem}
-            selectedLap={null} onSelectLap={() => {}} scaleOverride={sharedScale} />
+            selectedLap={pickedLaps.__current ?? null} onSelectLap={(i) => pickLap('__current', i)}
+            chartScrollRef={lapScrollRef('__current')} onScrollCenter={() => {}} scaleOverride={sharedScale} />
           {expandedCards['__current'] && (
             <div className="px-3 pb-3 border-t border-gray-50 pt-2">
               <CompareLapTable laps={currentLaps} isBike={isBike} isRun={isRun} isSwim={isSwim} workOnly={workOnly} unitSystem={unitSystem} />
@@ -2654,7 +2694,8 @@ function CompareContent({ merged, athleteId, onOpen }) {
             {/* LapChart — shared Y-scale */}
             {compLaps.length > 0 && (
               <LapChart laps={compLaps} color={actColor} isBike={actIsBike} isRun={actIsRun} isSwim={actIsSwim} unitSystem={unitSystem}
-                selectedLap={null} onSelectLap={() => {}} scaleOverride={sharedScale} />
+                selectedLap={pickedLaps[act.id] ?? null} onSelectLap={(i) => pickLap(act.id, i)}
+                chartScrollRef={lapScrollRef(act.id)} onScrollCenter={() => {}} scaleOverride={sharedScale} />
             )}
             {compLaps.length === 0 && (
               <div className="px-3 pb-3 text-[10px] text-gray-400 italic">No laps available</div>

@@ -42,8 +42,12 @@ export function classifyLaps(laps, sport = 'bike') {
   const avg = haveIntensity ? laps.reduce((a, l, i) => a + intens[i] * durs[i], 0) / totalT : 0;
   const maxI = positive.length ? Math.max(...positive) : 0;
   // Steady ride (little spread above the mean) → no distinct intervals; call
-  // everything work except an easy first/last lap.
+  // everything work except an easy first/last lap. Little spread above the
+  // mean does not rule out laps far BELOW it: in a 3×10 min session the
+  // efforts are most of the time and sit barely above the mean, while the
+  // two-minute jogs sit a quarter below it. Those still read as recovery.
   const steady = haveIntensity && avg > 0 && (maxI - avg) / avg < 0.12;
+  const clearlyEasy = (i) => intens[i] > 0 && intens[i] < avg * 0.9;
 
   for (let i = 0; i < n; i++) {
     const l = laps[i];
@@ -59,7 +63,7 @@ export function classifyLaps(laps, sport = 'bike') {
     // Intensity-based (the real classification).
     if (haveIntensity && avg > 0) {
       if (steady) {
-        out[i] = i === 0 && n > 2 ? 'warmup' : i === n - 1 && n > 2 ? 'cooldown' : 'work';
+        out[i] = i === 0 && n > 2 ? 'warmup' : i === n - 1 && n > 2 ? 'cooldown' : clearlyEasy(i) ? 'recovery' : 'work';
       } else if (intens[i] >= avg * 1.02) {
         out[i] = 'work';
       } else if (i === 0 && n > 2) {

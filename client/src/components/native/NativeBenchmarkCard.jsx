@@ -8,7 +8,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import api from '../../services/api';
 import { GlassCard, SectionTitle } from './shared/Tiles';
-import { fmtViewerPace, viewerPaceSuffix } from '../../utils/viewerUnits';
+import { fmtViewerPace } from '../../utils/viewerUnits';
 
 const C = {
   primary: '#767EB5',
@@ -159,7 +159,6 @@ export default function NativeBenchmarkCard({ athleteId, sport, user }) {
     ?? (s ? Math.max(s.lt1?.count || 0, s.lt2?.count || 0) : 0);
   const av = stats?.athlete;
   const isPaceSport = sport !== 'bike';
-  const paceSuffix = viewerPaceSuffix(sport === 'swim' ? 'swim' : 'run');
   const sportLabel = sport === 'bike' ? 'Cycling' : sport === 'run' ? 'Running' : 'Swimming';
 
   // Bike prefers W/kg when the population has it; falls back to absolute W.
