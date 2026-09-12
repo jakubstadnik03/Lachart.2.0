@@ -6,6 +6,7 @@ import ReactDOM from 'react-dom';
 import TrainingFormComponent from '../TrainingForm';
 import SessionProgressChart from '../training/SessionProgressChart';
 import CompareSessionsMenu from '../training/CompareSessionsMenu';
+import { comparedSessionStub } from '../../utils/comparedSessionStub';
 import TimeInZonesBar from '../training/TimeInZonesBar';
 import PeakValuesChart, { readPower, readHeartRate } from '../training/PeakValuesChart';
 import WorkoutStepsCompliance from '../training/WorkoutStepsCompliance';
@@ -83,7 +84,7 @@ import { useCategories, hexToRgba } from '../../context/CategoryContext';
 import { activityAccentColor } from '../../utils/activityAccentColor';
 import { DAY_THEME_PRESETS, dayThemePresetColor, PERIOD_TYPES, periodColor, buildPeriodsByDate } from '../../utils/calendarThemes';
 import { computePowerTss, computeHrTss, canToggleTss, resolveActivityTss, getAvailableTssModes, getActivityTssDisplayMode, cycleTssMode, tssModeLabel, tssToggleDisabledReason } from '../../utils/computeTss';
-import { compareActivitiesChronologically, buildChronologicalDayItems, sortPlannedWorkoutsForDay, reorderPlannedWorkoutIds, pairPlannedWithActivities, planSportMatchesActivity, dedupeCalendarActivities } from '../../utils/calendarDayOrdering';
+import { compareActivitiesChronologically, buildChronologicalDayItems, sortPlannedWorkoutsForDay, reorderPlannedWorkoutIds, pairPlannedWithActivities, planSportMatchesActivity, dedupeCalendarActivities, looksLikeSameSession } from '../../utils/calendarDayOrdering';
 import { stravaHalfCadenceToSpm, cadenceDisplayUnit } from '../../utils/cadenceDisplay';
 import { lapDetailStats } from '../../utils/lapDetailStats';
 import { completedSecs } from '../../utils/completedSessionStats';
@@ -2085,7 +2086,7 @@ function CompareContent({ merged, athleteId, onOpen }) {
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error,   setError]   = useState(null);
-  const [workOnly, setWorkOnly] = useState(true); // hide rest/recovery by default
+  const [workOnly, setWorkOnly] = useState(false); // every lap, until the athlete asks for work only
   const [expandedCards, setExpandedCards] = useState({});
   // Which lap is picked in which card's chart — LapChart shows the lap's
   // numbers in its header once one is. Cards used to swallow the tap.
@@ -2238,7 +2239,13 @@ function CompareContent({ merged, athleteId, onOpen }) {
       .then(d => {
         if (cancelled) return;
         const minScore = activeFilters.includes('structure') && !activeFilters.includes('title') ? 0.18 : 0.12;
-        const sorted = [...d]
+        // The same ride reaches the app from Strava and from Garmin as two
+        // records. One of them may be the session that is open — a perfect
+        // match with itself — and the rest would be listed twice.
+        const withoutTwins = dedupeCalendarActivities(
+          (Array.isArray(d) ? d : []).filter((r) => !looksLikeSameSession(merged, r)),
+        );
+        const sorted = withoutTwins
           .map((r) => ({ ...r, _matchScore: similarityScore(r) }))
           .filter((r) => r._matchScore >= minScore)
           .sort((a, b) => {
@@ -5800,19 +5807,9 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
         records={chartTraining?.records}
         accent={color}
       />
-      {nestedActivity && (() => {
-        const na = nestedActivity;
-        const fakeActivity = {
-          id: na.id, _id: na.id, type: na.type,
-          sport: na.sport || merged?.sport, date: na.date,
-          title: na.title, titleManual: na.title,
-          category: na.category, lactate: na.lactate,
-          distance: na.distance, elapsed_time: na.duration,
-          average_heartrate: na.avgHr, average_watts: na.avgPower,
-          laps: na.laps || [],
-        };
-        return <ActivityFullModal activity={fakeActivity} athleteId={athleteId} onClose={() => setNestedActivity(null)} />;
-      })()}
+      {nestedActivity && (
+        <ActivityFullModal activity={comparedSessionStub(nestedActivity, merged)} athleteId={athleteId} onClose={() => setNestedActivity(null)} />
+      )}
     </>;
   }
 
@@ -6448,32 +6445,13 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
       records={chartTraining?.records}
       accent={color}
     />
-    {nestedActivity && (() => {
-      const na = nestedActivity;
-      const fakeActivity = {
-        id:    na.id,
-        _id:   na.id,
-        type:  na.type,
-        sport: na.sport || merged?.sport,
-        date:  na.date,
-        title: na.title,
-        titleManual: na.title,
-        category: na.category,
-        lactate:  na.lactate,
-        distance: na.distance,
-        elapsed_time: na.duration,
-        average_heartrate: na.avgHr,
-        average_watts: na.avgPower,
-        laps: na.laps || [],
-      };
-      return (
-        <ActivityFullModal
-          activity={fakeActivity}
-          athleteId={athleteId}
-          onClose={() => setNestedActivity(null)}
-        />
-      );
-    })()}
+    {nestedActivity && (
+      <ActivityFullModal
+        activity={comparedSessionStub(nestedActivity, merged)}
+        athleteId={athleteId}
+        onClose={() => setNestedActivity(null)}
+      />
+    )}
   </>;
 }
 

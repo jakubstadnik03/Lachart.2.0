@@ -9,6 +9,12 @@ const AppleHealthActivity = require('../models/AppleHealthActivity');
 const AppleHealthWellness = require('../models/AppleHealthWellness');
 const StravaStream = require('../models/StravaStream');
 const GarminActivity = require('../models/GarminActivity');
+const {
+  SIMILAR_SELECT,
+  buildStructureFilter,
+  applySimilarExcludeId,
+  normalizeSimilarActivity,
+} = require('../utils/similarActivities');
 const GarminStream = require('../models/GarminStream');
 const GarminWellness = require('../models/GarminWellness');
 const { resolveUserPlan } = require('../middleware/featureGate');
@@ -4992,103 +4998,12 @@ function buildTitleOrConditions(title, titleKeywords) {
   return or;
 }
 
-function applySimilarExcludeId(filter, excludeId, source) {
-  if (!excludeId) return;
-  if (source === 'strava') {
-    const numId = parseInt(String(excludeId).replace(/^strava-/i, ''), 10);
-    if (!isNaN(numId)) filter.stravaId = { $ne: numId };
-  } else if (source === 'fit' && String(excludeId).startsWith('fit-')) {
-    filter._id = { $ne: String(excludeId).replace(/^fit-/, '') };
-  } else if (source === 'regular' && String(excludeId).startsWith('regular-')) {
-    filter._id = { $ne: String(excludeId).replace(/^regular-/, '') };
-  }
-}
-
 function similarSportQuery(sport) {
   const s = String(sport || '').toLowerCase();
   if (/bike|cycling|ride/.test(s)) return { $in: ['bike', 'cycling', 'ride', 'Bike', 'Ride', 'Cycling', 'VirtualRide', 'virtualride'] };
   if (/run/.test(s)) return { $in: ['run', 'running', 'Run', 'Running', 'TrailRun', 'trailrun'] };
   if (/swim/.test(s)) return { $in: ['swim', 'swimming', 'Swim', 'Swimming'] };
   return sport;
-}
-
-function buildStructureFilter(base, duration, distance, lapCount, source) {
-  const f = { ...base };
-  const dur = parseFloat(duration);
-  const dist = parseFloat(distance);
-  const laps = parseInt(lapCount, 10);
-
-  if (dur > 0) {
-    const min = dur * 0.72;
-    const max = dur * 1.28;
-    if (source === 'strava') f.elapsed_time = { $gte: min, $lte: max };
-    else if (source === 'fit') f.totalElapsedTime = { $gte: min, $lte: max };
-  }
-  if (dist > 0) {
-    const min = dist * 0.78;
-    const max = dist * 1.22;
-    if (source === 'strava') f.distance = { $gte: min, $lte: max };
-    else if (source === 'fit') f.totalDistance = { $gte: min, $lte: max };
-  }
-  if (laps > 2) {
-    f['laps.0'] = { $exists: true };
-  }
-  return f;
-}
-
-function normalizeSimilarActivity(a, source) {
-  if (source === 'strava') {
-    return {
-      id: `strava-${a.stravaId}`,
-      type: 'strava',
-      date: a.startDate,
-      title: a.titleManual || a.name || 'Activity',
-      category: a.category || null,
-      lactate: a.lactate != null ? Number(a.lactate) : null,
-      sport: a.sport || null,
-      distance: Number(a.distance || 0),
-      duration: Number(a.elapsed_time || 0),
-      avgHr: Number(a.average_heartrate || 0),
-      avgPower: Number(a.average_watts || 0),
-      avgSpeed: Number(a.average_speed || 0),
-      elevation: Number(a.total_elevation_gain || 0),
-      laps: Array.isArray(a.laps) ? a.laps : [],
-    };
-  }
-  if (source === 'fit') {
-    return {
-      id: `fit-${a._id}`,
-      type: 'fit',
-      date: a.timestamp,
-      title: a.titleManual || a.titleAuto || 'FIT Activity',
-      category: a.category || null,
-      lactate: a.lactate != null ? Number(a.lactate) : null,
-      sport: a.sport || null,
-      distance: Number(a.totalDistance || 0),
-      duration: Number(a.totalElapsedTime || 0),
-      avgHr: Number(a.avgHeartRate || 0),
-      avgPower: Number(a.avgPower || 0),
-      avgSpeed: Number(a.avgSpeed || 0),
-      elevation: 0,
-      laps: Array.isArray(a.laps) ? a.laps : [],
-    };
-  }
-  return {
-    id: `regular-${a._id}`,
-    type: 'regular',
-    date: a.date,
-    title: a.title || 'Training',
-    category: a.category || null,
-    lactate: null,
-    sport: a.sport || null,
-    distance: 0,
-    duration: Number(a.duration || 0),
-    avgHr: 0,
-    avgPower: 0,
-    avgSpeed: 0,
-    elevation: 0,
-    laps: [],
-  };
 }
 
 router.get('/activities/similar', verifyToken, async (req, res) => {
@@ -5122,15 +5037,19 @@ router.get('/activities/similar', verifyToken, async (req, res) => {
     const FitTraining = require('../models/fitTraining');
     const uid = targetUserId.toString();
 
-    const stravaSelect = 'stravaId titleManual name category lactate sport startDate distance elapsed_time average_heartrate average_watts average_speed total_elevation_gain laps';
-    const fitSelect = '_id titleManual titleAuto category lactate sport timestamp totalDistance totalElapsedTime avgHeartRate avgPower avgSpeed laps';
-
     const queryJobs = [];
 
+    // Garmin sessions are compared too — an athlete on Garmin alone used to
+    // get an empty Compare tab. The same ride synced from both providers
+    // comes back twice here; the client collapses those pairs.
     if (hasMetaSearch) {
       const stravaFilter = { userId: uid, $or: orConditions };
       if (sport) stravaFilter.sport = similarSportQuery(sport);
       applySimilarExcludeId(stravaFilter, excludeId, 'strava');
+
+      const garminFilter = { userId: uid, $or: orConditions };
+      if (sport) garminFilter.sport = similarSportQuery(sport);
+      applySimilarExcludeId(garminFilter, excludeId, 'garmin');
 
       const fitFilter = { athleteId: uid, $or: orConditions };
       if (sport) fitFilter.sport = similarSportQuery(sport);
@@ -5141,27 +5060,32 @@ router.get('/activities/similar', verifyToken, async (req, res) => {
       applySimilarExcludeId(trainingFilter, excludeId, 'regular');
 
       queryJobs.push(
-        { promise: StravaActivity.find(stravaFilter).sort({ startDate: -1 }).limit(limitNum).select(stravaSelect).lean(), source: 'strava' },
-        { promise: FitTraining.find(fitFilter).sort({ timestamp: -1 }).limit(limitNum).select(fitSelect).lean(), source: 'fit' },
+        { promise: StravaActivity.find(stravaFilter).sort({ startDate: -1 }).limit(limitNum).select(SIMILAR_SELECT.strava).lean(), source: 'strava' },
+        { promise: GarminActivity.find(garminFilter).sort({ startDate: -1 }).limit(limitNum).select(SIMILAR_SELECT.garmin).lean(), source: 'garmin' },
+        { promise: FitTraining.find(fitFilter).sort({ timestamp: -1 }).limit(limitNum).select(SIMILAR_SELECT.fit).lean(), source: 'fit' },
         trainingFilter.$or?.length
-          ? { promise: Training.find(trainingFilter).sort({ date: -1 }).limit(limitNum).select('_id title category sport date duration results').lean(), source: 'regular' }
+          ? { promise: Training.find(trainingFilter).sort({ date: -1 }).limit(limitNum).select(SIMILAR_SELECT.regular).lean(), source: 'regular' }
           : null,
       );
     }
 
     if (hasStructureSearch) {
       const stravaStruct = buildStructureFilter({ userId: uid }, duration, distance, lapCount, 'strava');
+      const garminStruct = buildStructureFilter({ userId: uid }, duration, distance, lapCount, 'garmin');
       const fitStruct = buildStructureFilter({ athleteId: uid }, duration, distance, lapCount, 'fit');
       if (sport) {
         stravaStruct.sport = similarSportQuery(sport);
+        garminStruct.sport = similarSportQuery(sport);
         fitStruct.sport = similarSportQuery(sport);
       }
       applySimilarExcludeId(stravaStruct, excludeId, 'strava');
+      applySimilarExcludeId(garminStruct, excludeId, 'garmin');
       applySimilarExcludeId(fitStruct, excludeId, 'fit');
 
       queryJobs.push(
-        { promise: StravaActivity.find(stravaStruct).sort({ startDate: -1 }).limit(limitNum).select(stravaSelect).lean(), source: 'strava' },
-        { promise: FitTraining.find(fitStruct).sort({ timestamp: -1 }).limit(limitNum).select(fitSelect).lean(), source: 'fit' },
+        { promise: StravaActivity.find(stravaStruct).sort({ startDate: -1 }).limit(limitNum).select(SIMILAR_SELECT.strava).lean(), source: 'strava' },
+        { promise: GarminActivity.find(garminStruct).sort({ startDate: -1 }).limit(limitNum).select(SIMILAR_SELECT.garmin).lean(), source: 'garmin' },
+        { promise: FitTraining.find(fitStruct).sort({ timestamp: -1 }).limit(limitNum).select(SIMILAR_SELECT.fit).lean(), source: 'fit' },
       );
     }
 
