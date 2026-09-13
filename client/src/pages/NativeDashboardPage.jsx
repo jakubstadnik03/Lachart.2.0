@@ -691,6 +691,7 @@ export default function NativeDashboardPage({
   stravaConnected = false,        // gates the manual-sync refresh button
   onRequestStravaSync = null,     // () => Promise — full dashboard refresh (+ Strava when connected)
   onPlanWorkout = null,           // (date) => void — opens planned-workout form for that date
+  onEditPlanStructure = null,     // (pw) => void — opens the full builder (steps, templates) for a plan
   dayPlans = [],                  // [{ date, title, category, notes }] — day-level themes
   onDayPlanSave = null,           // (dateStr, payload) => Promise — upsert a day theme
   onDayPlanDelete = null,         // (dateStr) => Promise — remove a day theme
@@ -1543,6 +1544,7 @@ export default function NativeDashboardPage({
           athleteId={athleteId || user?._id || user?.id}
           user={user}
           onClose={closePlanned}
+          onEditStructure={onEditPlanStructure ? (pw) => { closePlanned(); onEditPlanStructure(pw); } : null}
           onOpenLinkedActivity={(act) => { closePlanned(); openActivity(act); }}
           onSaved={(updated) => {
             onPlannedWorkoutChanged && onPlannedWorkoutChanged({ type: 'updated', planned: updated });

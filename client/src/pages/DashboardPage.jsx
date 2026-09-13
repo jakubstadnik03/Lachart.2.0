@@ -47,7 +47,7 @@ import LactateCurveCalculator from "../components/Testing-page/LactateCurveCalcu
 import DateSelector from "../components/DateSelector";
 import WeeklyCalendar from "../components/DashboardPage/WeeklyCalendar";
 import WorkoutPlanModal from "../components/WorkoutPlanner/WorkoutPlanModal";
-import { getPlannedWorkouts, createPlannedWorkout, updatePlannedWorkout, deletePlannedWorkout, getDayPlans, setDayPlan as apiSetDayPlan, deleteDayPlan as apiDeleteDayPlan, getPeriods, savePeriod as apiSavePeriod, deletePeriod as apiDeletePeriod } from '../services/workoutPlannerApi';
+import { getPlannedWorkouts, createPlannedWorkout, updatePlannedWorkout, deletePlannedWorkout, getDayPlans, setDayPlan as apiSetDayPlan, deleteDayPlan as apiDeleteDayPlan, getPeriods, savePeriod as apiSavePeriod, deletePeriod as apiDeletePeriod, getWorkoutTemplates } from '../services/workoutPlannerApi';
 import DashboardEmptyWelcome from "../components/DashboardPage/DashboardEmptyWelcome";
 import { Skeleton } from "../components/common/Skeleton";
 import { buildActivityMatcher, getActivityAppId, metricsPatchFromDetail, patchCalendarCache, upsertPlannedWorkoutList, removePlannedWorkoutFromList, notifyPlannedWorkoutUpdated, notifyPlannedWorkoutDeleted } from '../utils/activityEventPatches';
@@ -1842,21 +1842,29 @@ export default function DashboardPage() {
   // ── Planned workouts + day themes for dashboard calendar ──────────────────
   const [dayPlans, setDayPlans] = useState([]);
   const [periods, setPeriods] = useState([]);
+  const [planTemplates, setPlanTemplates] = useState([]);
+  const rememberTemplate = useCallback((tpl) => {
+    if (tpl?._id) setPlanTemplates((prev) => [tpl, ...prev.filter((t) => t._id !== tpl._id)]);
+  }, []);
   const loadDashboardPlannedWorkouts = useCallback(async () => {
     try {
       const role = String(user?.role || '').toLowerCase();
       const isCoachLike = ['coach', 'tester', 'testing', 'admin'].includes(role);
       const loadFor = isCoachLike && selectedAthleteId ? selectedAthleteId : user?._id;
       const opts = isCoachLike && selectedAthleteId ? { athleteId: selectedAthleteId } : {};
-      const [pw, dp, ps] = await Promise.all([
+      const [pw, dp, ps, tpls] = await Promise.all([
         getPlannedWorkouts(opts),
         getDayPlans(opts).catch(() => []),
         getPeriods(opts).catch(() => []),
+        // The plan modal's Templates tab: without these, a template saved
+        // on the phone never showed up there.
+        getWorkoutTemplates().catch(() => []),
       ]);
       if (String(loadFor) !== String(activeDataAthleteRef.current)) return;
       setPlannedWorkouts(Array.isArray(pw) ? pw : []);
       setDayPlans(Array.isArray(dp) ? dp : []);
       setPeriods(Array.isArray(ps) ? ps : []);
+      setPlanTemplates(Array.isArray(tpls) ? tpls : []);
     } catch (_) {}
   }, [selectedAthleteId, user?.role, user?._id]);
 
@@ -2664,6 +2672,11 @@ export default function DashboardPage() {
           if (!isPremium) { gate('Workout Planning', 'pro'); return; }
           setPlanModal({ date, workout: null });
         }}
+        onEditPlanStructure={(pw) => {
+          if (!isPremium) { gate('Workout Planning', 'pro'); return; }
+          const d = pw?.date ? new Date(pw.date) : new Date();
+          setPlanModal({ date: d, workout: pw });
+        }}
         stravaConnected={stravaConnected}
         onRequestStravaSync={performManualStravaSync}
         dayPlans={dayPlans}
@@ -2684,6 +2697,8 @@ export default function DashboardPage() {
           date={planModal.date}
           workout={planModal.workout}
           context={selectedAthleteId ? { athleteId: selectedAthleteId } : {}}
+          templates={planTemplates}
+          onTemplateSaved={rememberTemplate}
           onSave={handleDashboardPlanSave}
           onDelete={handleDashboardPlanDelete}
           onClose={() => setPlanModal(null)}
@@ -3402,6 +3417,8 @@ export default function DashboardPage() {
         date={planModal.date}
         workout={planModal.workout}
         context={selectedAthleteId ? { athleteId: selectedAthleteId } : {}}
+        templates={planTemplates}
+        onTemplateSaved={rememberTemplate}
         onSave={handleDashboardPlanSave}
         onDelete={handleDashboardPlanDelete}
         onClose={() => setPlanModal(null)}

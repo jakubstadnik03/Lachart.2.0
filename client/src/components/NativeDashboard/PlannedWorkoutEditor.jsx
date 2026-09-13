@@ -117,6 +117,8 @@ export default function PlannedWorkoutEditor({
   onOpenLinkedActivity,
   /** The day's recorded sessions — the ones this plan could be paired with. */
   dayActivities = [],
+  /** Opens the full builder for this plan: steps, typed session, templates. */
+  onEditStructure = null,
 }) {
   const isOpen = !!plannedWorkout;
   const navigate = useNavigate();
@@ -1004,6 +1006,27 @@ export default function PlannedWorkoutEditor({
             }}>
               {error}
             </div>
+          )}
+
+          {/* The structure itself — steps, a typed session, the template
+              library — is edited in the same builder the web has. */}
+          {onEditStructure && !linkedActivity && (
+            <button
+              type="button"
+              onClick={() => onEditStructure(plannedWorkout)}
+              style={{
+                width: '100%', marginTop: 4, padding: '11px 12px', borderRadius: 12,
+                border: '1px solid rgba(118,126,181,.3)', background: 'rgba(118,126,181,.08)', color: '#4f46e5',
+                fontFamily: 'inherit', fontSize: 12.5, fontWeight: 800,
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                cursor: 'pointer', WebkitTapHighlightColor: 'transparent', touchAction: 'manipulation',
+              }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M4 19h16M4 15l4-4 4 4 8-8" />
+              </svg>
+              {hasSteps ? 'Edit steps & templates' : 'Build the session — steps, templates'}
+            </button>
           )}
 
           {/* Export to .zwo / .tcx — visible whenever there are structured
