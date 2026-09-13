@@ -732,6 +732,7 @@ export default function WorkoutPlannerPage() {
           workout={modal.workout}
           context={context}
           templates={displayTemplates}
+          onTemplateSaved={(tpl) => { if (tpl?._id) setTemplates((prev) => [tpl, ...prev.filter((t) => t._id !== tpl._id)]); }}
           onSave={handleSave}
           onDelete={handleDelete}
           onClose={() => setModal(null)}

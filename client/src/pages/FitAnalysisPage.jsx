@@ -4494,6 +4494,7 @@ const FitAnalysisPage = () => {
           workout={planModal.workout}
           context={planContext}
           templates={planTemplates}
+          onTemplateSaved={(tpl) => { if (tpl?._id) setPlanTemplates((prev) => [tpl, ...prev.filter((t) => t._id !== tpl._id)]); }}
           onSave={handlePlanSave}
           onDelete={handlePlanDelete}
           onClose={() => setPlanModal(null)}

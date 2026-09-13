@@ -18,10 +18,10 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import ReactDOM from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence, useDragControls } from 'framer-motion';
-import { XMarkIcon, TrashIcon, BookmarkIcon, WrenchScrewdriverIcon, RectangleStackIcon, ArrowRightIcon, ArrowLeftIcon, BellIcon, CheckCircleIcon, PlayIcon, ChevronDownIcon, CheckIcon } from '@heroicons/react/24/outline';
+import { XMarkIcon, TrashIcon, BookmarkIcon, MagnifyingGlassIcon, WrenchScrewdriverIcon, RectangleStackIcon, ArrowRightIcon, ArrowLeftIcon, BellIcon, CheckCircleIcon, PlayIcon, ChevronDownIcon, CheckIcon } from '@heroicons/react/24/outline';
 import { Bike, WavesLadder, Dumbbell, PersonStanding, Repeat2, Sparkles, Waves, TestTube2, MoreHorizontal, Mountain, Snowflake } from 'lucide-react';
 import WorkoutBuilder, {
-  PRESET_CATALOG, buildPresetSteps, computeEstTSS,
+  PRESET_CATALOG, PRESET_CATEGORY_LABELS, buildPresetSteps, computeEstTSS,
   expandSteps, resolveTargetWatts, resolveTargetPace, resolveTargetSwimPace,
   fmtDuration as fmtStepDuration, fmtPace, fmtDistance,
 } from './WorkoutBuilder';
@@ -498,7 +498,7 @@ export function WorkoutLapList({ steps, context, sport }) {
   );
 }
 
-export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onClose, context = {}, templates = [], onAddDayTheme = null, onAddPeriod = null, onLogInjury = null }) {
+export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onClose, context = {}, templates = [], onTemplateSaved = null, onAddDayTheme = null, onAddPeriod = null, onLogInjury = null }) {
   const isEdit = Boolean(workout?._id);
   const { user: authUser } = useAuth() || {};
 
@@ -602,6 +602,13 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
   };
   const [tab, setTab]             = useState('builder');
   const [presetSport, setPresetSport] = useState(workout?.sport || 'bike');
+  // The page hands templates in; one saved here shows up at once, without a reload.
+  const [myTemplates, setMyTemplates] = useState(templates);
+  useEffect(() => { setMyTemplates(templates); }, [templates]);
+  const [tplQuery, setTplQuery] = useState('');
+  const [tplCat, setTplCat] = useState('all');
+  const [savedTemplateName, setSavedTemplateName] = useState('');
+  const categoryLabel = (id) => (categories || []).find((c) => c.id === id)?.label || PRESET_CATEGORY_LABELS[id] || id;
   // Build workout section: collapsed until user clicks "Build Workout"
   const [showBuilder, setShowBuilder] = useState(isEdit && (workout?.steps?.length > 0));
   // Planned manual stats (used when no builder steps)
@@ -1124,51 +1131,93 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
                           })}
                         </div>
 
-                        {/* Built-in presets */}
-                        <div>
-                          <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-2">Built-in workouts</p>
-                          <div className="grid grid-cols-2 gap-2">
-                            {PRESET_CATALOG.filter(p => p.sport === presetSport).map(preset => {
-                              const pSteps = buildPresetSteps(preset.key);
-                              return (
-                                <button key={preset.key}
-                                  onClick={() => { setSport(preset.sport); loadTemplate({ name: preset.name, sport: preset.sport, steps: pSteps }); }}
-                                  className="flex items-start gap-2.5 p-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 transition-all text-left group"
-                                  style={{ borderLeftColor: preset.color, borderLeftWidth: 3 }}>
-                                  <div className="flex-1 min-w-0">
-                                    <p className="text-xs font-semibold text-slate-800 leading-tight">{preset.name}</p>
-                                    <p className="text-[10px] text-slate-400 mt-0.5">{preset.desc}</p>
-                                    <div className="mt-1.5"><MiniWorkoutChart steps={pSteps} width={100} height={16} /></div>
-                                  </div>
-                                  <ArrowRightIcon className="w-3 h-3 text-slate-300 group-hover:text-slate-600 shrink-0 mt-0.5 transition-colors" />
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </div>
-
-                        {/* My saved templates */}
+                        {/* Find one: by name, and by what kind of session it is */}
                         {(() => {
-                          const myTpls = templates.filter(t => t.sport === presetSport);
-                          return myTpls.length > 0 ? (
-                            <div>
-                              <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-2">My templates</p>
+                          const q = tplQuery.trim().toLowerCase();
+                          const tplCategory = (t) => (Array.isArray(t.tags) && t.tags[0]) || null;
+                          const mine = myTemplates.filter((t) => t.sport === presetSport && !t.isDefault);
+                          const presets = PRESET_CATALOG.filter((p) => p.sport === presetSport);
+                          const cats = [...new Set([...presets.map((p) => p.cat), ...mine.map(tplCategory)].filter(Boolean))];
+                          const matches = (name, desc, cat) => (tplCat === 'all' || cat === tplCat)
+                            && (!q || `${name} ${desc || ''} ${categoryLabel(cat || '')}`.toLowerCase().includes(q));
+                          const mineShown = mine.filter((t) => matches(t.name, t.description, tplCategory(t)));
+                          const presetsShown = presets.filter((p) => matches(p.name, p.desc, p.cat));
+                          return (
+                            <>
                               <div className="flex flex-col gap-2">
-                                {myTpls.map(tpl => (
-                                  <button key={tpl._id} onClick={() => { setSport(tpl.sport); loadTemplate(tpl); }}
-                                    className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 bg-white hover:border-primary/50 hover:bg-primary/5 transition-all text-left">
-                                    <img src={SPORT_ICONS[tpl.sport] || SPORT_ICONS.bike} alt={tpl.sport} className="w-6 h-6 shrink-0" />
-                                    <div className="flex-1 min-w-0">
-                                      <p className="text-sm font-semibold text-slate-800">{tpl.name}</p>
-                                      <p className="text-[11px] text-slate-400">{fmtDuration(stepTotalSecs(tpl.steps))}</p>
-                                      {tpl.steps?.length > 0 && <div className="mt-1"><MiniWorkoutChart steps={tpl.steps} /></div>}
-                                    </div>
-                                    <span className="flex items-center gap-0.5 text-xs text-primary font-semibold shrink-0">Use <ArrowRightIcon className="w-3 h-3" /></span>
-                                  </button>
-                                ))}
+                                <div className="relative">
+                                  <MagnifyingGlassIcon className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                                  <input
+                                    type="search"
+                                    value={tplQuery}
+                                    onChange={(e) => setTplQuery(e.target.value)}
+                                    placeholder="Search workouts…"
+                                    className="w-full pl-9 pr-3 py-2 text-sm rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-primary/30"
+                                  />
+                                </div>
+                                {cats.length > 1 && (
+                                  <div className="flex gap-1.5 overflow-x-auto pb-0.5" style={{ WebkitOverflowScrolling: 'touch' }}>
+                                    {[{ id: 'all', label: 'All' }, ...cats.map((c) => ({ id: c, label: categoryLabel(c) }))].map((c) => (
+                                      <button key={c.id} type="button" onClick={() => setTplCat(c.id)}
+                                        className={`shrink-0 px-2.5 py-1 rounded-full text-[11px] font-semibold border transition-colors ${tplCat === c.id ? 'bg-primary text-white border-primary' : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'}`}>
+                                        {c.label}
+                                      </button>
+                                    ))}
+                                  </div>
+                                )}
                               </div>
-                            </div>
-                          ) : null;
+
+                              {/* Saved templates first — they are the coach's own */}
+                              {mineShown.length > 0 && (
+                                <div>
+                                  <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-2">My templates</p>
+                                  <div className="grid grid-cols-2 gap-2">
+                                    {mineShown.map((tpl) => (
+                                      <button key={tpl._id} onClick={() => { setSport(tpl.sport); loadTemplate(tpl); }}
+                                        className="flex items-start gap-2.5 p-3 rounded-xl border border-slate-200 bg-white hover:bg-primary/5 hover:border-primary/40 transition-all text-left group"
+                                        style={{ borderLeftColor: '#767EB5', borderLeftWidth: 3 }}>
+                                        <div className="flex-1 min-w-0">
+                                          <p className="text-xs font-semibold text-slate-800 leading-tight truncate">{tpl.name}</p>
+                                          <p className="text-[10px] text-slate-400 mt-0.5">
+                                            {fmtDuration(stepTotalSecs(tpl.steps))}
+                                            {tplCategory(tpl) ? ` · ${categoryLabel(tplCategory(tpl))}` : ''}
+                                          </p>
+                                          {tpl.steps?.length > 0 && <div className="mt-1.5"><MiniWorkoutChart steps={tpl.steps} width={100} height={16} /></div>}
+                                        </div>
+                                        <ArrowRightIcon className="w-3 h-3 text-slate-300 group-hover:text-slate-600 shrink-0 mt-0.5 transition-colors" />
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Built-in presets */}
+                              <div>
+                                <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-2">Built-in workouts</p>
+                                {presetsShown.length === 0 && mineShown.length === 0 ? (
+                                  <p className="text-xs text-slate-400 py-4 text-center">Nothing matches — try another word or category.</p>
+                                ) : null}
+                                <div className="grid grid-cols-2 gap-2">
+                                  {presetsShown.map(preset => {
+                                    const pSteps = buildPresetSteps(preset.key);
+                                    return (
+                                      <button key={preset.key}
+                                        onClick={() => { setSport(preset.sport); loadTemplate({ name: preset.name, sport: preset.sport, steps: pSteps }); }}
+                                        className="flex items-start gap-2.5 p-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 transition-all text-left group"
+                                        style={{ borderLeftColor: preset.color, borderLeftWidth: 3 }}>
+                                        <div className="flex-1 min-w-0">
+                                          <p className="text-xs font-semibold text-slate-800 leading-tight">{preset.name}</p>
+                                          <p className="text-[10px] text-slate-400 mt-0.5">{preset.desc} · {categoryLabel(preset.cat)}</p>
+                                          <div className="mt-1.5"><MiniWorkoutChart steps={pSteps} width={100} height={16} /></div>
+                                        </div>
+                                        <ArrowRightIcon className="w-3 h-3 text-slate-300 group-hover:text-slate-600 shrink-0 mt-0.5 transition-colors" />
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            </>
+                          );
                         })()}
                       </div>
                     )}
@@ -1205,12 +1254,20 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
                     onClick={async () => {
                       const name = window.prompt('Template name:', title);
                       if (!name) return;
-                      try { await createWorkoutTemplate({ name, sport, steps, description: desc }); } catch (_) {}
+                      try {
+                        const saved = await createWorkoutTemplate({ name, sport, steps, description: desc, tags: category ? [category] : [] });
+                        if (saved?._id) setMyTemplates((prev) => [saved, ...prev.filter((t) => t._id !== saved._id)]);
+                        onTemplateSaved?.(saved);
+                        setSavedTemplateName(name);
+                        setTimeout(() => setSavedTemplateName(''), 3500);
+                      } catch (_) {
+                        window.alert('Could not save the template.');
+                      }
                     }}
                     className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 text-slate-600 text-sm whitespace-nowrap shrink-0"
                   >
                     <BookmarkIcon className="w-4 h-4" />
-                    Save template
+                    {savedTemplateName ? `Saved “${savedTemplateName}”` : 'Save template'}
                   </button>
                 )}
                 {isEdit && steps.length > 0 && (

@@ -883,43 +883,79 @@ function totalDuration(steps) {
 // ─── Built-in preset catalog (exported for Templates tab) ────────────────────
 export const PRESET_CATALOG = [
   // ── Bike ────────────────────────────────────────────────────────────────────
-  { key: 'threshold_intervals', name: 'Threshold Intervals', sport: 'bike', desc: '5×8min @LT2',           color: '#767EB5' },
-  { key: 'sweet_spot',          name: 'Sweet Spot',          sport: 'bike', desc: '3×15min @88-93%FTP',    color: '#f97316' },
-  { key: 'vo2max',              name: 'VO2max Bike',         sport: 'bike', desc: '6×4min @Z5',             color: '#ef4444' },
-  { key: 'zone2',               name: 'Zone 2 Ride',         sport: 'bike', desc: '60min steady Z2',        color: '#22c55e' },
-  { key: 'over_under',          name: 'Over-Unders',         sport: 'bike', desc: '3×(3+2min)',             color: '#a855f7' },
-  { key: 'pyramid',             name: 'Pyramid',             sport: 'bike', desc: '2-4-6-4-2min @LT2',     color: '#f59e0b' },
-  { key: 'tempo',               name: 'Tempo',               sport: 'bike', desc: '2×20min @90%LT2',       color: '#dc2626' },
-  { key: 'lactate',             name: 'Lactate Staircase',   sport: 'bike', desc: 'Z2→Z5 steps',           color: '#6366f1' },
-  { key: 'bike_3030',           name: '30/30s',              sport: 'bike', desc: '2×10×(30s Z5 + 30s Z1)', color: '#e11d48' },
-  { key: 'bike_long',           name: 'Long Ride',           sport: 'bike', desc: '2h Z2 + 3×10min tempo',  color: '#16a34a' },
-  { key: 'bike_big_gear',       name: 'Big Gear Strength',   sport: 'bike', desc: '5×5min low-cadence @85%LT2', color: '#0ea5e9' },
-  { key: 'bike_recovery',       name: 'Recovery Spin',       sport: 'bike', desc: '45min @Z1',              color: '#86efac' },
+  { key: 'threshold_intervals', name: 'Threshold Intervals', sport: 'bike', cat: 'lt2',       desc: '5×8min @LT2',                 color: '#767EB5' },
+  { key: 'bike_2x20',           name: '2×20 Threshold',      sport: 'bike', cat: 'lt2',       desc: '2×20min @LT2 + 5min easy',    color: '#5b21b6' },
+  { key: 'sweet_spot',          name: 'Sweet Spot',          sport: 'bike', cat: 'tempo',     desc: '3×15min @88-93%FTP',          color: '#f97316' },
+  { key: 'bike_ss_4x10',        name: 'Sweet Spot 4×10',     sport: 'bike', cat: 'tempo',     desc: '4×10min @90%FTP + 3min',      color: '#fb923c' },
+  { key: 'tempo',               name: 'Tempo',               sport: 'bike', cat: 'tempo',     desc: '2×20min @90%LT2',             color: '#dc2626' },
+  { key: 'bike_z3_hour',        name: 'Zone 3 Hour',         sport: 'bike', cat: 'tempo',     desc: '60min steady Z3',             color: '#f59e0b' },
+  { key: 'vo2max',              name: 'VO2max Bike',         sport: 'bike', cat: 'vo2max',    desc: '6×4min @Z5',                  color: '#ef4444' },
+  { key: 'bike_5x5',            name: 'VO2max 5×5',          sport: 'bike', cat: 'vo2max',    desc: '5×5min @Z5 + 5min easy',      color: '#b91c1c' },
+  { key: 'bike_3030',           name: '30/30s',              sport: 'bike', cat: 'vo2max',    desc: '2×10×(30s Z5 + 30s Z1)',      color: '#e11d48' },
+  { key: 'bike_4020',           name: '40/20s',              sport: 'bike', cat: 'vo2max',    desc: '3×8×(40s Z5 + 20s Z1)',       color: '#f43f5e' },
+  { key: 'bike_anaerobic',      name: 'Anaerobic 8×1',       sport: 'bike', cat: 'sprint',    desc: '8×1min @130%LT2 + 3min',      color: '#9f1239' },
+  { key: 'bike_tabata',         name: 'Tabata',              sport: 'bike', cat: 'sprint',    desc: '2×8×(20s all-out + 10s)',     color: '#be123c' },
+  { key: 'bike_sprints',        name: 'Sprint Set',          sport: 'bike', cat: 'sprint',    desc: '8×15s max + 4min spin',       color: '#7f1d1d' },
+  { key: 'over_under',          name: 'Over-Unders',         sport: 'bike', cat: 'lt2',       desc: '3×(3+2min)',                  color: '#a855f7' },
+  { key: 'pyramid',             name: 'Pyramid',             sport: 'bike', cat: 'lt2',       desc: '2-4-6-4-2min @LT2',           color: '#f59e0b' },
+  { key: 'bike_race_pace',      name: 'Race Pace 3×15',      sport: 'bike', cat: 'race',      desc: '3×15min @LT2 + 5min',         color: '#ec4899' },
+  { key: 'lactate',             name: 'Lactate Staircase',   sport: 'bike', cat: 'lt1',       desc: 'Z2→Z5 steps',                 color: '#6366f1' },
+  { key: 'bike_lt1_hour',       name: 'LT1 Hour',            sport: 'bike', cat: 'lt1',       desc: '60min @LT1',                  color: '#0ea5e9' },
+  { key: 'zone2',               name: 'Zone 2 Ride',         sport: 'bike', cat: 'zone2',     desc: '60min steady Z2',             color: '#22c55e' },
+  { key: 'bike_long',           name: 'Long Ride',           sport: 'bike', cat: 'endurance', desc: '2h Z2 + 3×10min tempo',       color: '#16a34a' },
+  { key: 'bike_3h',             name: 'Endurance 3h',        sport: 'bike', cat: 'endurance', desc: '3h Z2 with 2×20min Z3',       color: '#15803d' },
+  { key: 'bike_big_gear',       name: 'Big Gear Strength',   sport: 'bike', cat: 'strength',  desc: '5×5min low-cadence @85%LT2',  color: '#0ea5e9' },
+  { key: 'bike_cadence',        name: 'Cadence Drills',      sport: 'bike', cat: 'technique', desc: '6×3min high cadence Z2',      color: '#06b6d4' },
+  { key: 'bike_ramp_test',      name: 'Ramp Test',           sport: 'bike', cat: 'race',      desc: '+20W every minute to failure', color: '#64748b' },
+  { key: 'bike_recovery',       name: 'Recovery Spin',       sport: 'bike', cat: 'recovery',  desc: '45min @Z1',                   color: '#86efac' },
 
   // ── Run ─────────────────────────────────────────────────────────────────────
-  { key: 'run_easy',            name: 'Easy Run',            sport: 'run',  desc: '45min @Z2',              color: '#86efac' },
-  { key: 'run_long',            name: 'Long Run',            sport: 'run',  desc: '90min @Z1-Z2',           color: '#22c55e' },
-  { key: 'run_threshold',       name: 'Threshold Run',       sport: 'run',  desc: '2×15min @LT2',           color: '#f97316' },
-  { key: 'run_tempo',           name: 'Tempo Run',           sport: 'run',  desc: '20min @90%LT2',          color: '#dc2626' },
-  { key: 'run_vo2max',          name: 'VO2max Run',          sport: 'run',  desc: '6×3min @Z5 + jog',       color: '#ef4444' },
-  { key: 'run_fartlek',         name: 'Fartlek',             sport: 'run',  desc: '10×1min fast + 1min jog', color: '#a855f7' },
-  { key: 'run_hills',           name: 'Hill Repeats',        sport: 'run',  desc: '8×60sec @Z5 + 2min',     color: '#6366f1' },
-  { key: 'run_progressive',     name: 'Progressive Run',     sport: 'run',  desc: 'Z2→LT2 build',           color: '#f59e0b' },
-  { key: 'run_1k_repeats',      name: '1 km Repeats',        sport: 'run',  desc: '10×1km @LT2 + 90s jog',  color: '#fb923c' },
-  { key: 'run_400s',            name: '400m Repeats',        sport: 'run',  desc: '12×400m @Z5 + 90s jog',  color: '#e11d48' },
-  { key: 'run_strides',         name: 'Easy + Strides',      sport: 'run',  desc: '40min Z2 + 6×20s strides', color: '#14b8a6' },
-  { key: 'run_recovery',        name: 'Recovery Jog',        sport: 'run',  desc: '30min @Z1',              color: '#86efac' },
+  { key: 'run_easy',            name: 'Easy Run',            sport: 'run',  cat: 'zone2',     desc: '45min @Z2',                   color: '#86efac' },
+  { key: 'run_long',            name: 'Long Run',            sport: 'run',  cat: 'endurance', desc: '90min @Z1-Z2',                color: '#22c55e' },
+  { key: 'run_long_progression', name: 'Progression Long Run', sport: 'run', cat: 'endurance', desc: '60min Z2 + 30min Z3 + 10min LT2', color: '#15803d' },
+  { key: 'run_threshold',       name: 'Threshold Run',       sport: 'run',  cat: 'lt2',       desc: '2×15min @LT2',                color: '#f97316' },
+  { key: 'run_tempo',           name: 'Tempo Run',           sport: 'run',  cat: 'tempo',     desc: '20min @90%LT2',               color: '#dc2626' },
+  { key: 'run_cruise',          name: 'Cruise Intervals',    sport: 'run',  cat: 'lt2',       desc: '5×2km @LT2 + 90s jog',        color: '#7c3aed' },
+  { key: 'run_marathon_pace',   name: 'Marathon Pace',       sport: 'run',  cat: 'race',      desc: '2×5km @LT1 + 3min jog',       color: '#ec4899' },
+  { key: 'run_vo2max',          name: 'VO2max Run',          sport: 'run',  cat: 'vo2max',    desc: '6×3min @Z5 + jog',            color: '#ef4444' },
+  { key: 'run_5x2',             name: 'Intervals 5×2',       sport: 'run',  cat: 'vo2max',    desc: '5×2min @Z5 + 2min jog',       color: '#b91c1c' },
+  { key: 'run_yasso',           name: 'Yasso 800s',          sport: 'run',  cat: 'vo2max',    desc: '8×800m @Z4 + 400m jog',       color: '#f43f5e' },
+  { key: 'run_mile_repeats',    name: 'Mile Repeats',        sport: 'run',  cat: 'lt2',       desc: '4×1600m @LT2 + 3min jog',     color: '#8b5cf6' },
+  { key: 'run_fartlek',         name: 'Fartlek',             sport: 'run',  cat: 'tempo',     desc: '10×1min fast + 1min jog',     color: '#a855f7' },
+  { key: 'run_hills',           name: 'Hill Repeats',        sport: 'run',  cat: 'hills',     desc: '8×60sec @Z5 + 2min',          color: '#6366f1' },
+  { key: 'run_kenyan_hills',    name: 'Kenyan Hills',        sport: 'run',  cat: 'hills',     desc: '3×5min rolling @Z4 + 3min',   color: '#4f46e5' },
+  { key: 'run_progressive',     name: 'Progressive Run',     sport: 'run',  cat: 'tempo',     desc: 'Z2→LT2 build',                color: '#f59e0b' },
+  { key: 'run_1k_repeats',      name: '1 km Repeats',        sport: 'run',  cat: 'lt2',       desc: '10×1km @LT2 + 90s jog',       color: '#fb923c' },
+  { key: 'run_400s',            name: '400m Repeats',        sport: 'run',  cat: 'sprint',    desc: '12×400m @Z5 + 90s jog',       color: '#e11d48' },
+  { key: 'run_200s',            name: '200m Speed',          sport: 'run',  cat: 'sprint',    desc: '10×200m fast + 200m walk',    color: '#9f1239' },
+  { key: 'run_strides',         name: 'Easy + Strides',      sport: 'run',  cat: 'technique', desc: '40min Z2 + 6×20s strides',    color: '#14b8a6' },
+  { key: 'run_recovery',        name: 'Recovery Jog',        sport: 'run',  cat: 'recovery',  desc: '30min @Z1',                   color: '#86efac' },
 
   // ── Swim ────────────────────────────────────────────────────────────────────
-  { key: 'swim_endurance',      name: 'Endurance Set',       sport: 'swim', desc: '30min steady @Z2',       color: '#38bdf8' },
-  { key: 'swim_threshold',      name: 'Threshold Set',       sport: 'swim', desc: '10×100m @LT2',           color: '#0ea5e9' },
-  { key: 'swim_sprint',         name: 'Sprint Set',          sport: 'swim', desc: '12×25m @Z5 + 30s rest',  color: '#ef4444' },
-  { key: 'swim_pyramid',        name: 'Pyramid',             sport: 'swim', desc: '400-300-200-100m @LT2',  color: '#6366f1' },
-  { key: 'swim_pull',           name: 'Pull Set',            sport: 'swim', desc: '3×400m @90%LT2',         color: '#a855f7' },
-  { key: 'swim_warmup_drills',  name: 'Drill Focus',         sport: 'swim', desc: 'WU + 8×50m drills + CD', color: '#22c55e' },
-  { key: 'swim_200s',           name: '200s Set',            sport: 'swim', desc: '5×200m @LT2 + 30s rest', color: '#2563eb' },
-  { key: 'swim_kick',           name: 'Kick Set',            sport: 'swim', desc: '8×50m kick + 20s rest',  color: '#f59e0b' },
+  { key: 'swim_endurance',      name: 'Endurance Set',       sport: 'swim', cat: 'endurance', desc: '30min steady @Z2',            color: '#38bdf8' },
+  { key: 'swim_aerobic_200s',   name: 'Aerobic 200s',        sport: 'swim', cat: 'zone2',     desc: '10×200m @Z2 + 20s rest',      color: '#22c55e' },
+  { key: 'swim_open_water',     name: 'Open Water Prep',     sport: 'swim', cat: 'endurance', desc: '3×500m @Z2 + 45s rest',       color: '#0891b2' },
+  { key: 'swim_threshold',      name: 'Threshold Set',       sport: 'swim', cat: 'lt2',       desc: '10×100m @LT2',                color: '#0ea5e9' },
+  { key: 'swim_css_20x100',     name: 'CSS 20×100',          sport: 'swim', cat: 'lt2',       desc: '20×100m @LT2 + 10s rest',     color: '#2563eb' },
+  { key: 'swim_5x400',          name: 'Threshold 5×400',     sport: 'swim', cat: 'lt2',       desc: '5×400m @LT2 + 30s rest',      color: '#1d4ed8' },
+  { key: 'swim_200s',           name: '200s Set',            sport: 'swim', cat: 'lt2',       desc: '5×200m @LT2 + 30s rest',      color: '#2563eb' },
+  { key: 'swim_broken_400s',    name: 'Broken 400s',         sport: 'swim', cat: 'race',      desc: '4×(4×100m @Z4 + 10s)',         color: '#ec4899' },
+  { key: 'swim_descending',     name: 'Descending 4×200',    sport: 'swim', cat: 'tempo',     desc: '200m Z2→Z3→Z4→Z5 + 30s',      color: '#f59e0b' },
+  { key: 'swim_pyramid',        name: 'Pyramid',             sport: 'swim', cat: 'lt2',       desc: '400-300-200-100m @LT2',       color: '#6366f1' },
+  { key: 'swim_pull',           name: 'Pull Set',            sport: 'swim', cat: 'tempo',     desc: '3×400m @90%LT2',              color: '#a855f7' },
+  { key: 'swim_sprint',         name: 'Sprint Set',          sport: 'swim', cat: 'sprint',    desc: '12×25m @Z5 + 30s rest',       color: '#ef4444' },
+  { key: 'swim_16x25',          name: 'Sprint 16×25',        sport: 'swim', cat: 'sprint',    desc: '16×25m max + 40s rest',       color: '#b91c1c' },
+  { key: 'swim_vo2_8x50',       name: 'VO2max 8×50',         sport: 'swim', cat: 'vo2max',    desc: '8×50m @Z5 + 30s rest',        color: '#f43f5e' },
+  { key: 'swim_warmup_drills',  name: 'Drill Focus',         sport: 'swim', cat: 'technique', desc: 'WU + 8×50m drills + CD',      color: '#22c55e' },
+  { key: 'swim_kick',           name: 'Kick Set',            sport: 'swim', cat: 'technique', desc: '8×50m kick + 20s rest',       color: '#f59e0b' },
+  { key: 'swim_recovery',       name: 'Recovery Swim',       sport: 'swim', cat: 'recovery',  desc: '1200m easy @Z1',              color: '#86efac' },
 ];
+
+/** Labels for preset / template categories that are not one of the athlete's own. */
+export const PRESET_CATEGORY_LABELS = {
+  endurance: 'Endurance', zone2: 'Zone 2', lt1: 'LT1', tempo: 'Tempo', lt2: 'LT2', vo2max: 'VO₂max',
+  hills: 'Hills', race: 'Race pace', sprint: 'Sprint', recovery: 'Recovery', strength: 'Strength', technique: 'Technique',
+};
 
 export function buildPresetSteps(preset) {
   const p = () => `ps-${Date.now()}-${Math.random().toString(36).slice(2,7)}`;
@@ -1014,6 +1050,45 @@ export function buildPresetSteps(preset) {
       ...CD(600)];
   if (preset === 'bike_recovery')
     return [WRK(2700,{type:'zone',value:1})];
+  if (preset === 'bike_2x20')
+    return [...WU(), EZ(), ...GROUP(2, 1200, {type:'lt2'}, 300), ...CD(600)];
+  if (preset === 'bike_ss_4x10')
+    return [...WU(), EZ(), ...GROUP(4, 600, {type:'percent_ftp',value:90}, 180), ...CD(600)];
+  if (preset === 'bike_z3_hour')
+    return [...WU(), WRK(3600,{type:'zone',value:3}), ...CD(600)];
+  if (preset === 'bike_5x5')
+    return [...WU(), EZ(), ...GROUP(5, 300, {type:'zone',value:5}, 300), ...CD(600)];
+  if (preset === 'bike_4020')
+    return [...WU(), EZ(),
+      ...GROUP(8, 40, {type:'zone',value:5}, 20), REC(300),
+      ...GROUP(8, 40, {type:'zone',value:5}, 20), REC(300),
+      ...GROUP(8, 40, {type:'zone',value:5}, 20), ...CD(600)];
+  if (preset === 'bike_anaerobic')
+    return [...WU(), EZ(), ...GROUP(8, 60, {type:'percent_lt2',value:130}, 180), ...CD(600)];
+  if (preset === 'bike_tabata')
+    return [...WU(), EZ(),
+      ...GROUP(8, 20, {type:'percent_lt2',value:170}, 10), REC(300),
+      ...GROUP(8, 20, {type:'percent_lt2',value:170}, 10), ...CD(600)];
+  if (preset === 'bike_sprints')
+    return [...WU(), EZ(), ...GROUP(8, 15, {type:'percent_lt2',value:200}, 240), ...CD(600)];
+  if (preset === 'bike_race_pace')
+    return [...WU(), EZ(), ...GROUP(3, 900, {type:'lt2'}, 300), ...CD(600)];
+  if (preset === 'bike_lt1_hour')
+    return [...WU(), WRK(3600,{type:'lt1'}), ...CD(600)];
+  if (preset === 'bike_3h')
+    return [...WU(), WRK(3600,{type:'zone',value:2}),
+      ...GROUP(2, 1200, {type:'zone',value:3}, 600),
+      WRK(2400,{type:'zone',value:2}), ...CD(600)];
+  if (preset === 'bike_cadence')
+    return [...WU(), EZ(),
+      ...GROUP(6, 180, {type:'zone',value:2}, 120, {type:'zone',value:1}, { cadenceMin:100, cadenceMax:110 }),
+      ...CD(600)];
+  if (preset === 'bike_ramp_test') {
+    // +20 W a minute from 100 W; the athlete stops when the legs do.
+    const steps = [...WU(), EZ()];
+    for (let w = 100; w <= 460; w += 20) steps.push(WRK(60, {type:'watts', value:w}));
+    steps.push(...CD(600)); return steps;
+  }
 
   // ── Run ─────────────────────────────────────────────────────────────────────
   if (preset === 'run_easy')
@@ -1049,6 +1124,36 @@ export function buildPresetSteps(preset) {
     return [...WU(), WRK(2400,{type:'zone',value:2}), ...GROUP(6, 20, {type:'zone',value:5}, 60), ...CD(300)];
   if (preset === 'run_recovery')
     return [WRK(1800,{type:'zone',value:1})];
+  if (preset === 'run_long_progression')
+    return [...WU(), WRK(3600,{type:'zone',value:2}), WRK(1800,{type:'zone',value:3}), WRK(600,{type:'lt2'}), ...CD(600)];
+  if (preset === 'run_cruise')
+    return [...WU(), EZ(), ...RGROUP(5, 2000, {type:'lt2'}, 90), ...CD(600)];
+  if (preset === 'run_marathon_pace')
+    return [...WU(), EZ(), ...RGROUP(2, 5000, {type:'lt1'}, 180), ...CD(600)];
+  if (preset === 'run_5x2')
+    return [...WU(), EZ(), ...GROUP(5, 120, {type:'zone',value:5}, 120), ...CD(600)];
+  if (preset === 'run_yasso') {
+    const gid = p();
+    return [...WU(), EZ(),
+      { clientId:p(), groupId:gid, isGroupHeader:true, groupRepeat:8, stepType:'work',
+        durationType:'distance', distanceMeters:800, durationSeconds:runDist(800), powerTarget:{type:'zone',value:4} },
+      { clientId:p(), groupId:gid, stepType:'recovery',
+        durationType:'distance', distanceMeters:400, durationSeconds:Math.round(400 * 0.4), powerTarget:{type:'zone',value:1} },
+      ...CD(600)];
+  }
+  if (preset === 'run_mile_repeats')
+    return [...WU(), EZ(), ...RGROUP(4, 1600, {type:'lt2'}, 180), ...CD(600)];
+  if (preset === 'run_kenyan_hills')
+    return [...WU(), EZ(), ...GROUP(3, 300, {type:'zone',value:4}, 180), ...CD(600)];
+  if (preset === 'run_200s') {
+    const gid = p();
+    return [...WU(), EZ(),
+      { clientId:p(), groupId:gid, isGroupHeader:true, groupRepeat:10, stepType:'work',
+        durationType:'distance', distanceMeters:200, durationSeconds:runDist(200), powerTarget:{type:'zone',value:5} },
+      { clientId:p(), groupId:gid, stepType:'recovery',
+        durationType:'distance', distanceMeters:200, durationSeconds:Math.round(200 * 0.6), powerTarget:{type:'zone',value:1} },
+      ...CD(600)];
+  }
 
   // ── Swim (distance-based: durationType='distance', distanceMeters) ──────────
   // Estimate ~2:00/100m = 120 sec/100m for chart sizing
@@ -1111,6 +1216,31 @@ export function buildPresetSteps(preset) {
 
   if (preset === 'swim_kick')
     return [...SWU(400), ...SGROUP(8, 50, {type:'zone',value:3}, 20), ...SCD(200)];
+  if (preset === 'swim_aerobic_200s')
+    return [...SWU(400), ...SGROUP(10, 200, {type:'zone',value:2}, 20), ...SCD(200)];
+  if (preset === 'swim_open_water')
+    return [...SWU(400), ...SGROUP(3, 500, {type:'zone',value:2}, 45), ...SCD(200)];
+  if (preset === 'swim_css_20x100')
+    return [...SWU(400), ...SGROUP(20, 100, {type:'lt2'}, 10), ...SCD(200)];
+  if (preset === 'swim_5x400')
+    return [...SWU(400), ...SGROUP(5, 400, {type:'lt2'}, 30), ...SCD(200)];
+  if (preset === 'swim_broken_400s') {
+    // Four 400s, each broken into 4×100 with 10 s — held at race effort.
+    const steps = [...SWU(400)];
+    for (let i = 0; i < 4; i++) { steps.push(...SGROUP(4, 100, {type:'zone',value:4}, 10)); if (i < 3) steps.push(SRST(60)); }
+    steps.push(...SCD(200)); return steps;
+  }
+  if (preset === 'swim_descending') {
+    const steps = [...SWU(400)];
+    [2,3,4,5].forEach((z, i) => { steps.push(SWRK(200,{type:'zone',value:z})); if (i < 3) steps.push(SRST(30)); });
+    steps.push(...SCD(200)); return steps;
+  }
+  if (preset === 'swim_16x25')
+    return [...SWU(400), ...SGROUP(16, 25, {type:'zone',value:5}, 40), ...SCD(200)];
+  if (preset === 'swim_vo2_8x50')
+    return [...SWU(400), ...SGROUP(8, 50, {type:'zone',value:5}, 30), ...SCD(200)];
+  if (preset === 'swim_recovery')
+    return [SWRK(1200,{type:'zone',value:1})];
   return [];
 }
 
