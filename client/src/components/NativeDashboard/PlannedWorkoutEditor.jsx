@@ -13,6 +13,8 @@ import { WorkoutSummary, WorkoutLapList, FieldSelect, SPORT_OPTIONS, SportOptIco
 import api from '../../services/api';
 import TrainingComments from '../TrainingComments';
 import { plannedDistanceMetres } from '../../utils/plannedWorkoutDistance';
+import { getActivityAppId } from '../../utils/activityEventPatches';
+import { activityCompletedStats } from '../../utils/activityStatsLine';
 import {
   distanceInputUnitLabel,
   formatDistanceInputFromMetres,
@@ -113,6 +115,8 @@ export default function PlannedWorkoutEditor({
   onSaved,
   onDeleted,
   onOpenLinkedActivity,
+  /** The day's recorded sessions — the ones this plan could be paired with. */
+  dayActivities = [],
 }) {
   const isOpen = !!plannedWorkout;
   const navigate = useNavigate();
@@ -157,6 +161,7 @@ export default function PlannedWorkoutEditor({
   const [doneTss, setDoneTss] = useState('');
   const [savingDone, setSavingDone] = useState(false);
   const [doneError, setDoneError] = useState(null);
+  const [pairing, setPairing] = useState(false);
 
   /** Prefill from the plan — most sessions land close to what was asked for. */
   const startEnteringDone = () => {
@@ -365,6 +370,38 @@ export default function PlannedWorkoutEditor({
   if (!isOpen) return null;
 
   const isCompleted = !!linkedActivity;
+
+  // Pairing by hand — which session this plan stands for is the athlete's
+  // call, not the sport matcher's. Unpair leaves the plan alone (it will not
+  // take the next session of its sport either); pairing points it at one.
+  const linkedId = linkedActivity ? getActivityAppId(linkedActivity) : null;
+  const pairOptions = (Array.isArray(dayActivities) ? dayActivities : [])
+    .filter((a) => getActivityAppId(a) !== linkedId);
+  const setPlanPairing = async (act) => {
+    if (!plannedWorkout?._id || pairing) return;
+    setPairing(true);
+    try {
+      const appId = act ? getActivityAppId(act) : null;
+      const payload = appId
+        ? {
+          completedTrainingId: appId,
+          unpaired: false,
+          status: 'completed',
+          stravaActivityId: act.stravaId ? String(act.stravaId) : null,
+          fitTrainingId: (act.type === 'fit' || act.source === 'fit' || appId.startsWith('fit-')) && act._id ? String(act._id) : null,
+        }
+        : { completedTrainingId: null, unpaired: true, status: 'planned', stravaActivityId: null, fitTrainingId: null };
+      const updated = await updatePlannedWorkout(plannedWorkout._id, payload, athleteId);
+      const saved = updated?.data || updated;
+      notifyPlannedWorkoutUpdated(saved);
+      onSaved && onSaved(saved);
+      onClose && onClose();
+    } catch (e) {
+      setDoneError(e?.response?.data?.error || e?.message || 'Could not change the pairing.');
+    } finally {
+      setPairing(false);
+    }
+  };
   const tint = SPORT_TINT[sport === 'strength' ? 'gym' : sport] || SPORT_TINT.other;
 
   // Planned vs completed, in the same three units so the columns line up.
@@ -736,6 +773,74 @@ export default function PlannedWorkoutEditor({
                 <polyline points="9 18 15 12 9 6" />
               </svg>
             </button>
+          </div>
+        )}
+
+        {/* Which session this plan stands for */}
+        {(isCompleted || pairOptions.length > 0) && (
+          <div style={{ padding: '0 18px 8px' }}>
+            <div style={{
+              borderRadius: 14, background: 'rgba(255,255,255,.7)',
+              border: '1px solid rgba(118,126,181,.15)', padding: '10px 12px',
+            }}>
+              <div style={{ fontSize: 9, fontWeight: 800, color: '#9CA3AF', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 6 }}>
+                {isCompleted ? 'Paired session' : 'Pair with a session'}
+              </div>
+              {isCompleted && (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: pairOptions.length ? 8 : 0 }}>
+                  <div style={{ minWidth: 0, fontSize: 12, fontWeight: 700, color: '#111827', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {linkedActivity.title || linkedActivity.name || linkedActivity.titleManual || 'Activity'}
+                  </div>
+                  <button
+                    type="button"
+                    disabled={pairing}
+                    onClick={() => setPlanPairing(null)}
+                    style={{
+                      flexShrink: 0, padding: '6px 10px', borderRadius: 999,
+                      background: 'rgba(239,68,68,.08)', border: '1px solid rgba(239,68,68,.25)', color: '#b91c1c',
+                      fontFamily: 'inherit', fontSize: 11, fontWeight: 800, cursor: 'pointer',
+                      WebkitTapHighlightColor: 'transparent', touchAction: 'manipulation', opacity: pairing ? .6 : 1,
+                    }}
+                  >
+                    Unpair
+                  </button>
+                </div>
+              )}
+              {pairOptions.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {isCompleted && (
+                    <div style={{ fontSize: 10, fontWeight: 700, color: '#9CA3AF' }}>Pair with a different session</div>
+                  )}
+                  {pairOptions.map((a) => {
+                    const stats = activityCompletedStats(a);
+                    return (
+                      <button
+                        key={getActivityAppId(a)}
+                        type="button"
+                        disabled={pairing}
+                        onClick={() => setPlanPairing(a)}
+                        style={{
+                          width: '100%', textAlign: 'left', padding: '9px 11px', borderRadius: 12,
+                          background: '#fff', border: '1px solid rgba(118,126,181,.22)',
+                          fontFamily: 'inherit', cursor: 'pointer', opacity: pairing ? .6 : 1,
+                          WebkitTapHighlightColor: 'transparent', touchAction: 'manipulation',
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ fontSize: 12, fontWeight: 700, color: '#111827', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {a.title || a.name || a.titleManual || 'Activity'}
+                            </div>
+                            {stats ? <div style={{ fontSize: 10.5, color: '#6B7280' }}>{stats}</div> : null}
+                          </div>
+                          <span style={{ flexShrink: 0, fontSize: 11, fontWeight: 800, color: '#4f46e5' }}>Pair</span>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           </div>
         )}
 

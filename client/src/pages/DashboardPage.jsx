@@ -119,7 +119,7 @@ function pickTodaysCompleted(activities, plannedWorkouts) {
       // (fallback) a same-day plan of the same sport exists.
       const wasPlanned = dayPlans.some(p =>
         (p?.completedTrainingId && String(p.completedTrainingId) === aid) ||
-        normaliseSportForWidget(p?.sport) === normaliseSportForWidget(a?.sport)
+        (!p?.unpaired && normaliseSportForWidget(p?.sport) === normaliseSportForWidget(a?.sport))
       );
       const durSec = completedSecs(a);
       const distM  = Number(a.distance || a.totalDistance || 0);
@@ -165,7 +165,7 @@ function pickTodaysPlanned(plannedWorkouts, activities) {
     const aid = String(a.id || a._id || '');
     const sport = normaliseSportForWidget(a?.sport);
     let match = todays.find(p => !claimed.has(pid(p)) && p.completedTrainingId && String(p.completedTrainingId) === aid);
-    if (!match) match = todays.find(p => !claimed.has(pid(p)) && normaliseSportForWidget(p?.sport) === sport);
+    if (!match) match = todays.find(p => !claimed.has(pid(p)) && !p.unpaired && normaliseSportForWidget(p?.sport) === sport);
     if (match) claimed.add(pid(match));
   }
 

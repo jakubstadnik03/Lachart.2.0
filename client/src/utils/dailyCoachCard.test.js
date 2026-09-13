@@ -315,3 +315,25 @@ describe('isHardPlan — what earns the HARD badge', () => {
     expect(isHardPlan(plan({ title: 'Ride', targetTss: 50 }))).toBe(false);
   });
 });
+
+describe('today’s plans and today’s sessions', () => {
+  const ride = { id: 'strava-77', date: NOW, sport: 'Ride', title: 'Morning Ride', totalTime: 5400, distance: 60000, tss: 90 };
+  const swim = { id: 'strava-78', date: NOW, sport: 'Swim', title: 'Lunch Swim', totalTime: 2400, distance: 2000, tss: 40 };
+
+  it('a plan of the same sport is done, and knows which session did it', () => {
+    const card = build({ activities: [...activities, ride, swim] });
+    expect(card.todayPlanned[0].doneId).toBe('strava-77');
+    expect(card.todayUnplanned.map((a) => a.id)).toEqual(['strava-78']);
+  });
+
+  it('an unpaired plan takes nothing, so the session is listed on its own', () => {
+    const card = build({ activities: [...activities, ride], plannedWorkouts: [{ ...hardPlan, unpaired: true }, tomorrowPlan] });
+    expect(card.todayPlanned[0].doneId).toBeUndefined();
+    expect(card.todayUnplanned.map((a) => a.id)).toEqual(['strava-77']);
+  });
+
+  it('an explicit link wins over the sport', () => {
+    const card = build({ activities: [...activities, ride, swim], plannedWorkouts: [{ ...hardPlan, completedTrainingId: 'strava-78' }, tomorrowPlan] });
+    expect(card.todayPlanned[0].doneId).toBe('strava-78');
+  });
+});

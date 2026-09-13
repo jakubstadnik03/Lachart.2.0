@@ -82,6 +82,10 @@ const plannedWorkoutSchema = new mongoose.Schema({
     index: true,
   },
   completedTrainingId: String,   // Training._id when marked complete
+  // The athlete said this plan was not the session the calendar paired it
+  // with — and not the next one of the same sport either. Cleared when they
+  // pair it by hand.
+  unpaired: { type: Boolean, default: false },
   coachNotes:  String,
   comment:     String,
   targetTss:   Number,

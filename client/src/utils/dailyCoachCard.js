@@ -367,11 +367,19 @@ export function buildDailyCard({
   // the session, and the "already logged" list only carries what nothing
   // planned accounts for.
   const claimed = new Set();
+  const rawPlanById = new Map(plans.map((p) => [String(p?._id || p?.id || ''), p]));
+  const actId = (a) => String(a?.id || a?._id || '');
   todayPlanned.forEach((p) => {
-    const match = todayActs.find((a) => !claimed.has(a) && planMatchesSession(p.sport, a.sport || a.type || ''));
+    const raw = rawPlanById.get(String(p.id)) || {};
+    // The athlete's own pairing wins; an unpaired plan takes nothing.
+    if (raw.unpaired) return;
+    const linked = raw.completedTrainingId
+      ? todayActs.find((a) => actId(a) === String(raw.completedTrainingId))
+      : null;
+    const match = linked || todayActs.find((a) => !claimed.has(a) && planMatchesSession(p.sport, a.sport || a.type || ''));
     if (match) {
       claimed.add(match);
-      p.doneId = String(match.id || match._id || '');
+      p.doneId = actId(match);
     }
   });
   const todayUnplanned = todayCompleted.filter((c) => !todayActs.some((a) => claimed.has(a) && String(a.id || a._id || '') === String(c.id)));

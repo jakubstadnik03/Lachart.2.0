@@ -317,7 +317,7 @@ router.put('/planned/:id', verifyToken, requirePlanWorkouts, async (req, res) =>
     const coachEditing = String(req.user.userId) !== String(athleteId);
 
     const fields = ['date','sport','title','description','steps','status',
-                    'completedTrainingId','coachNotes','comment','targetTss',
+                    'completedTrainingId','unpaired','coachNotes','comment','targetTss',
                     'plannedDuration','plannedDistance','isLactateTest','category',
                     'executionData','fitTrainingId','stravaActivityId','dayOrder'];
     fields.forEach(f => { if (req.body[f] !== undefined) pw[f] = req.body[f]; });

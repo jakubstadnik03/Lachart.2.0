@@ -1570,6 +1570,15 @@ export default function NativeDashboardPage({
         <PlannedWorkoutEditor
           plannedWorkout={editingPlanned.pw}
           linkedActivity={editingPlanned.linkedAct}
+          dayActivities={(() => {
+            // The sessions recorded on the plan's day — what it could be paired with.
+            const key = String(editingPlanned.pw?.date || '').slice(0, 10);
+            if (!key) return [];
+            return dedupeCalendarActivities((activities || []).filter((a) => {
+              const d = a?.date || a?.startDate || a?.timestamp;
+              return d && toLocalDateStr(new Date(d)) === key;
+            }));
+          })()}
           athleteId={athleteId || user?._id || user?.id}
           user={user}
           onClose={closePlanned}

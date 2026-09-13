@@ -28,6 +28,7 @@ import {
   dedupeCalendarActivities,
   planSportMatchesActivity,
   pairPlannedWithActivities,
+  plannedForActivity,
   buildChronologicalDayItems,
 } from './calendarDayOrdering';
 // eslint-disable-next-line import/first
@@ -233,6 +234,32 @@ describe('pairPlannedWithActivities', () => {
     ];
     const { pwToAct } = pairPlannedWithActivities(twoCore, [acts[0]]);
     expect(pwToAct.size).toBe(1);
+  });
+
+  it('an unpaired plan takes no session, not even one of its sport', () => {
+    const { pwToAct } = pairPlannedWithActivities([{ ...planned[1], unpaired: true }], acts);
+    expect(pwToAct.size).toBe(0);
+  });
+
+  it('an explicit link beats the greedy rule, whichever plan comes first', () => {
+    // Two bike plans, two rides; the athlete pointed the second plan at the
+    // first ride. The first plan then takes the ride that is left.
+    const rides = [
+      { id: 'strava-1', stravaId: 1, sport: 'Ride', date: '2026-08-17T08:00:00' },
+      { id: 'strava-2', stravaId: 2, sport: 'Ride', date: '2026-08-17T17:00:00' },
+    ];
+    const plans = [
+      { _id: 'p-morning', sport: 'bike' },
+      { _id: 'p-evening', sport: 'bike', completedTrainingId: 'strava-1' },
+    ];
+    const { pwToAct } = pairPlannedWithActivities(plans, rides);
+    expect(pwToAct.get('p-evening')?.id).toBe('strava-1');
+    expect(pwToAct.get('p-morning')?.id).toBe('strava-2');
+  });
+
+  it('finds the plan a session stands for, by the same rule', () => {
+    expect(plannedForActivity(planned, acts, acts[1])?._id).toBe('p-bike');
+    expect(plannedForActivity([{ ...planned[1], unpaired: true }], acts, acts[1])).toBeNull();
   });
 });
 

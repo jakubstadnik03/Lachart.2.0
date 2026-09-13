@@ -525,20 +525,42 @@ export function pairPlannedWithActivities(plannedForDay, acts, sportMatchesFn = 
   const claimed = new Set();
   if (!plannedForDay?.length || !acts?.length) return { pwToAct, claimed };
 
+  // Explicit links first, all of them, so a plan the athlete pointed at a
+  // session keeps it even when an earlier plan of the same sport would have
+  // claimed that session by the greedy rule.
   for (const pw of plannedForDay) {
-    if (!pw?._id) continue;
-    const prelinked = pw.completedTrainingId
-      ? acts.find((a) => activityMatchesClaimId(a, pw.completedTrainingId))
-      : null;
-    const match = prelinked
-      || acts.find((a) => !isActivityClaimed(claimed, a)
-        && sportMatchesFn(pw.sport, a.sport || a.type || ''));
+    if (!pw?._id || pw.unpaired || !pw.completedTrainingId) continue;
+    const prelinked = acts.find((a) => activityMatchesClaimId(a, pw.completedTrainingId));
+    if (prelinked) {
+      pwToAct.set(String(pw._id), prelinked);
+      claimActivity(claimed, prelinked);
+    }
+  }
+  for (const pw of plannedForDay) {
+    if (!pw?._id || pwToAct.has(String(pw._id))) continue;
+    // "Unpair" is the athlete saying this plan was not that session — and
+    // not the next one of the same sport either.
+    if (pw.unpaired) continue;
+    const match = acts.find((a) => !isActivityClaimed(claimed, a)
+      && sportMatchesFn(pw.sport, a.sport || a.type || ''));
     if (match) {
       pwToAct.set(String(pw._id), match);
       claimActivity(claimed, match);
     }
   }
   return { pwToAct, claimed };
+}
+
+/** The plan a session stands for on its day, by the same pairing — or null. */
+export function plannedForActivity(plannedForDay, acts, act, sportMatchesFn = planSportMatchesActivity) {
+  if (!act || !plannedForDay?.length) return null;
+  const { pwToAct } = pairPlannedWithActivities(plannedForDay, acts, sportMatchesFn);
+  const key = getActivityAppId(act) || String(act.id ?? act._id ?? '');
+  for (const pw of plannedForDay) {
+    const paired = pwToAct.get(String(pw._id));
+    if (paired && (paired === act || (getActivityAppId(paired) || String(paired.id ?? paired._id ?? '')) === key)) return pw;
+  }
+  return null;
 }
 
 /**

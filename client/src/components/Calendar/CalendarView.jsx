@@ -33,7 +33,7 @@ import {
   FlagIcon,
   MoonIcon,
 } from '@heroicons/react/24/outline';
-import SportIcon from '../shared/SportIcon';
+import SportIcon, { SportGlyph } from '../shared/SportIcon';
 import HoverCard from '../shared/HoverCard';
 import { DurationPickerField, DurationPickerSheet } from '../shared/DurationWheelPicker.jsx';
 import { zoneContextFromProfile } from '../../utils/zoneContext';
@@ -84,7 +84,7 @@ import { useCategories, hexToRgba } from '../../context/CategoryContext';
 import { activityAccentColor } from '../../utils/activityAccentColor';
 import { DAY_THEME_PRESETS, dayThemePresetColor, PERIOD_TYPES, periodColor, buildPeriodsByDate } from '../../utils/calendarThemes';
 import { computePowerTss, computeHrTss, canToggleTss, resolveActivityTss, getAvailableTssModes, getActivityTssDisplayMode, cycleTssMode, tssModeLabel, tssToggleDisabledReason } from '../../utils/computeTss';
-import { compareActivitiesChronologically, buildChronologicalDayItems, sortPlannedWorkoutsForDay, reorderPlannedWorkoutIds, pairPlannedWithActivities, planSportMatchesActivity, dedupeCalendarActivities, looksLikeSameSession } from '../../utils/calendarDayOrdering';
+import { compareActivitiesChronologically, buildChronologicalDayItems, sortPlannedWorkoutsForDay, reorderPlannedWorkoutIds, pairPlannedWithActivities, planSportMatchesActivity, plannedForActivity, isActivityClaimed, dedupeCalendarActivities, looksLikeSameSession } from '../../utils/calendarDayOrdering';
 import { stravaHalfCadenceToSpm, cadenceDisplayUnit } from '../../utils/cadenceDisplay';
 import { lapDetailStats } from '../../utils/lapDetailStats';
 import { completedSecs } from '../../utils/completedSessionStats';
@@ -613,17 +613,64 @@ function PeriodHoverContent({ periods }) {
   );
 }
 
+/**
+ * "Pair with a session" for the phone's day list, where there is no hover
+ * menu. Folded to one line until tapped; each candidate is one tap.
+ */
+function PairWithSession({ pw, options, onPair, color = '#767EB5' }) {
+  const [open, setOpen] = React.useState(false);
+  if (!onPair || !options?.length) return null;
+  return (
+    <div className="-mt-0.5">
+      <button type="button"
+        onClick={(e) => { e.stopPropagation(); setOpen((v) => !v); }}
+        className="w-full flex items-center justify-between px-3 py-1.5 rounded-lg text-[11px] font-semibold touch-manipulation"
+        style={{ color, backgroundColor: color + '0d', WebkitTapHighlightColor: 'transparent' }}>
+        <span>Pair with a session</span>
+        <ChevronDownIcon className={`w-3.5 h-3.5 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && (
+        <div className="mt-1 flex flex-col gap-1">
+          {options.map((a) => {
+            const stats = activityCompletedStats(a);
+            return (
+              <button key={getActivityAppId(a)} type="button"
+                onClick={(e) => { e.stopPropagation(); setOpen(false); onPair(pw, a); }}
+                className="w-full text-left px-3 py-2 rounded-lg border border-gray-200 bg-white active:bg-gray-50 touch-manipulation"
+                style={{ WebkitTapHighlightColor: 'transparent' }}>
+                <div className="flex items-center gap-2 min-w-0">
+                  <SportGlyph sport={a.sport || a.type} size={13} />
+                  <span className="text-[12px] font-semibold text-gray-800 truncate flex-1">{a.title || a.name || a.titleManual || 'Activity'}</span>
+                  <span className="text-[11px] font-bold" style={{ color }}>Pair</span>
+                </div>
+                {stats ? <div className="text-[10.5px] text-gray-400 truncate pl-5">{stats}</div> : null}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Planned workout card (desktop) ──────────────────────────────────────────
-function PlannedWorkoutCard({ pw, onSelect, onStart, compact = false, showDescription = false, onDragStart, onDragEnd, isDragging = false, compliance = null, pairingState = null, linkedActivity = null, onSelectLinked = null, onDuplicate = null, onDelete = null, onRepeat = null, onReorderDragOver = null, onReorderDrop = null, reorderHint = null }) {
+function PlannedWorkoutCard({ pw, onSelect, onStart, compact = false, showDescription = false, onDragStart, onDragEnd, isDragging = false, compliance = null, pairingState = null, linkedActivity = null, onSelectLinked = null, onDuplicate = null, onDelete = null, onRepeat = null, pairCandidates = null, onUnpair = null, onPair = null, onReorderDragOver = null, onReorderDrop = null, reorderHint = null }) {
   const [menuOpen, setMenuOpen] = React.useState(false);
   const [repeatOpen, setRepeatOpen] = React.useState(false);
+  const [pairOpen, setPairOpen] = React.useState(false);
+  // Sessions this plan could stand for: the day's, minus the one it has.
+  const pairOptions = React.useMemo(() => {
+    if (!onPair || !Array.isArray(pairCandidates)) return [];
+    const linkedId = linkedActivity ? getActivityAppId(linkedActivity) : null;
+    return pairCandidates.filter((a) => getActivityAppId(a) !== linkedId);
+  }, [onPair, pairCandidates, linkedActivity]);
   const [menuPos, setMenuPos] = React.useState({ top: 0, right: 0 });
   const menuBtnRef = React.useRef(null);
   const { getCategory, getCategoryStyle: getCatStyle } = useCategories();
 
   React.useEffect(() => {
     if (!menuOpen) return;
-    const handler = (e) => { if (!e.target.closest('[data-pw-menu]')) { setMenuOpen(false); setRepeatOpen(false); } };
+    const handler = (e) => { if (!e.target.closest('[data-pw-menu]')) { setMenuOpen(false); setRepeatOpen(false); setPairOpen(false); } };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, [menuOpen]);
@@ -634,6 +681,7 @@ function PlannedWorkoutCard({ pw, onSelect, onStart, compact = false, showDescri
     if (rect) setMenuPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
     setMenuOpen(v => !v);
     setRepeatOpen(false);
+    setPairOpen(false);
   };
 
   const plannedSport = (pw.sport || 'bike').toLowerCase();
@@ -787,9 +835,34 @@ function PlannedWorkoutCard({ pw, onSelect, onStart, compact = false, showDescri
           <div
             data-pw-menu
             style={{ position: 'fixed', top: menuPos.top, right: menuPos.right, zIndex: 9999 }}
-            className="w-40 bg-white rounded-xl shadow-xl border border-gray-100 py-1.5 text-sm overflow-hidden"
+            className={`${pairOpen ? 'w-64' : 'w-40'} bg-white rounded-xl shadow-xl border border-gray-100 py-1.5 text-sm overflow-hidden`}
           >
-            {!repeatOpen ? (
+            {pairOpen ? (
+              <div className="px-3 py-2">
+                <button className="flex items-center gap-1 text-[10px] text-gray-400 hover:text-gray-600 mb-2 transition-colors"
+                  onClick={e => { e.stopPropagation(); setPairOpen(false); }}>
+                  ← Back
+                </button>
+                <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-2">Pair with a session</div>
+                <div className="flex flex-col gap-1 max-h-56 overflow-y-auto">
+                  {pairOptions.map((a) => {
+                    const title = a.title || a.name || a.titleManual || 'Activity';
+                    const stats = activityCompletedStats(a);
+                    return (
+                      <button key={getActivityAppId(a)}
+                        className="text-left px-2 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 hover:border-gray-300 transition-colors"
+                        onClick={e => { e.stopPropagation(); setMenuOpen(false); setPairOpen(false); onPair(pw, a); }}>
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <SportGlyph sport={a.sport || a.type} size={12} />
+                          <span className="text-xs font-semibold text-gray-800 truncate">{title}</span>
+                        </div>
+                        {stats ? <div className="text-[10px] text-gray-400 truncate">{stats}</div> : null}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : !repeatOpen ? (
               <>
                 <button className="w-full text-left px-3 py-2 hover:bg-gray-50 flex items-center gap-2.5 text-gray-700 transition-colors"
                   onClick={e => { e.stopPropagation(); setMenuOpen(false); onSelect?.(pw); }}>
@@ -817,6 +890,26 @@ function PlannedWorkoutCard({ pw, onSelect, onStart, compact = false, showDescri
                   <button className="w-full text-left px-3 py-2 hover:bg-gray-50 flex items-center gap-2.5 text-gray-700 transition-colors"
                     onClick={e => { e.stopPropagation(); setMenuOpen(false); onStart(pw); }}>
                     <PlayIcon className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" /> Start
+                  </button>
+                )}
+                {/* Which session this plan stands for is the athlete's call, not the sport matcher's. */}
+                {(linkedActivity && onUnpair) || pairOptions.length > 0 ? <div className="border-t border-gray-100 my-1" /> : null}
+                {linkedActivity && onUnpair && (
+                  <button className="w-full text-left px-3 py-2 hover:bg-gray-50 flex items-center gap-2.5 text-gray-700 transition-colors"
+                    onClick={e => { e.stopPropagation(); setMenuOpen(false); onUnpair(pw); }}>
+                    <svg className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round">
+                      <path d="M6.5 9.5 3.8 12.2a2 2 0 0 0 2.8 2.8l2.7-2.7M9.5 6.5l2.7-2.7a2 2 0 0 0-2.8-2.8L6.7 3.7M2 2l12 12"/>
+                    </svg>
+                    Unpair
+                  </button>
+                )}
+                {pairOptions.length > 0 && (
+                  <button className="w-full text-left px-3 py-2 hover:bg-gray-50 flex items-center gap-2.5 text-gray-700 transition-colors"
+                    onClick={e => { e.stopPropagation(); setPairOpen(true); }}>
+                    <svg className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round">
+                      <path d="M6.5 9.5 3.8 12.2a2 2 0 0 0 2.8 2.8l2.7-2.7M9.5 6.5l2.7-2.7a2 2 0 0 0-2.8-2.8L6.7 3.7M6 10l4-4"/>
+                    </svg>
+                    Pair with…
                   </button>
                 )}
                 {onDelete && (
@@ -4153,6 +4246,30 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
     }
   }, [merged, plannedWorkout, athleteId, onPlannedSaved]);
 
+  // This session was not that plan. The plan goes back to planned and
+  // stays unpaired until the athlete points it at a session by hand.
+  const [unpairing, setUnpairing] = useState(false);
+  const unpairPlan = useCallback(async () => {
+    if (!plannedWorkout?._id || unpairing) return;
+    setUnpairing(true);
+    try {
+      const { updatePlannedWorkout } = await import('../../services/workoutPlannerApi.js');
+      const saved = await updatePlannedWorkout(
+        plannedWorkout._id,
+        { completedTrainingId: null, unpaired: true, status: 'planned', stravaActivityId: null, fitTrainingId: null },
+        athleteId,
+      );
+      setPlannedWorkout(null);
+      if (onPlannedSaved) onPlannedSaved(saved);
+      try { window.dispatchEvent(new CustomEvent('plannedWorkoutUpdated', { detail: { planned: saved } })); } catch { /* ignore */ }
+      clearFormFitnessCache();
+    } catch (err) {
+      console.error('Failed to unpair the plan', err);
+    } finally {
+      setUnpairing(false);
+    }
+  }, [plannedWorkout, athleteId, onPlannedSaved, unpairing]);
+
   // Accept "1:30:00", "1:30", "90", "90m", "1h30", "1h 30m" → seconds.
   // style 'hm' → H:MM (planned editor). style 'ms' → M:SS.
   //
@@ -5077,7 +5194,14 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                       {hasPlanned ? (
                         <>
                           <div className="grid grid-cols-[1fr_58px_62px_24px_42px] items-center px-3 py-1.5 bg-gray-50/80">
-                            <div />
+                            <div>
+                              {plannedWorkout?._id ? (
+                                <button type="button" onClick={unpairPlan} disabled={unpairing}
+                                  className="text-[10px] font-semibold text-gray-400 active:text-red-500">
+                                  Unpair
+                                </button>
+                              ) : null}
+                            </div>
                             <div className="text-[9px] font-bold text-slate-500 uppercase tracking-wide text-right">Planned</div>
                             <div className="text-[9px] font-bold text-blue-500 uppercase tracking-wide text-right">Completed</div>
                             <div />
@@ -6138,7 +6262,15 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                         return (
                           <div className="w-full sm:w-auto sm:min-w-[280px] rounded-xl border border-gray-100 overflow-hidden">
                             <div className="grid grid-cols-[1fr_5.5rem_5.5rem] bg-gray-50 border-b border-gray-100 text-[9px] font-bold uppercase tracking-wide text-gray-400">
-                              <span className="px-3 py-1.5">&nbsp;</span>
+                              <span className="px-3 py-1.5">
+                                {plannedWorkout?._id ? (
+                                  <button type="button" onClick={unpairPlan} disabled={unpairing}
+                                    className="normal-case tracking-normal text-[10px] font-semibold text-gray-400 hover:text-red-500 transition-colors"
+                                    title="This session is not this plan">
+                                    Unpair
+                                  </button>
+                                ) : '\u00a0'}
+                              </span>
                               <span className="px-3 py-1.5 text-right">Planned</span>
                               <span className="px-3 py-1.5 text-right text-emerald-600">Completed</span>
                             </div>
@@ -8681,6 +8813,33 @@ export default function CalendarView({
   const autoOpenedIdRef = useRef(null);
 
   // Optimistic handler — mark selected immediately, then call parent
+  // Pairing by hand. "Unpair" leaves the plan alone — it will not take the
+  // next session of its sport either; "Pair with" points it at one session.
+  const setPlanPairing = useCallback(async (pw, act) => {
+    if (!pw?._id) return;
+    const appId = act ? getActivityAppId(act) : null;
+    const payload = appId
+      ? {
+        completedTrainingId: appId,
+        unpaired: false,
+        status: 'completed',
+        stravaActivityId: act.stravaId ? String(act.stravaId) : null,
+        fitTrainingId: (act.type === 'fit' || act.source === 'fit' || appId.startsWith('fit-')) && act._id ? String(act._id) : null,
+      }
+      : { completedTrainingId: null, unpaired: true, status: 'planned', stravaActivityId: null, fitTrainingId: null };
+    try {
+      const { updatePlannedWorkout } = await import('../../services/workoutPlannerApi.js');
+      const saved = await updatePlannedWorkout(pw._id, payload, athleteId);
+      onPlannedSaved?.(saved);
+      try { window.dispatchEvent(new CustomEvent('plannedWorkoutUpdated', { detail: { planned: saved } })); } catch { /* ignore */ }
+      clearFormFitnessCache();
+    } catch (e) {
+      console.warn('plan pairing failed', e);
+    }
+  }, [athleteId, onPlannedSaved]);
+  const handleUnpairPlan = useCallback((pw) => setPlanPairing(pw, null), [setPlanPairing]);
+  const handlePairPlan = useCallback((pw, act) => setPlanPairing(pw, act), [setPlanPairing]);
+
   const handleRepeatWorkout = useCallback((pw, weeks) => {
     if (!onCopyPlannedWorkout || !pw.date) return;
     const base = new Date(pw.date + 'T12:00:00');
@@ -8772,7 +8931,8 @@ export default function CalendarView({
       const actDate = a.date || a.timestamp || a.startDate || a.start_time;
       const dayKey = actDate ? getLocalDateString(new Date(actDate)) : null;
       const dayPws = dayKey ? (plannedByDay.get(dayKey) || []) : [];
-      const matchPw = dayPws.find(pw => planSportMatchesActivity(pw.sport, a.sport || a.type || '')) || null;
+      const dayActs = dayKey ? (activitiesByDay.get(dayKey) || [a]) : [a];
+      const matchPw = plannedForActivity(dayPws, dayActs, a);
       setActivityModal({ activity: a, plannedWorkout: matchPw });
     }
   };
@@ -8879,10 +9039,11 @@ export default function CalendarView({
     const actDate = match.date || match.timestamp || match.startDate || match.start_time;
     const dayKey  = actDate ? getLocalDateString(new Date(actDate)) : null;
     const dayPws  = dayKey ? (plannedByDay.get(dayKey) || []) : [];
-    const matchPw = dayPws.find(pw => planSportMatchesActivity(pw.sport, match.sport || match.type || '')) || null;
+    const dayActs = dayKey ? (activitiesByDay.get(dayKey) || [match]) : [match];
+    const matchPw = plannedForActivity(dayPws, dayActs, match);
     setActivityModal({ activity: match, plannedWorkout: matchPw });
     autoOpenedIdRef.current = effectiveSelectedId;
-  }, [autoOpenSelectedActivity, effectiveSelectedId, activities, plannedByDay]);
+  }, [autoOpenSelectedActivity, effectiveSelectedId, activities, plannedByDay, activitiesByDay]);
 
   // Auto-rename activities when they get paired with a planned workout
   const autoRenamedRef = useRef(new Set()); // track activity IDs already renamed this session
@@ -9924,6 +10085,19 @@ export default function CalendarView({
                                   </button>
                                 );
                               })}
+                              {/* Plans with no session yet, and sessions no plan claimed:
+                                  the athlete can join them by hand here, where there is no menu. */}
+                              {(() => {
+                                const { pwToAct, claimed } = pairPlannedWithActivities(planned, acts);
+                                const free = acts.filter((a) => !isActivityClaimed(claimed, a));
+                                if (!free.length) return null;
+                                return planned
+                                  .filter((pw) => pw?._id && !pwToAct.has(String(pw._id)) && pw.status !== 'skipped')
+                                  .map((pw) => (
+                                    <PairWithSession key={`pair-${pw._id}`} pw={pw} options={free} onPair={handlePairPlan}
+                                      color={SPORT_PLAN_COLORS[(pw.sport || 'bike').toLowerCase()] || '#767EB5'} />
+                                  ));
+                              })()}
                             </>
                           );
                         })()}
@@ -10251,6 +10425,9 @@ export default function CalendarView({
                                 onDuplicate={onCopyPlannedWorkout ? (p) => onCopyPlannedWorkout(p, p.date) : null}
                                 onDelete={onDeletePlannedWorkout}
                                 onRepeat={onCopyPlannedWorkout ? handleRepeatWorkout : null}
+                                pairCandidates={allActs}
+                                onUnpair={handleUnpairPlan}
+                                onPair={handlePairPlan}
                                 {...planReorderProps(pw, key, planned)}
                               />
                             );
@@ -10445,6 +10622,9 @@ export default function CalendarView({
                               onDuplicate={onCopyPlannedWorkout ? (p) => onCopyPlannedWorkout(p, p.date) : null}
                               onDelete={onDeletePlannedWorkout}
                               onRepeat={onCopyPlannedWorkout ? handleRepeatWorkout : null}
+                              pairCandidates={allActs}
+                              onUnpair={handleUnpairPlan}
+                              onPair={handlePairPlan}
                               {...planReorderProps(pw, key, plannedForDay)}
                             />
                           );

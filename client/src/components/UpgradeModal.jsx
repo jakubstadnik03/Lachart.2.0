@@ -10,6 +10,7 @@ import {
 } from '../constants/planPricing';
 import { createCheckoutSession } from '../services/api';
 import { useAuth } from '../context/AuthProvider';
+import { planForUser } from '../utils/planForUser';
 
 const SWIPE_THRESHOLD = 80;
 const SWIPE_VEL_THRESHOLD = 400;
@@ -129,9 +130,12 @@ function useSwipeDismiss(onClose) {
  *   feature      — string  e.g. "FIT Training Analysis"
  *   requiredPlan — 'pro' | 'coach'  (default 'pro')
  */
-export default function UpgradeModal({ isOpen, onClose, feature = 'This feature', requiredPlan = 'pro' }) {
+export default function UpgradeModal({ isOpen, onClose, feature = 'This feature', requiredPlan: requiredPlanProp = 'pro' }) {
   const navigate = useNavigate();
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, user } = useAuth();
+  // A coach hitting a locked feature was offered the Athlete plan at €6.99 —
+  // the wrong plan, and one that would not unlock coach features anyway.
+  const requiredPlan = planForUser(requiredPlanProp, user);
   const plan = PLAN_DETAILS[requiredPlan] || PLAN_DETAILS.pro;
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
