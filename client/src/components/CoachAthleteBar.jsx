@@ -193,6 +193,91 @@ export default function CoachAthleteBar() {
     );
   }
 
+  /* ── One or two athletes: a single row. The two-row layout exists so a
+        long list of chips can scroll under the counts; with one athlete it
+        was ninety pixels of header for one name. ── */
+  if (activeAthletes.length <= 2) {
+    const chip = (key, { onClick, title, selected, ringClass, img, onImgError, name, dot, nameClass }) => (
+      <button key={key} onClick={onClick} title={title}
+        className={`flex-shrink-0 flex items-center gap-1.5 pl-1 pr-2.5 py-1 rounded-full transition-all ${selected ? `bg-violet-50 ring-2 ${ringClass}` : 'hover:bg-gray-50'}`}>
+        <span className="relative">
+          <img src={img} alt={name} onError={onImgError}
+            className={`w-7 h-7 rounded-full object-cover ${selected ? 'ring-2 ring-violet-400' : ''}`} />
+          {dot}
+        </span>
+        <span className={`text-[11px] font-semibold truncate max-w-[6rem] ${nameClass}`}>{name}</span>
+      </button>
+    );
+    return (
+      <div
+        className="shrink-0 border-b border-gray-100 bg-white/95 backdrop-blur-sm px-2 sm:px-3 py-1 mt-[calc(env(safe-area-inset-top,0px)+3.5rem)] lg:mt-0"
+        onTouchStart={handleTouchStart}
+        onTouchEnd={handleTouchEnd}
+      >
+        <div className="flex items-center gap-1.5">
+          {chip('me', {
+            onClick: () => handleSelectAthlete(user?._id),
+            title: 'Show my own data',
+            selected: isViewingSelf,
+            ringClass: 'ring-primary/30',
+            img: getAvatarBySportAndGender(user),
+            onImgError: (e) => { e.currentTarget.src = '/images/coach-avatar.webp'; },
+            name: user?.name || 'Me',
+            nameClass: isViewingSelf ? 'text-primary' : 'text-gray-600',
+            dot: (
+              <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-primary border-2 border-white flex items-center justify-center">
+                <svg className="w-1.5 h-1.5 text-white" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
+                </svg>
+              </span>
+            ),
+          })}
+          <div className="w-px h-5 bg-gray-200 flex-shrink-0" />
+          {activeAthletes.map((athlete) => {
+            const st = statuses[athlete._id];
+            const statusKey = st?.status || 'red';
+            const isSelected = String(selectedAthleteId) === String(athlete._id);
+            return chip(athlete._id, {
+              onClick: () => handleSelectAthlete(athlete._id),
+              title: `${athlete.name} ${athlete.surname}${st?.lastTestDate ? '' : ' · No test data'}`,
+              selected: isSelected,
+              ringClass: STATUS_RING[statusKey],
+              img: getAthleteAvatar(athlete),
+              name: athlete.name,
+              nameClass: isSelected ? 'text-violet-700' : 'text-gray-600',
+              dot: st !== undefined ? (
+                <span className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-white ${STATUS_DOT[statusKey]}`} />
+              ) : null,
+            });
+          })}
+          <button onClick={() => navigate('/athletes')} title="Add athlete"
+            className="flex-shrink-0 w-7 h-7 rounded-full border-2 border-dashed border-gray-300 flex items-center justify-center text-gray-400 hover:border-primary hover:text-primary transition-colors">
+            <UserPlusIcon className="w-3.5 h-3.5" />
+          </button>
+          <div className="ml-auto flex items-center gap-1.5 flex-shrink-0">
+            {needsTestingCount > 0 && (
+              <span className="hidden sm:flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-red-50 text-red-600 border border-red-100 whitespace-nowrap">
+                <span className="w-1.5 h-1.5 rounded-full bg-red-400" />
+                {needsTestingCount} need testing
+              </span>
+            )}
+            {pendingCount > 0 && (
+              <span className="hidden sm:flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber-50 text-amber-600 border border-amber-100 whitespace-nowrap">
+                {pendingCount} pending
+              </span>
+            )}
+            <button onClick={() => navigate('/athletes')} className="text-[11px] text-gray-400 hover:text-primary transition-colors font-medium whitespace-nowrap">
+              Manage →
+            </button>
+            <button onClick={() => toggleCollapsed(true)} className="p-0.5 text-gray-400 hover:text-gray-600 touch-manipulation">
+              <ChevronUpIcon className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   /* ── Expanded ── */
   return (
     <div
