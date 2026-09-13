@@ -65,6 +65,25 @@ describe('parseWorkoutText', () => {
     ]);
   });
 
+  it('joins parts with "+", and a recovery after a repeat belongs to it', () => {
+    expect(flat(parseWorkoutText('15min wu + 4x15min LT2 + 10min cd').items)).toEqual([
+      'warmup:900:{"type":"zone","value":1}',
+      '4x[work:900:{"type":"lt2"}]',
+      'cooldown:600:{"type":"zone","value":1}',
+    ]);
+    expect(flat(parseWorkoutText('15min wu + 4x10min LT2 + 2min rec + 10min cd').items)).toEqual([
+      'warmup:900:{"type":"zone","value":1}',
+      '4x[work:600:{"type":"lt2"} recovery:120:{"type":"zone","value":1}]',
+      'cooldown:600:{"type":"zone","value":1}',
+    ]);
+    // A recovery that is already inside the repeat is not taken twice.
+    expect(flat(parseWorkoutText('4x(10min LT2 + 2min rec) + 5min easy + 10min cd').items)).toEqual([
+      '4x[work:600:{"type":"lt2"} recovery:120:{"type":"zone","value":1}]',
+      'recovery:300:{"type":"zone","value":1}',
+      'cooldown:600:{"type":"zone","value":1}',
+    ]);
+  });
+
   it('says what it could not place instead of dropping it quietly', () => {
     const { items, warnings } = parseWorkoutText('10min, 5min banana');
     expect(flat(items)).toEqual(['work:600:{"type":"zone","value":2}', 'work:300:{"type":"zone","value":2}']);

@@ -34,3 +34,37 @@ describe('materializeParsedWorkout', () => {
     expect(step.durationSeconds).toBeGreaterThan(0);
   });
 });
+
+describe('recipeToItems — the fill-in form', () => {
+  const { recipeToItems } = require('./WorkoutBuilder');
+
+  it('writes warm-up, sets with their recovery, and cool-down', () => {
+    const items = recipeToItems({
+      warm: { on: true, qty: 15, unit: 'min', target: 'zone1', build: false },
+      sets: [{ reps: 4, qty: 15, unit: 'min', target: 'lt2', recQty: 3, recUnit: 'min', recTarget: 'zone1' }],
+      cool: { on: true, qty: 10, unit: 'min', target: 'zone1' },
+    });
+    expect(items).toEqual([
+      { step: { stepType: 'warmup', powerTarget: { type: 'zone', value: 1 }, durationSeconds: 900 } },
+      { repeat: 4, members: [
+        { stepType: 'work', powerTarget: { type: 'lt2' }, durationSeconds: 900 },
+        { stepType: 'recovery', powerTarget: { type: 'zone', value: 1 }, durationSeconds: 180 },
+      ] },
+      { step: { stepType: 'cooldown', powerTarget: { type: 'zone', value: 1 }, durationSeconds: 600 } },
+    ]);
+  });
+
+  it('takes km and m for the track and the pool, and a build for the warm-up', () => {
+    const items = recipeToItems({
+      warm: { on: true, qty: 2, unit: 'km', build: true, buildTo: 'zone3' },
+      sets: [{ reps: 8, qty: 100, unit: 'm', target: 'zone5', recQty: 0, recUnit: 'm' }],
+      cool: { on: false, qty: 10, unit: 'min' },
+    });
+    expect(items[0].build).toMatchObject({ metres: 2000, to: { type: 'zone', value: 3 } });
+    expect(items[1]).toEqual({ repeat: 8, members: [{ stepType: 'work', powerTarget: { type: 'zone', value: 5 }, durationType: 'distance', distanceMeters: 100 }] });
+    expect(items).toHaveLength(2);
+    const steps = materializeParsedWorkout(items, { context: {}, nextId: ids() });
+    expect(steps.filter((s) => s.stepType === 'warmup').length).toBeGreaterThanOrEqual(3);
+    expect(steps.find((s) => s.distanceMeters === 100).durationSeconds).toBeGreaterThan(0);
+  });
+});

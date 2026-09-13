@@ -195,29 +195,55 @@ export function parseWorkoutText(text) {
   const src = String(text || '').replace(/×/g, 'x').replace(/’/g, "'");
   if (!src.trim()) return { items, warnings };
 
-  for (const seg of splitSegments(src)) {
-    // Repeat prefix: "4x", "4 x", "4x(" … the rest is the cycle.
-    const rep = seg.match(/^\s*(\d+)\s*x\s*(.*)$/i);
-    const reps = rep ? Number(rep[1]) : 1;
-    let body = rep ? rep[2] : seg;
-    body = body.trim().replace(/^\((.*)\)$/s, '$1');
-    const memberTexts = body.split(/\s\+\s|\s\+|\+\s/).map((m) => m.trim()).filter(Boolean);
-    const members = memberTexts.flatMap(splitMembers);
-    const steps = members.map((m) => memberToStep(m, reps > 1, warnings)).filter(Boolean);
-    if (!steps.length) continue;
+  const isEasy = (st) => st.stepType === 'recovery' || st.stepType === 'rest';
 
-    const build = steps.find((s) => s.build);
-    if (build) {
-      // "5x3min build" → five steps of three minutes; "15min build" → five of three.
-      const count = reps > 1 ? reps : 5;
-      const secs = build.secs != null ? build.secs : null;
-      items.push({ build: { count, secs: reps > 1 ? secs : (secs != null ? Math.round(secs / count) : null), metres: build.metres, to: build.target || null } });
-      continue;
+  for (const seg of splitSegments(src)) {
+    // "+" joins things at two levels: "15min wu + 4x15min LT2" is two parts
+    // of the session, "4x10min LT2 + 2min rec" is one repeat with its
+    // recovery. Split at the top level first; a recovery that follows a
+    // repeat then joins it.
+    for (const piece of splitPlus(seg)) {
+      // Repeat prefix: "4x", "4 x", "4x(" … the rest is the cycle.
+      const rep = piece.match(/^\s*(\d+)\s*x\s*(.*)$/i);
+      const reps = rep ? Number(rep[1]) : 1;
+      let body = rep ? rep[2] : piece;
+      body = body.trim().replace(/^\((.*)\)$/s, '$1');
+      const memberTexts = splitPlus(body);
+      const members = memberTexts.flatMap(splitMembers);
+      const steps = members.map((m) => memberToStep(m, reps > 1, warnings)).filter(Boolean);
+      if (!steps.length) continue;
+
+      const build = steps.find((st) => st.build);
+      if (build) {
+        // "5x3min build" → five steps of three minutes; "15min build" → five of three.
+        const count = reps > 1 ? reps : 5;
+        const secs = build.secs != null ? build.secs : null;
+        items.push({ build: { count, secs: reps > 1 ? secs : (secs != null ? Math.round(secs / count) : null), metres: build.metres, to: build.target || null } });
+        continue;
+      }
+      const last = items[items.length - 1];
+      if (reps > 1) items.push({ repeat: reps, members: steps });
+      else if (last?.repeat && steps.every(isEasy) && !last.members.some(isEasy)) last.members.push(...steps);
+      else steps.forEach((step) => items.push({ step }));
     }
-    if (reps > 1) items.push({ repeat: reps, members: steps });
-    else steps.forEach((step) => items.push({ step }));
   }
   return { items, warnings };
+}
+
+/** Split on "+" outside parentheses. */
+function splitPlus(text) {
+  const out = [];
+  let depth = 0;
+  let cur = '';
+  for (let i = 0; i < text.length; i += 1) {
+    const ch = text[i];
+    if (ch === '(') depth += 1;
+    if (ch === ')') depth = Math.max(0, depth - 1);
+    if (depth === 0 && ch === '+') { if (cur.trim()) out.push(cur.trim()); cur = ''; continue; }
+    cur += ch;
+  }
+  if (cur.trim()) out.push(cur.trim());
+  return out;
 }
 
 export default parseWorkoutText;

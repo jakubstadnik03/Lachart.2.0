@@ -239,10 +239,14 @@ export function materializeParsedWorkout(items, { context = {}, nextId }) {
       return;
     }
     if (it.build) {
+      const stepSecs = it.build.secs
+        || (it.build.metres > 0
+          ? Math.max(60, Math.round((estimateSecondsFromDistance(it.build.metres, { type: 'zone', value: 2 }, context) || it.build.metres / 3) / it.build.count))
+          : 180);
       const spec = {
         rampType: 'warmup',
         count: it.build.count,
-        durationSeconds: it.build.secs || 180,
+        durationSeconds: stepSecs,
         from: { type: 'zone', value: 1 },
         to: it.build.to || { type: 'zone', value: 3 },
       };
@@ -2420,41 +2424,217 @@ function StepRow({ step, index, total, onUpdate, onDelete, onDuplicate = null, o
   );
 }
 
+/** The intensity choices of the fill-in form, and what each means to the builder. */
+const RECIPE_TARGETS = [
+  { key: 'zone1', label: 'Z1', target: { type: 'zone', value: 1 } },
+  { key: 'zone2', label: 'Z2', target: { type: 'zone', value: 2 } },
+  { key: 'zone3', label: 'Z3', target: { type: 'zone', value: 3 } },
+  { key: 'zone4', label: 'Z4', target: { type: 'zone', value: 4 } },
+  { key: 'zone5', label: 'Z5', target: { type: 'zone', value: 5 } },
+  { key: 'lt1', label: 'LT1', target: { type: 'lt1' } },
+  { key: 'lt2', label: 'LT2', target: { type: 'lt2' } },
+  { key: 'ss', label: 'Sweet spot', target: { type: 'percent_ftp', value: 90 } },
+];
+const recipeTarget = (key) => (RECIPE_TARGETS.find((t) => t.key === key) || RECIPE_TARGETS[0]).target;
+
+/** Runs are written in km or m, swims in m, rides in time. */
+function recipeUnitsFor(sport) {
+  if (sport === 'swim') return ['min', 'm'];
+  if (sport === 'run') return ['min', 'km', 'm'];
+  return ['min', 'km'];
+}
+
+/** A quantity + unit → the step's length fields; null when there is none. */
+function recipeLength(qty, unit) {
+  const n = Number(String(qty).replace(',', '.'));
+  if (!Number.isFinite(n) || n <= 0) return null;
+  if (unit === 'km') return { durationType: 'distance', distanceMeters: Math.round(n * 1000) };
+  if (unit === 'm') return { durationType: 'distance', distanceMeters: Math.round(n) };
+  return { durationSeconds: Math.round(n * 60) };
+}
+
 /**
- * Type the session, get the steps. The way a coach writes it on a whiteboard:
- * "15min WU, 4x10min LT2 2min rec, 10min CD".
+ * Warm-up, main sets, cool-down as fields — the same session the text box
+ * takes, for whoever would rather pick than type. Produces the parser's
+ * items, so both roads end in materializeParsedWorkout.
  */
-function TypedSessionBox({ context, onAdd, defaultOpen }) {
+export function recipeToItems({ warm, sets, cool }) {
+  const items = [];
+  const warmLen = warm?.on ? recipeLength(warm.qty, warm.unit) : null;
+  if (warmLen) {
+    if (warm.build) {
+      const secs = warmLen.durationSeconds || null;
+      const count = Math.max(3, Math.min(8, Math.round((secs || 900) / 180)));
+      items.push({ build: { count, secs: secs ? Math.round(secs / count) : null, metres: warmLen.distanceMeters || null, to: recipeTarget(warm.buildTo || 'zone3') } });
+    } else {
+      items.push({ step: { stepType: 'warmup', powerTarget: recipeTarget(warm.target || 'zone1'), ...warmLen } });
+    }
+  }
+  (sets || []).forEach((set) => {
+    const workLen = recipeLength(set.qty, set.unit);
+    if (!workLen) return;
+    const reps = Math.max(1, Math.round(Number(set.reps) || 1));
+    const members = [{ stepType: 'work', powerTarget: recipeTarget(set.target || 'lt2'), ...workLen }];
+    const recLen = recipeLength(set.recQty, set.recUnit);
+    if (recLen) members.push({ stepType: 'recovery', powerTarget: recipeTarget(set.recTarget || 'zone1'), ...recLen });
+    if (reps > 1) items.push({ repeat: reps, members });
+    else members.forEach((step) => items.push({ step }));
+  });
+  const coolLen = cool?.on ? recipeLength(cool.qty, cool.unit) : null;
+  if (coolLen) items.push({ step: { stepType: 'cooldown', powerTarget: recipeTarget(cool.target || 'zone1'), ...coolLen } });
+  return items;
+}
+
+const recipeInput = 'w-14 text-sm border border-slate-200 rounded-lg px-2 py-1.5 text-center focus:outline-none focus:ring-2 focus:ring-primary/30 bg-white';
+const recipeSelect = 'text-sm border border-slate-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-primary/30';
+
+function RecipeLength({ qty, unit, units, onChange }) {
+  return (
+    <span className="inline-flex items-center gap-1">
+      <input type="number" min="0" step="any" value={qty} onChange={(e) => onChange({ qty: e.target.value })} className={recipeInput} />
+      <select value={unit} onChange={(e) => onChange({ unit: e.target.value })} className={recipeSelect}>
+        {units.map((u) => <option key={u} value={u}>{u}</option>)}
+      </select>
+    </span>
+  );
+}
+
+function RecipeTarget({ value, onChange }) {
+  return (
+    <select value={value} onChange={(e) => onChange(e.target.value)} className={recipeSelect}>
+      {RECIPE_TARGETS.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
+    </select>
+  );
+}
+
+function SessionRecipeForm({ sport, onBuild }) {
+  const units = recipeUnitsFor(sport);
+  const [warm, setWarm] = useState({ on: true, qty: 15, unit: 'min', target: 'zone1', build: false, buildTo: 'zone3' });
+  const [sets, setSets] = useState([{ reps: 4, qty: 10, unit: 'min', target: 'lt2', recQty: 2, recUnit: 'min', recTarget: 'zone1' }]);
+  const [cool, setCool] = useState({ on: true, qty: 10, unit: 'min', target: 'zone1' });
+  const patchSet = (i, patch) => setSets((prev) => prev.map((st, j) => (j === i ? { ...st, ...patch } : st)));
+  const items = recipeToItems({ warm, sets, cool });
+  const label = 'w-[5.5rem] shrink-0 text-[11px] font-semibold uppercase tracking-wide text-slate-400 whitespace-nowrap';
+  return (
+    <div className="flex flex-col gap-2.5">
+      <div className="flex items-center gap-2 flex-wrap">
+        <label className={`${label} flex items-center gap-1.5 cursor-pointer`}>
+          <input type="checkbox" checked={warm.on} onChange={(e) => setWarm({ ...warm, on: e.target.checked })} className="accent-primary" />
+          Warm-up
+        </label>
+        <RecipeLength qty={warm.qty} unit={warm.unit} units={units} onChange={(p) => setWarm({ ...warm, ...p })} />
+        {!warm.build && <><span className="text-xs text-slate-400">@</span><RecipeTarget value={warm.target} onChange={(v) => setWarm({ ...warm, target: v })} /></>}
+        <label className="inline-flex items-center gap-1.5 text-xs text-slate-500 cursor-pointer ml-1">
+          <input type="checkbox" checked={warm.build} onChange={(e) => setWarm({ ...warm, build: e.target.checked })} className="accent-primary" />
+          build up to
+        </label>
+        {warm.build && <RecipeTarget value={warm.buildTo} onChange={(v) => setWarm({ ...warm, buildTo: v })} />}
+      </div>
+
+      {sets.map((set, i) => (
+        <div key={i} className="flex items-center gap-2 flex-wrap">
+          <span className={label}>{i === 0 ? 'Main set' : `Set ${i + 1}`}</span>
+          <span className="inline-flex items-center gap-1">
+            <input type="number" min="1" value={set.reps} onChange={(e) => patchSet(i, { reps: e.target.value })} className={recipeInput} />
+            <span className="text-xs text-slate-400">×</span>
+          </span>
+          <RecipeLength qty={set.qty} unit={set.unit} units={units} onChange={(p) => patchSet(i, p)} />
+          <span className="text-xs text-slate-400">@</span>
+          <RecipeTarget value={set.target} onChange={(v) => patchSet(i, { target: v })} />
+          <span className="text-xs text-slate-400 ml-1">rec</span>
+          <RecipeLength qty={set.recQty} unit={set.recUnit} units={units} onChange={(p) => patchSet(i, { recQty: p.qty ?? set.recQty, recUnit: p.unit ?? set.recUnit })} />
+          {sets.length > 1 && (
+            <button type="button" onClick={() => setSets((prev) => prev.filter((_, j) => j !== i))}
+              className="text-slate-300 hover:text-red-500 p-1" title="Remove set">
+              <XMarkIcon className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+      ))}
+      <button type="button"
+        onClick={() => setSets((prev) => [...prev, { ...prev[prev.length - 1] }])}
+        className="self-start text-[11px] font-semibold text-slate-500 hover:text-slate-700 pl-[5.5rem]">
+        + Add set
+      </button>
+
+      <div className="flex items-center gap-2 flex-wrap">
+        <label className={`${label} flex items-center gap-1.5 cursor-pointer`}>
+          <input type="checkbox" checked={cool.on} onChange={(e) => setCool({ ...cool, on: e.target.checked })} className="accent-primary" />
+          Cool-down
+        </label>
+        <RecipeLength qty={cool.qty} unit={cool.unit} units={units} onChange={(p) => setCool({ ...cool, ...p })} />
+        <span className="text-xs text-slate-400">@</span>
+        <RecipeTarget value={cool.target} onChange={(v) => setCool({ ...cool, target: v })} />
+      </div>
+
+      <div className="flex justify-end">
+        <button type="button" onClick={() => onBuild(items)} disabled={!items.length}
+          className="px-3 py-1.5 rounded-lg text-xs font-bold text-white bg-primary hover:opacity-90 disabled:opacity-40">
+          Build steps
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Compose the session: fill in warm-up / sets / cool-down, or type it the
+ * way a coach writes it on a whiteboard — "15min WU + 4x10min LT2 2min rec
+ * + 10min CD". Both end as the same steps.
+ */
+function SessionComposer({ context, sport, onAdd, defaultOpen }) {
+  const [mode, setMode] = useState('form');
   const [text, setText] = useState('');
   const [warnings, setWarnings] = useState([]);
-  const build = () => {
-    const parsed = parseWorkoutText(text);
-    const steps = materializeParsedWorkout(parsed.items, { context, nextId: uid });
-    setWarnings(steps.length ? parsed.warnings : [...parsed.warnings, 'Nothing to build — write a time or a distance for each step.']);
-    if (steps.length) { onAdd(steps); setText(''); }
+  const add = (items, parseWarnings = []) => {
+    const steps = materializeParsedWorkout(items, { context, nextId: uid });
+    setWarnings(steps.length ? parseWarnings : [...parseWarnings, 'Nothing to build — give each step a time or a distance.']);
+    if (steps.length) onAdd(steps);
+    return steps.length > 0;
   };
+  const buildFromText = () => {
+    const parsed = parseWorkoutText(text);
+    if (add(parsed.items, parsed.warnings)) setText('');
+  };
+  const tab = (key, labelText) => (
+    <button type="button" onClick={() => setMode(key)}
+      className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition-colors ${mode === key ? 'bg-white text-primary shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>
+      {labelText}
+    </button>
+  );
+  const unitsHint = sport === 'swim' ? '400m, 1.5km' : sport === 'run' ? '2km, 400m' : '2km';
   return (
     <details open={defaultOpen} className="rounded-xl border border-slate-100 bg-slate-50/50 open:bg-white open:border-slate-200">
       <summary className="px-3 py-2.5 text-xs font-semibold text-slate-500 cursor-pointer list-none flex items-center justify-between">
-        <span>Type the session</span>
+        <span>Compose the session</span>
         <ChevronDownIcon className="w-4 h-4 text-slate-400" />
       </summary>
-      <div className="px-3 pb-3 flex flex-col gap-2 border-t border-slate-100 pt-2">
-        <textarea
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); build(); } }}
-          rows={2}
-          placeholder="15min WU, 5x3min build, 4x10min LT2 2min rec, 10min CD"
-          className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/30 resize-none bg-white"
-        />
-        <div className="flex items-center justify-between gap-2">
-          <span className="text-[11px] text-slate-400">WU/CD, 4x…, LT1, LT2, Z1–Z5, 90%, 250W, build, easy, rest · 400m or 2km for the pool and the track</span>
-          <button type="button" onClick={build} disabled={!text.trim()}
-            className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-bold text-white bg-primary hover:opacity-90 disabled:opacity-40">
-            Build steps
-          </button>
+      <div className="px-3 pb-3 flex flex-col gap-3 border-t border-slate-100 pt-2.5">
+        <div className="inline-flex self-start items-center gap-0.5 p-0.5 rounded-lg bg-slate-100">
+          {tab('form', 'Fill in')}
+          {tab('text', 'Type it')}
         </div>
+        {mode === 'form' ? (
+          <SessionRecipeForm sport={sport} onBuild={(items) => add(items)} />
+        ) : (
+          <>
+            <textarea
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); buildFromText(); } }}
+              rows={2}
+              placeholder="15min WU + 5x3min build + 4x10min LT2 2min rec + 10min CD"
+              className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/30 resize-none bg-white"
+            />
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[11px] text-slate-400">WU/CD, 4x…, LT1, LT2, Z1–Z5, 90%, 250W, build, easy, rest · {unitsHint} for distance</span>
+              <button type="button" onClick={buildFromText} disabled={!text.trim()}
+                className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-bold text-white bg-primary hover:opacity-90 disabled:opacity-40">
+                Build steps
+              </button>
+            </div>
+          </>
+        )}
         {warnings.length > 0 && (
           <ul className="text-[11px] text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 space-y-0.5">
             {warnings.map((w, i) => <li key={i}>{w}</li>)}
@@ -2790,7 +2970,7 @@ export default function WorkoutBuilder({ initialSteps = [], context = {}, sport 
         </div>
       )}
 
-      <TypedSessionBox context={ctx} onAdd={(ns) => notify([...steps, ...ns])} defaultOpen={steps.length === 0} />
+      <SessionComposer context={ctx} sport={sport} onAdd={(ns) => notify([...steps, ...ns])} defaultOpen={steps.length === 0} />
 
       {/* Quick builders — collapsed when steps already exist */}
       <details
