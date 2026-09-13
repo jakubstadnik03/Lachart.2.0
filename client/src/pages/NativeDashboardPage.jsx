@@ -14,6 +14,7 @@ import HealthEpisodeCard from '../components/NativeDashboard/HealthEpisodeCard';
 import WellnessDetailSheet from '../components/shared/WellnessDetailSheet';
 import OnboardingChecklist from '../components/NativeDashboard/OnboardingChecklist';
 import DailyCoachCard from '../components/DashboardPage/DailyCoachCard';
+import { PlanMiniChart } from '../components/training/WorkoutProfile';
 import TrainingTimeline from '../components/DashboardPage/TrainingTimeline';
 import RaceCountdownCard from '../components/DashboardPage/RaceCountdownCard';
 import PostRaceFeedbackCard from '../components/DashboardPage/PostRaceFeedbackCard';
@@ -100,46 +101,6 @@ function SportIcon({ sport, size = 22 }) {
   return <SharedSportIcon sport={sport} className={cls} />;
 }
 
-// ─── Planned workout mini step-chart (mirrors WeeklyCalendar PlanMiniChart) ───
-function PlanMiniChart({ steps, color, width = 88, height = 16 }) {
-  if (!steps?.length) return null;
-  const STEP_COLORS = { warmup: '#fbbf24', work: '#767EB5', recovery: '#6ee7b7', cooldown: '#38bdf8', rest: '#d1d5db' };
-  // Expand groups / repeats into a flat list of steps
-  const expanded = [];
-  const visited = new Set();
-  steps.forEach(s => {
-    if (!s.groupId) { expanded.push(s); return; }
-    if (visited.has(s.groupId)) return;
-    visited.add(s.groupId);
-    const group = steps.filter(x => x.groupId === s.groupId);
-    const reps = (group.find(x => x.isGroupHeader)?.groupRepeat) || 1;
-    // Header IS the work step — include it; sort header first so each rep renders [work, recovery].
-    const ordered = [...group.filter(x => x.isGroupHeader), ...group.filter(x => !x.isGroupHeader)];
-    for (let r = 0; r < reps; r++) ordered.forEach(gs => expanded.push(gs));
-  });
-  const total = expanded.reduce((s, st) => s + (st.durationSeconds || 30), 0);
-  if (!total) return null;
-  const FLOOR = 0.12;
-  let cx = 0;
-  return (
-    <svg width={width} height={height} style={{ display: 'block', flexShrink: 0 }}>
-      {expanded.map((step, i) => {
-        const w = Math.max(1, ((step.durationSeconds || 30) / total) * width);
-        const intensity = step.stepType === 'work' ? 1 : step.stepType === 'warmup' ? 0.55 : step.stepType === 'cooldown' ? 0.4 : step.stepType === 'recovery' ? 0.3 : 0.15;
-        const bh = Math.max(FLOOR * height, intensity * height);
-        const bw = Math.max(1, w - 0.5);
-        const fill = STEP_COLORS[step.stepType] || color || '#767EB5';
-        const sx = cx; cx += w;
-        if (step.isRamp && step.stepType === 'warmup') {
-          return <polygon key={i} points={`${sx},${height} ${sx+bw},${height-bh} ${sx+bw},${height}`} fill={fill} opacity={0.85} />;
-        } else if (step.isRamp && step.stepType === 'cooldown') {
-          return <polygon key={i} points={`${sx},${height-bh} ${sx},${height} ${sx+bw},${height}`} fill={fill} opacity={0.85} />;
-        }
-        return <rect key={i} x={sx} y={height - bh} width={bw} height={bh} fill={fill} rx={1} opacity={0.85} />;
-      })}
-    </svg>
-  );
-}
 
 // ─── Animated wrapper ─────────────────────────────────────────────────────────
 // CSS keyframe animation — no framer-motion dependency needed

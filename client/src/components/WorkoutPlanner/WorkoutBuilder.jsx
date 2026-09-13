@@ -17,6 +17,7 @@
  */
 import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { paceToViewer, paceFromViewer, viewerPaceSuffix } from '../../utils/viewerUnits';
+import { parseWorkoutText } from '../../utils/workoutText';
 import { PlusIcon, TrashIcon, ChevronDownIcon, ChevronUpIcon,
          ArrowPathIcon, XMarkIcon, Bars3Icon } from '@heroicons/react/24/outline';
 
@@ -131,6 +132,23 @@ export function moveGroup(list, groupId, dir) {
  * of a block it was no longer next to, and expandSteps would go on repeating
  * it there.
  */
+/**
+ * A copy of the step at `index`, right after it. Inside a repeat block it is
+ * one more member; it never inherits the header flags, or a 4x would become
+ * two 4x headers with the count on each.
+ */
+export function duplicateStepAt(list, index, nextId) {
+  const src = list[index];
+  if (!src) return list;
+  const copy = { ...src, clientId: nextId() };
+  delete copy.isGroupHeader;
+  delete copy.groupRepeat;
+  delete copy.rampSpec;
+  const next = [...list];
+  next.splice(index + 1, 0, copy);
+  return next;
+}
+
 export function moveStepOrGroup(list, index, dir) {
   if (!Array.isArray(list) || !dir || !list[index]) return list;
   const units = unitsOf(list);
@@ -195,6 +213,46 @@ export function buildRampSteps(spec, context) {
       label: `${label.charAt(0).toUpperCase()}${label.slice(1)} ${i + 1}`,
     };
   });
+}
+
+/**
+ * Builder steps from a typed session (see utils/workoutText). Repeats become
+ * blocks, a "build" becomes a ramp made with the athlete's thresholds, and a
+ * distance step gets the time it would take.
+ */
+export function materializeParsedWorkout(items, { context = {}, nextId }) {
+  const out = [];
+  const withTime = (st) => {
+    const step = { ...st, clientId: nextId() };
+    if (step.durationType === 'distance' && step.distanceMeters > 0) {
+      step.durationSeconds = estimateSecondsFromDistance(step.distanceMeters, step.powerTarget, context) || Math.round(step.distanceMeters / 3);
+    }
+    return step;
+  };
+  (items || []).forEach((it) => {
+    if (it.step) { out.push(withTime(it.step)); return; }
+    if (it.repeat) {
+      const gid = nextId();
+      it.members.forEach((m, i) => {
+        out.push({ ...withTime(m), groupId: gid, ...(i === 0 ? { isGroupHeader: true, groupRepeat: it.repeat } : {}) });
+      });
+      return;
+    }
+    if (it.build) {
+      const spec = {
+        rampType: 'warmup',
+        count: it.build.count,
+        durationSeconds: it.build.secs || 180,
+        from: { type: 'zone', value: 1 },
+        to: it.build.to || { type: 'zone', value: 3 },
+      };
+      const gid = nextId();
+      buildRampSteps(spec, context).forEach((st, i) => {
+        out.push({ ...st, clientId: nextId(), groupId: gid, ...(i === 0 ? { isGroupHeader: true, groupRepeat: 1, rampSpec: spec } : {}) });
+      });
+    }
+  });
+  return out;
 }
 
 /**
@@ -2177,7 +2235,7 @@ function DurationStepper({ value, display, onDisplayChange, onCommit, onBump, is
   );
 }
 
-function StepRow({ step, index, total, onUpdate, onDelete, onMoveUp, onMoveDown, context, highlighted = false, dragHandleProps = {} }) {
+function StepRow({ step, index, total, onUpdate, onDelete, onDuplicate = null, onMoveUp, onMoveDown, context, highlighted = false, dragHandleProps = {} }) {
   const [powerOpen, setPowerOpen] = useState(false);
   const [noteOpen, setNoteOpen] = useState(false);
   const col = STEP_COLORS[step.stepType] || STEP_COLORS.work;
@@ -2323,15 +2381,31 @@ function StepRow({ step, index, total, onUpdate, onDelete, onMoveUp, onMoveDown,
             )}
           </div>
         )}
-        {!noteOpen && !step.notes && (
-          <button
-            type="button"
-            onClick={() => setNoteOpen(true)}
-            className="text-[11px] text-slate-400 hover:text-slate-600 text-left"
-          >
-            + Add note
-          </button>
-        )}
+        <div className="flex items-center gap-3">
+          {!noteOpen && !step.notes && (
+            <button
+              type="button"
+              onClick={() => setNoteOpen(true)}
+              className="text-[11px] text-slate-400 hover:text-slate-600 text-left"
+            >
+              + Add note
+            </button>
+          )}
+          {/* A copy lands right under this step — the usual way a 5×5 gets typed. */}
+          {onDuplicate && (
+            <button
+              type="button"
+              onClick={onDuplicate}
+              className="text-[11px] text-slate-400 hover:text-slate-600 text-left inline-flex items-center gap-1"
+              title="Duplicate this interval"
+            >
+              <svg className="w-3 h-3" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.6}>
+                <rect x="5" y="5" width="8" height="8" rx="1.5" /><path d="M3 11V4a1 1 0 0 1 1-1h7" strokeLinecap="round" />
+              </svg>
+              Duplicate interval
+            </button>
+          )}
+        </div>
       </div>
 
       {powerOpen && (
@@ -2343,6 +2417,51 @@ function StepRow({ step, index, total, onUpdate, onDelete, onMoveUp, onMoveDown,
         />
       )}
     </div>
+  );
+}
+
+/**
+ * Type the session, get the steps. The way a coach writes it on a whiteboard:
+ * "15min WU, 4x10min LT2 2min rec, 10min CD".
+ */
+function TypedSessionBox({ context, onAdd, defaultOpen }) {
+  const [text, setText] = useState('');
+  const [warnings, setWarnings] = useState([]);
+  const build = () => {
+    const parsed = parseWorkoutText(text);
+    const steps = materializeParsedWorkout(parsed.items, { context, nextId: uid });
+    setWarnings(steps.length ? parsed.warnings : [...parsed.warnings, 'Nothing to build — write a time or a distance for each step.']);
+    if (steps.length) { onAdd(steps); setText(''); }
+  };
+  return (
+    <details open={defaultOpen} className="rounded-xl border border-slate-100 bg-slate-50/50 open:bg-white open:border-slate-200">
+      <summary className="px-3 py-2.5 text-xs font-semibold text-slate-500 cursor-pointer list-none flex items-center justify-between">
+        <span>Type the session</span>
+        <ChevronDownIcon className="w-4 h-4 text-slate-400" />
+      </summary>
+      <div className="px-3 pb-3 flex flex-col gap-2 border-t border-slate-100 pt-2">
+        <textarea
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); build(); } }}
+          rows={2}
+          placeholder="15min WU, 5x3min build, 4x10min LT2 2min rec, 10min CD"
+          className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/30 resize-none bg-white"
+        />
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-[11px] text-slate-400">WU/CD, 4x…, LT1, LT2, Z1–Z5, 90%, 250W, build, easy, rest · 400m or 2km for the pool and the track</span>
+          <button type="button" onClick={build} disabled={!text.trim()}
+            className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-bold text-white bg-primary hover:opacity-90 disabled:opacity-40">
+            Build steps
+          </button>
+        </div>
+        {warnings.length > 0 && (
+          <ul className="text-[11px] text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 space-y-0.5">
+            {warnings.map((w, i) => <li key={i}>{w}</li>)}
+          </ul>
+        )}
+      </div>
+    </details>
   );
 }
 
@@ -2493,6 +2612,7 @@ export default function WorkoutBuilder({ initialSteps = [], context = {}, sport 
     notify(next);
   };
   const deleteStep   = (idx)     => notify(steps.filter((_,i)=>i!==idx));
+  const duplicateStep = (idx) => notify(duplicateStepAt(steps, idx, uid));
   const moveStep = (idx, dir) => {
     const next = moveStepOrGroup(steps, idx, dir);
     if (next !== steps) notify(next);
@@ -2670,6 +2790,8 @@ export default function WorkoutBuilder({ initialSteps = [], context = {}, sport 
         </div>
       )}
 
+      <TypedSessionBox context={ctx} onAdd={(ns) => notify([...steps, ...ns])} defaultOpen={steps.length === 0} />
+
       {/* Quick builders — collapsed when steps already exist */}
       <details
         ref={quickBlocksRef}
@@ -2780,7 +2902,7 @@ export default function WorkoutBuilder({ initialSteps = [], context = {}, sport 
                           onDrop={(e) => { e.stopPropagation(); handleDrop(bi); }}
                         >
                           <StepRow step={steps[bi]} index={bi} total={steps.length}
-                            onUpdate={u=>updateStep(bi,u)} onDelete={()=>deleteStep(bi)}
+                            onUpdate={u=>updateStep(bi,u)} onDelete={()=>deleteStep(bi)} onDuplicate={()=>duplicateStep(bi)}
                             onMoveUp={()=>moveStep(bi,-1)} onMoveDown={()=>moveStep(bi,1)} context={ctx}
                             highlighted={highlightedStepId === steps[bi].clientId}
                             dragHandleProps={{
@@ -2952,7 +3074,7 @@ export default function WorkoutBuilder({ initialSteps = [], context = {}, sport 
                           onDrop={e => { e.stopPropagation(); handleDrop(gi); }}
                         >
                           <StepRow step={steps[gi]} index={gi} total={steps.length}
-                            onUpdate={u=>updateStep(gi,u)} onDelete={()=>deleteStep(gi)}
+                            onUpdate={u=>updateStep(gi,u)} onDelete={()=>deleteStep(gi)} onDuplicate={()=>duplicateStep(gi)}
                             onMoveUp={()=>moveStep(gi,-1)} onMoveDown={()=>moveStep(gi,1)} context={ctx}
                             highlighted={highlightedStepId === steps[gi].clientId}
                             dragHandleProps={{
@@ -2982,7 +3104,7 @@ export default function WorkoutBuilder({ initialSteps = [], context = {}, sport 
                     checked={selectedIndices.has(idx)} onChange={()=>toggleSelect(idx)}/>
                   <div className="flex-1 min-w-0">
                     <StepRow step={s} index={idx} total={steps.length}
-                      onUpdate={u=>updateStep(idx,u)} onDelete={()=>deleteStep(idx)}
+                      onUpdate={u=>updateStep(idx,u)} onDelete={()=>deleteStep(idx)} onDuplicate={()=>duplicateStep(idx)}
                       onMoveUp={()=>moveStep(idx,-1)} onMoveDown={()=>moveStep(idx,1)} context={ctx}
                       highlighted={highlightedStepId === s.clientId}
                       dragHandleProps={{

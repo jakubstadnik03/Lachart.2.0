@@ -8,6 +8,7 @@
  * copy, so a session looks like itself wherever it appears.
  */
 import React from 'react';
+import { planProfileBars } from '../../utils/planProfile';
 
 /** Runs, walks and swims are read in distance; rides in time. */
 export function isRunLikeSport(sport) {
@@ -20,81 +21,24 @@ export function isRunLikeSport(sport) {
  * `fluid` swaps the fixed pixel width for a viewBox that stretches to its
  * container — what a calendar card wants, since the card's width is the
  * column's and not known here. `width` then only sets the aspect ratio.
+ *
+ * `context` is the athlete's thresholds (zoneContextFromProfile); without
+ * it the bars are still in proportion, from the builder's defaults.
  */
-export function PlanMiniChart({ steps, color, width = 60, height = 16, fluid = false }) {
-  if (!steps?.length) return null;
-  const STEP_COLORS = { warmup:'#fbbf24', work:'#767EB5', recovery:'#6ee7b7', cooldown:'#38bdf8', rest:'#d1d5db' };
-  const FLOOR = 0.12;
+export function PlanMiniChart({ steps, color, width = 60, height = 16, fluid = false, context = null }) {
+  const bars = planProfileBars(steps, { width, context, color });
+  if (!bars.length) return null;
 
-  // Build segment list: individual steps stay as-is; repeat groups become one
-  // "compressed" segment that renders a capped number of visible cycles so the
-  // chart stays readable even in a 60px-wide thumbnail.
-  const segments = []; // { kind:'step', step } | { kind:'group', workDur, recDur, reps, totalDur }
-  const visited = new Set();
-  steps.forEach(s => {
-    if (!s.groupId) { segments.push({ kind:'step', step:s }); return; }
-    if (visited.has(s.groupId)) return;
-    visited.add(s.groupId);
-    const group = steps.filter(x => x.groupId === s.groupId);
-    const header = group.find(x => x.isGroupHeader);
-    const reps = header?.groupRepeat || 1;
-    const workDur = header?.durationSeconds || 0;
-    const recDur  = group.filter(x => !x.isGroupHeader).reduce((a, g) => a + (g.durationSeconds || 0), 0);
-    segments.push({ kind:'group', workDur, recDur, reps, totalDur:(workDur + recDur) * reps });
-  });
-
-  const total = segments.reduce((s, seg) =>
-    s + (seg.kind === 'step' ? (seg.step.durationSeconds || 30) : seg.totalDur), 0);
-  if (!total) return null;
-
-  const elems = [];
-  let cx = 0;
-
-  segments.forEach((seg, si) => {
-    if (seg.kind === 'step') {
-      const s = seg.step;
-      const w  = Math.max(1.5, (s.durationSeconds || 30) / total * width);
-      const intensity = s.stepType==='work' ? 1 : s.stepType==='warmup' ? 0.55 : s.stepType==='cooldown' ? 0.4 : s.stepType==='recovery' ? 0.3 : 0.15;
-      const bh = Math.max(FLOOR * height, intensity * height);
-      const bw = Math.max(1, w - 0.5);
-      const fill = STEP_COLORS[s.stepType] || color || '#767EB5';
-      const sx = cx; cx += w;
-      if (s.isRamp && s.stepType === 'warmup') {
-        elems.push(<polygon key={si} points={`${sx},${height} ${sx+bw},${height-bh} ${sx+bw},${height}`} fill={fill} opacity={0.85}/>);
-      } else if (s.isRamp && s.stepType === 'cooldown') {
-        elems.push(<polygon key={si} points={`${sx},${height-bh} ${sx},${height} ${sx+bw},${height}`} fill={fill} opacity={0.85}/>);
-      } else {
-        elems.push(<rect key={si} x={sx} y={height-bh} width={bw} height={bh} fill={fill} rx={1} opacity={0.85}/>);
-      }
-    } else {
-      // Repeat group — render as a compressed "comb" of work/recovery stripes.
-      // Limit visible cycles so each stripe is at least 2px wide.
-      const { workDur, recDur, reps, totalDur } = seg;
-      const gw = Math.max(6, totalDur / total * width);
-      const sx = cx; cx += gw;
-      const cycleTotalDur = workDur + (recDur || 0);
-      // How many cycles fit given minimum stripe width of 2px
-      const maxCycles = Math.max(1, Math.floor(gw / 2));
-      const visCycles = Math.min(reps, maxCycles);
-      const cycleW    = gw / visCycles;
-      const workFrac  = cycleTotalDur > 0 ? workDur / cycleTotalDur : 1;
-      const workW     = cycleW * workFrac;
-      const recW      = cycleW * (1 - workFrac);
-      const workH     = height; // full height
-      const recH      = Math.max(FLOOR * height, 0.32 * height);
-
-      for (let r = 0; r < visCycles; r++) {
-        const x0 = sx + r * cycleW;
-        // Work stripe
-        const ww = Math.max(1, workW - 0.5);
-        elems.push(<rect key={`${si}w${r}`} x={x0} y={0} width={ww} height={workH} fill={STEP_COLORS.work} rx={r===0&&visCycles===1?1:0} opacity={0.85}/>);
-        // Recovery stripe
-        if (recW >= 1 && recDur > 0) {
-          const rw = Math.max(1, recW - 0.5);
-          elems.push(<rect key={`${si}r${r}`} x={x0 + workW} y={height - recH} width={rw} height={recH} fill={STEP_COLORS.recovery} rx={0} opacity={0.80}/>);
-        }
-      }
+  const elems = bars.map((b, i) => {
+    const bh = b.h * height;
+    const bw = Math.max(1, b.w - 0.5);
+    if (b.ramp === 'up') {
+      return <polygon key={i} points={`${b.x},${height} ${b.x + bw},${height - bh} ${b.x + bw},${height}`} fill={b.fill} opacity={0.85} />;
     }
+    if (b.ramp === 'down') {
+      return <polygon key={i} points={`${b.x},${height - bh} ${b.x},${height} ${b.x + bw},${height}`} fill={b.fill} opacity={0.85} />;
+    }
+    return <rect key={i} x={b.x} y={height - bh} width={bw} height={bh} fill={b.fill} rx={1} opacity={0.85} />;
   });
 
   return (
