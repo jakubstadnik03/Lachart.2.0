@@ -17,7 +17,7 @@ import { BRAND_LOGO_SRC } from '../../constants/brandLogo';
 import { NavLink, useLocation, useNavigate, Outlet } from 'react-router-dom';
 import { AnimatePresence, motion, useMotionValue, useTransform, animate } from 'framer-motion';
 import { useAuth } from '../../context/AuthProvider';
-import { getAvatarBySportAndGender } from '../../utils/avatarUtils';
+import { getAvatarBySportAndGender, onAvatarError } from '../../utils/avatarUtils';
 import { getNotifications, markAllNotificationsRead, markNotificationRead, deleteNotification, clearAllNotifications, autoSyncStravaActivities } from '../../services/api';
 import api from '../../services/api';
 import { useNotification } from '../../context/NotificationContext';
@@ -453,7 +453,7 @@ function NativeAthleteBar({ coach, athletes, effectiveAthleteId, onSelect, statu
                 <button key={a._id} onClick={() => onSelect(String(a._id))}
                   style={{ touchAction: 'manipulation', flexShrink: 0, WebkitTapHighlightColor: 'transparent' }}
                   className={`relative rounded-full ${isSelected ? 'ring-2 ring-violet-300' : ''}`}>
-                  <img src={getAvatarBySportAndGender(a)} alt={a.name}
+                  <img src={getAvatarBySportAndGender(a)} onError={onAvatarError(a)} alt={a.name}
                     className={`w-6 h-6 rounded-full border ${isSelected ? 'border-violet-400' : 'border-transparent'}`} />
                   <span className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border border-white" style={{ background: dot }} />
                 </button>
@@ -550,7 +550,7 @@ function NativeAthleteBar({ coach, athletes, effectiveAthleteId, onSelect, statu
               className={`flex flex-col items-center gap-0.5 px-2 py-1 rounded-xl transition-all ${isSelected ? 'bg-violet-50' : ''}`}
             >
               <div className="relative">
-                <img src={getAvatarBySportAndGender(a)} alt=""
+                <img src={getAvatarBySportAndGender(a)} onError={onAvatarError(a)} alt=""
                   className={`w-9 h-9 rounded-full border-2 ${isSelected ? 'border-violet-400' : 'border-transparent'}`} />
                 <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-white" style={{ background: dot }} />
               </div>
@@ -728,7 +728,7 @@ function NativeProfileSheet({ open, onClose, user, logout, navigate }) {
             {/* User info */}
             <div className="flex items-center gap-3 px-5 py-4 border-b border-gray-100">
               <div className="w-12 h-12 rounded-full overflow-hidden border-2 border-primary/20 flex-shrink-0">
-                {user && <img src={getAvatarBySportAndGender(user)} alt="" className="w-full h-full object-cover" />}
+                {user && <img src={getAvatarBySportAndGender(user)} onError={onAvatarError(user)} alt="" className="w-full h-full object-cover" />}
               </div>
               <div className="min-w-0">
                 <p className="font-semibold text-gray-900 truncate">{user?.name} {user?.surname}</p>

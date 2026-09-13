@@ -4,7 +4,7 @@ import { MagnifyingGlassIcon, EllipsisVerticalIcon, UserPlusIcon, UsersIcon } fr
 import { useNavigate } from 'react-router-dom';
 import api from '../services/api';
 import { useNotification } from '../context/NotificationContext';
-import { getAthleteAvatar } from '../utils/avatarUtils';
+import { getAthleteAvatar, onAvatarError } from '../utils/avatarUtils';
 import CoachAthleteOverview from '../components/Athletes/CoachAthleteOverview';
 import Modal from '../components/Modal';
 import { useAthleteSelection } from '../context/AthleteSelectionContext';
@@ -486,7 +486,7 @@ const AthletesPage = () => {
                         {/* Avatar */}
                         <button onClick={() => handleViewProfile(athlete._id)} style={{ touchAction: 'manipulation' }}>
                           <div className="w-14 h-14 rounded-2xl bg-purple-50 overflow-hidden shrink-0 border border-purple-100">
-                            <img src={getAthleteAvatar(athlete)} alt="" className="w-full h-full object-cover" />
+                            <img src={getAthleteAvatar(athlete)} onError={onAvatarError(athlete)} alt="" className="w-full h-full object-cover" />
                           </div>
                         </button>
 
@@ -558,7 +558,7 @@ const AthletesPage = () => {
                         <div className="px-6 pb-6 flex-grow flex flex-col">
                           <div className="flex justify-center -mt-16">
                             <div className="w-32 h-32 rounded-full bg-gray-200 border-4 border-white overflow-hidden relative z-10">
-                              <img src={getAthleteAvatar(athlete)} alt={`${athlete.name}'s avatar`} className="w-full h-full object-cover" />
+                              <img src={getAthleteAvatar(athlete)} onError={onAvatarError(athlete)} alt={`${athlete.name}'s avatar`} className="w-full h-full object-cover" />
                             </div>
                           </div>
                           <div className="text-center mt-4">
@@ -644,7 +644,7 @@ const AthletesPage = () => {
                   <div className="flex items-center gap-4">
                     <div className="w-16 h-16 rounded-2xl bg-purple-50 overflow-hidden shrink-0 border border-purple-100 flex items-center justify-center">
                       {formData.sport || formData.gender ? (
-                        <img src={getAthleteAvatar({ sport: formData.sport, gender: formData.gender || 'male' })} alt="Avatar" className="w-full h-full object-cover" />
+                        <img src={getAthleteAvatar({ sport: formData.sport, gender: formData.gender || 'male' })} onError={onAvatarError({ sport: formData.sport, gender: formData.gender || 'male' })} alt="Avatar" className="w-full h-full object-cover" />
                       ) : (
                         <span className="text-[10px] text-gray-400 text-center px-1 leading-tight">Select sport for avatar</span>
                       )}

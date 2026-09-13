@@ -7,6 +7,7 @@ const { recordStravaSyncLogSafe } = require('./stravaSyncLogService');
 // route module. The old local copy aggressively wiped user.strava on every
 // 4xx, which caused users to be silently disconnected by transient errors.
 const { getValidStravaToken } = require('../utils/stravaToken');
+const { avatarRefreshDue, avatarUpdateFor } = require('../utils/stravaAvatar');
 const {
   STRAVA_AUTO_SYNC_MIN_USER_AGE_MS,
   STRAVA_AUTO_SYNC_PAGE_DELAY_MS,
@@ -99,6 +100,21 @@ async function syncStravaForUser(user, opts = {}) {
       return { imported: 0, updated: 0, error: 'Invalid Strava token' };
     }
     
+    // The profile picture, once a week. Strava's picture URLs die when the
+    // athlete changes the photo, and the one saved at connect time was
+    // never looked at again. Never lets a failure touch the sync itself.
+    if (avatarRefreshDue(user)) {
+      try {
+        const athleteResp = await axios.get('https://www.strava.com/api/v3/athlete', {
+          headers: { Authorization: `Bearer ${token}` },
+          timeout: 15000,
+        });
+        await User.findByIdAndUpdate(user._id, { $set: avatarUpdateFor(user, athleteResp.data) });
+      } catch (avatarErr) {
+        console.warn(`[StravaAutoSync] avatar refresh skipped for user ${user._id}: ${avatarErr?.message || avatarErr}`);
+      }
+    }
+
     // Use lastSyncDate if available, otherwise sync last 7 days.
     // IMPORTANT: subtract a 48h overlap window so we re-check the recent
     // past on every sync. Without overlap, any activity that arrives at

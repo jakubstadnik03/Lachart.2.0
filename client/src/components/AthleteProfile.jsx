@@ -11,7 +11,7 @@ import api from '../services/api';
 import { motion } from 'framer-motion';
 import { XMarkIcon } from '@heroicons/react/24/outline';
 import { useNotification } from '../context/NotificationContext';
-import { getAthleteAvatar } from '../utils/avatarUtils';
+import { getAthleteAvatar, onAvatarError } from '../utils/avatarUtils';
 import { formatHeight, formatWeight, resolveDistanceUnitSystem, getUserUnits } from '../utils/unitsConverter';
 
 export default function AthleteProfile() {
@@ -309,7 +309,7 @@ export default function AthleteProfile() {
                     <div className="flex justify-center -mt-12 sm:-mt-16">
                       <div className="w-24 h-24 sm:w-32 sm:h-32 rounded-full bg-gray-200 border-4 border-white overflow-hidden relative z-10">
                         <img
-                          src={getAthleteAvatar(athlete)}
+                          src={getAthleteAvatar(athlete)} onError={onAvatarError(athlete)}
                           alt="Profile"
                           className="w-full h-full object-cover"
                         />
@@ -478,7 +478,7 @@ export default function AthleteProfile() {
                   <div className="w-full aspect-square bg-gray-200 rounded-full overflow-hidden flex items-center justify-center">
                     {formData.sport || formData.gender ? (
                       <img
-                        src={getAthleteAvatar({ sport: formData.sport, gender: formData.gender || 'male' })}
+                        src={getAthleteAvatar({ sport: formData.sport, gender: formData.gender || 'male' })} onError={onAvatarError({ sport: formData.sport, gender: formData.gender || 'male' })}
                         alt="Profile"
                         className="w-full h-full object-cover"
                       />

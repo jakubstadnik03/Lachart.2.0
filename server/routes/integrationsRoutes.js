@@ -9,6 +9,7 @@ const AppleHealthActivity = require('../models/AppleHealthActivity');
 const AppleHealthWellness = require('../models/AppleHealthWellness');
 const StravaStream = require('../models/StravaStream');
 const GarminActivity = require('../models/GarminActivity');
+const { stravaAvatarUrlFrom } = require('../utils/stravaAvatar');
 const {
   SIMILAR_SELECT,
   buildStructureFilter,
@@ -1873,14 +1874,9 @@ router.get('/strava/callback', async (req, res) => {
     }
 
     // Save Strava profile picture if available.
-    if (freshAthlete?.profile && freshAthlete.profile !== 'avatar/athlete/large.png') {
-      const profilePath = freshAthlete.profile_large || freshAthlete.profile_medium || freshAthlete.profile;
-      if (profilePath && !profilePath.startsWith('http')) {
-        user.avatar = `https://www.strava.com/${profilePath}`;
-      } else if (profilePath) {
-        user.avatar = profilePath;
-      }
-    }
+    const connectAvatar = stravaAvatarUrlFrom(freshAthlete);
+    if (connectAvatar) user.avatar = connectAvatar;
+    user.strava.avatarRefreshedAt = new Date();
     await user.save();
 
     // Pull recent activities immediately so the calendar has data while the
@@ -7275,21 +7271,13 @@ router.post('/strava/update-avatar', verifyToken, async (req, res) => {
     });
     
     if (athlete?.profile && athlete.profile !== 'avatar/athlete/large.png') {
-      // Use profile_large if available, otherwise profile_medium, otherwise profile
-      const profilePath = athlete.profile_large || athlete.profile_medium || athlete.profile;
-      // Convert relative path to full URL
-      let avatarUrl = null;
-      if (profilePath && !profilePath.startsWith('http')) {
-        avatarUrl = `https://www.strava.com/${profilePath}`;
-      } else if (profilePath) {
-        avatarUrl = profilePath;
-      }
-      
+      const avatarUrl = stravaAvatarUrlFrom(athlete);
+
       if (avatarUrl) {
         // Use findByIdAndUpdate to ensure the update is saved properly
         const updatedUser = await User.findByIdAndUpdate(
           req.user.userId,
-          { $set: { avatar: avatarUrl } },
+          { $set: { avatar: avatarUrl, 'strava.avatarRefreshedAt': new Date() } },
           { new: true, runValidators: true }
         );
         

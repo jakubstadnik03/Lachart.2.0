@@ -150,6 +150,8 @@ const userSchema = new mongoose.Schema({
     expiresAt: { type: Number, default: null },
     autoSync: { type: Boolean, default: false }, // Enable automatic sync
     lastSyncDate: { type: Date, default: null }, // Last successful sync date
+    // When the profile picture was last re-read from Strava (see utils/stravaAvatar).
+    avatarRefreshedAt: { type: Date, default: null },
     backfillState: { type: String, default: null },
     backfillCursorBefore: { type: Number, default: null },
     backfillStopBefore: { type: Number, default: null },

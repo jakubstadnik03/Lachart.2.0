@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { UserPlusIcon, BeakerIcon } from '@heroicons/react/24/outline';
 import { Bike, Activity, Waves, Medal } from 'lucide-react';
 import api from '../../services/api';
-import { getAthleteAvatar } from '../../utils/avatarUtils';
+import { getAthleteAvatar, onAvatarError } from '../../utils/avatarUtils';
 
 const SPORT_ICONS = { cycling: Bike, running: Activity, swimming: Waves, triathlon: Medal };
 function SportIcon({ sport, size = 14 }) {
@@ -223,7 +223,7 @@ export default function CoachDashboardHeader({ selectedAthleteId, onSelectAthlet
             >
               <div className="relative">
                 <img
-                  src={getAthleteAvatar(athlete)}
+                  src={getAthleteAvatar(athlete)} onError={onAvatarError(athlete)}
                   alt={athlete.name}
                   className={`w-9 h-9 rounded-full object-cover transition-all ${isSelected ? 'ring-2 ring-violet-400' : ''}`}
                 />
@@ -256,7 +256,7 @@ export default function CoachDashboardHeader({ selectedAthleteId, onSelectAthlet
       {selectedAthlete && !isViewingSelf && (
         <div className="bg-white rounded-2xl border border-violet-100 px-4 py-3 flex items-center gap-4 shadow-sm">
           <img
-            src={getAthleteAvatar(selectedAthlete)}
+            src={getAthleteAvatar(selectedAthlete)} onError={onAvatarError(selectedAthlete)}
             alt={selectedAthlete.name}
             className="w-11 h-11 rounded-full border-2 border-violet-200 shrink-0"
           />

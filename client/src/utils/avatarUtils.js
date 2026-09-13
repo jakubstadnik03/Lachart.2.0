@@ -81,3 +81,21 @@ export const getAthleteAvatar = (athlete) => {
   // Default fallback: athlete avatar based on gender
   return isFemale ? '/images/athlete-female-avatar.jpeg' : '/images/athlete-avatar.jpeg';
 };
+
+/** The stock avatar this user would get without a photo. */
+export const defaultAvatarFor = (user) => getAvatarBySportAndGender({ ...(user || {}), avatar: null });
+
+/**
+ * onError for an avatar <img>: swap in the stock avatar, once.
+ *
+ * A Strava profile picture URL stops working the day the athlete changes
+ * the photo — the CDN answers 403 for the old one — and the app keeps the
+ * URL it saved at connect time. Without this the header and the menu showed
+ * a broken image with "User Avatar" under it.
+ */
+export const onAvatarError = (user) => (e) => {
+  const img = e?.currentTarget;
+  if (!img || img.dataset.avatarFallback) return;
+  img.dataset.avatarFallback = '1';
+  img.src = defaultAvatarFor(user);
+};

@@ -4,7 +4,7 @@ import { UserPlusIcon, ChevronDownIcon, ChevronUpIcon } from '@heroicons/react/2
 import { useAuth } from '../context/AuthProvider';
 import { athleteRouteFor, useAthleteSelection } from '../context/AthleteSelectionContext';
 import api from '../services/api';
-import { getAthleteAvatar, getAvatarBySportAndGender } from '../utils/avatarUtils';
+import { getAthleteAvatar, getAvatarBySportAndGender, onAvatarError } from '../utils/avatarUtils';
 
 const isCoachRole = (user) =>
   ['coach', 'tester', 'testing', 'admin'].includes(user?.role) ||
@@ -171,7 +171,7 @@ export default function CoachAthleteBar() {
               return (
                 <button key={athlete._id} onClick={() => handleSelectAthlete(athlete._id)}
                   className={`flex-shrink-0 relative rounded-full transition-all ${isSelected ? `ring-2 ${STATUS_RING[statusKey]}` : ''}`}>
-                  <img src={getAthleteAvatar(athlete)} alt={athlete.name}
+                  <img src={getAthleteAvatar(athlete)} onError={onAvatarError(athlete)} alt={athlete.name}
                     className={`w-6 h-6 rounded-full object-cover border ${isSelected ? 'border-violet-400' : 'border-transparent'}`} />
                   {st !== undefined && (
                     <span className={`absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border border-white ${STATUS_DOT[statusKey]}`} />
@@ -347,7 +347,7 @@ export default function CoachAthleteBar() {
               className={`flex-shrink-0 flex flex-col items-center gap-0.5 px-1.5 py-1 rounded-xl transition-all ${isSelected ? `bg-violet-50 ring-2 ${STATUS_RING[statusKey]}` : 'hover:bg-gray-50'}`}
             >
               <div className="relative">
-                <img src={getAthleteAvatar(athlete)} alt={athlete.name}
+                <img src={getAthleteAvatar(athlete)} onError={onAvatarError(athlete)} alt={athlete.name}
                   className={`w-8 h-8 rounded-full object-cover ${isSelected ? 'ring-2 ring-violet-400' : ''}`} />
                 {st !== undefined && (
                   <span className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-white ${STATUS_DOT[statusKey]}`} />

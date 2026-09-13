@@ -2,7 +2,7 @@ import React, { useRef, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthProvider';
 import { motion, AnimatePresence } from 'framer-motion';
-import { getAvatarBySportAndGender } from '../../utils/avatarUtils';
+import { getAvatarBySportAndGender, onAvatarError } from '../../utils/avatarUtils';
 
 export const UserDropdown = ({ isOpen, setIsOpen, user: propUser, disabled }) => {
   const dropdownRef = useRef(null);
@@ -57,7 +57,7 @@ export const UserDropdown = ({ isOpen, setIsOpen, user: propUser, disabled }) =>
         disabled={disabled}
       >
         <img
-          src={getAvatar(displayUser)}
+          src={getAvatar(displayUser)} onError={onAvatarError(displayUser)}
           alt="User Avatar"
           className="w-8 h-8 rounded-full"
           key={displayUser?._id}

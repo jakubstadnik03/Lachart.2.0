@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthProvider';
 import { athleteIdInPath, athleteRouteFor, useAthleteSelection } from '../context/AthleteSelectionContext';
 import api from '../services/api';
 import { motion, AnimatePresence } from 'framer-motion';
-import { getAvatarBySportAndGender } from '../utils/avatarUtils';
+import { getAvatarBySportAndGender, onAvatarError } from '../utils/avatarUtils';
 import { LAYOUT_DESKTOP_MIN_PX } from '../constants/layoutBreakpoints';
 import { isCapacitorNative } from '../utils/isNativeApp';
 import { usePremium } from '../hooks/usePremium';
@@ -311,7 +311,7 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
           className="p-4 flex items-center border-b border-gray-200 flex-shrink-0"
         >
           <img
-            src={getAvatar(displayUser)}
+            src={getAvatar(displayUser)} onError={onAvatarError(displayUser)}
             alt="User Avatar"
             className="w-12 h-12 rounded-full"
             key={displayUser?._id}
@@ -504,7 +504,7 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
                       >
                         <div className="relative shrink-0">
                           <img
-                            src={getAvatar(athlete)}
+                            src={getAvatar(athlete)} onError={onAvatarError(athlete)}
                             alt=""
                             className="w-6 h-6 rounded-full"
                           />
