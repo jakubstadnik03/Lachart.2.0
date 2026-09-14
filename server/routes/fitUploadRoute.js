@@ -69,29 +69,9 @@ const upload = multer({
  *       401:
  *         description: Unauthorized
  */
-// ── Free-plan: FIT upload requires premium ────────────────────────────────
-async function requirePremiumForFitUpload(req, res, next) {
-  if (process.env.SUBSCRIPTION_ENABLED !== 'true') return next();
-  try {
-    const User = require('../models/UserModel');
-    const { resolvePremiumForUserDocument } = require('../utils/premiumAccess');
-    const user = await User.findById(req.user.userId);
-    const { isPremium } = await resolvePremiumForUserDocument(user);
-    if (!isPremium) {
-      return res.status(403).json({
-        error: 'PREMIUM_REQUIRED',
-        feature: 'fit_upload',
-        message: 'FIT file upload requires a Pro or Coach plan.'
-      });
-    }
-    next();
-  } catch (e) {
-    next(e);
-  }
-}
-// ─────────────────────────────────────────────────────────────────────────
-
-router.post('/upload', verifyToken, requirePremiumForFitUpload, upload.single('file'), fitUploadController.uploadFitFile);
+// FIT upload is a Free-plan feature — featureGate's FEATURE_MATRIX has said
+// so all along; this route was the one place still asking for Pro.
+router.post('/upload', verifyToken, upload.single('file'), fitUploadController.uploadFitFile);
 
 // Cache middleware for slow endpoints (5 minutes cache)
 // Shared module so controllers can also invalidate after mutations.

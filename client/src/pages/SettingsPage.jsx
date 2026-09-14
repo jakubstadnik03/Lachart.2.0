@@ -1001,10 +1001,6 @@ const SettingsPage = () => {
   const handleUpload = async () => {
     if (files.length === 0) return;
 
-    // ── Premium gate: FIT upload requires Athlete plan ──────────────────────
-    if (!gate('FIT Training Upload', 'pro')) return;
-    // ────────────────────────────────────────────────────────────────────────
-
     try {
       setUploading(true);
       for (const file of files) {
