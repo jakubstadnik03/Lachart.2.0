@@ -35,33 +35,11 @@ import {
 } from '../utils/calendarActivitiesForPmc';
 import WorkoutTemplateLibrary from '../components/WorkoutPlanner/WorkoutTemplateLibrary';
 import { getPlannerPanelsPrefs, setPlannerPanelsPrefs, plannerPanelsDefault } from '../utils/uiPrefs';
-import { buildPresetSteps } from '../components/WorkoutPlanner/WorkoutBuilder';
 // Lazy — ActivityFullModal lives in the 8k-line CalendarView; don't pull it
 // into the planner chunk unless an activity is actually opened.
 const ActivityFullModal = lazy(() =>
   import('../components/Calendar/CalendarView').then(m => ({ default: m.ActivityFullModal }))
 );
-
-// Starter workout templates shown in the library when the user hasn't saved
-// any of their own yet — so the planner isn't empty on day one. Built from the
-// same presets the WorkoutBuilder uses, so dragging one onto a day creates a
-// fully-structured planned workout. Power targets are zone/threshold-relative,
-// so they scale to each athlete's profile.
-const DEFAULT_TEMPLATE_DEFS = [
-  { name: 'Endurance ride · Z2 60′',     sport: 'bike',  preset: 'zone2' },
-  { name: 'Sweet Spot · 3×15′',          sport: 'bike',  preset: 'sweet_spot' },
-  { name: 'Threshold · 5×8′ LT2',        sport: 'bike',  preset: 'threshold_intervals' },
-  { name: 'VO₂max · 6×4′',               sport: 'bike',  preset: 'vo2max' },
-  { name: 'Over/Under · 3 sets',         sport: 'bike',  preset: 'over_under' },
-  { name: 'Tempo · 2×20′',               sport: 'bike',  preset: 'tempo' },
-  { name: 'Easy run · 45′',              sport: 'run',   preset: 'run_easy' },
-  { name: 'Long run · 90′',              sport: 'run',   preset: 'run_long' },
-  { name: 'Run threshold · 2×15′',       sport: 'run',   preset: 'run_threshold' },
-  { name: 'Run VO₂max · 6×3′',           sport: 'run',   preset: 'run_vo2max' },
-  { name: 'Fartlek · 10×1′',             sport: 'run',   preset: 'run_fartlek' },
-  { name: 'Swim endurance · 1.6 km',     sport: 'swim',  preset: 'swim_endurance' },
-  { name: 'Swim threshold · 10×100',     sport: 'swim',  preset: 'swim_threshold' },
-];
 
 const VISIBLE_WEEKS = 8;
 /**
@@ -75,6 +53,27 @@ const VISIBLE_WEEKS = 8;
  */
 const PAST_WEEKS = 4;
 const NAV_SHIFT_WEEKS = 4;
+
+/**
+ * The edge a hidden panel folds to: a slim tab where the panel was, so the
+ * way back is where the panel went — not only a button in the page header.
+ */
+function PanelRail({ side, label, Icon, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={`Show ${label.toLowerCase()}`}
+      aria-label={`Show ${label.toLowerCase()}`}
+      className={`shrink-0 w-9 sticky top-0 h-screen flex flex-col items-center gap-2 pt-4 bg-white/70 text-slate-400 hover:text-primary hover:bg-primary/5 transition-colors ${
+        side === 'left' ? 'border-r border-slate-200/70' : 'border-l border-slate-200/70'
+      }`}
+    >
+      <Icon className="w-4 h-4" />
+      <span className="text-[10px] font-bold uppercase tracking-wider" style={{ writingMode: 'vertical-rl' }}>{label}</span>
+    </button>
+  );
+}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // WorkoutPlannerPage
@@ -99,20 +98,6 @@ export default function WorkoutPlannerPage() {
   const [chartActivities, setChartActivities] = useState([]);
   const [templates, setTemplates] = useState([]);
   const [userProfile, setUserProfile] = useState(null);
-  // Built once — starter templates to fall back on when the athlete has none.
-  const defaultTemplates = useMemo(
-    () => DEFAULT_TEMPLATE_DEFS.map((d, i) => ({
-      _id: `default-${i}`,
-      name: d.name,
-      sport: d.sport,
-      steps: buildPresetSteps(d.preset),
-      isDefault: true,
-    })),
-    []
-  );
-  // What the library shows: the athlete's own templates, or the starters when
-  // they haven't saved any yet.
-  const displayTemplates = templates.length > 0 ? templates : defaultTemplates;
   const [loading,   setLoading]   = useState(false);
   const [dragOverDay, setDragOverDay] = useState(null);   // dateStr currently hovered with a template drag
 
@@ -540,16 +525,18 @@ export default function WorkoutPlannerPage() {
     <div className="min-h-full bg-slate-50 flex">
       {/* Left: draggable template library — desktop only (drag-and-drop is a
           mouse affordance; on phones the planner goes full-width). */}
-      {!isMobile && panels.library && (
+      {!isMobile && (panels.library ? (
         <WorkoutTemplateLibrary
-          templates={displayTemplates}
+          templates={templates}
           onClose={() => togglePanel('library')}
           onOpenTemplate={(tpl) => setModal({
             date: today,
             workout: { title: tpl.name, sport: tpl.sport, steps: tpl.steps },
           })}
         />
-      )}
+      ) : (
+        <PanelRail side="left" label="Library" Icon={RectangleStackIcon} onClick={() => togglePanel('library')} />
+      ))}
 
       {/* Planner + progress charts */}
       <div className={`flex-1 min-w-0 ${isMobile ? '' : 'flex'}`}>
@@ -769,7 +756,7 @@ export default function WorkoutPlannerPage() {
           date={modal.date}
           workout={modal.workout}
           context={context}
-          templates={displayTemplates}
+          templates={templates}
           onTemplateSaved={(tpl) => { if (tpl?._id) setTemplates((prev) => [tpl, ...prev.filter((t) => t._id !== tpl._id)]); }}
           onSave={handleSave}
           onDelete={handleDelete}
@@ -793,7 +780,7 @@ export default function WorkoutPlannerPage() {
       )}
       </div>
 
-      {!isMobile && panels.progress && (
+      {!isMobile && (panels.progress ? (
         <PlannerProgressPanel
           weekStarts={weekStarts}
           planned={planned}
@@ -805,7 +792,9 @@ export default function WorkoutPlannerPage() {
           userProfile={userProfile}
           onClose={() => togglePanel('progress')}
         />
-      )}
+      ) : (
+        <PanelRail side="right" label="Progress" Icon={ChartBarIcon} onClick={() => togglePanel('progress')} />
+      ))}
       </div>
     </div>
   );
