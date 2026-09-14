@@ -19,6 +19,8 @@ export default function PlannerWeekSummary({
   tab = 'plan',
   onTabChange,
   compact = false,
+  /** 'card' — the stacked box with Plan/Done tabs; 'strip' — one line for the week header. */
+  variant = 'card',
 }) {
   const summary = buildPlannerWeekSummary({
     planned,
@@ -52,6 +54,62 @@ export default function PlannerWeekSummary({
   const shell = `flex flex-col rounded-xl border border-slate-200 bg-slate-50 border-l-4 border-l-primary/40 text-left ${
     compact ? 'p-2 min-w-0' : 'p-2.5 min-w-[168px]'
   }`;
+
+  // One line next to the week's dates, both halves at once. The week used to
+  // spend a 190px column on this box — a fifth of the row — and the seven days
+  // paid for it; a header line costs the days nothing.
+  if (variant === 'strip') {
+    const sportChips = (rows, keyPrefix) => rows.map((row) => (
+      <span key={`${keyPrefix}-${row.sport}`} className="inline-flex items-center gap-1 text-[11px] text-slate-600 tabular-nums whitespace-nowrap">
+        <SportIcon sport={row.sport} className="w-3.5 h-3.5 text-slate-500" />
+        {formatDecimalHours(row.sec) || formatWeekDurationSeconds(row.sec) || '—'}
+        {row.tss > 0 && <span className="text-primary font-bold text-[10px]">{Math.round(row.tss)}</span>}
+      </span>
+    ));
+    const label = (text) => (
+      <span className="text-[10px] font-bold uppercase tracking-wide text-slate-400">{text}</span>
+    );
+    return (
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 min-w-0">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          {label('Plan')}
+          <span className="font-extrabold text-slate-900 tabular-nums text-sm">{plannedHoursStr || '—'}</span>
+          {planTssRounded > 0 && <span className="font-bold text-primary tabular-nums text-[11px]">{planTssRounded} TSS</span>}
+          {plan.count > 0 && (
+            <span className="text-slate-400 tabular-nums text-[11px]">{plan.count} {plan.count === 1 ? 'session' : 'sessions'}</span>
+          )}
+          {plan.totalDist > 0 && <span className="text-slate-400 tabular-nums text-[11px]">{fmtDistShort(plan.totalDist, user)}</span>}
+          {sportChips(plan.bySport, 'plan')}
+        </div>
+        <span className="h-4 w-px bg-slate-200" aria-hidden="true" />
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          {label('Done')}
+          <span className="font-extrabold text-slate-900 tabular-nums text-sm">{doneHoursStr || '—'}</span>
+          {tssRounded > 0 && (
+            <span className="inline-flex items-center gap-0.5 font-bold text-primary tabular-nums text-[11px]">
+              <FireIcon className="w-3 h-3 shrink-0" />{tssRounded} TSS
+            </span>
+          )}
+          {done.totalDist > 0 && <span className="text-slate-400 tabular-nums text-[11px]">{fmtDistShort(done.totalDist, user)}</span>}
+          {completionPct != null && (
+            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full tabular-nums ${
+              completionPct >= 100 ? 'bg-emerald-100 text-emerald-600' : completionPct >= 70 ? 'bg-amber-100 text-amber-600' : 'bg-slate-100 text-slate-500'
+            }`}>
+              {completionPct}%
+            </span>
+          )}
+          {showTrend && (
+            <span className={`shrink-0 ${tssRounded > prevRounded ? 'text-emerald-500' : 'text-red-400'}`} title="vs previous week">
+              {tssRounded > prevRounded
+                ? <ArrowTrendingUpIcon className="w-3.5 h-3.5" />
+                : <ArrowTrendingDownIcon className="w-3.5 h-3.5" />}
+            </span>
+          )}
+          {sportChips(done.bySport, 'done')}
+        </div>
+      </div>
+    );
+  }
 
   const tabs = (
     <div className="flex gap-0.5 mb-1.5 bg-slate-200 rounded-md p-0.5">

@@ -8,7 +8,7 @@
  */
 import React, { useState, useEffect, useCallback, useMemo, useRef, lazy, Suspense } from 'react';
 import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
-import { ChevronLeftIcon, ChevronRightIcon } from '@heroicons/react/24/outline';
+import { ChevronLeftIcon, ChevronRightIcon, RectangleStackIcon, ChartBarIcon } from '@heroicons/react/24/outline';
 import { useAuth } from '../context/AuthProvider';
 import { useAthleteSelection } from '../context/AthleteSelectionContext';
 import { useNotification } from '../context/NotificationContext';
@@ -34,6 +34,7 @@ import {
   readCalendarActivitiesCache,
 } from '../utils/calendarActivitiesForPmc';
 import WorkoutTemplateLibrary from '../components/WorkoutPlanner/WorkoutTemplateLibrary';
+import { getPlannerPanelsPrefs, setPlannerPanelsPrefs, plannerPanelsDefault } from '../utils/uiPrefs';
 import { buildPresetSteps } from '../components/WorkoutPlanner/WorkoutBuilder';
 // Lazy — ActivityFullModal lives in the 8k-line CalendarView; don't pull it
 // into the planner chunk unless an activity is actually opened.
@@ -124,6 +125,18 @@ export default function WorkoutPlannerPage() {
     window.addEventListener('orientationchange', h);
     return () => { window.removeEventListener('resize', h); window.removeEventListener('orientationchange', h); };
   }, []);
+  // The two side panels. Until the user has toggled one, what opens depends
+  // on the width: the seven days come first, a panel only when it leaves them
+  // room. A choice, once made, is kept.
+  const [panels, setPanels] = useState(() => (
+    getPlannerPanelsPrefs()
+    || plannerPanelsDefault(typeof window !== 'undefined' ? window.innerWidth : 0)
+  ));
+  const togglePanel = (which) => setPanels((prev) => {
+    const next = { ...prev, [which]: !prev[which] };
+    setPlannerPanelsPrefs(next);
+    return next;
+  });
   const [modal, setModal] = useState(null); // { date, workout? }
   const [activityModal, setActivityModal] = useState(null); // { activity, plannedWorkout } — completed detail
   const [context, setContext] = useState({ ftp: 250, lt1Power: null, lt2Power: null });
@@ -527,9 +540,10 @@ export default function WorkoutPlannerPage() {
     <div className="min-h-full bg-slate-50 flex">
       {/* Left: draggable template library — desktop only (drag-and-drop is a
           mouse affordance; on phones the planner goes full-width). */}
-      {!isMobile && (
+      {!isMobile && panels.library && (
         <WorkoutTemplateLibrary
           templates={displayTemplates}
+          onClose={() => togglePanel('library')}
           onOpenTemplate={(tpl) => setModal({
             date: today,
             workout: { title: tpl.name, sport: tpl.sport, steps: tpl.steps },
@@ -571,7 +585,30 @@ export default function WorkoutPlannerPage() {
             {loading && <div className="w-3.5 h-3.5 border-2 border-primary border-t-transparent rounded-full animate-spin" />}
           </div>
         </div>
-        <div className="flex items-center gap-0.5 bg-white rounded-xl ring-1 ring-slate-200 shadow-sm p-1 self-start">
+        <div className="flex items-center gap-2 self-start">
+        {!isMobile && (
+          <div className="flex items-center gap-0.5 bg-white rounded-xl ring-1 ring-slate-200 shadow-sm p-1">
+            {[
+              ['library', 'Library', RectangleStackIcon, 'Workout library — drag a template onto a day'],
+              ['progress', 'Progress', ChartBarIcon, 'Training progress — plan vs done, load, form'],
+            ].map(([key, label, Icon, title]) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => togglePanel(key)}
+                aria-pressed={panels[key]}
+                title={title}
+                className={`flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-lg transition-colors ${
+                  panels[key] ? 'bg-primary/10 text-primary' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-700'
+                }`}
+              >
+                <Icon className="w-4 h-4" />
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
+        <div className="flex items-center gap-0.5 bg-white rounded-xl ring-1 ring-slate-200 shadow-sm p-1">
           <button
             type="button"
             onClick={() => setAnchorWeek((d) => startOfWeek(addDays(d, -NAV_SHIFT_WEEKS * 7)))}
@@ -601,6 +638,7 @@ export default function WorkoutPlannerPage() {
           >
             <ChevronRightIcon className="w-4 h-4" />
           </button>
+        </div>
         </div>
       </div>
 
@@ -755,7 +793,7 @@ export default function WorkoutPlannerPage() {
       )}
       </div>
 
-      {!isMobile && (
+      {!isMobile && panels.progress && (
         <PlannerProgressPanel
           weekStarts={weekStarts}
           planned={planned}
@@ -765,6 +803,7 @@ export default function WorkoutPlannerPage() {
           context={context}
           user={user}
           userProfile={userProfile}
+          onClose={() => togglePanel('progress')}
         />
       )}
       </div>

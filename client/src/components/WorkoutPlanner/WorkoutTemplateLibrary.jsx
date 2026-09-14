@@ -25,7 +25,7 @@ function fmtDur(secs) {
   return h > 0 ? `${h}h ${m}m` : `${m}m`;
 }
 
-export default function WorkoutTemplateLibrary({ templates = [], onOpenTemplate = null }) {
+export default function WorkoutTemplateLibrary({ templates = [], onOpenTemplate = null, onClose = null }) {
   const [sport, setSport] = useState('all');
   const [q, setQ] = useState('');
 
@@ -41,8 +41,23 @@ export default function WorkoutTemplateLibrary({ templates = [], onOpenTemplate 
   return (
     <aside className="w-60 shrink-0 border-r border-slate-200/70 bg-white flex flex-col h-[calc(100vh-0px)] sticky top-0">
       <div className="p-3 border-b border-slate-100">
-        <div className="text-xs font-bold uppercase tracking-wider text-slate-500">Workout library</div>
-        <p className="text-[10.5px] text-slate-400 mb-2.5">Drag onto a day to plan it</p>
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <div className="text-xs font-bold uppercase tracking-wider text-slate-500">Workout library</div>
+            <p className="text-[10.5px] text-slate-400 mb-2.5">Drag onto a day to plan it</p>
+          </div>
+          {onClose && (
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Hide the library"
+              title="Hide the library"
+              className="-mr-1 -mt-1 p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+            >
+              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M15 6l-6 6 6 6" /></svg>
+            </button>
+          )}
+        </div>
         <input
           value={q}
           onChange={e => setQ(e.target.value)}

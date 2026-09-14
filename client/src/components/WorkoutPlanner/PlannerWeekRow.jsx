@@ -147,7 +147,7 @@ export default function PlannerWeekRow({
   });
 
   const grid = (
-    <div className={isMobile ? 'flex flex-col gap-2.5' : 'grid grid-cols-7 gap-2 items-stretch flex-1 min-w-0'}>
+    <div className={isMobile ? 'flex flex-col gap-2.5' : 'grid grid-cols-7 gap-2.5 items-stretch min-w-0'}>
       {days.map((day, di) => {
         const dateStr = toLocalDateStr(day);
         const isToday = isSameDay(day, today);
@@ -268,26 +268,34 @@ export default function PlannerWeekRow({
     </div>
   );
 
+  const summaryProps = {
+    planned, trainings, weekStart, context, user, userProfile, prevWeekTrainings,
+  };
+
+  if (isMobile) {
+    return (
+      <section className="mb-8">
+        <h2 className="text-sm font-bold text-slate-700 mb-2 tabular-nums">{weekLabel}</h2>
+        <div className="space-y-3">
+          {grid}
+          <PlannerWeekSummary {...summaryProps} tab={summaryTab} onTabChange={setSummaryTab} compact />
+        </div>
+      </section>
+    );
+  }
+
+  // The week's totals sit in its header line, so the seven days have the
+  // whole row. The header is sticky: scrolling through twelve weeks, the
+  // dates and totals of the week on screen stay in view.
   return (
-    <section className="mb-8">
-      <h2 className="text-sm font-bold text-slate-700 mb-2 tabular-nums">{weekLabel}</h2>
-      <div className={isMobile ? 'space-y-3' : 'flex gap-3 items-start'}>
-        {grid}
-        <div className={isMobile ? '' : 'w-[190px] shrink-0 sticky top-4'}>
-          <PlannerWeekSummary
-            planned={planned}
-            trainings={trainings}
-            weekStart={weekStart}
-            context={context}
-            user={user}
-            userProfile={userProfile}
-            prevWeekTrainings={prevWeekTrainings}
-            tab={summaryTab}
-            onTabChange={setSummaryTab}
-            compact={isMobile}
-          />
+    <section className="mb-6">
+      <div className="sticky top-0 z-10 -mx-1 px-1 pt-1 pb-2 bg-slate-50/95 backdrop-blur-sm">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl bg-white ring-1 ring-slate-200/70 shadow-sm px-3 py-1.5">
+          <h2 className="text-sm font-bold text-slate-800 tabular-nums shrink-0">{weekLabel}</h2>
+          <PlannerWeekSummary {...summaryProps} variant="strip" />
         </div>
       </div>
+      {grid}
     </section>
   );
 }

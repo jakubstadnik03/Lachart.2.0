@@ -107,6 +107,7 @@ export default function PlannerProgressPanel({
   user = null,
   userProfile = null,
   compact = false,
+  onClose = null,
 }) {
   const [metricTab, setMetricTab] = useState('volume');
   const today = useMemo(() => new Date(), []);
@@ -180,8 +181,23 @@ export default function PlannerProgressPanel({
   return (
     <aside className={shell}>
       <div>
-        <h3 className="text-xs font-bold text-slate-800 mb-0.5">Training progress</h3>
-        <p className="text-[10px] text-slate-400 mb-2">Plan vs done · weekly load</p>
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <h3 className="text-xs font-bold text-slate-800 mb-0.5">Training progress</h3>
+            <p className="text-[10px] text-slate-400 mb-2">Plan vs done · weekly load</p>
+          </div>
+          {onClose && (
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Hide training progress"
+              title="Hide training progress"
+              className="-mr-1 -mt-1 p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+            >
+              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M9 6l6 6-6 6" /></svg>
+            </button>
+          )}
+        </div>
         {tabs}
       </div>
 

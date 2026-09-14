@@ -101,3 +101,38 @@ export function setEditProfileZonesPrefs({ sport, tab }) {
     // ignore
   }
 }
+
+// ── Workout planner side panels ─────────────────────────────────────────────
+// Which of the planner's two side panels (template library, training progress)
+// are open. Stored only once the user has toggled one; until then the page
+// decides from how wide it is — see plannerPanelsDefault.
+const PLANNER_PANELS_KEY = 'lachart_planner_panels';
+
+export function getPlannerPanelsPrefs() {
+  try {
+    const raw = safeGet(PLANNER_PANELS_KEY);
+    if (!raw) return null;
+    const p = JSON.parse(raw);
+    if (!p || typeof p !== 'object') return null;
+    return { library: !!p.library, progress: !!p.progress };
+  } catch {
+    return null;
+  }
+}
+
+export function setPlannerPanelsPrefs(panels) {
+  safeSet(PLANNER_PANELS_KEY, JSON.stringify({ library: !!panels?.library, progress: !!panels?.progress }));
+}
+
+/**
+ * What to open on a planner the user has not configured: the seven days come
+ * first, and a panel only when it leaves them room. The app sidebar takes
+ * ~260px, the library 240, the progress panel 272; a day should keep at least
+ * ~120px, so the library waits for a 1440px window and the progress panel for
+ * a 1700px one. Below that, both together squeezed each day to a strip that
+ * fit the word "Rest" and nothing else.
+ */
+export function plannerPanelsDefault(viewportWidth) {
+  const w = Number(viewportWidth) || 0;
+  return { library: w >= 1440, progress: w >= 1700 };
+}
