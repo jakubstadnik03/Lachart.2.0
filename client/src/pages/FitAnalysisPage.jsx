@@ -3118,8 +3118,11 @@ const FitAnalysisPage = () => {
     }
   }, []);
 
+  // Opening a session is not a paid feature: the Free plan promises Strava
+  // and Garmin sync and lactate on intervals, and both mean looking at the
+  // session. This used to ask for Pro first, so a free athlete tapping an
+  // uploaded ride got the paywall instead of the ride.
   const loadTrainingDetail = useCallback(async (id) => {
-    if (!gate('FIT Training Analysis', 'pro')) return;
     try {
       setDetailLoading(true);
       const data = await getFitTraining(id, healthAthleteId);
@@ -3197,7 +3200,7 @@ const FitAnalysisPage = () => {
       localStorage.removeItem('fitAnalysis_selectedTrainingId');
       setDetailLoading(false);
     }
-  }, [gate, healthAthleteId]);
+  }, [healthAthleteId]);
 
   // Load training from Training model (from TrainingTable)
   const loadTrainingFromTrainingModel = useCallback(async (trainingId) => {
@@ -3598,6 +3601,13 @@ const FitAnalysisPage = () => {
         loadTrainingDetail(rid.replace('fit-', ''));
       } else if (rid.startsWith('training-')) {
         loadTrainingFromTrainingModel(rid.replace('training-', ''));
+      } else if (rid.startsWith('garmin-')) {
+        // Garmin has no side-panel loader: the calendar's ActivityFullModal
+        // reads `garmin-` ids itself (see openFromActivityId). Falling through
+        // asked the FIT endpoint for a training named "garmin-…" — a 404 for
+        // everyone, and until loadTrainingDetail lost its paywall, an upgrade
+        // prompt for free athletes.
+        setDetailLoading(false);
       } else {
         loadTrainingDetail(rid);
       }
