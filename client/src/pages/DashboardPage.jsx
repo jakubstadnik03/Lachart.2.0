@@ -2318,10 +2318,10 @@ export default function DashboardPage() {
     const coachAthleteId = isCoachLike && selectedAthleteId ? selectedAthleteId : null;
     let saved;
     if (planModal?.workout?._id) {
-      saved = await updatePlannedWorkout(planModal.workout._id, data, coachAthleteId);
+      saved = await updatePlannedWorkout(planModal.workout._id, data, coachAthleteId, { inline: true });
       setPlannedWorkouts(prev => upsertPlannedWorkoutList(prev, saved));
     } else {
-      saved = await createPlannedWorkout(data, coachAthleteId);
+      saved = await createPlannedWorkout(data, coachAthleteId, { inline: true });
       setPlannedWorkouts(prev => upsertPlannedWorkoutList(prev, saved));
     }
     notifyPlannedWorkoutUpdated(saved);

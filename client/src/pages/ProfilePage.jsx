@@ -466,16 +466,15 @@ const [selectedTitle, setSelectedTitle] = useState(null);
   }, []);
 
   const handleProfilePlanSave = useCallback(async (data) => {
-    try {
-      if (planModal?.workout?._id) {
-        const updated = await updatePlannedWorkout(planModal.workout._id, data);
-        setPlannedWorkouts(prev => prev.map(p => p._id === updated._id ? updated : p));
-      } else {
-        const created = await createPlannedWorkout(data);
-        setPlannedWorkouts(prev => [...prev, created]);
-      }
-      setPlanModal(null);
-    } catch (_) {}
+    // Errors reach the modal, which reports them next to its Save button.
+    if (planModal?.workout?._id) {
+      const updated = await updatePlannedWorkout(planModal.workout._id, data, null, { inline: true });
+      setPlannedWorkouts(prev => prev.map(p => p._id === updated._id ? updated : p));
+    } else {
+      const created = await createPlannedWorkout(data, null, { inline: true });
+      setPlannedWorkouts(prev => [...prev, created]);
+    }
+    setPlanModal(null);
   }, [planModal]);
 
   const handleProfilePlanDelete = useCallback(async (pw) => {

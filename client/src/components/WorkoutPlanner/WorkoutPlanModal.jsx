@@ -17,6 +17,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import ReactDOM from 'react-dom';
 import { useNavigate } from 'react-router-dom';
+import { isCapacitorNative } from '../../utils/isNativeApp';
 import { motion, AnimatePresence, useDragControls } from 'framer-motion';
 import { XMarkIcon, TrashIcon, BookmarkIcon, MagnifyingGlassIcon, WrenchScrewdriverIcon, RectangleStackIcon, ArrowRightIcon, ArrowLeftIcon, BellIcon, CheckCircleIcon, PlayIcon, ChevronDownIcon, CheckIcon } from '@heroicons/react/24/outline';
 import { Bike, WavesLadder, Dumbbell, PersonStanding, Repeat2, Sparkles, Waves, TestTube2, MoreHorizontal, Mountain, Snowflake } from 'lucide-react';
@@ -675,11 +676,10 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
       });
     } catch (err) {
       const code = err?.response?.data?.code;
-      setSaveError(
-        err?.response?.status === 403 && (code === 'PREMIUM_REQUIRED' || code === 'FEATURE_REQUIRES_UPGRADE')
-          ? 'Planning workouts is part of LaChart Athlete — reading this plan is free, saving changes needs the plan.'
-          : (err?.response?.data?.error || err?.message || 'Could not save the workout.'),
-      );
+      const refused = err?.response?.status === 403 && (code === 'PREMIUM_REQUIRED' || code === 'FEATURE_REQUIRES_UPGRADE');
+      setSaveError(refused
+        ? { text: 'Planning workouts is part of LaChart Athlete — reading this plan is free, changing it needs the plan.', upgrade: true }
+        : { text: err?.response?.data?.error || err?.message || 'Could not save the workout.' });
       setSaving(false);
       return;
     }
@@ -1331,7 +1331,16 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
 
             {saveError && (
               <p className="mx-4 mb-1 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800" role="alert">
-                {saveError}
+                {saveError.text}
+                {saveError.upgrade && !isCapacitorNative() && (
+                  <button
+                    type="button"
+                    onClick={() => { onClose && onClose(); navigate('/settings?tab=subscription'); }}
+                    className="ml-1.5 font-semibold text-primary underline underline-offset-2"
+                  >
+                    See plans
+                  </button>
+                )}
               </p>
             )}
             {/* Primary actions */}

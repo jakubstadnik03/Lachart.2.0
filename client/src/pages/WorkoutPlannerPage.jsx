@@ -440,19 +440,18 @@ export default function WorkoutPlannerPage() {
 
   // ── CRUD handlers ─────────────────────────────────────────────────────────
   const handleSave = async (data) => {
-    try {
-      if (modal.workout?._id) {
-        const updated = await updatePlannedWorkout(modal.workout._id, data, coachAthleteId);
-        setPlanned(prev => prev.map(p => p._id === updated._id ? updated : p));
-      } else {
-        const created = await createPlannedWorkout(data, coachAthleteId);
-        setPlanned(prev => [...prev, created]);
-      }
-      setModal(null);
-      addNotification(modal.workout?._id ? 'Workout updated' : 'Workout planned', 'success');
-    } catch {
-      addNotification('Failed to save workout', 'error');
+    // A failure is reported by the modal itself, next to its Save button —
+    // a Free athlete's refused save says what it needs; a network error says
+    // what it was.
+    if (modal.workout?._id) {
+      const updated = await updatePlannedWorkout(modal.workout._id, data, coachAthleteId, { inline: true });
+      setPlanned(prev => prev.map(p => p._id === updated._id ? updated : p));
+    } else {
+      const created = await createPlannedWorkout(data, coachAthleteId, { inline: true });
+      setPlanned(prev => [...prev, created]);
     }
+    setModal(null);
+    addNotification(modal.workout?._id ? 'Workout updated' : 'Workout planned', 'success');
   };
 
   // Drag-and-drop a template onto a day → save it straight away, no modal.

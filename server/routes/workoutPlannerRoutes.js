@@ -13,6 +13,7 @@ const DayPlan         = require('../models/DayPlan');
 const CalendarPeriod  = require('../models/CalendarPeriod');
 const User       = require('../models/UserModel');
 const { requireFeature } = require('../middleware/featureGate');
+const { isPlanProgressUpdate } = require('../utils/planProgress');
 const { maybeNotifyCoachPlanUpdate } = require('../utils/coachPlanNotifications');
 const {
   syncPlannedWorkoutToGarmin,
@@ -40,10 +41,18 @@ function maybeMirrorUpcomingToGarmin(athleteId) {
  * plan — the same gate is applied because Coach inherits Pro.
  *
  * Reads stay open (GET) so an athlete on a free plan still sees the workout
- * their Pro/Coach trainer assigned them. Writes (POST/PUT/DELETE) require
- * plan_workouts.
+ * their Pro/Coach trainer assigned them, and so does answering it (done,
+ * skipped, paired, a note — utils/planProgress). Writing a plan (POST, a PUT
+ * that changes what it asks for, DELETE) requires plan_workouts.
  */
 const requirePlanWorkouts = requireFeature('plan_workouts');
+
+// Answering a plan — done, skipped, paired, a note — is free; writing one is
+// not. See utils/planProgress for the line between the two.
+function requirePlanWorkoutsUnlessProgress(req, res, next) {
+  if (isPlanProgressUpdate(req.body)) return next();
+  return requirePlanWorkouts(req, res, next);
+}
 
 // ── Helper: is requester a coach/admin who may manage athlete data? ──────────
 function isCoachLike(user) {
@@ -306,7 +315,7 @@ router.post('/planned', verifyToken, requirePlanWorkouts, async (req, res) => {
 });
 
 /** PUT /api/workout-planner/planned/:id */
-router.put('/planned/:id', verifyToken, requirePlanWorkouts, async (req, res) => {
+router.put('/planned/:id', verifyToken, requirePlanWorkoutsUnlessProgress, async (req, res) => {
   try {
     const { athleteId } = await resolveAthleteId(req);
     const pw = await PlannedWorkout.findById(req.params.id);

@@ -105,16 +105,21 @@ export const getPlannedWorkout = async (id) => {
   return data;
 };
 
-export const createPlannedWorkout = async (payload, athleteId = null) => {
+/**
+ * `inline: true` keeps a plan-refused (403 upgrade) answer with the caller —
+ * the plan modal shows it next to its Save button — instead of the app-wide
+ * handler that leaves the page for the subscription tab.
+ */
+export const createPlannedWorkout = async (payload, athleteId = null, { inline = false } = {}) => {
   const params = athleteId ? { athleteId } : {};
-  const { data } = await api.post(`${BASE}/planned`, normalizePlannedPayload(payload), { params });
+  const { data } = await api.post(`${BASE}/planned`, normalizePlannedPayload(payload), { params, handlesPremiumInline: inline });
   invalidatePlannedWorkoutsCache();
   return data;
 };
 
-export const updatePlannedWorkout = async (id, payload, athleteId = null) => {
+export const updatePlannedWorkout = async (id, payload, athleteId = null, { inline = false } = {}) => {
   const params = athleteId ? { athleteId } : {};
-  const { data } = await api.put(`${BASE}/planned/${id}`, normalizePlannedPayload(payload), { params });
+  const { data } = await api.put(`${BASE}/planned/${id}`, normalizePlannedPayload(payload), { params, handlesPremiumInline: inline });
   invalidatePlannedWorkoutsCache();
   return data;
 };

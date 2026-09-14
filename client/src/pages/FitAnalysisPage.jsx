@@ -2517,15 +2517,19 @@ const FitAnalysisPage = () => {
 
       let saved;
       if (planModal?.workout?._id) {
-        saved = await updatePlannedWorkout(planModal.workout._id, data, coachAthleteId);
+        saved = await updatePlannedWorkout(planModal.workout._id, data, coachAthleteId, { inline: true });
         setPlannedWorkoutsCalendar(prev => upsertPlannedWorkoutList(prev, saved));
       } else {
-        saved = await createPlannedWorkout(data, coachAthleteId);
+        saved = await createPlannedWorkout(data, coachAthleteId, { inline: true });
         setPlannedWorkoutsCalendar(prev => upsertPlannedWorkoutList(prev, saved));
       }
       notifyPlannedWorkoutUpdated(saved);
       setPlanModal(null);
-    } catch (_) {}
+    } catch (e) {
+      // The modal reports it (a refused save for a Free athlete, a network
+      // error); swallowing it here left the modal open saying nothing.
+      throw e;
+    }
   }, [planModal, selectedAthleteId, user?.role]);
 
   const handlePlanDelete = useCallback(async (pw) => {
