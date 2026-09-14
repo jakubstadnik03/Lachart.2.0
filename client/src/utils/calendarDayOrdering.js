@@ -1,5 +1,7 @@
-import { resolveSportKey } from '../components/shared/SportIcon';
+import { resolveSportKey, gymKind } from './sportKey';
 import { getActivityAppId } from './activityEventPatches';
+import { completedSecs } from './completedSessionStats';
+import { plannedWorkoutDurationSecs } from './plannedDuration';
 
 const INTEGRATION_ACTIVITY_TYPES = new Set([
   'strava', 'garmin', 'fit', 'regular', 'training', 'apple_health',
@@ -520,14 +522,83 @@ export function planSportMatchesActivity(pwSport, actSport) {
   return p === a && p !== 'other';
 }
 
+/**
+ * The gym flavour a plan asks for. The planner has one gym sport, so a yoga
+ * plan is a strength plan with "yoga" (or "jóga") in its title.
+ */
+function planGymKind(pw) {
+  if (gymKind(pw?.title) === 'yoga') return 'yoga';
+  return gymKind(pw?.sport);
+}
+
+/**
+ * How far a session is from what its plan asked for: 0 when the length (or
+ * the distance) is exactly the plan's, 0.5 when it is half or one-and-a-half
+ * times it. Null when neither side gives a number to compare.
+ */
+export function planFitDeviation(pw, act) {
+  const secs = completedSecs(act);
+  const plannedSecs = plannedWorkoutDurationSecs(pw, secs);
+  const devs = [];
+  if (plannedSecs > 0 && secs > 0) devs.push(Math.abs(secs - plannedSecs) / plannedSecs);
+  const metres = Number(act?.distance ?? act?.totalDistance ?? act?.distanceMeters ?? 0);
+  const plannedMetres = Number(pw?.plannedDistance || 0);
+  if (plannedMetres > 0 && metres > 0) devs.push(Math.abs(metres - plannedMetres) / plannedMetres);
+  return devs.length ? Math.min(...devs) : null;
+}
+
+/** Within this much of the plan, a session is the plan's length for pairing purposes. */
+export const GOOD_FIT_DEVIATION = 0.35;
+
+/**
+ * How well a session answers a plan, for choosing between candidates:
+ *   tier — 2 when the sports are the same (and, in the gym, the same kind:
+ *          weights for a strength plan, yoga for a yoga plan); 1 when the
+ *          plan merely allows the sport (brick ↔ ride, strength ↔ yoga).
+ *   fit  — 2 when the length or distance is close to the plan's, 1 when
+ *          there is nothing to compare, 0 when it is far off.
+ * Null when the sports do not match at all. The fit never vetoes a pairing —
+ * a lone 2-hour ride still pairs with the day's 1-hour ride plan; it only
+ * decides which plan gets the ride when two could.
+ */
+export function planActivityFit(pw, act, sportMatchesFn = planSportMatchesActivity) {
+  const actSport = act?.sport || act?.type || '';
+  if (!sportMatchesFn(pw?.sport, actSport)) return null;
+  const p = resolveSportKey(pw?.sport);
+  const a = resolveSportKey(actSport);
+  let tier = p === a ? 2 : 1;
+  if (tier === 2 && a === 'gym') {
+    const pk = planGymKind(pw);
+    const ak = gymKind(actSport);
+    if (pk && ak && pk !== ak) tier = 1;
+  }
+  const dev = planFitDeviation(pw, act);
+  const fit = dev == null ? 1 : (dev <= GOOD_FIT_DEVIATION ? 2 : 0);
+  return { tier, fit, dev };
+}
+
+/**
+ * Best answer first: the same sport and kind, then the closest length, then
+ * the plan higher in the day's stack, then the earlier session.
+ */
+function compareCandidates(x, y) {
+  if (x.tier !== y.tier) return y.tier - x.tier;
+  if (x.fit !== y.fit) return y.fit - x.fit;
+  const dx = x.dev == null ? Infinity : x.dev;
+  const dy = y.dev == null ? Infinity : y.dev;
+  if (dx !== dy) return dx - dy;
+  if (x.planIdx !== y.planIdx) return x.planIdx - y.planIdx;
+  return x.actIdx - y.actIdx;
+}
+
 export function pairPlannedWithActivities(plannedForDay, acts, sportMatchesFn = planSportMatchesActivity) {
   const pwToAct = new Map();
   const claimed = new Set();
   if (!plannedForDay?.length || !acts?.length) return { pwToAct, claimed };
 
   // Explicit links first, all of them, so a plan the athlete pointed at a
-  // session keeps it even when an earlier plan of the same sport would have
-  // claimed that session by the greedy rule.
+  // session keeps it even when another plan of the same sport would have
+  // been the better fit.
   for (const pw of plannedForDay) {
     if (!pw?._id || pw.unpaired || !pw.completedTrainingId) continue;
     const prelinked = acts.find((a) => activityMatchesClaimId(a, pw.completedTrainingId));
@@ -536,17 +607,26 @@ export function pairPlannedWithActivities(plannedForDay, acts, sportMatchesFn = 
       claimActivity(claimed, prelinked);
     }
   }
-  for (const pw of plannedForDay) {
-    if (!pw?._id || pwToAct.has(String(pw._id))) continue;
-    // "Unpair" is the athlete saying this plan was not that session — and
-    // not the next one of the same sport either.
-    if (pw.unpaired) continue;
-    const match = acts.find((a) => !isActivityClaimed(claimed, a)
-      && sportMatchesFn(pw.sport, a.sport || a.type || ''));
-    if (match) {
-      pwToAct.set(String(pw._id), match);
-      claimActivity(claimed, match);
-    }
+
+  // Then every plan/session pair that could go together, best fit first, so
+  // a 75-minute run lands on the 75-minute plan and not on whichever run
+  // plan happened to sit higher in the stack. "Unpair" is the athlete
+  // saying this plan was not that session — and not the next one of the
+  // same sport either.
+  const plans = sortPlannedWorkoutsForDay(plannedForDay).filter((pw) => pw?._id && !pw.unpaired && !pwToAct.has(String(pw._id)));
+  const sessions = sortActivitiesChronologically(acts).filter((a) => !isActivityClaimed(claimed, a));
+  const candidates = [];
+  plans.forEach((pw, planIdx) => {
+    sessions.forEach((act, actIdx) => {
+      const score = planActivityFit(pw, act, sportMatchesFn);
+      if (score) candidates.push({ ...score, pw, act, planIdx, actIdx });
+    });
+  });
+  candidates.sort(compareCandidates);
+  for (const c of candidates) {
+    if (pwToAct.has(String(c.pw._id)) || isActivityClaimed(claimed, c.act)) continue;
+    pwToAct.set(String(c.pw._id), c.act);
+    claimActivity(claimed, c.act);
   }
   return { pwToAct, claimed };
 }

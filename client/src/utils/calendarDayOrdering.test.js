@@ -3,37 +3,16 @@
  * genuinely different sessions makes one disappear with nothing on screen to
  * show it went. So most of these tests are about what must NOT merge.
  */
-// calendarDayOrdering imports resolveSportKey from SportIcon, which pulls in
-// lucide-react — ESM that jest will not transform inside node_modules. Only the
-// sport-key mapping is needed here.
-// Mirrors SportIcon.resolveSportKey, order included — pairing depends on it.
-jest.mock('../components/shared/SportIcon', () => ({
-  resolveSportKey: (s) => {
-    const v = String(s || '').toLowerCase();
-    if (/bike|ride|cycl|virtual/.test(v)) return 'bike';
-    if (/swim/.test(v)) return 'swim';
-    if (/elliptical|cross-trainer|crosstrainer/.test(v)) return 'elliptical';
-    if (/nordic|backcountry|rollerski/.test(v) || (v.includes('ski') && !v.includes('kite'))) return 'ski';
-    if (/hike/.test(v)) return 'hike';
-    if (/walk/.test(v)) return 'walk';
-    if (/run|trail/.test(v)) return 'run';
-    if (/gym|weight|strength|workout|crossfit|yoga|fitness/.test(v)) return 'gym';
-    return 'other';
-  },
-}));
-
-// eslint-disable-next-line import/first
 import {
   looksLikeSameSession,
   dedupeCalendarActivities,
   planSportMatchesActivity,
+  planActivityFit,
   pairPlannedWithActivities,
   plannedForActivity,
   buildChronologicalDayItems,
 } from './calendarDayOrdering';
-// eslint-disable-next-line import/first
 import fs from 'fs';
-// eslint-disable-next-line import/first
 import path from 'path';
 
 const ride = (over = {}) => ({
@@ -263,6 +242,77 @@ describe('pairPlannedWithActivities', () => {
   });
 });
 
+describe('which plan gets the session', () => {
+  // Saturday 12 September 2026, an athlete's actual day. The coach had left a
+  // generic "Běžecký trenink" from earlier in the week and then written the
+  // real session — 75 minutes, OV tempo — plus a morning in the gym. The
+  // watch logged yoga, weights and a 77-minute run. First-come pairing gave
+  // the run to the placeholder and the gym plan nothing, because the watch's
+  // strength session was stored as "other".
+  const plans = [
+    { _id: 'p-generic', title: 'Běžecký trenink', sport: 'run', dayOrder: 0 },
+    { _id: 'p-tempo', title: 'OV tempo na 12 min', sport: 'run', plannedDuration: 4500, dayOrder: 1 },
+    { _id: 'p-gym', title: 'Ranní posilovna na vrch těla', sport: 'strength', plannedDuration: 3600, dayOrder: 2 },
+  ];
+  const yoga = { id: 'garmin-1', sport: 'yoga', startDate: '2026-09-12T06:58:39Z', movingTime: 2685, distance: 0 };
+  const weights = { id: 'garmin-2', sport: 'strength', startDate: '2026-09-12T07:48:18Z', movingTime: 5401, distance: 0 };
+  const run = { id: 'garmin-3', sport: 'running', startDate: '2026-09-12T14:17:29Z', movingTime: 4638, distance: 11231 };
+  const acts = [yoga, weights, run];
+
+  it('the run lands on the plan of its length, the weights on the strength plan', () => {
+    const { pwToAct } = pairPlannedWithActivities(plans, acts);
+    expect(pwToAct.get('p-tempo')?.id).toBe('garmin-3');
+    expect(pwToAct.get('p-gym')?.id).toBe('garmin-2');
+    expect(pwToAct.has('p-generic')).toBe(false);
+  });
+
+  it('leaves the placeholder as a plan and the yoga as its own session', () => {
+    const { items } = buildChronologicalDayItems(plans, acts, pairPlannedWithActivities);
+    expect(items.map((i) => i.kind).sort()).toEqual(['activity', 'pair', 'pair', 'planned']);
+    expect(items.find((i) => i.kind === 'activity').act.id).toBe('garmin-1');
+  });
+
+  it('a yoga plan — the planner has no yoga sport, so it is "strength" titled Jóga — takes the yoga', () => {
+    const yogaPlan = [{ _id: 'p-yoga', title: 'Jóga', sport: 'strength' }];
+    expect(pairPlannedWithActivities(yogaPlan, [weights, yoga]).pwToAct.get('p-yoga')?.id).toBe('garmin-1');
+    // And with only weights logged it still pairs, as it always did.
+    expect(pairPlannedWithActivities(yogaPlan, [weights]).pwToAct.get('p-yoga')?.id).toBe('garmin-2');
+  });
+
+  it('the fit only chooses, it never vetoes', () => {
+    // A lone two-hour ride is still the day's one-hour ride plan.
+    const plan = [{ _id: 'p-ride', sport: 'bike', plannedDuration: 3600 }];
+    const long = [{ id: 'strava-9', sport: 'Ride', movingTime: 7200, distance: 60000 }];
+    expect(pairPlannedWithActivities(plan, long).pwToAct.get('p-ride')?.id).toBe('strava-9');
+    expect(planActivityFit(plan[0], long[0])).toMatchObject({ tier: 2, fit: 0 });
+  });
+
+  it('a plan with no length is a better bet than one the session clearly is not', () => {
+    const two = [
+      { _id: 'p-short', sport: 'run', plannedDuration: 1800, dayOrder: 0 },
+      { _id: 'p-open', sport: 'run', dayOrder: 1 },
+    ];
+    expect(pairPlannedWithActivities(two, [run]).pwToAct.get('p-open')?.id).toBe('garmin-3');
+  });
+
+  it('distance counts as a fit too', () => {
+    const plan = [
+      { _id: 'p-5k', sport: 'run', plannedDistance: 5000, dayOrder: 0 },
+      { _id: 'p-10k', sport: 'run', plannedDistance: 10000, dayOrder: 1 },
+    ];
+    expect(pairPlannedWithActivities(plan, [run]).pwToAct.get('p-10k')?.id).toBe('garmin-3');
+  });
+
+  it('a brick plan allows a ride, but the ride plan is the ride', () => {
+    const plan = [
+      { _id: 'p-brick', sport: 'brick', dayOrder: 0 },
+      { _id: 'p-ride', sport: 'bike', dayOrder: 1 },
+    ];
+    const rideOnly = [{ id: 'strava-1', sport: 'Ride', movingTime: 3600 }];
+    expect(pairPlannedWithActivities(plan, rideOnly).pwToAct.get('p-ride')?.id).toBe('strava-1');
+  });
+});
+
 describe('one pairing implementation', () => {
   // The dashboard week used to carry its own copy of the matcher. It drifted:
   // the calendar merged plan and activity into one card while the week showed
@@ -274,5 +324,17 @@ describe('one pairing implementation', () => {
     expect(src).not.toMatch(/function\s+planSportMatchesActivity/);
     expect(src).not.toMatch(/function\s+pairPlannedWith/);
     expect(src).toMatch(/pairPlannedWithActivities/);
+  });
+
+  it('nor does the daily brief', () => {
+    const src = read('utils/dailyCoachCard.js');
+    expect(src).not.toMatch(/function\s+planMatchesSession/);
+    expect(src).not.toMatch(/function\s+sportBucket/);
+    expect(src).toMatch(/pairPlannedWithActivities/);
+  });
+
+  it('and the module itself stays free of the icon set, so the brief can import it', () => {
+    const src = read('utils/calendarDayOrdering.js');
+    expect(src).not.toMatch(/SportIcon/);
   });
 });

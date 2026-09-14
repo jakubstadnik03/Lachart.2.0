@@ -30,6 +30,7 @@ const { notifyStravaImportedPush } = require('../utils/stravaImportNotifications
 const { stravaHalfCadenceToSpm } = require('../utils/cadenceDisplay');
 const { sanitizeSavedAutoLaps } = require('../utils/sanitizeSavedAutoLaps');
 const { findExternalDuplicate } = require('../utils/appleHealthDuplicate');
+const { mapGarminSportType, garminSportOf } = require('../utils/garminSport');
 const { isAdminUser } = require('../utils/isAdminUser');
 // Every Strava read goes through this so the shared budget sees it — see
 // utils/stravaRequest for why hand-rolled axios.get calls were a problem.
@@ -3838,47 +3839,6 @@ async function getValidGarminToken(user) {
   return { accessToken: nextAccessToken, tokenType };
 }
 
-function mapGarminSportType(rawSport) {
-  const sportType = String(rawSport || 'running').toLowerCase();
-  const sportMap = {
-    running: 'running',
-    cycling: 'cycling',
-    biking: 'cycling',
-    road_biking: 'cycling',
-    mountain_biking: 'cycling',
-    gravel_cycling: 'cycling',
-    gravel_biking: 'cycling',
-    cyclocross: 'cycling',
-    track_cycling: 'cycling',
-    virtual_ride: 'cycling',
-    indoor_cycling: 'cycling',
-    e_bike_fitness: 'cycling',
-    e_bike_mountain: 'cycling',
-    swimming: 'swimming',
-    pool_swimming: 'swimming',
-    lap_swimming: 'swimming',
-    open_water_swimming: 'swimming',
-    triathlon: 'triathlon',
-    walking: 'running',
-    hiking: 'running',
-    trail_running: 'running',
-    treadmill_running: 'running',
-    street_running: 'running',
-    track_running: 'running',
-    virtual_run: 'running',
-    indoor_running: 'running',
-    ultra_run: 'running'
-  };
-  if (sportMap[sportType]) return sportMap[sportType];
-  // Keyword fallback so unmapped Garmin typeKeys (they have dozens) land in
-  // the right bucket instead of everything defaulting to "running" — a wrong
-  // sport breaks the calendar icon AND the Strava-vs-Garmin dedup.
-  if (/swim/.test(sportType)) return 'swimming';
-  if (/rid|bik|cycl/.test(sportType)) return 'cycling';
-  if (/run|walk|hik/.test(sportType)) return 'running';
-  return 'other';
-}
-
 function mapGarminActivityToDoc(user, a) {
   const rawId = a.activityId || a.summaryId || a.activityUUID || a.activityUuid || String(a.startTimeInSeconds || a.startTimeGMT || a.startTimeLocal || Date.now());
   const garminId = String(rawId);
@@ -5192,9 +5152,11 @@ router.get('/activities', verifyToken, activitiesCacheMiddleware, async (req, re
     const stravaSelect = summaryOnly
       ? 'stravaId name titleManual category sport startDate elapsedTime movingTime distance averageSpeed averageHeartRate average_heartrate averagePower average_watts weightedAveragePower weighted_average_watts lactate manualTss tssDisplayMode metricsManualized calories rpe'
       : 'stravaId name titleManual category sport startDate elapsedTime movingTime distance averageSpeed averageHeartRate average_heartrate averagePower average_watts weightedAveragePower weighted_average_watts lactate manualTss tssDisplayMode metricsManualized calories rpe laps.lactate';
+    // raw.activityType rides along (a few bytes) so a row stored as "other"
+    // before the gym family was mapped still reads back as strength / yoga.
     const garminSelect = summaryOnly
-      ? 'garminId name titleManual category sport startDate elapsedTime movingTime distance averageSpeed averageHeartRate averagePower lactate manualTss tssDisplayMode metricsManualized'
-      : 'garminId name titleManual category sport startDate elapsedTime movingTime distance averageSpeed averageHeartRate averagePower lactate manualTss tssDisplayMode metricsManualized laps.lactate';
+      ? 'garminId name titleManual category sport raw.activityType startDate elapsedTime movingTime distance averageSpeed averageHeartRate averagePower lactate manualTss tssDisplayMode metricsManualized'
+      : 'garminId name titleManual category sport raw.activityType startDate elapsedTime movingTime distance averageSpeed averageHeartRate averagePower lactate manualTss tssDisplayMode metricsManualized laps.lactate';
     const appleSelect = summaryOnly
       ? 'healthKitId title name category sport startDate durationSeconds distanceMeters avgHeartRate lactate'
       : null;
@@ -5289,6 +5251,8 @@ router.get('/activities', verifyToken, activitiesCacheMiddleware, async (req, re
       if (/swim/.test(s)) return 'swim';
       if (/rid|bik|cycl/.test(s)) return 'bike';
       if (/run|walk|hik/.test(s)) return 'run';
+      // Strava "WeightTraining", Garmin "strength": the same hour in the gym.
+      if (/strength|weight|gym|yoga|pilates|crossfit|fitness|workout|cardio|hiit/.test(s)) return 'gym';
       return s || 'unknown';
     };
 
@@ -5365,12 +5329,13 @@ router.get('/activities', verifyToken, activitiesCacheMiddleware, async (req, re
         source: 'strava',
         sourceId: a.stravaId
       })),
-      ...garminActs.map(a => ({
+      ...garminActs.map(({ raw, ...a }) => ({
         ...a,
         // Re-map sport at read time: docs imported by older builds can hold a
         // raw Garmin typeKey (e.g. VIRTUAL_RIDE) that neither the client icon
-        // helpers nor the dedup below understand. Idempotent for good values.
-        sport: mapGarminSportType(a.sport),
+        // helpers nor the dedup below understand, and rows synced before the
+        // gym family was mapped say "other". Idempotent for good values.
+        sport: garminSportOf({ ...a, raw }),
         averageHeartRate: a.averageHeartRate ?? a.averageHR ?? null,
         source: 'garmin',
         sourceId: a.garminId
@@ -6505,7 +6470,7 @@ router.get('/garmin/activities/:id', verifyToken, async (req, res) => {
       detail: {
         id: garminId,
         name: activity.titleManual || activity.name,
-        sport: activity.sport,
+        sport: garminSportOf(activity),
         start_date: activity.startDate,
         distance: activity.distance,
         moving_time: activity.movingTime ?? activity.elapsedTime,

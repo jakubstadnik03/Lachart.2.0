@@ -13,6 +13,7 @@ import { resolveActivityTss } from './computeTss';
 import { enrichProfileForTss } from './inferThresholdsFromActivities';
 import { activityCalendarDateKey, localCalendarDateKey } from './calendarDateKeys';
 import { assessReadiness } from './recovery';
+import { pairPlannedWithActivities } from './calendarDayOrdering';
 import { getDailyLesson } from '../content/dailyLessons';
 import {
   READINESS_META,
@@ -55,31 +56,6 @@ function planDateKey(pw) {
 
 function sportLabel(sport) {
   return SPORT_LABEL[String(sport || '').toLowerCase()] || 'Session';
-}
-
-/**
- * The calendar's plan ↔ session pairing, reduced to what this file needs.
- * calendarDayOrdering has the full version, but it reaches the icon set
- * and this module must stay free of React and the DOM.
- */
-function sportBucket(sport) {
-  const s = String(sport || '').toLowerCase();
-  if (/bike|ride|cycl|virtual/.test(s)) return 'bike';
-  if (s.includes('swim')) return 'swim';
-  if (/hike|walk/.test(s)) return 'walk';
-  if (/run|trail/.test(s)) return 'run';
-  if (/gym|weight|strength|workout|crossfit|yoga|fitness/.test(s)) return 'gym';
-  return 'other';
-}
-
-function planMatchesSession(pwSport, actSport) {
-  const p = String(pwSport || '').toLowerCase();
-  const a = sportBucket(actSport);
-  if (p === 'brick') return a === 'bike' || a === 'run';
-  if (p === 'mtbike' || p === 'mtb') return a === 'bike';
-  if (p === 'strength' || p === 'crosstrain') return a === 'gym';
-  const pb = sportBucket(p);
-  return pb !== 'other' && pb === a;
 }
 
 function formatDuration(seconds) {
@@ -363,26 +339,26 @@ export function buildDailyCard({
   const todayCompleted = todayActs.map((a) => describeActivity(a, tssCtx, useMiles));
 
   // A plan whose sport already has a session logged today is done, whatever
-  // its status says — the calendar pairs the same way. The row then opens
-  // the session, and the "already logged" list only carries what nothing
-  // planned accounts for.
-  const claimed = new Set();
+  // its status says — paired by the calendar's own rule, so the card and the
+  // calendar can never disagree about which session was which plan. The row
+  // then opens the session, and the "already logged" list only carries what
+  // nothing planned accounts for.
   const rawPlanById = new Map(plans.map((p) => [String(p?._id || p?.id || ''), p]));
   const actId = (a) => String(a?.id || a?._id || '');
+  const rawToday = todayPlanned
+    .map((p) => rawPlanById.get(String(p.id)))
+    .filter(Boolean)
+    .map((raw) => (raw._id ? raw : { ...raw, _id: raw.id }));
+  const { pwToAct } = pairPlannedWithActivities(rawToday, todayActs);
+  const claimed = new Set();
   todayPlanned.forEach((p) => {
-    const raw = rawPlanById.get(String(p.id)) || {};
-    // The athlete's own pairing wins; an unpaired plan takes nothing.
-    if (raw.unpaired) return;
-    const linked = raw.completedTrainingId
-      ? todayActs.find((a) => actId(a) === String(raw.completedTrainingId))
-      : null;
-    const match = linked || todayActs.find((a) => !claimed.has(a) && planMatchesSession(p.sport, a.sport || a.type || ''));
+    const match = pwToAct.get(String(p.id));
     if (match) {
       claimed.add(match);
       p.doneId = actId(match);
     }
   });
-  const todayUnplanned = todayCompleted.filter((c) => !todayActs.some((a) => claimed.has(a) && String(a.id || a._id || '') === String(c.id)));
+  const todayUnplanned = todayCompleted.filter((c) => !todayActs.some((a) => claimed.has(a) && actId(a) === String(c.id)));
 
   const load = rollingLoad(acts, tssCtx, now);
 

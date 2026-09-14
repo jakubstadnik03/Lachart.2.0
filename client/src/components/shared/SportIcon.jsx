@@ -1,5 +1,6 @@
 import React from 'react';
 import { Bike, Footprints, Dumbbell, Mountain, Snowflake, Zap as ZapIcon } from 'lucide-react';
+import { resolveSportKey } from '../../utils/sportKey';
 
 // Detailed runner figure — path data inlined from /public/icon/run.svg
 // so we can colorize via currentColor (Tailwind text-* classes).
@@ -34,26 +35,10 @@ export const EllipticalSvg = ({ className = '', style }) => (
   </svg>
 );
 
-/** Canonical sport keys used across dashboard, calendar, and native tiles. */
-export function resolveSportKey(sport) {
-  const s = String(sport || '').toLowerCase();
-  if (s.includes('bike') || s.includes('ride') || s.includes('cycl') || s.includes('virtual')) return 'bike';
-  if (s.includes('swim')) return 'swim';
-  if (s.includes('elliptical') || s.includes('cross-trainer') || s.includes('crosstrainer')) return 'elliptical';
-  if (
-    s.includes('nordic') ||
-    s.includes('backcountry') ||
-    s.includes('rollerski') ||
-    (s.includes('ski') && !s.includes('kite'))
-  ) return 'ski';
-  if (s.includes('hike')) return 'hike';
-  if (s.includes('walk')) return 'walk';
-  if (s.includes('run') || s.includes('trail')) return 'run';
-  if (s.includes('gym') || s.includes('weight') || s.includes('strength') || s.includes('workout') ||
-      s.includes('crossfit') || s.includes('yoga') || s.includes('fitness'))
-    return 'gym';
-  return 'other';
-}
+// The sport-key resolver lives in utils/sportKey (no React there, so the
+// pairing code and the Expo app can share it); re-exported for the many
+// callers that import it from here.
+export { resolveSportKey };
 
 export const SPORT_ICON_COLORS = {
   bike:  '#3b82f6',
