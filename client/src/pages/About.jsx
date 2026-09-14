@@ -457,7 +457,7 @@ export default function About() {
               height on whitespace before any content showed up. `clamp()`
               scales smoothly: ~28 px top/bottom + ~12 px left/right on the
               narrowest phones, full 80/24 on desktop. */}
-          <div style={{ maxWidth: 1280, margin: '0 auto', padding: 'clamp(24px, 7vw, 80px) clamp(12px, 4vw, 24px)', position: 'relative', zIndex: 1 }}>
+          <div style={{ maxWidth: 1280, margin: '0 auto', padding: 'clamp(16px, 3vw, 36px) clamp(12px, 4vw, 24px) clamp(24px, 7vw, 80px)', position: 'relative', zIndex: 1 }}>
             <div className="lc-hero-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 60, alignItems: 'center' }}>
               {/* Left column */}
               <div ref={pushRef} className="lc-reveal">
