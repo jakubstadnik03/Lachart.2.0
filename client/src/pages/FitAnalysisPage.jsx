@@ -4769,8 +4769,11 @@ const FitAnalysisPage = () => {
               return !(a.type === 'strava' && (matchId || matchSid));
             }));
           }}
+          // Opening a plan is free — a coached athlete on the Free plan has
+          // plans on the calendar and must be able to read them. Creating one
+          // and saving edits stay Pro; the server answers a free save with the
+          // upgrade prompt.
           onSelectPlannedWorkout={(pw) => {
-            if (!isPremium) { gate('Workout Planning', 'pro'); return; }
             if (pw.status === 'completed' && pw.executionData) {
               setCompareModal(pw);
             } else {

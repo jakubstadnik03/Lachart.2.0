@@ -578,6 +578,10 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
   const [steps, setSteps]         = useState(workout?.steps || []);
   const [category, setCategory]   = useState(workout?.category || '');
   const [saving, setSaving]       = useState(false);
+  // Why the last save did not go through. A Free athlete may open a coach's
+  // plan (reading is free); saving it is answered by the server with the
+  // upgrade code, and the button must not stay on "Saving…" over that.
+  const [saveError, setSaveError] = useState(null);
   // Inline "Plan a race" form (opened from the Or-mark-this-day tile).
   const [raceOpen, setRaceOpen]   = useState(false);
   const [metricsOpen, setMetricsOpen] = useState(false);
@@ -648,25 +652,37 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
   const handleSave = async () => {
     if (!title.trim()) return;
     setSaving(true);
+    setSaveError(null);
     const stepsDur = steps.length > 0 ? stepTotalSecs(steps) : 0;
     const estTss   = steps.length > 0 ? computeEstTSS(steps, { ...effContext, sport }) : null;
-    await onSave({
-      date: toLocalISO(date),
-      sport,
-      title: title.trim(),
-      description: desc,
-      comment: comment.trim() || undefined,
-      targetTss:       tss ? Number(tss) : (estTss || undefined),
-      steps,
-      category:        category || null,
-      plannedDuration: stepsDur || parseDurStr(plannedDurStr) || undefined,
-      plannedDistance: plannedDistStr
-        ? (sport === 'swim'
-          ? parseFloat(plannedDistStr)
-          : parseDistanceInputToMetres(plannedDistStr, unitSystem))
-        : undefined,
-      isLactateTest:   sport === 'lactate' || undefined,
-    });
+    try {
+      await onSave({
+        date: toLocalISO(date),
+        sport,
+        title: title.trim(),
+        description: desc,
+        comment: comment.trim() || undefined,
+        targetTss:       tss ? Number(tss) : (estTss || undefined),
+        steps,
+        category:        category || null,
+        plannedDuration: stepsDur || parseDurStr(plannedDurStr) || undefined,
+        plannedDistance: plannedDistStr
+          ? (sport === 'swim'
+            ? parseFloat(plannedDistStr)
+            : parseDistanceInputToMetres(plannedDistStr, unitSystem))
+          : undefined,
+        isLactateTest:   sport === 'lactate' || undefined,
+      });
+    } catch (err) {
+      const code = err?.response?.data?.code;
+      setSaveError(
+        err?.response?.status === 403 && (code === 'PREMIUM_REQUIRED' || code === 'FEATURE_REQUIRES_UPGRADE')
+          ? 'Planning workouts is part of LaChart Athlete — reading this plan is free, saving changes needs the plan.'
+          : (err?.response?.data?.error || err?.message || 'Could not save the workout.'),
+      );
+      setSaving(false);
+      return;
+    }
     setSaving(false);
     // Show in-app notification for lactate test
     if (sport === 'lactate') {
@@ -1313,6 +1329,11 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
               </div>
             )}
 
+            {saveError && (
+              <p className="mx-4 mb-1 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800" role="alert">
+                {saveError}
+              </p>
+            )}
             {/* Primary actions */}
             <div className="flex items-center gap-2 px-4 py-3" style={{ paddingBottom: 'calc(12px + env(safe-area-inset-bottom, 0px))' }}>
               {isEdit && steps.length > 0 && sport !== 'lactate' && (

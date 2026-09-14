@@ -2672,8 +2672,9 @@ export default function DashboardPage() {
           if (!isPremium) { gate('Workout Planning', 'pro'); return; }
           setPlanModal({ date, workout: null });
         }}
+        // Reading a plan's structure is free, like opening the plan on the
+        // web; saving a change is what the server keeps for Pro.
         onEditPlanStructure={(pw) => {
-          if (!isPremium) { gate('Workout Planning', 'pro'); return; }
           const d = pw?.date ? new Date(pw.date) : new Date();
           setPlanModal({ date: d, workout: pw });
         }}
@@ -3082,8 +3083,11 @@ export default function DashboardPage() {
               if (!isPremium) { gate('Workout Planning', 'pro'); return; }
               setPlanModal({ date, workout: null });
             }}
+            // Opening a plan is free — a coached athlete on the Free plan has
+            // plans on the calendar and must be able to read them. Creating
+            // one (onPlanWorkout) and saving edits stay Pro; the server
+            // answers a free save with the upgrade prompt.
             onSelectPlannedWorkout={(pw) => {
-              if (!isPremium) { gate('Workout Planning', 'pro'); return; }
               // pw.date may be a full ISO datetime ('2026-05-04T00:00:00.000Z')
               // or a date-only 'YYYY-MM-DD' — slice to date-only first.
               const dateOnly = String(pw.date || '').slice(0, 10);

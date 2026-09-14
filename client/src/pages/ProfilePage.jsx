@@ -1157,8 +1157,8 @@ const [selectedTitle, setSelectedTitle] = useState(null);
             if (!isPremium) { gate('Workout Planning', 'pro'); return; }
             setPlanModal({ date, workout: null });
           }}
+          // Opening a plan is free (see DashboardPage); creating one stays Pro.
           onSelectPlannedWorkout={(pw) => {
-            if (!isPremium) { gate('Workout Planning', 'pro'); return; }
             const dateOnly = String(pw.date || '').slice(0, 10);
             const d = dateOnly ? new Date(`${dateOnly}T12:00:00`) : new Date();
             setPlanModal({ date: isNaN(d.getTime()) ? new Date() : d, workout: pw });
