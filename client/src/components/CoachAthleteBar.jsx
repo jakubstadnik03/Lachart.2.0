@@ -256,8 +256,8 @@ export default function CoachAthleteBar() {
           </button>
           <div className="ml-auto flex items-center gap-1.5 flex-shrink-0">
             {needsTestingCount > 0 && (
-              <span className="hidden sm:flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-red-50 text-red-600 border border-red-100 whitespace-nowrap">
-                <span className="w-1.5 h-1.5 rounded-full bg-red-400" />
+              <span className="hidden sm:flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 text-slate-600 border border-slate-200 whitespace-nowrap">
+                <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
                 {needsTestingCount} need testing
               </span>
             )}
@@ -291,8 +291,10 @@ export default function CoachAthleteBar() {
           <span className="text-gray-800">{activeAthletes.length}</span> athletes
         </span>
         {needsTestingCount > 0 && (
-          <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-red-50 text-red-600 border border-red-100">
-            <span className="w-1.5 h-1.5 rounded-full bg-red-400" />
+          {/* A count, not an alarm: half a roster due for a retest is normal, and
+              red on every load made the bar read as something broken. */}
+          <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 text-slate-600 border border-slate-200">
+            <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
             {needsTestingCount} need testing
           </span>
         )}
