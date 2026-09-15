@@ -503,19 +503,16 @@ export default function About() {
                     page no competitor's homepage shows, and the headline now
                     claims the platform in words rather than needing a
                     screenshot to do it — the badges carry the training half. */}
-                <BrowserFrame label="lachart.net — Threshold analysis">
-                  <picture>
-                    <source type="image/webp" srcSet="/screenshots/2026/threshold-curve-640.webp 640w, /screenshots/2026/threshold-curve-960.webp 960w, /screenshots/2026/threshold-curve-1280.webp 1280w" sizes="(min-width: 1024px) 560px, 100vw" />
-                    <img src="/screenshots/2026/threshold-curve.jpg" alt="Lactate test with LT1 and LT2 on the curve — LaChart" width="1600" height="1012" style={{ display: 'block', width: '100%', height: 'auto' }} />
-                  </picture>
+                <BrowserFrame label="lachart.net — Lactate Curve">
+                  <img src="/about-design/hero-lactate-curve.jpg" alt="Lactate curve with LT1 and LT2 — LaChart" width="1536" height="1024" style={{ display: 'block', width: '100%', height: 'auto' }} />
                 </BrowserFrame>
                 {/* Floating badges */}
                 <FloatingBadge cls="lc-float lc-hero-badge" style={{ top: -14, left: -22 }} icon={
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /></svg>
-                } label="LT2 Threshold" value="3:33 /km" tint={LC.accent} />
+                } label="LT2 Threshold" value="340 W" tint={LC.accent} />
                 <FloatingBadge cls="lc-float lc-hero-badge d2" style={{ bottom: -16, right: -18 }} icon={
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 12l2 2 4-4" /><circle cx="12" cy="12" r="9" /></svg>
-                } label="Zone 2 Pace" value="4:15–4:40 /km" tint={LC.primary} />
+                } label="Zone 2 Power" value="187–255 W" tint={LC.primary} />
                 {/* Was "La baseline 1.2 mmol/L" — a third lactate number on a
                     hero that now claims a whole platform. Form is the other
                     half of the story and the thing a coach checks daily. */}
