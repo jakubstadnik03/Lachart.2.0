@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import TestingForm from '../components/Testing-page/TestingForm';
 import LactateCurve from '../components/Testing-page/LactateCurve';
+import LactateCurveCalculator from '../components/Testing-page/LactateCurveCalculator';
 import { useNotification } from '../context/NotificationContext';
 import Header from '../components/Header/Header';
 import Menu from '../components/Menu';
@@ -17,13 +18,13 @@ import { GoogleLogin } from '@react-oauth/google';
 import { API_BASE_URL } from '../config/api.config';
 import { logUserRegistration, logTestCreated } from '../utils/eventLogger';
 import { isCapacitorNative } from '../utils/isNativeApp';
-import { computeLactateThresholds } from '../components/Testing-page/lactateThresholdSegmented';
-import { formatPaceMMSS } from '../utils/unitsConverter';
 import {
   BeakerIcon,
   HeartIcon,
   ChartBarIcon,
   AdjustmentsHorizontalIcon,
+  UserIcon,
+  UsersIcon,
 } from '@heroicons/react/24/outline';
 import TestSection from '../components/Testing-page/TestSection';
 import { PUBLIC_TOOLS } from '../constants/publicTools';
@@ -500,7 +501,7 @@ function RegisterModal({ onClose, onGoogleSuccess, onGoogleError, onEmailSubmit,
                     : 'border-gray-200 text-gray-600 hover:border-gray-300'
                 }`}
               >
-                <span className="text-xl">🏃</span>
+                <UserIcon className="h-6 w-6" />
                 <span>Athlete</span>
                 <span className="text-[10px] font-normal text-gray-400 leading-tight text-center">Track my own tests &amp; training</span>
               </button>
@@ -513,7 +514,7 @@ function RegisterModal({ onClose, onGoogleSuccess, onGoogleError, onEmailSubmit,
                     : 'border-gray-200 text-gray-600 hover:border-gray-300'
                 }`}
               >
-                <span className="text-xl">📋</span>
+                <UsersIcon className="h-6 w-6" />
                 <span>Coach</span>
                 <span className="text-[10px] font-normal text-gray-400 leading-tight text-center">Manage athletes &amp; their tests</span>
               </button>
@@ -686,26 +687,6 @@ const TestingWithoutLogin = () => {
       }).filter(Boolean)
     };
   };
-
-  // Free teaser: compute LT2 only (LT1, OBLA, D-max & zones stay gated behind signup)
-  const lt2Teaser = useMemo(() => {
-    if (!hasValidData) return null;
-    try {
-      const td = prepareCalculatorData();
-      const isPace = td.sport === 'run' || td.sport === 'swim';
-      const points = (td.results || [])
-        .map(r => ({ power: r.power, lactate: r.lactate }))
-        .filter(p => p.power > 0 && p.lactate > 0);
-      if (points.length < 3) return null;
-      const res = computeLactateThresholds(points, { isPace, baseLactate: td.baseLactate || null });
-      if (!res || res.LT2 == null || !Number.isFinite(res.LT2)) return null;
-      if (td.sport === 'bike') return `${Math.round(res.LT2)} W`;
-      return `${formatPaceMMSS(res.LT2)}${td.sport === 'swim' ? ' /100m' : ' /km'}`;
-    } catch {
-      return null;
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [testData, hasValidData]);
 
   const handleTestDataChange = (newData) => {
     if (newData.field && newData.value !== undefined) { setTestData(p=>({...p,[newData.field]:newData.value})); return; }
@@ -909,27 +890,23 @@ const TestingWithoutLogin = () => {
 
                 {hasValidData ? (
                   <>
-                    {/* Free: the real lactate curve — the proof the tool works */}
+                    {/* Free: the measured curve, then the fitted one with LT1
+                        and LT2 on it — the proof the tool works. The other
+                        methods and the zones are what the account opens. */}
                     <LactateCurve mockData={prepareCalculatorData()} demoMode />
-
-                    {/* Free teaser: LT2 value */}
-                    {lt2Teaser && (
-                      <div className="flex items-center justify-between gap-4 rounded-2xl bg-white px-5 py-4 ring-1 ring-slate-200/70 shadow-sm">
-                        <div>
-                          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Anaerobic threshold (LT2)</p>
-                          <p className="text-2xl font-extrabold text-slate-900">{lt2Teaser}</p>
-                        </div>
-                        <span className="max-w-[150px] text-right text-[11px] leading-snug text-slate-400">Free preview — the full breakdown is one step away</span>
-                      </div>
-                    )}
+                    <LactateCurveCalculator
+                      mockData={prepareCalculatorData()}
+                      demoMode
+                      onUnlock={() => { trackEvent('calc_unlock_click', { calc: 'lactate', source: 'thresholds' }); setShowRegister(true); }}
+                    />
 
                     {/* Gated: everything else behind a free account */}
                     <div className="rounded-2xl bg-gradient-to-r from-primary to-violet-500 p-6 text-center text-white">
                       <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-white/15">
-                        <BeakerIcon className="h-6 w-6 text-white" />
+                        <AdjustmentsHorizontalIcon className="h-6 w-6 text-white" />
                       </div>
-                      <p className="mb-1 text-lg font-bold">See your full analysis</p>
-                      <p className="mx-auto mb-4 max-w-md text-sm text-white/85">Create a free account to unlock <strong>LT1, OBLA &amp; D-max</strong> thresholds, your complete <strong>power / heart-rate / pace training zones</strong>, and save this test to track your progress over time.</p>
+                      <p className="mb-1 text-lg font-bold">Unlock your training zones</p>
+                      <p className="mx-auto mb-4 max-w-md text-sm text-white/85">Create a free account for your complete <strong>power / heart-rate / pace training zones</strong>, <strong>OBLA, IAT &amp; D-max</strong> side by side with LT1 and LT2, and this test saved to track your progress over time.</p>
                       <button
                         onClick={() => { trackEvent('calc_unlock_click', { calc: 'lactate' }); setShowRegister(true); }}
                         className="rounded-xl bg-white px-6 py-2.5 text-sm font-bold text-primary shadow transition hover:bg-white/90"

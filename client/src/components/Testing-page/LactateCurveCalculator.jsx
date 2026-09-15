@@ -857,10 +857,58 @@ const lactateZoneLtpOverlayPlugin = {
 
 ChartJS.register(lactateZoneLtpOverlayPlugin);
 
+/**
+ * What the free calculator gives away, and what it holds back.
+ *
+ * A visitor gets the curve and the two numbers a lactate test is done for —
+ * LT1 and LT2, with the heart rate and lactate at each. Every other method,
+ * the confidence score and the zones are the account's; they are named here
+ * so the visitor knows what the door opens onto.
+ */
+function DemoThresholds({ rows, onUnlock }) {
+  return (
+    <div className="flex flex-col rounded-2xl bg-slate-50/70 ring-1 ring-slate-200/70">
+      <div className="px-4 pt-3.5 pb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Your thresholds</div>
+      <div className="space-y-2 px-4">
+        {rows.map((r) => (
+          <div key={r.key} className="rounded-xl bg-white px-3.5 py-3 ring-1 ring-slate-200/70">
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="text-[13px] font-bold text-slate-900">{r.label}</span>
+              <span className="text-lg font-extrabold tabular-nums text-slate-900">{r.x}</span>
+            </div>
+            <div className="mt-0.5 flex items-center justify-between gap-2 text-[11px] text-slate-500">
+              <span>{r.gloss}</span>
+              <span className="tabular-nums">{r.hr ? `${r.hr} bpm · ` : ''}{r.la} mmol/L</span>
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="mt-3 border-t border-slate-200/70 px-4 py-3.5">
+        <p className="text-[12px] leading-snug text-slate-600">
+          <span className="font-semibold text-slate-800">With a free account:</span> OBLA, IAT, log-log and
+          baseline methods side by side, threshold confidence, your training zones — and the test saved to
+          track over time.
+        </p>
+        {onUnlock && (
+          <button
+            type="button"
+            onClick={onUnlock}
+            className="mt-3 w-full rounded-xl bg-gradient-to-r from-primary to-violet-500 px-4 py-2.5 text-[13px] font-semibold text-white shadow-sm transition hover:opacity-90"
+          >
+            Unlock zones &amp; methods for free →
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 const LactateCurveCalculator = ({
   mockData,
   athleteId: athleteIdProp = null,
   demoMode = false,
+  /** Demo only: what the locked parts of the readout open. */
+  onUnlock = null,
   /** Open the PDF preview as soon as the test is loaded. Defaults to reading
    *  `?pdf=1`, which is how the app's Export PDF arrives here: this is the
    *  preview that carries the analysis override and Email to athlete, and a
@@ -1845,6 +1893,9 @@ const LactateCurveCalculator = ({
 
   const thresholdDatasets = Object.keys(thresholds)
     .filter(key => !['heartRates', 'lactates', 'LTRatio', 'testAnalysis'].includes(key)) // LTRatio je poměr, ne hodnota power/pace, takže ho nezobrazovat v grafu
+    // The free calculator draws the two thresholds it gives away; the
+    // other methods are part of what the account opens.
+    .filter(key => !demoMode || key === 'LTP1' || key === 'LTP2')
     .map(key => {
       const yValue = thresholds.lactates[key];
       
@@ -1999,7 +2050,8 @@ const LactateCurveCalculator = ({
 
   // Create zone datasets for colored background areas
   const zoneDatasets = (() => {
-    if (!zones || !thresholds['LTP1'] || !thresholds['LTP2']) {
+    // Zones are the account's; the free curve carries none.
+    if (demoMode || !zones || !thresholds['LTP1'] || !thresholds['LTP2']) {
       return [];
     }
     
@@ -2926,16 +2978,39 @@ const LactateCurveCalculator = ({
       >
         <InformationCircleIcon className="w-4 h-4" />
       </button>
-      <button
-        onClick={() => setShowDataTable(!showDataTable)}
-        className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600 touch-manipulation"
-        aria-label={showDataTable ? "Expand curve" : "Show table"}
-        title={showDataTable ? "Expand curve to full width" : "Show data table"}
-      >
-        {showDataTable ? <ArrowsPointingOutIcon className="w-4 h-4" /> : <ArrowsPointingInIcon className="w-4 h-4" />}
-      </button>
+      {!demoMode && (
+        <button
+          onClick={() => setShowDataTable(!showDataTable)}
+          className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600 touch-manipulation"
+          aria-label={showDataTable ? "Expand curve" : "Show table"}
+          title={showDataTable ? "Expand curve to full width" : "Show data table"}
+        >
+          {showDataTable ? <ArrowsPointingOutIcon className="w-4 h-4" /> : <ArrowsPointingInIcon className="w-4 h-4" />}
+        </button>
+      )}
     </>
   );
+
+  // Demo: the two numbers, formatted the way the axis shows them.
+  const fmtThresholdX = (v) => {
+    if (v == null || !Number.isFinite(Number(v))) return '—';
+    const n = Number(v);
+    if (!isPaceSport) return `${Math.round(n)} W`;
+    if (dataIsSpeed) return `${n.toFixed(1)} ${unitSystem === 'imperial' ? 'mph' : 'km/h'}`;
+    const unit = isSwimming
+      ? (unitSystem === 'imperial' ? '/100yd' : '/100m')
+      : (unitSystem === 'imperial' ? '/mi' : '/km');
+    return `${formatZoneBoundaryPace(n)}${unit}`;
+  };
+  const demoRows = demoMode ? [
+    { key: 'LTP1', label: 'LT1', gloss: 'Aerobic threshold' },
+    { key: 'LTP2', label: 'LT2', gloss: 'Anaerobic threshold' },
+  ].map((r) => ({
+    ...r,
+    x: fmtThresholdX(thresholds?.[r.key]),
+    hr: thresholds?.heartRates?.[r.key] ? Math.round(Number(thresholds.heartRates[r.key])) : null,
+    la: Number.isFinite(Number(thresholds?.lactates?.[r.key])) ? Number(thresholds.lactates[r.key]).toFixed(1) : '—',
+  })) : [];
 
   // Toolbar: what the reader does with the curve — view, pin, send.
   const toolbar = (
@@ -3028,7 +3103,9 @@ const LactateCurveCalculator = ({
       tint="primary"
       title="Threshold analysis"
       meta={[trainingTitle, formatDate(mockData.date)].filter(Boolean).join(' · ')}
-      subtitle="LT1 where lactate first leaves baseline, LT2 where it runs away — every method side by side."
+      subtitle={demoMode
+        ? "LT1 where lactate first leaves baseline, LT2 where it runs away."
+        : "LT1 where lactate first leaves baseline, LT2 where it runs away — every method side by side."}
       actions={headerActions}
       toolbar={toolbar}
       collapsible
@@ -3343,7 +3420,7 @@ const LactateCurveCalculator = ({
         
         <div className="flex flex-col lg:flex-row gap-4">
           <div
-            className={showDataTable ? "flex-1 min-w-0" : "w-full"}
+            className={(showDataTable || demoMode) ? "flex-1 min-w-0" : "w-full"}
             style={{
               // Sized between the original cramped 400-px max and the
               // bigger 600-px try: settle on 520 desktop / 500 mobile so
@@ -3369,7 +3446,13 @@ const LactateCurveCalculator = ({
             )}
           </div>
           
-          {showDataTable && (
+          {demoMode && (
+            <div className="w-full shrink-0 lg:w-[320px]">
+              <DemoThresholds rows={demoRows} onUnlock={onUnlock} />
+            </div>
+          )}
+
+          {!demoMode && showDataTable && (
             <>
               {chartView === 'power' && (
                 <div className="w-full lg:w-[80px] shrink-0">
