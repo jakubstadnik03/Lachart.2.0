@@ -672,11 +672,11 @@ export default function About() {
               }}>
                 <div style={{ position: 'relative', flex: 1, minHeight: 280, overflow: 'hidden',
                               background: 'linear-gradient(135deg, ' + LC.primaryTint + ' 0%, #fff 60%)' }}>
-                  <img src="/screenshots/2026/threshold-curve-1280.webp"
+                  <img src="/screenshots/2026/laptop/threshold-analysis-1280.webp"
                        alt="Lactate curve with LT1 and LT2 thresholds"
                        loading="lazy"
-                       style={{ position: 'absolute', inset: 0, width: '100%', height: '100%',
-                                objectFit: 'cover', objectPosition: 'left top' }} />
+                       style={{ position: 'absolute', inset: '18px 18px 0', width: 'calc(100% - 36px)', height: 'calc(100% - 18px)',
+                                objectFit: 'contain', objectPosition: 'center bottom' }} />
                 </div>
                 <div style={{ padding: '22px 26px 24px' }}>
                   <span style={{ fontSize: 10.5, fontWeight: 700, color: LC.primary, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
@@ -1080,11 +1080,20 @@ export default function About() {
                   )}
                 </div>
                 <div ref={pushRef} className={`lc-reveal ${i % 2 === 1 ? 'left' : 'right'}`} style={{ direction: 'ltr' }}>
-                  <BrowserFrame label={d.url}>
-                    {/* A leading "/" means the asset lives elsewhere in /public;
-                        bare filenames stay relative to /about-design as before. */}
-                    <img src={d.img.startsWith('/') ? d.img : `/about-design/${d.img}`} alt={d.title.replace(/<[^>]+>/g, '')} loading="lazy" style={{ display: 'block', width: '100%', height: 'auto' }} />
-                  </BrowserFrame>
+                  {d.laptop ? (
+                    /* The laptop is in the picture (webp with alpha), so no
+                       browser frame around it; the page crop is the fallback. */
+                    <picture>
+                      <source type="image/webp" srcSet={`/screenshots/2026/laptop/${d.laptop}-640.webp 640w, /screenshots/2026/laptop/${d.laptop}-960.webp 960w, /screenshots/2026/laptop/${d.laptop}-1280.webp 1280w`} sizes="(min-width: 960px) 560px, 100vw" />
+                      <img src={`/screenshots/2026/${d.laptop}.jpg`} alt={d.title.replace(/<[^>]+>/g, '')} loading="lazy" style={{ display: 'block', width: '100%', height: 'auto' }} />
+                    </picture>
+                  ) : (
+                    <BrowserFrame label={d.url}>
+                      {/* A leading "/" means the asset lives elsewhere in /public;
+                          bare filenames stay relative to /about-design as before. */}
+                      <img src={d.img.startsWith('/') ? d.img : `/about-design/${d.img}`} alt={d.title.replace(/<[^>]+>/g, '')} loading="lazy" style={{ display: 'block', width: '100%', height: 'auto' }} />
+                    </BrowserFrame>
+                  )}
                 </div>
               </div>
               <style>{`@media (max-width: 960px) { .lc-deepdive { grid-template-columns: 1fr !important; gap: 30px !important; direction: ltr !important; } }`}</style>
@@ -2285,12 +2294,12 @@ function PriceCard({ name, price, badge, highlighted, features, ctaLabel, ctaTo,
 
 /* ─── Data tables ─────────────────────────────────────────────────────── */
 const DEEPDIVES = [
-  { eb: 'Core feature', title: 'Lactate Curve <em>Generation</em>', lead: 'Enter your test values — power, heart rate, lactate, pace — and instantly generate the lactate curve. Calculate all critical thresholds in one interactive graph.', bullets: ['Step or ramp protocol — any test design', 'LT1, LT2, OBLA, IAT, D-max, log-log calculated in parallel', 'Baseline adjusts for individual resting lactate'], tags: ['LT1 & LT2', 'OBLA 2.0–3.5', 'IAT', 'D-max', 'Log-log'], img: '/screenshots/2026/threshold-analysis-1280.webp', url: 'lachart.net — Threshold analysis · Pace vs lactate' },
+  { eb: 'Core feature', title: 'Lactate Curve <em>Generation</em>', lead: 'Enter your test values — power, heart rate, lactate, pace — and instantly generate the lactate curve. Calculate all critical thresholds in one interactive graph.', bullets: ['Step or ramp protocol — any test design', 'LT1, LT2, OBLA, IAT, D-max, log-log calculated in parallel', 'Baseline adjusts for individual resting lactate'], tags: ['LT1 & LT2', 'OBLA 2.0–3.5', 'IAT', 'D-max', 'Log-log'], img: '/screenshots/2026/threshold-analysis-1280.webp', laptop: 'threshold-analysis', url: 'lachart.net — Threshold analysis · Pace vs lactate' },
   { eb: 'Zones',         title: 'Train <em>inside your zones</em>, not someone else\'s', lead: 'Your zones are derived from your last lactate test — power, pace and heart rate side by side. Update the test, zones update everywhere.', bullets: ['5-zone or Seiler 3-zone models', 'Power, pace and HR per sport', 'Auto-updates when a new test is recorded'], img: 'zones-generator.png', url: 'lachart.net — Training Zones' },
   { eb: 'Progress tracking', title: 'Historical <em>test comparison</em>', lead: 'Overlay multiple lactate tests to visualize your progression. Watch your LT1 and LT2 move to higher intensities as your fitness improves.', bullets: ['Compare multiple test curves on one chart', 'Track zone shifts over training seasons', 'Visualize threshold improvements', 'Export comparison PDF reports'], img: 'lactate-testing-page.png', url: 'lachart.net — Lactate Testing' },
-  { eb: 'Form & fitness', title: 'Read your <em>fitness, fatigue and form</em> at a glance', lead: 'CTL, ATL and TSB tracked every day. A plain-English status word — fresh, optimal, productive, overreaching — so you always know what today\'s training should be.', bullets: ['Auto-updated from every Strava or FIT activity', '14-day, 6-week and 3-month views', 'Plan race peaks around predicted form'], img: '/screenshots/2026/dashboard-1280.webp', url: 'lachart.net — Dashboard' },
-  { eb: 'Training log',  title: 'Every interval, with <em>a lactate dot</em>', lead: 'Open any training and tag any interval with a blood sample. Empty dots are tap-to-log. Every sample feeds back into your curve and your zones.', bullets: ['Power, HR, cadence and pace per interval', 'Auto-detected laps from FIT and Strava', '"Ready for lactate" filter surfaces untagged sessions'], img: '/screenshots/2026/training-laps-1280.webp', url: 'lachart.net — Training' },
-  { eb: 'Calendar',       title: 'Your whole training <em>week, month, season</em>', lead: 'An interactive calendar of every workout — completed, planned, with lactate, without. Click any day to see the session, intervals and zones.', bullets: ['Color-coded by sport and intensity', 'Strava and FIT activities appear automatically', 'Daily TSS bars track weekly load'], img: '/screenshots/2026/calendar-1280.webp', url: 'lachart.net — Calendar' },
+  { eb: 'Form & fitness', title: 'Read your <em>fitness, fatigue and form</em> at a glance', lead: 'CTL, ATL and TSB tracked every day. A plain-English status word — fresh, optimal, productive, overreaching — so you always know what today\'s training should be.', bullets: ['Auto-updated from every Strava or FIT activity', '14-day, 6-week and 3-month views', 'Plan race peaks around predicted form'], img: '/screenshots/2026/dashboard-1280.webp', laptop: 'dashboard', url: 'lachart.net — Dashboard' },
+  { eb: 'Training log',  title: 'Every interval, with <em>a lactate dot</em>', lead: 'Open any training and tag any interval with a blood sample. Empty dots are tap-to-log. Every sample feeds back into your curve and your zones.', bullets: ['Power, HR, cadence and pace per interval', 'Auto-detected laps from FIT and Strava', '"Ready for lactate" filter surfaces untagged sessions'], img: '/screenshots/2026/training-laps-1280.webp', laptop: 'training-laps', url: 'lachart.net — Training' },
+  { eb: 'Calendar',       title: 'Your whole training <em>week, month, season</em>', lead: 'An interactive calendar of every workout — completed, planned, with lactate, without. Click any day to see the session, intervals and zones.', bullets: ['Color-coded by sport and intensity', 'Strava and FIT activities appear automatically', 'Daily TSS bars track weekly load'], img: '/screenshots/2026/calendar-1280.webp', laptop: 'calendar', url: 'lachart.net — Calendar' },
   { eb: 'PDF reports',    title: 'Professional <em>test reports</em> in seconds', lead: 'Branded PDF with your lactate curve, HR overlay, color-coded zones, threshold table, previous-test comparison and training recommendations.', bullets: ['Curve + HR overlay on a single page', 'All thresholds (LTP1, LTP2, OBLA, IAT)', 'Stage-by-stage results table', 'Personalised training recommendations'], img: 'lachart-test-pdf.png', url: 'test_lisa_2026-04-12.pdf' },
 ];
 
