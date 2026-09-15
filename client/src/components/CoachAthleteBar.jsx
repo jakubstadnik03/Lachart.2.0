@@ -290,9 +290,9 @@ export default function CoachAthleteBar() {
         <span className="text-xs font-semibold text-gray-500">
           <span className="text-gray-800">{activeAthletes.length}</span> athletes
         </span>
+        {/* A count, not an alarm: half a roster due for a retest is normal, and
+            red on every load made the bar read as something broken. */}
         {needsTestingCount > 0 && (
-          {/* A count, not an alarm: half a roster due for a retest is normal, and
-              red on every load made the bar read as something broken. */}
           <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 text-slate-600 border border-slate-200">
             <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
             {needsTestingCount} need testing
