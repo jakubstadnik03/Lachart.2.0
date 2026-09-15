@@ -28,6 +28,7 @@ import WorkoutBuilder, {
 } from './WorkoutBuilder';
 import api from '../../services/api';
 import { createWorkoutTemplate, exportPlannedWorkout } from '../../services/workoutPlannerApi';
+import SaveTemplateDialog from './SaveTemplateDialog';
 import { useCategories } from '../../context/CategoryContext';
 import { useAuth } from '../../context/AuthProvider';
 import DailyMetricsCard from '../training/DailyMetricsCard';
@@ -616,6 +617,8 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
   const [tplQuery, setTplQuery] = useState('');
   const [tplCat, setTplCat] = useState('all');
   const [savedTemplateName, setSavedTemplateName] = useState('');
+  const [saveTemplateOpen, setSaveTemplateOpen] = useState(false);
+  const [savingTemplate, setSavingTemplate] = useState(false);
   const categoryLabel = (id) => (categories || []).find((c) => c.id === id)?.label || PRESET_CATEGORY_LABELS[id] || id;
   // Build workout section: collapsed until user clicks "Build Workout"
   const [showBuilder, setShowBuilder] = useState((isEdit || arrivesBuilt) && (workout?.steps?.length > 0));
@@ -700,6 +703,12 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
     const newSteps = tpl.steps || [];
     setSteps(newSteps);
     if (!title) setTitle(tpl.name);
+    // A template carries its description and category; a plan built from it
+    // starts with both, unless the coach has already written their own.
+    const tplDescription = tpl.description || '';
+    const tplCategory = tpl.category || (Array.isArray(tpl.tags) && tpl.tags[0]) || '';
+    if (!desc && tplDescription) setDesc(tplDescription);
+    if (!category && tplCategory) setCategory(tplCategory);
     const newSport = tpl.sport || sport || 'bike';
     if (!sport) setSport(newSport);
     if (tpl.targetTss) {
@@ -1271,24 +1280,37 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
                 {steps.length > 0 && (
                   <button
                     type="button"
-                    onClick={async () => {
-                      const name = window.prompt('Template name:', title);
-                      if (!name) return;
-                      try {
-                        const saved = await createWorkoutTemplate({ name, sport, steps, description: desc, tags: category ? [category] : [] });
-                        if (saved?._id) setMyTemplates((prev) => [saved, ...prev.filter((t) => t._id !== saved._id)]);
-                        onTemplateSaved?.(saved);
-                        setSavedTemplateName(name);
-                        setTimeout(() => setSavedTemplateName(''), 3500);
-                      } catch (_) {
-                        window.alert('Could not save the template.');
-                      }
-                    }}
+                    onClick={() => setSaveTemplateOpen(true)}
                     className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 text-slate-600 text-sm whitespace-nowrap shrink-0"
                   >
                     <BookmarkIcon className="w-4 h-4" />
                     {savedTemplateName ? `Saved “${savedTemplateName}”` : 'Save template'}
                   </button>
+                )}
+                {saveTemplateOpen && (
+                  <SaveTemplateDialog
+                    initialName={title}
+                    initialCategory={category || ''}
+                    initialDescription={desc}
+                    categories={categories || []}
+                    saving={savingTemplate}
+                    onClose={() => setSaveTemplateOpen(false)}
+                    onSave={async ({ name, category: tplCategory, description }) => {
+                      setSavingTemplate(true);
+                      try {
+                        const saved = await createWorkoutTemplate({ name, sport, steps, description, tags: tplCategory ? [tplCategory] : [] });
+                        if (saved?._id) setMyTemplates((prev) => [saved, ...prev.filter((t) => t._id !== saved._id)]);
+                        onTemplateSaved?.(saved);
+                        setSavedTemplateName(name);
+                        setTimeout(() => setSavedTemplateName(''), 3500);
+                        setSaveTemplateOpen(false);
+                      } catch (_) {
+                        window.alert('Could not save the template.');
+                      } finally {
+                        setSavingTemplate(false);
+                      }
+                    }}
+                  />
                 )}
                 {isEdit && steps.length > 0 && (
                   <>

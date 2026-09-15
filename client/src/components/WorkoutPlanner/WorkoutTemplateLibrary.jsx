@@ -52,14 +52,14 @@ function TemplateRow({ item, onOpen, categoryLabel }) {
   const meta = [SPORT_LABELS[item.sportKey] || item.sportKey, dur, item.category ? categoryLabel(item.category) : null]
     .filter(Boolean).join(' · ');
   return (
-    <HoverCard content={<WorkoutStepsSummary title={item.name} sport={item.sport} steps={item.steps} note="Drag onto a day to plan it" />}>
+    <HoverCard content={<WorkoutStepsSummary title={item.name} sport={item.sport} steps={item.steps} note={!item.builtIn && item.desc ? item.desc : 'Drag onto a day to plan it'} />}>
     <div
       draggable
       onDragStart={(e) => {
         e.dataTransfer.effectAllowed = 'copy';
         e.dataTransfer.setData(
           'application/x-lachart-template',
-          JSON.stringify({ name: item.name, sport: item.sport, steps: item.steps }),
+          JSON.stringify({ name: item.name, sport: item.sport, steps: item.steps, description: item.builtIn ? '' : item.desc, category: item.category || '' }),
         );
       }}
       onClick={() => onOpen?.(item)}

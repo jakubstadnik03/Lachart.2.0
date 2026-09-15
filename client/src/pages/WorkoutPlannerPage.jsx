@@ -462,6 +462,8 @@ export default function WorkoutPlannerPage() {
         sport: tpl.sport,
         title: tpl.name,
         steps: tpl.steps,
+        description: tpl.description || undefined,
+        category: tpl.category || undefined,
         plannedDuration: stepTotalSecs(tpl.steps) || undefined,
       };
       const created = await createPlannedWorkout(payload, coachAthleteId);
@@ -531,7 +533,10 @@ export default function WorkoutPlannerPage() {
           onClose={() => togglePanel('library')}
           onOpenTemplate={(tpl) => setModal({
             date: today,
-            workout: { title: tpl.name, sport: tpl.sport, steps: tpl.steps },
+            workout: {
+              title: tpl.name, sport: tpl.sport, steps: tpl.steps,
+              description: tpl.builtIn ? '' : (tpl.desc || ''), category: tpl.category || '',
+            },
           })}
           onDeleteTemplate={async (tpl) => {
             if (!window.confirm(`Delete the template “${tpl.name}”?`)) return;
