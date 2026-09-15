@@ -452,7 +452,9 @@ const AdminDashboard = () => {
   const [error, setError] = useState(null);
   const [editingUser, setEditingUser] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [stravaFilter, setStravaFilter] = useState('all'); // 'all', 'connected', 'notConnected'
+  // Which sync source the athlete has: 'all', 'strava', 'garmin', 'either', 'both', 'none'
+  // ('connected' / 'notConnected' were the Strava-only values; kept as aliases).
+  const [stravaFilter, setStravaFilter] = useState('all');
   const [mobileAppFilter, setMobileAppFilter] = useState('all'); // 'all', 'hasApp', 'active7d', 'noApp'
   const [premiumFilter, setPremiumFilter] = useState('all'); // 'all' | 'free' | 'manual' | 'paid' | 'trial' | 'any'
   // Email is optional on the user model (sparse index), so an account created
@@ -1037,10 +1039,16 @@ const AdminDashboard = () => {
       filtered = filtered.filter((u) => !u.email);
     }
 
-    if (stravaFilter === 'connected') {
+    if (stravaFilter === 'connected' || stravaFilter === 'strava') {
       filtered = filtered.filter((u) => u.stravaConnected);
-    } else if (stravaFilter === 'notConnected') {
-      filtered = filtered.filter((u) => !u.stravaConnected);
+    } else if (stravaFilter === 'garmin') {
+      filtered = filtered.filter((u) => u.garminConnected);
+    } else if (stravaFilter === 'either') {
+      filtered = filtered.filter((u) => u.stravaConnected || u.garminConnected);
+    } else if (stravaFilter === 'both') {
+      filtered = filtered.filter((u) => u.stravaConnected && u.garminConnected);
+    } else if (stravaFilter === 'notConnected' || stravaFilter === 'none') {
+      filtered = filtered.filter((u) => !u.stravaConnected && !u.garminConnected);
     }
 
     if (mobileAppFilter === 'hasApp') {
@@ -1090,6 +1098,20 @@ const AdminDashboard = () => {
     const has = users.filter((u) => !!u.email).length;
     const reachable = users.filter((u) => !!u.email && u.notifications?.emailNotifications !== false).length;
     return { all: users.length, has, reachable, none: users.length - has };
+  }, [users]);
+
+  const sourceCounts = useMemo(() => {
+    const c = { all: users.length, strava: 0, garmin: 0, either: 0, both: 0, none: 0 };
+    users.forEach((u) => {
+      const s = !!u.stravaConnected;
+      const g = !!u.garminConnected;
+      if (s) c.strava += 1;
+      if (g) c.garmin += 1;
+      if (s || g) c.either += 1;
+      if (s && g) c.both += 1;
+      if (!s && !g) c.none += 1;
+    });
+    return c;
   }, [users]);
 
   const premiumCounts = useMemo(() => {
@@ -1981,15 +2003,14 @@ const AdminDashboard = () => {
 
               <div className="bg-white rounded-lg shadow p-4 sm:p-6">
                 <div className="flex items-center">
-                  <div className="p-2 bg-pink-100 rounded-lg">
-                    <span className="text-xl sm:text-2xl">🏋️</span>
+                  <div className="p-2 bg-amber-100 rounded-lg">
+                    <span className="text-xl sm:text-2xl">⭐</span>
                   </div>
                   <div className="ml-3 sm:ml-4">
-                    <p className="text-xs sm:text-sm font-medium text-gray-600">Avg Trainings/User</p>
-                    <p className="text-xl sm:text-2xl font-bold text-gray-900">
-                      {users.length > 0 
-                        ? (users.reduce((sum, u) => sum + (u.trainingCount || 0), 0) / users.length).toFixed(1)
-                        : '0'}
+                    <p className="text-xs sm:text-sm font-medium text-gray-600">Premium Users</p>
+                    <p className="text-xl sm:text-2xl font-bold text-gray-900">{premiumCounts.any}</p>
+                    <p className="text-xs text-gray-500 mt-1">
+                      {premiumCounts.paid} paid · {premiumCounts.trial} trial · {premiumCounts.manual} manual
                     </p>
                   </div>
                 </div>
@@ -2484,15 +2505,18 @@ const AdminDashboard = () => {
                         />
                       </div>
                       <div className="flex items-center gap-2">
-                        <label className="text-xs sm:text-sm text-gray-600 whitespace-nowrap">Strava:</label>
+                        <label className="text-xs sm:text-sm text-gray-600 whitespace-nowrap">Sources:</label>
                         <select
                           value={stravaFilter}
                           onChange={(e) => setStravaFilter(e.target.value)}
                           className="px-2 py-1 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
                         >
-                          <option value="all">All</option>
-                          <option value="connected">Connected</option>
-                          <option value="notConnected">Not Connected</option>
+                          <option value="all">All ({sourceCounts.all})</option>
+                          <option value="strava">Strava ({sourceCounts.strava})</option>
+                          <option value="garmin">Garmin ({sourceCounts.garmin})</option>
+                          <option value="either">Strava or Garmin ({sourceCounts.either})</option>
+                          <option value="both">Both ({sourceCounts.both})</option>
+                          <option value="none">Not connected ({sourceCounts.none})</option>
                         </select>
                       </div>
                       <div className="flex items-center gap-2">
@@ -2555,7 +2579,7 @@ const AdminDashboard = () => {
                         <option value={users.length}>All ({users.length})</option>
                       </select>
                     </div>
-                    {stravaFilter === 'notConnected' && (
+                    {(stravaFilter === 'notConnected' || stravaFilter === 'none') && (
                       <button
                         onClick={async () => {
                           const notConnectedUsers = filteredUsers.filter(u => !u.stravaConnected && u.email);
