@@ -1413,10 +1413,17 @@ export default function About() {
                       display: 'inline-flex', alignItems: 'center', gap: 8,
                       padding: '12px 22px', borderRadius: 12,
                       background: '#fff', color: LC.muted,
-                      border: '1px solid ' + LC.border, opacity: 0.7,
+                      border: '1px solid ' + LC.border,
                     }}
                   >
-                    <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor"><path d="M3.18 23.07l9.21-9.21 3.05 3.05-9.13 5.27-3.13-1.11zm9.91-10l9.36-5.4c.43-.25.85-.25.85.59l.05 12.06c0 .85-.42.85-.85.59l-9.36-5.4 4.31-2.44-4.36-2.44v2.44zM3.18.93l9.13 5.27-3.05 3.05L3.18 23.07v-22.14zm9.91 10l-3.05 3.05L7 11l3.05-2.95 3.04 2.88z"/></svg>
+                    {/* The Play triangle in its own four colours — a grey
+                        glyph read as a broken icon next to the Apple one. */}
+                    <svg width="28" height="28" viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M3.6 2.3c-.3.3-.4.7-.4 1.2v17c0 .5.1.9.4 1.2l.1.1 9.5-9.5v-.2L3.7 2.2l-.1.1z" fill="#2196F3" />
+                      <path d="M16.4 15.5l-3.2-3.2v-.2l3.2-3.2.1.1 3.8 2.1c1.1.6 1.1 1.6 0 2.2l-3.8 2.1-.1.1z" fill="#FFC107" />
+                      <path d="M16.5 15.4L13.2 12 3.6 21.6c.4.4.9.4 1.6.1l11.3-6.3" fill="#F44336" />
+                      <path d="M16.5 8.6L5.2 2.2c-.7-.4-1.2-.3-1.6.1L13.2 12l3.3-3.4z" fill="#4CAF50" />
+                    </svg>
                     <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', lineHeight: 1.1 }}>
                       <span style={{ fontSize: 10, opacity: 0.75 }}>Coming to</span>
                       <span style={{ fontSize: 18, fontWeight: 700 }}>Google Play</span>
