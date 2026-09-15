@@ -9,6 +9,7 @@ import { getAvatarBySportAndGender, onAvatarError } from '../utils/avatarUtils';
 import { LAYOUT_DESKTOP_MIN_PX } from '../constants/layoutBreakpoints';
 import { isCapacitorNative } from '../utils/isNativeApp';
 import { usePremium } from '../hooks/usePremium';
+import { GuestIntro, GuestMenuList, GuestMenuFooter } from './GuestMenu';
 
 const SIX_WEEKS_MS = 6 * 7 * 24 * 60 * 60 * 1000;
 const TWELVE_WEEKS_MS = 12 * 7 * 24 * 60 * 60 * 1000;
@@ -35,9 +36,11 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
   const currentPath = location.pathname.split('/')[1];
   const currentAthleteIdFromUrl = location.pathname.split('/')[2];
 
-  // Use prop user/token if provided, otherwise use auth values
-  const user = propUser || authUser;
-  const token = propToken || authToken;
+  // A signed-in user wins over a page's placeholder: the free calculators
+  // pass an empty user, and someone with an account should still get their
+  // own sidebar there.
+  const user = authUser || propUser;
+  const token = authToken || propToken;
   // For avatar/name in sidebar always show logged-in user (coach sees own face, not athlete's)
   const displayUser = authUser || propUser;
 
@@ -307,22 +310,26 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
           <h1 className="text-xl font-bold text-primary">LaChart</h1>
         </div>
 
-        <div 
-          className="p-4 flex items-center border-b border-gray-200 flex-shrink-0"
-        >
-          <img
-            src={getAvatar(displayUser)} onError={onAvatarError(displayUser)}
-            alt="User Avatar"
-            className="w-12 h-12 rounded-full"
-            key={displayUser?._id}
-          />
-          <div className="ml-3">
-            <p className="text-sm font-medium text-gray-800">
-              {displayUser?.name || 'Demo'} {displayUser?.surname || 'User'}
-            </p>
-            <p className="text-xs text-gray-500">{displayUser?.email || 'demo@example.com'}</p>
+        {!user?.role ? (
+          <GuestIntro />
+        ) : (
+          <div 
+            className="p-4 flex items-center border-b border-gray-200 flex-shrink-0"
+          >
+            <img
+              src={getAvatar(displayUser)} onError={onAvatarError(displayUser)}
+              alt="User Avatar"
+              className="w-12 h-12 rounded-full"
+              key={displayUser?._id}
+            />
+            <div className="ml-3">
+              <p className="text-sm font-medium text-gray-800">
+                {displayUser?.name} {displayUser?.surname}
+              </p>
+              <p className="text-xs text-gray-500">{displayUser?.email}</p>
+            </div>
           </div>
-        </div>
+        )}
 
         <motion.div
           initial={false}
@@ -336,92 +343,11 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
             scrollbarColor: '#D1D5DB transparent',
           }}
         >
-          <h2 className="mb-2 pt-2 text-base text-gray-700 sm:mb-3 sm:pt-4 sm:text-lg">Menu</h2>
           {!user?.role ? (
-            <ul className="space-y-2 pb-2">
-              {[
-                { name: 'Lactate Curve Calculator', path: '/lactate-curve-calculator', icon: '/icon/testing.svg', variant: 'default' },
-                { name: 'FTP Calculator', path: '/ftp-calculator', icon: '/icon/training.svg', variant: 'default' },
-                { name: 'TSS Calculator', path: '/tss-calculator', icon: '/icon/dashboard.svg', variant: 'default' },
-                { name: 'Zone 2 Helper', path: '/zone2-calculator', icon: '/icon/training.svg', variant: 'default' },
-                { name: 'Training Zones Calculator', path: '/training-zones-calculator', icon: '/icon/testing.svg', variant: 'default' },
-                ...(!isCapacitorNative() ? [{ name: 'About LaChart', path: '/about', icon: '/icon/info.svg', variant: 'ghost' }] : []),
-                // External App Store link — only on web. `external: true`
-                // is consumed by the renderer below to switch from NavLink
-                // to a plain <a target="_blank">.
-                ...(!isCapacitorNative() ? [{ name: 'Download iPhone app', path: 'https://apps.apple.com/cz/app/lachart/id6764768876?l=cs', icon: '/icon/dashboard.svg', variant: 'ghost', external: true, badge: 'New' }] : []),
-                { name: 'Lactate Guide', path: '/lactate-guide', icon: '/icon/testing.svg', variant: 'ghost' },
-                { name: 'Sign up for free', path: '/signup', icon: '/icon/register-white.svg', variant: 'primary' },
-              ].map((item) => {
-                // Shared classname helper — external item gets the same look as
-                // the in-app NavLink, just without isActive support.
-                const baseCls = 'flex items-center text-sm font-medium py-3 px-3 sm:p-3 rounded-lg transition-colors duration-150 touch-manipulation';
-                const ghostCls = 'text-gray-700 hover:bg-gray-100';
-
-                if (item.external) {
-                  // External links (e.g. App Store) — plain anchor + badge.
-                  return (
-                    <li key={item.name}>
-                      <a
-                        href={item.path}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        onClick={() => {
-                          handleMenuItemClick && handleMenuItemClick();
-                          try { window.gtag && window.gtag('event', 'menu_download_app_click'); } catch {}
-                        }}
-                        className={`${baseCls} ${ghostCls} justify-between`}
-                      >
-                        <span className="flex items-center">
-                          <img src={item.icon} alt="" className="w-5 h-5 mr-3" />
-                          {item.name}
-                        </span>
-                        {item.badge && (
-                          <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-pink-500 text-white">
-                            {item.badge}
-                          </span>
-                        )}
-                      </a>
-                    </li>
-                  );
-                }
-
-                return (
-                  <li key={item.name}>
-                    <NavLink
-                      to={item.path}
-                      onClick={handleMenuItemClick}
-                      className={({ isActive }) => {
-                        if (item.variant === 'primary') {
-                          return `${baseCls} ${
-                            isActive
-                              ? 'bg-gradient-to-r from-primary to-pink-500 text-white shadow-md'
-                              : 'bg-gradient-to-r from-primary to-pink-500 text-white shadow hover:shadow-md'
-                          }`;
-                        }
-                        if (item.variant === 'ghost') {
-                          return `${baseCls} ${
-                            isActive ? 'bg-gray-900 text-white' : ghostCls
-                          }`;
-                        }
-                        // default variant
-                        return `${baseCls} ${
-                          isActive ? 'bg-primary text-white' : ghostCls
-                        }`;
-                      }}
-                    >
-                      <img
-                        src={item.icon}
-                        alt={item.name}
-                        className="w-5 h-5 mr-3"
-                      />
-                      {item.name}
-                    </NavLink>
-                  </li>
-                );
-              })}
-            </ul>
+            <GuestMenuList onItemClick={handleMenuItemClick} />
           ) : (
+            <>
+            <h2 className="mb-2 pt-2 text-base text-gray-700 sm:mb-3 sm:pt-4 sm:text-lg">Menu</h2>
             <ul className="space-y-2 pb-2">
               {menuItems
                 .filter(item => {
@@ -466,6 +392,7 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
                   does not have the app. Signed-in athletes had already made
                   that choice, so the sidebar no longer asks again. */}
             </ul>
+            </>
           )}
         </motion.div>
 
@@ -547,12 +474,7 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
           className="mt-auto flex-shrink-0 border-t border-gray-200 bg-white lg:bg-transparent"
         >
           {!user?.role ? (
-            <div className="p-3 sm:p-4">
-              <div className="text-center text-xs sm:text-sm text-gray-500">
-                <p>© 2026 LaChart</p>
-                <p className="mt-0.5 sm:mt-1">All rights reserved</p>
-              </div>
-            </div>
+            <GuestMenuFooter onItemClick={handleMenuItemClick} />
           ) : (
             <div className="px-2 py-2 sm:p-4 sm:pt-3">
               {/* Persistent upgrade nudge for free web users — the only ambient
@@ -622,21 +544,11 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
             </div>
           )}
 
+          {user?.role && (
           <div 
             className="border-t border-gray-100 px-2 pb-[max(0.5rem,env(safe-area-inset-bottom,0px))] pt-0 sm:border-t-0 sm:p-4 sm:pb-4 sm:pt-1"
           >
-            {!user?.role ? (
-              <div
-                className="flex items-center w-full text-xs sm:text-sm font-medium min-h-[44px] px-3 sm:p-3 rounded-lg text-gray-400 cursor-not-allowed"
-              >
-                <img
-                  src="/icon/logout.svg"
-                  alt=""
-                  className="w-4 h-4 sm:w-5 sm:h-5 mr-2 sm:mr-3 opacity-50 flex-shrink-0"
-                />
-                Log out
-              </div>
-            ) : (
+            {(
               <button
                 type="button"
                 onClick={handleLogout}
@@ -651,6 +563,7 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
               </button>
             )}
           </div>
+          )}
         </div>
       </motion.div>
       

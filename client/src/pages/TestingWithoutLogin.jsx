@@ -21,14 +21,12 @@ import { computeLactateThresholds } from '../components/Testing-page/lactateThre
 import { formatPaceMMSS } from '../utils/unitsConverter';
 import {
   BeakerIcon,
-  BoltIcon,
   HeartIcon,
-  TrophyIcon,
   ChartBarIcon,
   AdjustmentsHorizontalIcon,
-  SunIcon,
-  ScaleIcon,
 } from '@heroicons/react/24/outline';
+import TestSection from '../components/Testing-page/TestSection';
+import { PUBLIC_TOOLS } from '../constants/publicTools';
 
 // ─── Calculator helpers ────────────────────────────────────────────────────────
 const secsToHMS = (s) => {
@@ -569,16 +567,20 @@ function RegisterModal({ onClose, onGoogleSuccess, onGoogleError, onEmailSubmit,
 }
 
 // ─── Calculator tabs config ───────────────────────────────────────────────────
-const TABS = [
-  { id:'lactate', path:'/lactate-curve-calculator',    Icon:BeakerIcon,                  label:'Lactate Test',    desc:'LT1, LT2, OBLA & training zones from blood lactate data' },
-  { id:'ftp',     path:'/ftp-calculator',              Icon:BoltIcon,                    label:'FTP & Power',     desc:'Functional Threshold Power, W/kg & Coggan zones' },
-  { id:'vo2max',  path:'/vo2max-calculator',           Icon:HeartIcon,                   label:'VO2max',          desc:'Maximal oxygen uptake from 5-min all-out effort' },
-  { id:'race',    path:'/race-predictor',              Icon:TrophyIcon,                  label:'Race Predictor',  desc:'Predict 5K–marathon times via Riegel model' },
-  { id:'tss',     path:'/tss-calculator',              Icon:ChartBarIcon,                label:'Training Load',   desc:'TSS, Intensity Factor & session stress score' },
-  { id:'zones',   path:'/training-zones-calculator',   Icon:AdjustmentsHorizontalIcon,   label:'Training Zones',  desc:'Power, HR & run pace zones from threshold values' },
-  { id:'env',     path:'/heat-altitude-calculator',    Icon:SunIcon,                     label:'Heat & Altitude', desc:'Performance adjustments for conditions' },
-  { id:'weight',  path:'/weight-calculator',           Icon:ScaleIcon,                   label:'Weight & Power',  desc:'Impact of body weight change on performance' },
-];
+// One list for the tabs here and the sidebar — see constants/publicTools.
+const TABS = PUBLIC_TOOLS;
+
+// What each calculator card says about itself.
+const CALC_HEAD = {
+  lactate: { title: 'Lactate threshold test', sub: 'Enter your step test — LT1, LT2 and your zones are read from the curve.' },
+  ftp:     { title: 'FTP & power zones',      sub: 'Coggan 7-zone model from your best 20-minute power.' },
+  vo2max:  { title: 'VO2max estimate',        sub: 'Maximal oxygen uptake from a 5-minute all-out cycling effort.' },
+  race:    { title: 'Race time predictor',    sub: 'Finish times across distances from one result, by the Riegel model.' },
+  tss:     { title: 'Training load (TSS)',    sub: 'Training Stress Score and Intensity Factor for any session.' },
+  zones:   { title: 'Training zones',         sub: 'Power, heart rate and run pace zones from your threshold values.' },
+  env:     { title: 'Heat & altitude',        sub: 'Race pacing targets adjusted for heat, humidity and altitude.' },
+  weight:  { title: 'Weight & performance',   sub: 'What a change in body weight does to W/kg, flat speed and climbing.' },
+};
 
 const PATH_TO_TAB = Object.fromEntries(TABS.map(t => [t.path, t.id]));
 
@@ -777,7 +779,7 @@ const TestingWithoutLogin = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex overflow-x-hidden w-full relative">
+    <div className="min-h-screen bg-slate-50 flex overflow-x-hidden w-full relative">
       <Helmet>
         <title>{activeTabMeta.title}</title>
         <link rel="canonical" href={activeTabMeta.canonical} />
@@ -801,94 +803,100 @@ const TestingWithoutLogin = () => {
 
         <main className="flex-1 px-4 py-6 pt-20 lg:pt-8 max-w-[1400px] mx-auto w-full">
 
-          {/* ── Hero ── */}
-          <section className="relative rounded-3xl overflow-hidden mb-8 bg-gradient-to-br from-gray-900 via-primary/90 to-violet-800 text-white">
-            <div className="absolute inset-0 bg-[url('data:image/svg+xml,%3Csvg width=60 height=60 viewBox=0 0 60 60 xmlns=http://www.w3.org/2000/svg%3E%3Cg fill=none fill-rule=evenodd%3E%3Cg fill=%23ffffff fill-opacity=0.04%3E%3Cpath d=\'M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z\'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E')] opacity-40" />
-            <div className="relative px-6 sm:px-10 py-10 lg:py-14 flex flex-col lg:flex-row items-start lg:items-center gap-8">
-              <div className="flex-1">
-                <div className="inline-flex items-center gap-2 bg-white/15 rounded-full px-3 py-1 text-xs font-semibold mb-4">
-                  <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse"/>Free tools · No login required
+          {/* ── Hero ── one card, one message: what this tool is, and that
+              it is free. The four stat tiles it used to carry ("8
+              Calculators", "Free Forever") said nothing the pill does not. */}
+          <section className="relative mb-6 overflow-hidden rounded-2xl bg-gradient-to-br from-slate-900 via-primary to-violet-700 text-white">
+            <div className="relative flex flex-col gap-5 px-6 py-8 sm:px-8 lg:flex-row lg:items-center lg:justify-between lg:py-9">
+              <div className="min-w-0 max-w-2xl">
+                <div className="mb-3 inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-1 text-[11px] font-semibold">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                  Free tools · no account needed
                 </div>
-                <h1 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold tracking-tight mb-3 leading-tight">
+                <h1 className="text-2xl font-extrabold leading-tight tracking-tight sm:text-3xl lg:text-4xl">
                   {(SEO_H1[activeTab] || SEO_H1.lactate).h1}
                 </h1>
-                <p className="text-white/80 text-sm sm:text-base max-w-xl mb-6">
+                <p className="mt-2 text-sm text-white/80 sm:text-[15px]">
                   {(SEO_H1[activeTab] || SEO_H1.lactate).sub}
                 </p>
-                <div className="flex flex-wrap gap-3">
-                  {isAuthenticated ? (
-                    <button onClick={()=>navigate('/dashboard')} className="px-5 py-2.5 rounded-xl bg-white text-primary text-sm font-bold hover:bg-white/90 transition shadow">
-                      Go to dashboard →
-                    </button>
-                  ) : (
-                    <>
-                      <button onClick={()=>navigate('/signup')} className="px-5 py-2.5 rounded-xl bg-white text-primary text-sm font-bold hover:bg-white/90 transition shadow">
-                        Create free account →
-                      </button>
-                      <button onClick={()=>navigate('/login')} className="px-5 py-2.5 rounded-xl bg-white/15 text-white text-sm font-semibold hover:bg-white/25 transition border border-white/20">
-                        Sign in
-                      </button>
-                    </>
-                  )}
-                </div>
               </div>
-              {/* Stats */}
-              <div className="grid grid-cols-2 gap-3 w-full lg:w-auto">
-                {[{n:'8',l:'Calculators'},{n:'LT1/LT2',l:'Lactate Analysis'},{n:'7-zone',l:'Power Zones'},{n:'Free',l:'Forever'}].map(s=>(
-                  <div key={s.l} className="bg-white/10 rounded-2xl px-4 py-3 text-center backdrop-blur-sm border border-white/10">
-                    <div className="text-xl font-extrabold">{s.n}</div>
-                    <div className="text-xs text-white/70">{s.l}</div>
-                  </div>
-                ))}
+              {/* One door here; the header and the sidebar already hold both. */}
+              <div className="shrink-0">
+                {isAuthenticated ? (
+                  <button onClick={()=>navigate('/dashboard')} className="rounded-xl bg-white px-5 py-2.5 text-sm font-bold text-primary shadow transition hover:bg-white/90">
+                    Go to dashboard →
+                  </button>
+                ) : (
+                  <button onClick={()=>navigate('/signup')} className="rounded-xl bg-white px-5 py-2.5 text-sm font-bold text-primary shadow transition hover:bg-white/90">
+                    Create free account →
+                  </button>
+                )}
               </div>
             </div>
           </section>
 
-          {/* ── Tab navigation ── */}
-          <div className="flex gap-2 overflow-x-auto pb-2 mb-6 scrollbar-hide">
+          {/* ── Tool switcher ── */}
+          <nav aria-label="Calculators" className="mb-5 flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
             {TABS.map(t=>(
               <button
                 key={t.id}
                 onClick={()=>navigate(t.path)}
-                className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold whitespace-nowrap transition-all flex-shrink-0 ${activeTab===t.id?'bg-primary text-white shadow-md shadow-primary/30':'bg-white text-gray-600 border border-gray-200 hover:border-primary/40 hover:text-primary'}`}
+                aria-current={activeTab===t.id ? 'page' : undefined}
+                className={`flex flex-shrink-0 items-center gap-2 whitespace-nowrap rounded-xl px-3.5 py-2 text-[13px] font-semibold transition-colors ${
+                  activeTab===t.id ? 'bg-primary text-white shadow-sm' : 'bg-white text-slate-600 ring-1 ring-slate-200/70 hover:bg-slate-50 hover:text-slate-900'
+                }`}
               >
-                <t.Icon className="w-4 h-4 flex-shrink-0" />{t.label}
+                <t.Icon className="h-4 w-4 flex-shrink-0" />{t.label}
               </button>
             ))}
-          </div>
+          </nav>
 
-          {/* ── Calculator area ── */}
-          <div>
+          {/* ── The calculator ── same card as every block of the testing
+              page, so someone who signs up lands somewhere that looks like
+              where they came from. */}
+          {(() => {
+            const tab = TABS.find((t) => t.id === activeTab) || TABS[0];
+            const head = CALC_HEAD[tab.id] || CALC_HEAD.lactate;
+            const calc = {
+              ftp:    <FTPCalc onUnlock={()=>setShowRegister(true)}/>,
+              vo2max: <VO2maxCalc onUnlock={()=>setShowRegister(true)}/>,
+              race:   <RaceCalc onUnlock={()=>setShowRegister(true)}/>,
+              tss:    <TSSCalc onUnlock={()=>setShowRegister(true)}/>,
+              zones:  <ZonesCalc onUnlock={()=>setShowRegister(true)}/>,
+              env:    <EnvCalc onUnlock={()=>setShowRegister(true)}/>,
+              weight: <WeightCalc onUnlock={()=>setShowRegister(true)}/>,
+            }[tab.id];
 
-            {/* Calculator content */}
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+            if (tab.id !== 'lactate') {
+              return (
+                <TestSection id={`calc-${tab.id}`} icon={tab.Icon} tint="primary" title={head.title} subtitle={head.sub}>
+                  {calc}
+                </TestSection>
+              );
+            }
 
-              {/* Lactate Test */}
-              {activeTab==='lactate' && (
-                <div>
-                  <div className="flex items-center justify-between mb-5">
-                    <div>
-                      <h2 className="text-lg font-bold text-gray-900">Lactate Threshold Test</h2>
-                      <p className="text-xs text-gray-500 mt-0.5">Enter your step test data — we'll calculate LT1, LT2 and training zones</p>
-                    </div>
-                    <div className="relative">
-                      <button onClick={()=>setIsDemoDropdownOpen(o=>!o)} className="px-3 py-2 text-xs font-semibold text-primary bg-primary/10 rounded-xl hover:bg-primary/20 transition">
-                        Try demo data ▾
-                      </button>
-                      <AnimatePresence>
-                        {isDemoDropdownOpen && (
-                          <motion.div initial={{opacity:0,y:-8}} animate={{opacity:1,y:0}} exit={{opacity:0,y:-8}} className="absolute right-0 mt-2 w-44 bg-white rounded-xl shadow-xl border border-gray-100 z-50 py-1">
-                            {['bike','run','swim'].map(s=>(
-                              <button key={s} onClick={()=>{handleTestDataChange(mockData[s]);setIsDemoDropdownOpen(false);addNotification(`${s} demo data loaded`,'success');}} className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 capitalize">
-                                {s.charAt(0).toUpperCase()+s.slice(1)}
-                              </button>
-                            ))}
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
-                    </div>
-                  </div>
+            const demoMenu = (
+              <div className="relative">
+                <button onClick={()=>setIsDemoDropdownOpen(o=>!o)} className="rounded-lg bg-primary/10 px-3 py-1.5 text-[11px] font-semibold text-primary transition hover:bg-primary/20">
+                  Try demo data ▾
+                </button>
+                <AnimatePresence>
+                  {isDemoDropdownOpen && (
+                    <motion.div initial={{opacity:0,y:-8}} animate={{opacity:1,y:0}} exit={{opacity:0,y:-8}} className="absolute right-0 z-50 mt-2 w-40 rounded-xl bg-white py-1 shadow-xl ring-1 ring-slate-200">
+                      {['bike','run','swim'].map(s=>(
+                        <button key={s} onClick={()=>{handleTestDataChange(mockData[s]);setIsDemoDropdownOpen(false);addNotification(`${s} demo data loaded`,'success');}} className="w-full px-4 py-2 text-left text-sm capitalize text-slate-700 hover:bg-slate-50">
+                          {s.charAt(0).toUpperCase()+s.slice(1)}
+                        </button>
+                      ))}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            );
 
+            return (
+              <div className="space-y-5">
+                <TestSection id="calc-lactate" icon={tab.Icon} tint="primary" title={head.title} subtitle={head.sub} actions={demoMenu} flush bodyClassName="p-1 sm:p-2 md:p-4">
                   <TestingForm
                     testData={testData}
                     onTestDataChange={handleTestDataChange}
@@ -897,87 +905,77 @@ const TestingWithoutLogin = () => {
                     hideGlucoseColumn={false}
                     onGlucoseColumnChange={()=>{}}
                   />
+                </TestSection>
 
-                  {hasValidData && (
-                    <div className="mt-6 space-y-5">
-                      {/* Free: the real lactate curve — the proof the tool works */}
-                      <LactateCurve mockData={prepareCalculatorData()} demoMode />
+                {hasValidData ? (
+                  <>
+                    {/* Free: the real lactate curve — the proof the tool works */}
+                    <LactateCurve mockData={prepareCalculatorData()} demoMode />
 
-                      {/* Free teaser: LT2 value */}
-                      {lt2Teaser && (
-                        <div className="flex items-center justify-between rounded-2xl bg-gradient-to-br from-primary/5 to-violet-50 border border-primary/10 px-5 py-4">
-                          <div>
-                            <p className="text-[11px] font-semibold uppercase tracking-wide text-primary/70">Anaerobic threshold (LT2)</p>
-                            <p className="text-2xl font-extrabold text-gray-900">{lt2Teaser}</p>
-                          </div>
-                          <span className="text-[11px] text-gray-400 max-w-[130px] text-right leading-snug">Free preview — see the full breakdown below</span>
+                    {/* Free teaser: LT2 value */}
+                    {lt2Teaser && (
+                      <div className="flex items-center justify-between gap-4 rounded-2xl bg-white px-5 py-4 ring-1 ring-slate-200/70 shadow-sm">
+                        <div>
+                          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Anaerobic threshold (LT2)</p>
+                          <p className="text-2xl font-extrabold text-slate-900">{lt2Teaser}</p>
                         </div>
-                      )}
-
-                      {/* Gated: everything else behind a free account */}
-                      <div className="rounded-2xl bg-gradient-to-r from-primary to-violet-500 p-6 text-center text-white">
-                        <div className="w-12 h-12 rounded-2xl bg-white/15 flex items-center justify-center mb-3 mx-auto">
-                          <BeakerIcon className="w-6 h-6 text-white" />
-                        </div>
-                        <p className="text-lg font-bold mb-1">See your full analysis</p>
-                        <p className="text-sm text-white/85 mb-4 max-w-md mx-auto">Create a free account to unlock <strong>LT1, OBLA &amp; D-max</strong> thresholds, your complete <strong>power / heart-rate / pace training zones</strong>, and save this test to track your progress over time.</p>
-                        <button
-                          onClick={() => { trackEvent('calc_unlock_click', { calc: 'lactate' }); setShowRegister(true); }}
-                          className="px-6 py-2.5 rounded-xl bg-white text-primary text-sm font-bold shadow hover:bg-white/90 transition"
-                        >
-                          Unlock full results for free →
-                        </button>
+                        <span className="max-w-[150px] text-right text-[11px] leading-snug text-slate-400">Free preview — the full breakdown is one step away</span>
                       </div>
+                    )}
+
+                    {/* Gated: everything else behind a free account */}
+                    <div className="rounded-2xl bg-gradient-to-r from-primary to-violet-500 p-6 text-center text-white">
+                      <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-white/15">
+                        <BeakerIcon className="h-6 w-6 text-white" />
+                      </div>
+                      <p className="mb-1 text-lg font-bold">See your full analysis</p>
+                      <p className="mx-auto mb-4 max-w-md text-sm text-white/85">Create a free account to unlock <strong>LT1, OBLA &amp; D-max</strong> thresholds, your complete <strong>power / heart-rate / pace training zones</strong>, and save this test to track your progress over time.</p>
+                      <button
+                        onClick={() => { trackEvent('calc_unlock_click', { calc: 'lactate' }); setShowRegister(true); }}
+                        className="rounded-xl bg-white px-6 py-2.5 text-sm font-bold text-primary shadow transition hover:bg-white/90"
+                      >
+                        Unlock full results for free →
+                      </button>
                     </div>
-                  )}
+                  </>
+                ) : (
+                  <div className="rounded-2xl bg-white p-6 text-center ring-1 ring-slate-200/70 shadow-sm">
+                    <p className="text-sm text-slate-600">Fill in your lactate test above — the curve and thresholds appear here.</p>
+                    <p className="mt-1 text-xs text-slate-400">Or load the demo data to see an example.</p>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
-                  {!hasValidData && (
-                    <div className="mt-6 bg-gradient-to-br from-primary/5 to-violet-50 rounded-2xl p-6 text-center border border-primary/10">
-                      <p className="text-sm text-gray-600">Fill in your lactate test data above, then your curve and thresholds will appear here.</p>
-                      <p className="text-xs text-gray-400 mt-1">Try the demo data button to see an example →</p>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {activeTab==='ftp'    && <div><h2 className="text-lg font-bold text-gray-900 mb-1">FTP &amp; Power Zones</h2><p className="text-xs text-gray-500 mb-5">Coggan 7-zone model from your 20-minute best power</p><FTPCalc onUnlock={()=>setShowRegister(true)}/></div>}
-              {activeTab==='vo2max' && <div><h2 className="text-lg font-bold text-gray-900 mb-1">VO2max Estimator</h2><p className="text-xs text-gray-500 mb-5">Estimate maximal oxygen uptake from a 5-min all-out cycling effort</p><VO2maxCalc onUnlock={()=>setShowRegister(true)}/></div>}
-              {activeTab==='race'   && <div><h2 className="text-lg font-bold text-gray-900 mb-1">Race Time Predictor</h2><p className="text-xs text-gray-500 mb-5">Predict race times across all distances using the Riegel model</p><RaceCalc onUnlock={()=>setShowRegister(true)}/></div>}
-              {activeTab==='tss'    && <div><h2 className="text-lg font-bold text-gray-900 mb-1">Training Load (TSS)</h2><p className="text-xs text-gray-500 mb-5">Calculate Training Stress Score and Intensity Factor for any session</p><TSSCalc onUnlock={()=>setShowRegister(true)}/></div>}
-              {activeTab==='zones'  && <div><h2 className="text-lg font-bold text-gray-900 mb-1">Training Zones</h2><p className="text-xs text-gray-500 mb-5">Generate power, heart rate and run pace zones from threshold values</p><ZonesCalc onUnlock={()=>setShowRegister(true)}/></div>}
-              {activeTab==='env'    && <div><h2 className="text-lg font-bold text-gray-900 mb-1">Environment Adjustments</h2><p className="text-xs text-gray-500 mb-5">Adjust race pacing targets for heat, humidity and altitude</p><EnvCalc onUnlock={()=>setShowRegister(true)}/></div>}
-              {activeTab==='weight' && <div><h2 className="text-lg font-bold text-gray-900 mb-1">Weight &amp; Performance</h2><p className="text-xs text-gray-500 mb-5">How does body weight change affect your W/kg, flat speed and climbing?</p><WeightCalc onUnlock={()=>setShowRegister(true)}/></div>}
-            </div>
-          </div>
-
-          {/* ── Feature strip ── */}
-          <section className="mt-10 grid grid-cols-2 sm:grid-cols-4 gap-4">
+          {/* ── What the account adds ── */}
+          <section className="mt-8 grid grid-cols-2 gap-3 sm:grid-cols-4">
             {[
-              {Icon:BeakerIcon,  title:'Lactate Analysis',  desc:'LT1, LT2, OBLA from blood lactate step tests'},
-              {Icon:ChartBarIcon,title:'Progress Tracking',  desc:'Track fitness trends across weeks and months'},
-              {Icon:AdjustmentsHorizontalIcon,title:'Training Zones',desc:'7-zone power, HR and pace zones for every sport'},
-              {Icon:HeartIcon,   title:'Coach Tools',        desc:'Manage multiple athletes and share test reports'},
+              {Icon:BeakerIcon,  title:'Lactate analysis',  desc:'LT1, LT2, OBLA from blood lactate step tests'},
+              {Icon:ChartBarIcon,title:'Progress tracking',  desc:'Fitness trends across weeks and months'},
+              {Icon:AdjustmentsHorizontalIcon,title:'Training zones',desc:'Power, HR and pace zones for every sport'},
+              {Icon:HeartIcon,   title:'Coach tools',        desc:'Several athletes, shared test reports'},
             ].map(f=>(
-              <div key={f.title} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 text-center">
-                <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center mx-auto mb-2">
-                  <f.Icon className="w-4 h-4 text-primary" />
+              <div key={f.title} className="rounded-2xl bg-white p-4 ring-1 ring-slate-200/70 shadow-sm">
+                <div className="mb-2 flex h-8 w-8 items-center justify-center rounded-xl bg-primary/10">
+                  <f.Icon className="h-4 w-4 text-primary" />
                 </div>
-                <div className="text-sm font-semibold text-gray-900 mb-1">{f.title}</div>
-                <div className="text-xs text-gray-500">{f.desc}</div>
+                <div className="text-sm font-bold text-slate-900">{f.title}</div>
+                <div className="mt-0.5 text-xs text-slate-500">{f.desc}</div>
               </div>
             ))}
           </section>
 
           {/* ── Bottom CTA ── */}
-          <section className="mt-8 bg-gradient-to-r from-gray-900 to-primary rounded-3xl p-8 sm:p-10 text-white text-center mb-8">
-            <h2 className="text-2xl sm:text-3xl font-extrabold mb-2">Ready to track your full training load?</h2>
-            <p className="text-white/70 text-sm mb-6 max-w-lg mx-auto">LaChart combines lactate testing, training analytics, Strava sync and coach collaboration in one platform.</p>
-            <div className="flex flex-wrap gap-3 justify-center">
-              <button onClick={()=>navigate(isAuthenticated ? '/dashboard' : '/signup')} className="px-6 py-3 rounded-xl bg-white text-primary text-sm font-bold hover:bg-white/90 transition shadow">
+          <section className="mb-8 mt-6 rounded-2xl bg-gradient-to-r from-slate-900 to-primary p-7 text-center text-white sm:p-9">
+            <h2 className="mb-2 text-xl font-extrabold sm:text-2xl">Ready to track your full training load?</h2>
+            <p className="mx-auto mb-5 max-w-lg text-sm text-white/70">LaChart combines lactate testing, training analytics, Strava and Garmin sync and coach collaboration in one place.</p>
+            <div className="flex flex-wrap justify-center gap-3">
+              <button onClick={()=>navigate(isAuthenticated ? '/dashboard' : '/signup')} className="rounded-xl bg-white px-6 py-2.5 text-sm font-bold text-primary shadow transition hover:bg-white/90">
                 {isAuthenticated ? 'Go to dashboard' : 'Create free account'}
               </button>
               {!isCapacitorNative() && (
-                <button onClick={()=>navigate('/about')} className="px-6 py-3 rounded-xl bg-white/15 text-white text-sm font-semibold hover:bg-white/25 transition border border-white/20">
+                <button onClick={()=>navigate('/about')} className="rounded-xl border border-white/25 bg-white/10 px-6 py-2.5 text-sm font-semibold text-white transition hover:bg-white/20">
                   Learn more →
                 </button>
               )}
