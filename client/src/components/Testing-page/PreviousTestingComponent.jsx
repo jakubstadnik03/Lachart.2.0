@@ -16,7 +16,7 @@ import { getUserUnits, resolveDistanceUnitSystem } from '../../utils/unitsConver
 import { usePremium } from '../../hooks/usePremium';
 import UpgradeModal from '../UpgradeModal';
 import { LockClosedIcon } from '@heroicons/react/24/outline';
-import { trackFeatureUsage } from '../../utils/analytics';
+import { trackEvent } from '../../utils/analytics';
 
 const KM_PER_MILE = 1.609344;
 
@@ -498,7 +498,7 @@ const PreviousTestingComponent = ({
             }
             ctaLabel="Unlock full history"
             onUpgrade={() => {
-              trackFeatureUsage('test_history_upsell', 'click', { testCount: uniqueTests.length });
+              trackEvent('test_history_upsell_click', { testCount: uniqueTests.length, source: 'history_wall' });
               gate('Test History', 'pro');
             }}
           />

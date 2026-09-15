@@ -7,6 +7,9 @@ import { trackEvent } from '../../utils/analytics';
 import { resolveDistanceUnitSystem } from '../../utils/unitsConverter';
 import TrainingGlossary from '../DashboardPage/TrainingGlossary';
 import { sanitizeLactateInput } from '../../utils/lactateInput';
+import { usePremium } from '../../hooks/usePremium';
+import UpgradeModal from '../UpgradeModal';
+import { getUserTests } from '../../services/api';
 
 // Tutorial steps configuration
 const tutorialSteps = [
@@ -250,6 +253,9 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
   };
   const { addNotification } = useNotification();
   const { user } = useAuth();
+  // Real premium status for the post-save upgrade nudge (the `isPremium` prop
+  // defaults to true for callers that don't gate, so it can't drive the upsell).
+  const { isPremium: isPremiumResolved, gate: premiumGate, UpgradeModalProps } = usePremium();
   const [currentTutorialStep, setCurrentTutorialStep] = useState(0);
   const [highlightedField, setHighlightedField] = useState(null);
   const [isEditMode, setIsEditMode] = useState(false);
@@ -904,6 +910,28 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
     return result;
   };
 
+  // Post-save upgrade nudge for free athletes. test_saved is the fastest-growing
+  // signal in the funnel, so the moment someone builds real history — their 2nd,
+  // then 5th test — is the highest-intent time to offer unlocking it. Throttled
+  // to one prompt per milestone (localStorage) so it never nags on re-saves.
+  const maybeHistoryUpsell = useCallback(async () => {
+    if (demoMode || isPremiumResolved) return;
+    try {
+      const res = await getUserTests();
+      const list = Array.isArray(res?.data) ? res.data : (Array.isArray(res) ? res : []);
+      const count = list.length;
+      const MILESTONES = [2, 5];
+      if (!MILESTONES.includes(count)) return;
+      const key = `thUpsell_m${count}`;
+      try {
+        if (localStorage.getItem(key)) return;
+        localStorage.setItem(key, String(Date.now()));
+      } catch { /* storage blocked — still show once this session */ }
+      trackEvent('test_history_upsell_shown', { testCount: count, source: 'post_save' });
+      premiumGate('Test History', 'pro');
+    } catch { /* non-fatal — never block a save on the nudge */ }
+  }, [demoMode, isPremiumResolved, premiumGate]);
+
   const handleSaveChanges = async () => {
     if (!validateForm()) {
       return;
@@ -1020,6 +1048,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
       });
       setIsEditMode(false);
       setOriginalTestData(null); // Clear original data after successful save
+      void maybeHistoryUpsell();
     } catch (error) {
       console.error('Error saving test data:', error);
       const apiMsg = error?.response?.data?.error || error?.response?.data?.message;
@@ -1565,6 +1594,9 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
   return (
     <div className="flex flex-col w-full min-w-0 max-w-full overflow-x-hidden p-2 sm:p-4 bg-white rounded-xl relative h-full">
       {/* keyframes moved to global CSS (index.css) */}
+
+      {/* Post-save "unlock your history" nudge for free athletes (see maybeHistoryUpsell). */}
+      <UpgradeModal {...UpgradeModalProps} />
 
       {/* Single Tutorial Message Portal */}
       {demoMode && currentTutorialStep >= 0 && (
