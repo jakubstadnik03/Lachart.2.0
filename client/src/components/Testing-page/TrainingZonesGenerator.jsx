@@ -4,7 +4,8 @@ import { motion } from 'framer-motion';
 import { calculateThresholds, calculatePolynomialRegression } from './DataTable';
 import EditProfileModal from '../Profile/EditProfileModal';
 import api, { updateUserProfile, updateTest } from '../../services/api';
-import { InformationCircleIcon } from '@heroicons/react/24/outline';
+import { InformationCircleIcon, Squares2X2Icon } from '@heroicons/react/24/outline';
+import TestSection from './TestSection';
 import TrainingGlossary from '../DashboardPage/TrainingGlossary';
 import { useAuth } from '../../context/AuthProvider';
 import { getEffectiveLactateInputMode, getLactateDisplayMode } from '../../utils/lactateTestInputMode';
@@ -947,15 +948,58 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
     );
   }
 
+  const zoneActions = (
+    <>
+      <button
+        onClick={() => setShowGlossary(true)}
+        className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+        aria-label="Show glossary"
+        title="Training glossary"
+      >
+        <InformationCircleIcon className="w-4 h-4" />
+      </button>
+      <div className="flex rounded-lg border border-slate-200 overflow-hidden text-[11px] font-semibold">
+        <button
+          onClick={() => setZoneModel('5zone')}
+          className={`px-2.5 py-1.5 transition-colors ${zoneModel === '5zone' ? 'bg-primary text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}
+          title="Classic 5-zone LT-based model"
+        >
+          5-Zone
+        </button>
+        <button
+          onClick={() => setZoneModel('seiler')}
+          className={`px-2.5 py-1.5 border-l border-slate-200 transition-colors ${zoneModel === 'seiler' ? 'bg-primary text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}
+          title="Seiler polarized 3-zone model"
+        >
+          Seiler 3
+        </button>
+      </div>
+      {!demoMode && (
+        <button
+          onClick={() => setIsEditModalOpen(true)}
+          className="px-3 py-1.5 rounded-lg bg-primary text-white text-[11px] font-semibold hover:opacity-90"
+        >
+          Set zones
+        </button>
+      )}
+    </>
+  );
+
   return (
-    <div className="space-y-6">
-
-
-
-      {/* Combined Training Zones Table */}
-      <div className="relative flex flex-col gap-2 sm:gap-4 p-2 sm:p-4 bg-white/60 backdrop-blur-lg rounded-2xl sm:rounded-3xl border border-white/30 shadow-xl mt-3 sm:mt-5 overflow-hidden">
+    <TestSection
+      id="training-zones"
+      icon={Squares2X2Icon}
+      tint="emerald"
+      title="Training zones"
+      subtitle={zoneModel === 'seiler' ? 'Three polarized zones from this test' : 'Five zones from this test — power, pace, heart rate and lactate'}
+      meta={selectedTestDate ? new Date(selectedTestDate).toLocaleDateString() : null}
+      actions={zoneActions}
+      collapsible
+      flush
+    >
+      <div className="relative flex flex-col">
         {!hasBaseLactate && (
-          <div className="px-3 sm:px-4 py-2 bg-red-50 border-l-4 border-red-500 rounded-lg mb-3 max-w-full">
+          <div className="mx-4 mt-4 px-3 sm:px-4 py-2 bg-red-50 border-l-4 border-red-500 rounded-lg max-w-full">
             <div className="flex items-start gap-2">
               <span className="text-red-600 font-bold flex-shrink-0 mt-0.5">⚠️</span>
               <div className="text-sm text-red-700 break-words space-y-1">
@@ -965,72 +1009,18 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
             </div>
           </div>
         )}
-        <div className="px-3 sm:px-6 py-3 sm:py-4 border-b border-white/20 bg-white/20 rounded-t-2xl sm:rounded-t-3xl backdrop-blur">
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-2">
-              <div>
-                <h4 className="text-base sm:text-lg font-semibold text-gray-900 mb-1 drop-shadow-[0_1px_8px_rgba(0,0,30,0.10)]">
-                  Training Zones Table
-                </h4>
-                <p className="text-xs sm:text-sm text-gray-700 mt-1">
-                  Training zones from selected test
-                </p>
-                {selectedTestDate && (
-                  <p className="text-xs text-gray-600 mt-0.5">
-                    Date: {new Date(selectedTestDate).toLocaleDateString()}
-                  </p>
-                )}
-              </div>
-              <button
-                onClick={() => setShowGlossary(true)}
-                className="p-1 hover:bg-gray-100 rounded-full transition-colors"
-                aria-label="Show glossary"
-                title="Training Glossary"
-              >
-                <InformationCircleIcon className="w-5 h-5 text-gray-500" />
-              </button>
-            </div>
-            <div className="flex items-center gap-2">
-              {/* Zone model toggle */}
-              <div className="flex rounded-lg border border-gray-200 overflow-hidden text-xs font-medium shadow-sm">
-                <button
-                  onClick={() => setZoneModel('5zone')}
-                  className={`px-2.5 py-1.5 transition-colors ${zoneModel === '5zone' ? 'bg-primary text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
-                  title="Classic 5-zone LT-based model"
-                >
-                  5-Zone
-                </button>
-                <button
-                  onClick={() => setZoneModel('seiler')}
-                  className={`px-2.5 py-1.5 border-l border-gray-200 transition-colors ${zoneModel === 'seiler' ? 'bg-primary text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
-                  title="Seiler polarized 3-zone model"
-                >
-                  Seiler 3
-                </button>
-              </div>
-              {!demoMode && (
-                <button
-                  onClick={() => setIsEditModalOpen(true)}
-                  className="px-3 py-1.5 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition-all shadow-sm hover:shadow-md text-sm font-medium"
-                >
-                  Set Zones
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-        <div className="overflow-x-auto -mx-2 sm:mx-0 px-2 sm:px-0 max-w-[320px] sm:max-w-full mx-auto">
+        <div className="overflow-x-auto max-w-full">
           <div className="inline-block min-w-full align-middle">
             <table className="w-full min-w-[300px] sm:min-w-full md:min-w-full select-text">
-            <thead className="bg-white/10">
+            <thead className="bg-slate-50">
               <tr>
-                  <th className="px-1 sm:px-3 md:px-6 py-2 sm:py-3 md:py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-white/20">Zone</th>
-                  <th className="px-1 sm:px-3 md:px-6 py-2 sm:py-3 md:py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-white/20 hidden sm:table-cell">Description</th>
+                  <th className="px-1 sm:px-3 md:px-6 py-2 sm:py-3 md:py-4 text-left text-[10.5px] font-semibold text-slate-500 uppercase tracking-wider border-r border-slate-100">Zone</th>
+                  <th className="px-1 sm:px-3 md:px-6 py-2 sm:py-3 md:py-4 text-left text-[10.5px] font-semibold text-slate-500 uppercase tracking-wider border-r border-slate-100 hidden sm:table-cell">Description</th>
                 {selectedSport === 'bike' && (
-                    <th className="px-1 sm:px-3 md:px-6 py-2 sm:py-3 md:py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-white/20">Power (W)</th>
+                    <th className="px-1 sm:px-3 md:px-6 py-2 sm:py-3 md:py-4 text-left text-[10.5px] font-semibold text-slate-500 uppercase tracking-wider border-r border-slate-100">Power (W)</th>
                 )}
                 {(selectedSport === 'run' || selectedSport === 'swim') && (
-                    <th className="px-1 sm:px-3 md:px-6 py-2 sm:py-3 md:py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-white/20">
+                    <th className="px-1 sm:px-3 md:px-6 py-2 sm:py-3 md:py-4 text-left text-[10.5px] font-semibold text-slate-500 uppercase tracking-wider border-r border-slate-100">
                     {displayMode === 'pace' ? 
                       (selectedSport === 'swim' ? 
                         (unitSystem === 'imperial' ? 'Pace /100yd' : 'Pace /100m') :
@@ -1040,11 +1030,11 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
                     }
                   </th>
                 )}
-                  <th className="px-1 sm:px-3 md:px-6 py-2 sm:py-3 md:py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-white/20">HR</th>
-                  <th className="px-1 sm:px-3 md:px-6 py-2 sm:py-3 md:py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-white/20">Lactate</th>
+                  <th className="px-1 sm:px-3 md:px-6 py-2 sm:py-3 md:py-4 text-left text-[10.5px] font-semibold text-slate-500 uppercase tracking-wider border-r border-slate-100">HR</th>
+                  <th className="px-1 sm:px-3 md:px-6 py-2 sm:py-3 md:py-4 text-left text-[10.5px] font-semibold text-slate-500 uppercase tracking-wider border-r border-slate-100">Lactate</th>
               </tr>
             </thead>
-            <tbody className="bg-white/30 divide-y divide-white/30 rounded-b-3xl">
+            <tbody className="divide-y divide-slate-100">
               {Object.entries(zones.power || zones.speed || zones.pace || zones.heartRate).map(([zoneKey, zone], index) => {
                 const zoneNumber = parseInt(zoneKey.replace('zone', ''));
                 const currentZones = zones;
@@ -1058,15 +1048,14 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
                   <motion.tr
                     key={zoneKey}
                     className={
-                      `transition-all duration-200 ` +
-                      'hover:bg-white/40 hover:backdrop-blur pb-1 '
+                      'transition-colors hover:bg-slate-50 '
                     }
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     transition={{ delay: index * 0.07, duration: 0.25 }}
                   >
                     {/* ZONE NUMBER + DOT */}
-                    <td className="px-1 sm:px-3 md:px-6 py-2 sm:py-3 md:py-4 border-r border-white/20">
+                    <td className="px-1 sm:px-3 md:px-6 py-2 sm:py-3 md:py-4 border-r border-slate-100">
                       <div className="flex items-center">
                         <span className={
                           `w-2.5 h-2.5 sm:w-3 sm:h-3 md:w-3.5 md:h-3.5 rounded-full mr-1 sm:mr-2 md:mr-3 inline-block border border-white/70 shadow ` +
@@ -1090,19 +1079,19 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
                       </div>
                     </td>
                     {/* DESCRIPTION */}
-                    <td className="px-1 sm:px-3 md:px-6 py-2 sm:py-3 md:py-4 border-r border-white/20 hidden sm:table-cell">
+                    <td className="px-1 sm:px-3 md:px-6 py-2 sm:py-3 md:py-4 border-r border-slate-100 hidden sm:table-cell">
                       <span className="text-xs sm:text-sm font-normal text-gray-700">{zone.description}</span>
                     </td>
                     {/* POWER/PASTE/SPEED column */}
                     {selectedSport === 'bike' && powerZone && (
-                      <td className="px-1 sm:px-3 md:px-6 py-2 sm:py-3 md:py-4 border-r border-white/20">
+                      <td className="px-1 sm:px-3 md:px-6 py-2 sm:py-3 md:py-4 border-r border-slate-100">
                           <span className="text-xs sm:text-sm text-gray-900 font-mono font-normal tracking-tight">
                             {powerZone[zoneKey] ? `${powerZone[zoneKey].min}-${powerZone[zoneKey].max}W` : '-'}
                           </span>
                       </td>
                     )}
                     {(selectedSport === 'run' || selectedSport === 'swim') && powerZone && (
-                      <td className="px-1 sm:px-3 md:px-6 py-2 sm:py-3 md:py-4 border-r border-white/20">
+                      <td className="px-1 sm:px-3 md:px-6 py-2 sm:py-3 md:py-4 border-r border-slate-100">
                           <span className="text-xs sm:text-sm text-gray-900 font-mono font-normal tracking-tight break-words">
                             {powerZone[zoneKey] ? 
                               (displayMode === 'speed' ? 
@@ -1129,7 +1118,7 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
                       </td>
                     )}
                     {/* HR COLUMN */}
-                    <td className="px-1 sm:px-3 md:px-6 py-2 sm:py-3 md:py-4 border-r border-white/20">
+                    <td className="px-1 sm:px-3 md:px-6 py-2 sm:py-3 md:py-4 border-r border-slate-100">
                         <span className="text-xs sm:text-sm text-gray-900 font-mono font-normal tracking-tight">
                           {hrZone && hrZone[zoneKey] ? `${hrZone[zoneKey].min}-${hrZone[zoneKey].max}` : '-'}
                         </span>
@@ -1148,14 +1137,14 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
           </div>
         </div>
         {/* Mobile description tooltip */}
-        <div className="sm:hidden px-3 py-2 text-xs text-gray-600 bg-white/30 rounded-lg mx-3 mb-3">
+        <div className="sm:hidden px-3 py-2 text-xs text-slate-600 bg-slate-50 rounded-lg mx-3 mb-3">
           <p className="font-medium mb-1">Tip:</p>
           <p>Scroll horizontally to see all columns. Tap zone numbers to see descriptions.</p>
         </div>
       </div>
-      {/* Recommendations - minimalist card only */}
-      <div className="rounded-xl sm:rounded-xl px-3 sm:px-4 py-3 sm:py-4 bg-white/40 backdrop-blur-sm mt-4 shadow text-gray-700">
-        <h4 className="text-sm sm:text-base font-semibold text-blue-900 mb-2">Training Zone Reference</h4>
+      {/* What each zone is for */}
+      <div className="border-t border-slate-100 px-4 sm:px-5 py-3 text-slate-700">
+        <h4 className="text-[11px] font-semibold uppercase tracking-wide text-slate-400 mb-2">What each zone is for</h4>
         {zoneModel === 'seiler' ? (
           <ul className="text-xs sm:text-sm space-y-1.5 sm:space-y-1">
             <li className="flex items-start gap-2"><span className="mt-1 w-2.5 h-2.5 rounded-full bg-blue-400/70 border border-white/70 shadow flex-shrink-0" /><span><span className="font-medium text-gray-900">Zone 1 (Polarized Base):</span> <span className="hidden sm:inline text-gray-500">&lt; LT1 · </span>Easy aerobic — bulk of training volume (≥80%)</span></li>
@@ -1222,7 +1211,7 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
         initialTerm="Training Zones"
         initialCategory="Lactate"
       />
-    </div>
+    </TestSection>
   );
 };
 

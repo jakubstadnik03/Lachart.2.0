@@ -25,7 +25,8 @@ import DataTable, {
   calculatePolynomialRegressionLactateToHR,
   isThresholdDebugEnabled,
 } from './DataTable';
-import { InformationCircleIcon, ArrowsPointingOutIcon, ArrowsPointingInIcon, EnvelopeIcon, DocumentArrowDownIcon, ArrowPathIcon, ArrowDownTrayIcon, CheckIcon, PencilSquareIcon } from '@heroicons/react/24/outline';
+import { InformationCircleIcon, ArrowsPointingOutIcon, ArrowsPointingInIcon, EnvelopeIcon, DocumentArrowDownIcon, ArrowPathIcon, ArrowDownTrayIcon, CheckIcon, PencilSquareIcon, PresentationChartLineIcon } from '@heroicons/react/24/outline';
+import TestSection from './TestSection';
 import TrainingGlossary from '../DashboardPage/TrainingGlossary';
 import { useAuth } from '../../context/AuthProvider';
 import { getEffectiveLactateInputMode, getLactateDisplayMode } from '../../utils/lactateTestInputMode';
@@ -1550,14 +1551,14 @@ const LactateCurveCalculator = ({
   if (validResults.length < 2) {
     console.warn('[LactateCurveCalculator] Not enough valid results:', validResults.length);
     return (
-      <div className="flex flex-col gap-4 p-2 sm:p-4 bg-white rounded-2xl shadow-lg mt-3 sm:mt-5">
+      <TestSection id="lactate-curve" icon={PresentationChartLineIcon} tint="primary" title="Threshold analysis" meta={formatDate(mockData.date)}>
         <div className="text-center py-8">
-          <div className="text-gray-500">Not enough valid data points to display the curve</div>
-          <div className="text-sm text-gray-400 mt-2">
+          <div className="text-slate-500">Not enough valid data points to display the curve</div>
+          <div className="text-sm text-slate-400 mt-2">
             Need at least 2 valid measurements with both power/pace and lactate values
           </div>
         </div>
-      </div>
+      </TestSection>
     );
   }
   
@@ -2908,152 +2909,134 @@ const LactateCurveCalculator = ({
   const finalOptions = chartView === 'hr' && hasEnoughHRData ? hrChartOptions : options;
   const showHRViewPlaceholder = chartView === 'hr' && !hasEnoughHRData;
 
-  return (
-    <div className="flex flex-col gap-4 p-2 sm:p-4 bg-white rounded-2xl shadow-lg mt-3 sm:mt-5 relative">
-      <UpgradeModal {...UpgradeModalProps} />
-      <div className="flex flex-col gap-4">
-        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
-          {/* Left: title + chart-type toggle + icon buttons */}
-          <div className="flex flex-wrap items-center gap-2 min-w-0">
-            <h2 className="text-base sm:text-xl font-bold truncate">
-              Lactate Curve
-              {trainingTitle && (
-                <span className="text-sm sm:text-lg text-gray-800 ml-1 sm:ml-2">
-                  {trainingTitle}
-                </span>
-              )}
-              <span className="text-sm sm:text-lg text-gray-600 ml-1 sm:ml-2">({formatDate(mockData.date)})</span>
-            </h2>
-            <div className="flex rounded-lg border border-gray-200 p-0.5 bg-gray-50" role="group">
+  const baseMissing = !mockData.baseLactate || mockData.baseLactate === 0;
+  const ltPinned = Boolean(ltOverrides.LTP1 || ltOverrides.LTP2);
+  const toolBtn = 'h-8 px-2.5 text-[11px] font-semibold rounded-lg border transition-colors touch-manipulation whitespace-nowrap flex items-center gap-1.5';
+  const toolBtnIdle = 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50 active:bg-slate-100';
+  const toolBtnBusy = 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed';
+
+  // Header: the two icons that change how the block is laid out.
+  const headerActions = (
+    <>
+      <button
+        onClick={() => setShowGlossary(true)}
+        className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600 touch-manipulation"
+        aria-label="Show glossary"
+        title="Training glossary"
+      >
+        <InformationCircleIcon className="w-4 h-4" />
+      </button>
+      <button
+        onClick={() => setShowDataTable(!showDataTable)}
+        className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600 touch-manipulation"
+        aria-label={showDataTable ? "Expand curve" : "Show table"}
+        title={showDataTable ? "Expand curve to full width" : "Show data table"}
+      >
+        {showDataTable ? <ArrowsPointingOutIcon className="w-4 h-4" /> : <ArrowsPointingInIcon className="w-4 h-4" />}
+      </button>
+    </>
+  );
+
+  // Toolbar: what the reader does with the curve — view, pin, send.
+  const toolbar = (
+    <>
+      <div className="flex rounded-lg border border-slate-200 bg-white overflow-hidden text-[11px] font-semibold" role="group">
+        <button
+          type="button"
+          onClick={() => setChartView('power')}
+          className={`px-2.5 py-1.5 transition-colors touch-manipulation ${chartView === 'power' ? 'bg-primary text-white' : 'text-slate-600 hover:bg-slate-50'}`}
+          title={chartPrimaryVsLactateLabel}
+        >
+          {chartPrimaryVsLactateLabel}
+        </button>
+        <button
+          type="button"
+          onClick={() => setChartView('hr')}
+          className={`px-2.5 py-1.5 border-l border-slate-200 transition-colors touch-manipulation ${chartView === 'hr' ? 'bg-primary text-white' : 'text-slate-600 hover:bg-slate-50'}`}
+          title="Heart rate vs lactate"
+        >
+          HR vs La
+        </button>
+      </div>
+
+      <div className="flex items-center gap-1.5 text-[11px] text-slate-500 whitespace-nowrap">
+        <span className="uppercase tracking-wide font-semibold text-[10px] text-slate-400">Base</span>
+        <span className={`font-semibold tabular-nums ${baseMissing ? 'text-rose-600' : 'text-slate-800'}`}>
+          {mockData.baseLactate || 0} mmol/L
+        </span>
+        {baseMissing && (
+          <span className="px-1.5 py-0.5 text-[10px] bg-rose-100 text-rose-700 rounded font-semibold">Missing</span>
+        )}
+      </div>
+
+      {!demoMode && (
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          <button
+            onClick={() => setShowLtOverridePanel(v => !v)}
+            className={`${toolBtn} ${ltPinned ? 'bg-violet-50 border-violet-300 text-violet-800' : toolBtnIdle}`}
+            title="Manually pin LT1/LT2 threshold values"
+          >
+            <PencilSquareIcon className="w-3.5 h-3.5 flex-shrink-0" />
+            <span>{ltPinned ? 'LT1/LT2 pinned' : 'Set LT1/LT2'}</span>
+          </button>
+          <div data-tour="tour-lactate-share" className="flex items-center gap-2">
+            <div className="flex flex-col gap-0.5">
               <button
-                type="button"
-                onClick={() => setChartView('power')}
-                className={`px-3 py-2 text-xs font-medium rounded-md transition-colors touch-manipulation ${
-                  chartView === 'power' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900'
-                }`}
-                title={chartPrimaryVsLactateLabel}
+                onClick={() => {
+                  if (!isPremium) { gate('Email Report Export', 'pro'); return; }
+                  openEmailModal();
+                }}
+                disabled={sendingEmail}
+                className={`${toolBtn} ${sendingEmail ? toolBtnBusy : toolBtnIdle} ${!isPremium ? 'opacity-60' : ''}`}
+                title="Send report to email"
               >
-                {chartPrimaryVsLactateLabel}
+                <EnvelopeIcon className="w-4 h-4 flex-shrink-0" />
+                <span className="hidden sm:inline">{sendingEmail ? 'Sending…' : 'Email'}</span>
               </button>
-              <button
-                type="button"
-                onClick={() => setChartView('hr')}
-                className={`px-3 py-2 text-xs font-medium rounded-md transition-colors touch-manipulation ${
-                  chartView === 'hr' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900'
-                }`}
-                title="Heart rate vs lactate"
-              >
-                HR vs La
-              </button>
-            </div>
-            <button
-              onClick={() => setShowGlossary(true)}
-              className="h-9 w-9 flex items-center justify-center hover:bg-gray-100 rounded-full transition-colors touch-manipulation"
-              aria-label="Show glossary"
-              title="Training Glossary"
-            >
-              <InformationCircleIcon className="w-5 h-5 text-gray-500" />
-            </button>
-            <button
-              onClick={() => setShowDataTable(!showDataTable)}
-              className="h-9 w-9 flex items-center justify-center hover:bg-gray-100 rounded-full transition-colors touch-manipulation"
-              aria-label={showDataTable ? "Expand curve" : "Show table"}
-              title={showDataTable ? "Expand curve to full width" : "Show data table"}
-            >
-              {showDataTable ? (
-                <ArrowsPointingOutIcon className="w-5 h-5 text-gray-500" />
-              ) : (
-                <ArrowsPointingInIcon className="w-5 h-5 text-gray-500" />
-              )}
-            </button>
-          </div>
-
-          {/* Right: Base Lactate + Set LT1/LT2 + Email + PDF — all in one compact row */}
-          <div className="flex flex-wrap items-center gap-2">
-            {/* Base Lactate */}
-            <div className="flex items-center gap-1.5">
-              <p className="text-xs sm:text-sm text-gray-500 whitespace-nowrap">
-                Base Lactate:{' '}
-                <span className={`font-medium ${(!mockData.baseLactate || mockData.baseLactate === 0) ? 'text-red-500' : 'text-blue-500'}`}>
-                  {mockData.baseLactate || 0} mmol/L
-                </span>
-              </p>
-              {(!mockData.baseLactate || mockData.baseLactate === 0) && (
-                <span className="px-1.5 py-0.5 text-xs bg-red-100 text-red-700 rounded font-semibold whitespace-nowrap">
-                  ⚠️ Missing
-                </span>
-              )}
-            </div>
-
-            {/* Divider */}
-            <div className="h-5 w-px bg-gray-200 hidden sm:block" />
-
-            {/* Set LT1/LT2 */}
-            {!demoMode && (
-              <button
-                onClick={() => setShowLtOverridePanel(v => !v)}
-                className={`h-9 px-3 text-xs rounded-lg border transition-colors flex items-center gap-1.5 whitespace-nowrap ${
-                  (ltOverrides.LTP1 || ltOverrides.LTP2)
-                    ? 'bg-violet-50 border-violet-300 text-violet-800 font-semibold'
-                    : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
-                }`}
-                title="Manually pin LT1/LT2 threshold values"
-              >
-                <PencilSquareIcon className="w-3.5 h-3.5 flex-shrink-0" />
-                <span>{(ltOverrides.LTP1 || ltOverrides.LTP2) ? 'LT1/LT2 overridden' : 'Set LT1/LT2'}</span>
-              </button>
-            )}
-
-            {/* Email + PDF */}
-            {!demoMode && (
-              <div data-tour="tour-lactate-share" className="flex items-center gap-2">
-                <div className="flex flex-col gap-0.5">
-                  <button
-                    onClick={() => {
-                      if (!isPremium) { gate('Email Report Export', 'pro'); return; }
-                      openEmailModal();
-                    }}
-                    disabled={sendingEmail}
-                    className={`h-9 px-3 text-xs rounded-lg border transition-colors touch-manipulation whitespace-nowrap flex items-center gap-1.5 ${
-                      sendingEmail
-                        ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
-                        : 'bg-white hover:bg-gray-50 active:bg-gray-100 text-gray-900 border-gray-200'
-                    } ${!isPremium ? 'opacity-60' : ''}`}
-                    title="Send report to email"
-                  >
-                    <EnvelopeIcon className="w-4 h-4 flex-shrink-0" />
-                    <span className="hidden sm:inline">{sendingEmail ? 'Sending…' : 'Email'}</span>
-                  </button>
-                  {emailStatus?.message && (
-                    <div className={`text-xs ${emailStatus.type === 'success' ? 'text-emerald-600' : 'text-rose-600'}`}>
-                      {emailStatus.message}
-                    </div>
-                  )}
+              {emailStatus?.message && (
+                <div className={`text-[11px] ${emailStatus.type === 'success' ? 'text-emerald-600' : 'text-rose-600'}`}>
+                  {emailStatus.message}
                 </div>
-                <div className="flex flex-col gap-0.5">
-                  <button
-                    onClick={handleDownloadPdf}
-                    disabled={pdfPreviewLoading || downloadingPdf}
-                    className={`h-9 px-3 text-xs rounded-lg border transition-colors touch-manipulation whitespace-nowrap flex items-center gap-1.5 ${
-                      (pdfPreviewLoading || downloadingPdf)
-                        ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
-                        : 'bg-white hover:bg-gray-50 active:bg-gray-100 text-gray-900 border-gray-200'
-                    }`}
-                    title="Preview and download full report as PDF"
-                  >
-                    <DocumentArrowDownIcon className="w-4 h-4 flex-shrink-0" />
-                    <span className="hidden sm:inline">{pdfPreviewLoading ? 'Preparing…' : 'PDF'}</span>
-                  </button>
-                  {pdfStatus?.message && (
-                    <div className={`text-xs ${pdfStatus.type === 'success' ? 'text-emerald-600' : 'text-rose-600'}`}>
-                      {pdfStatus.message}
-                    </div>
-                  )}
+              )}
+            </div>
+            <div className="flex flex-col gap-0.5">
+              <button
+                onClick={handleDownloadPdf}
+                disabled={pdfPreviewLoading || downloadingPdf}
+                className={`${toolBtn} ${(pdfPreviewLoading || downloadingPdf) ? toolBtnBusy : toolBtnIdle}`}
+                title="Preview and download full report as PDF"
+              >
+                <DocumentArrowDownIcon className="w-4 h-4 flex-shrink-0" />
+                <span className="hidden sm:inline">{pdfPreviewLoading ? 'Preparing…' : 'PDF'}</span>
+              </button>
+              {pdfStatus?.message && (
+                <div className={`text-[11px] ${pdfStatus.type === 'success' ? 'text-emerald-600' : 'text-rose-600'}`}>
+                  {pdfStatus.message}
                 </div>
-              </div>
-            )}
+              )}
+            </div>
           </div>
         </div>
+      )}
+    </>
+  );
+
+  return (
+    <TestSection
+      id="lactate-curve"
+      icon={PresentationChartLineIcon}
+      tint="primary"
+      title="Threshold analysis"
+      meta={[trainingTitle, formatDate(mockData.date)].filter(Boolean).join(' · ')}
+      subtitle="LT1 where lactate first leaves baseline, LT2 where it runs away — every method side by side."
+      actions={headerActions}
+      toolbar={toolbar}
+      collapsible
+      className="relative"
+      bodyClassName="!px-2 !py-3 sm:!px-4 sm:!py-4"
+    >
+      <UpgradeModal {...UpgradeModalProps} />
+      <div className="flex flex-col gap-4">
 
         {/* ── Compact toggle row (2026-05) ─────────────────────────────────
              Threshold methods, Pre-test training and Test coach used to live
@@ -3063,7 +3046,7 @@ const LactateCurveCalculator = ({
              expanded; multiple can be open at once so users can cross-
              reference (e.g. pre-test training vs threshold methods). */}
         {!demoMode && (
-          <div className="mt-4 space-y-3">
+          <div className="space-y-3">
 
             {/* Single row of three chips */}
             <div className="flex items-center gap-2 flex-wrap">
@@ -3995,7 +3978,7 @@ const LactateCurveCalculator = ({
         </div>,
         document.body
       )}
-    </div>
+    </TestSection>
   );
 };
 

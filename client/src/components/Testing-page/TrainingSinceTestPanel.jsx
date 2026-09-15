@@ -33,8 +33,7 @@ import {
   ResponsiveContainer, Scatter, Tooltip, XAxis, YAxis,
 } from 'recharts';
 import {
-  ArrowTrendingUpIcon, ArrowTrendingDownIcon, BeakerIcon, BoltIcon,
-  CheckCircleIcon, ExclamationTriangleIcon, InformationCircleIcon, MinusIcon,
+  ArrowTrendingUpIcon, ArrowTrendingDownIcon, BoltIcon, MinusIcon,
 } from '@heroicons/react/24/outline';
 import { getThresholdDrift, getMonthlyPowerAnalysis } from '../../services/api';
 import {
@@ -42,6 +41,8 @@ import {
 } from '../../utils/hrPowerProfile';
 import { extractLactateThresholds } from '../../utils/extractLactateThresholds';
 import { buildTestInsights, testsToDemandRows } from '../../utils/testInsights';
+import TestSection from './TestSection';
+import TrainingInsights from './TrainingInsights';
 import {
   axisTick, demandUnitLabel, fmtDemand, fmtDemandDelta, fmtLongDate,
 } from '../../utils/thresholdFormat';
@@ -54,52 +55,11 @@ const HISTORY_COLOR = '#0d9488';
 const LT1_COLOR = '#0ea5e9';
 const LT2_COLOR = '#f97316';
 
-const TONE = {
-  good: { border: 'border-emerald-200', bg: 'bg-emerald-50/70', title: 'text-emerald-900', icon: CheckCircleIcon, iconColor: 'text-emerald-600' },
-  warn: { border: 'border-amber-200', bg: 'bg-amber-50/70', title: 'text-amber-900', icon: ExclamationTriangleIcon, iconColor: 'text-amber-600' },
-  info: { border: 'border-sky-200', bg: 'bg-sky-50/70', title: 'text-sky-900', icon: InformationCircleIcon, iconColor: 'text-sky-600' },
-  neutral: { border: 'border-gray-200', bg: 'bg-gray-50/70', title: 'text-gray-900', icon: BeakerIcon, iconColor: 'text-gray-500' },
-};
-
-const CONFIDENCE_LABEL = {
-  high: { text: 'strong evidence', cls: 'bg-emerald-100 text-emerald-700' },
-  medium: { text: 'fair evidence', cls: 'bg-sky-100 text-sky-700' },
-  low: { text: 'a hint, not a number', cls: 'bg-gray-100 text-gray-500' },
-};
-
 // ── Small pieces ───────────────────────────────────────────────────────────
 
 function Dot({ cx, cy, r, color }) {
   if (!Number.isFinite(cx) || !Number.isFinite(cy)) return null;
   return <circle cx={cx} cy={cy} r={r} fill={color} stroke="#fff" strokeWidth={1.5} />;
-}
-
-function ConfidenceChip({ level }) {
-  const c = CONFIDENCE_LABEL[level];
-  if (!c) return null;
-  return <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${c.cls}`}>{c.text}</span>;
-}
-
-function InsightCard({ insight }) {
-  const tone = TONE[insight.tone] || TONE.neutral;
-  const Icon = tone.icon;
-  return (
-    <div className={`rounded-xl border ${tone.border} ${tone.bg} p-3.5`}>
-      <div className="flex items-start gap-2.5">
-        <Icon className={`mt-0.5 h-4 w-4 shrink-0 ${tone.iconColor}`} />
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <h4 className={`text-[13.5px] font-bold leading-snug ${tone.title}`}>{insight.title}</h4>
-            <ConfidenceChip level={insight.confidence} />
-          </div>
-          <p className="mt-1 text-[12.5px] leading-relaxed text-gray-600">{insight.body}</p>
-          {insight.evidence && (
-            <p className="mt-1.5 font-mono text-[10.5px] leading-relaxed text-gray-400">{insight.evidence}</p>
-          )}
-        </div>
-      </div>
-    </div>
-  );
 }
 
 /**
@@ -667,24 +627,22 @@ export default function TrainingSinceTestPanel({
 
   if (!anchor || !(anchor.lt2 > 0)) {
     return (
-      <div className={`rounded-2xl border border-gray-200 bg-white p-5 shadow-sm ${className}`}>
-        <h3 className="text-[15px] font-bold text-gray-900">Since your test</h3>
-        <p className="mt-1 text-[13px] leading-relaxed text-gray-500">
+      <TestSection id="since-test" icon={BoltIcon} tint="violet" title="Since your test" className={className}>
+        <p className="text-[13px] leading-relaxed text-slate-500">
           This test has no usable LT2 yet. Add at least three stages with lactate and heart rate and
           your training will be read against the curve they draw.
         </p>
-      </div>
+      </TestSection>
     );
   }
 
   if (state.loading) {
     return (
-      <div className={`rounded-2xl border border-gray-200 bg-white p-5 shadow-sm ${className}`}>
-        <div className="h-4 w-48 animate-pulse rounded bg-gray-100" />
-        <div className="mt-3 h-3 w-full animate-pulse rounded bg-gray-50" />
-        <div className="mt-2 h-3 w-4/5 animate-pulse rounded bg-gray-50" />
-        <div className="mt-4 h-40 w-full animate-pulse rounded-xl bg-gray-50" />
-      </div>
+      <TestSection id="since-test" icon={BoltIcon} tint="violet" title="Since your test" subtitle="Reading your training against the curve…" className={className}>
+        <div className="h-3 w-full animate-pulse rounded bg-slate-100" />
+        <div className="mt-2 h-3 w-4/5 animate-pulse rounded bg-slate-100" />
+        <div className="mt-4 h-40 w-full animate-pulse rounded-xl bg-slate-50" />
+      </TestSection>
     );
   }
 
@@ -696,38 +654,32 @@ export default function TrainingSinceTestPanel({
   // here would send an athlete who already has to go and do it again.
   if (!drift) {
     return (
-      <div className={`rounded-2xl border border-gray-200 bg-white p-5 shadow-sm ${className}`}>
-        <h3 className="text-[15px] font-bold text-gray-900">Since your test</h3>
-        <p className="mt-1 text-[13px] leading-relaxed text-gray-500">
+      <TestSection id="since-test" icon={BoltIcon} tint="violet" title="Since your test" className={className}>
+        <p className="text-[13px] leading-relaxed text-slate-500">
           Could not read your training against this test just now. Nothing is wrong with the test
           itself — reload the page to try again.
         </p>
-      </div>
+      </TestSection>
     );
   }
 
+  const readMeta = `${test.title || 'Lactate test'} · ${fmtLongDate(test.date)}`
+    + (coverage?.considered ? ` · ${coverage.compared ?? coverage.read} of ${coverage.considered} sessions read` : '');
+
   return (
-    <div className={`rounded-2xl border border-gray-200 bg-white p-4 shadow-sm sm:p-5 ${className}`}>
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <BoltIcon className="h-4 w-4 text-primary" />
-          <h3 className="text-[15px] font-bold text-gray-900">Since your test</h3>
-        </div>
-        <span className="text-[11px] text-gray-400">
-          {test.title || 'Lactate test'} · {fmtLongDate(test.date)}
-          {coverage?.considered
-            ? ` · ${coverage.compared ?? coverage.read} of ${coverage.considered} sessions read`
-            : ''}
-        </span>
-      </div>
-      <p className="mt-1 max-w-3xl text-[12.5px] leading-relaxed text-gray-500">
-        Every steady session since test day is a partial re-test nobody was reading — known intensity,
-        known heart rate, hours of it. Read against your own curve, they say where your thresholds have
-        moved to.
-      </p>
+    <TestSection
+      id="since-test"
+      icon={BoltIcon}
+      tint="violet"
+      title="Since your test"
+      meta={readMeta}
+      subtitle="Every steady session since test day is a partial re-test: known intensity, known heart rate, hours of it. Read against your own curve, they say where your thresholds have moved to."
+      collapsible
+      className={className}
+    >
 
       {isViewingOlder && (
-        <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-xl border border-sky-200 bg-sky-50/70 px-3 py-2 text-[12px] leading-relaxed text-sky-900">
+        <div className="mb-4 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-xl border border-sky-200 bg-sky-50/70 px-3 py-2 text-[12px] leading-relaxed text-sky-900">
           <span>
             You have opened an older test. Everything below is read against your latest
             {' '}{kind === 'bike' ? 'cycling' : 'running'} test, {fmtLongDate(test.date)} — only the
@@ -747,7 +699,7 @@ export default function TrainingSinceTestPanel({
 
       {/* What the next test would show, from both directions. */}
       {(training || history) && (lt1Demand || lt2Demand) && (
-        <div className="-mx-1 mt-4 overflow-x-auto px-1">
+        <div className="-mx-1 overflow-x-auto px-1">
           <table className="w-full min-w-[520px] text-left">
             <thead>
               <tr className="text-[10.5px] uppercase tracking-wide text-gray-400">
@@ -782,9 +734,8 @@ export default function TrainingSinceTestPanel({
       </div>
 
       {insights.length > 0 && (
-        <div className="mt-5 space-y-2.5">
-          <h4 className="text-[13px] font-bold text-gray-900">What your training says</h4>
-          {insights.map((i) => <InsightCard key={i.id} insight={i} />)}
+        <div className="mt-5">
+          <TrainingInsights insights={insights} />
         </div>
       )}
 
@@ -794,6 +745,6 @@ export default function TrainingSinceTestPanel({
           anchor={anchor} kind={kind} storageMode={storageMode}
         />
       </div>
-    </div>
+    </TestSection>
   );
 }

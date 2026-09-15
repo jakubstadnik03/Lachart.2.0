@@ -1,4 +1,7 @@
 import React, { useMemo } from 'react';
+import { TrophyIcon } from '@heroicons/react/24/outline';
+// @ts-ignore — plain JSX shell shared by every block of the testing page.
+import TestSection from '../Testing-page/TestSection';
 import {
   ResponsiveContainer,
   LineChart,
@@ -396,7 +399,7 @@ function MetricMini({
   suffix?: string;
 }) {
   return (
-    <div className="rounded-xl border border-slate-200/80 bg-white/80 px-3 py-3 shadow-sm">
+    <div className="rounded-xl bg-slate-50/70 ring-1 ring-slate-200/70 px-3 py-3">
       <div className="text-[11px] font-medium uppercase tracking-wide text-slate-500">{label}</div>
       <div className="mt-1 flex items-baseline gap-0.5">
         <span className="text-lg font-bold text-slate-900">{value}</span>
@@ -418,7 +421,7 @@ function CyclingEventGrid({
   highlightId: string;
 }) {
   return (
-    <div className="mt-5">
+    <div>
       <div className="mb-2 flex flex-col gap-0.5 sm:flex-row sm:items-baseline sm:justify-between">
         <h3 className="text-sm font-bold text-slate-900">Power targets by event duration</h3>
         <p className="text-[11px] text-slate-500">FTP-percentage model · LT2 = FTP ({Math.round(ftp)} W)</p>
@@ -480,7 +483,7 @@ function RunningDistanceGrid({
   isPower: boolean;
 }) {
   return (
-    <div className="mt-5">
+    <div>
       <div className="mb-2 flex flex-col gap-0.5 sm:flex-row sm:items-baseline sm:justify-between">
         <h3 className="text-sm font-bold text-slate-900">Predicted times &amp; paces</h3>
         <p className="text-[11px] text-slate-500">
@@ -634,29 +637,19 @@ export function RacePacePredictorCard({
     : null;
 
   return (
-    <section
-      className={`rounded-2xl border border-slate-200/90 bg-gradient-to-b from-[#eef2ff] to-white p-5 shadow-[0_12px_40px_-18px_rgba(15,23,42,0.25)] sm:p-6 ${className}`}
-      style={{ fontFamily: "'Inter', 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif" }}
+    <TestSection
+      id="race-predictor"
+      icon={TrophyIcon}
+      tint="rose"
+      title={isCycling ? 'Power predictor' : 'Race pace predictor'}
+      meta={sportLabel}
+      subtitle={isCycling
+        ? 'Power targets by event duration, from the lactate threshold (FTP).'
+        : 'Times and paces by distance, from the lactate curve and the training behind it.'}
+      actions={<ConfidenceBadge level={model.conf} />}
+      collapsible
+      className={className}
     >
-      <header className="flex flex-col gap-2 border-b border-slate-200/80 pb-4 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <div className="flex items-center gap-2">
-            <h2 className="text-lg font-bold tracking-tight text-slate-900 sm:text-xl">
-              {isCycling ? 'Power Predictor' : 'Race Pace Predictor'}
-            </h2>
-            <span className="rounded-full bg-[#767eb5]/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-[#767eb5]">
-              {sportLabel}
-            </span>
-          </div>
-          <p className="text-sm text-slate-500">
-            {isCycling
-              ? 'Power targets based on lactate threshold (FTP)'
-              : 'Based on lactate & training data'}
-          </p>
-        </div>
-        <ConfidenceBadge level={model.conf} />
-      </header>
-
       {/* Event grid — cycling or running */}
       {isCycling ? (
         <CyclingEventGrid
@@ -685,7 +678,7 @@ export function RacePacePredictorCard({
       </div>
 
       {/* Curve insight */}
-      <div className="mt-6 rounded-xl border border-slate-200/80 bg-white p-4 shadow-sm">
+      <div className="mt-5 rounded-xl bg-slate-50/50 ring-1 ring-slate-200/70 p-4">
         <div className="mb-2 flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <h3 className="text-sm font-bold text-slate-900">Lactate curve</h3>
@@ -824,14 +817,14 @@ export function RacePacePredictorCard({
         </dl>
       </div>
 
-      <p className="mt-5 rounded-xl border border-slate-200/70 bg-white/90 px-4 py-3 text-sm leading-relaxed text-slate-700">
+      <p className="mt-5 rounded-xl bg-slate-50/70 ring-1 ring-slate-200/70 px-4 py-3 text-sm leading-relaxed text-slate-700">
         {model.summary}
       </p>
 
       <p className="mt-3 text-xs leading-relaxed text-slate-600">
         <span className="font-semibold text-[#767eb5]">Training note.</span> {model.hint}
       </p>
-    </section>
+    </TestSection>
   );
 }
 

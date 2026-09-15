@@ -11,8 +11,9 @@ import {
   Legend,
 } from "chart.js";
 import { HelpCircle, Info } from 'lucide-react';
-import { InformationCircleIcon } from '@heroicons/react/24/outline';
+import { InformationCircleIcon, PresentationChartLineIcon } from '@heroicons/react/24/outline';
 import TrainingGlossary from '../DashboardPage/TrainingGlossary';
+import TestSection from './TestSection';
 import { useAuth } from '../../context/AuthProvider';
 import { resolveDistanceUnitSystem } from '../../utils/unitsConverter';
 import { getEffectiveLactateInputMode, getLactateDisplayMode } from '../../utils/lactateTestInputMode';
@@ -109,6 +110,41 @@ const convertSecondsToSpeed = (seconds, unitSystem, sport) => {
 };
 
 
+const SPORT_NAME = { bike: 'Bike', run: 'Run', swim: 'Swim' };
+
+/**
+ * The chart's card: same shell as every other block of the testing page,
+ * a fixed height so the form beside it lines up, the glossary in the
+ * header. The three "nothing to draw yet" states use it too, so the card
+ * never changes shape while a test is being typed in.
+ */
+function CurveCard({ isMobile, meta, onGlossary, bodyClassName = '', children }) {
+  return (
+    <TestSection
+      id="test-curve"
+      icon={PresentationChartLineIcon}
+      tint="sky"
+      title="Lactate curve"
+      meta={meta}
+      actions={onGlossary ? (
+        <button
+          onClick={onGlossary}
+          className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+          aria-label="Show glossary"
+          title="Training glossary"
+        >
+          <InformationCircleIcon className="w-4 h-4" />
+        </button>
+      ) : null}
+      flush
+      className={`flex flex-col overflow-hidden ${isMobile ? 'h-[420px]' : 'min-h-[500px] h-[600px]'}`}
+      bodyClassName={`flex-1 min-h-0 flex flex-col ${bodyClassName}`}
+    >
+      {children}
+    </TestSection>
+  );
+}
+
 const LactateCurve = ({ mockData, demoMode = false }) => {
   const { user } = useAuth();
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
@@ -193,7 +229,7 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
 
   if (!mockData || !mockData.results || mockData.results.length === 0) {
     return (
-      <div className={`w-full ${isMobile ? 'h-[400px]' : 'min-h-[500px] h-[600px]'} bg-white ${isMobile ? 'rounded-lg' : 'rounded-2xl'} shadow-lg ${isMobile ? 'p-3' : 'p-6'} flex flex-col`}>
+      <CurveCard isMobile={isMobile} meta={SPORT_NAME[mockData?.sport] || null} bodyClassName={isMobile ? 'p-3' : 'p-6'}>
         <div className="flex flex-col items-center justify-center flex-1">
           <HelpCircle size={isMobile ? 32 : 48} className="text-gray-300 mb-4" />
           <p className={`text-gray-500 text-center ${isMobile ? 'text-sm' : ''}`}>
@@ -205,7 +241,7 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
             </p>
           )}
         </div>
-      </div>
+      </CurveCard>
     );
   }
 
@@ -260,7 +296,7 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
   if (validResults.length < 2) {
     console.log('Not enough valid results:', validResults.length);
     return (
-      <div className={`w-full ${isMobile ? 'h-[400px]' : 'min-h-[500px] h-[600px]'} bg-white ${isMobile ? 'rounded-lg' : 'rounded-2xl'} shadow-lg ${isMobile ? 'p-3' : 'p-6'} flex flex-col`}>
+      <CurveCard isMobile={isMobile} meta={SPORT_NAME[mockData?.sport] || null} bodyClassName={isMobile ? 'p-3' : 'p-6'}>
         <div className="flex flex-col items-center justify-center flex-1">
           <Info size={isMobile ? 32 : 48} className="text-yellow-400 mb-4" />
           <p className={`text-gray-600 text-center ${isMobile ? 'text-sm' : ''}`}>
@@ -277,7 +313,7 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
             Number of results: {mockData.results?.length || 0}
           </p>
         </div>
-      </div>
+      </CurveCard>
     );
   }
 
@@ -717,16 +753,14 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
       },
     };
 
+    const curveMeta = `${SPORT_NAME[mockData.sport] || mockData.sport || 'Test'} · ${validResults.length} stages`;
     return (
-      <div className={`relative w-full ${isMobile ? 'h-[400px]' : 'min-h-[500px] h-[600px]'} ${isMobile ? 'p-1.5' : 'p-2 md:p-4'} bg-white ${isMobile ? 'rounded-lg' : 'rounded-2xl'} shadow-lg overflow-hidden flex flex-col`}>
-        <button
-          onClick={() => setShowGlossary(true)}
-          className="absolute top-2 right-2 z-10 p-1.5 hover:bg-gray-100 rounded-full transition-colors"
-          aria-label="Show glossary"
-          title="Training Glossary"
-        >
-          <InformationCircleIcon className="w-5 h-5 text-gray-500" />
-        </button>
+      <CurveCard
+        isMobile={isMobile}
+        meta={curveMeta}
+        onGlossary={() => setShowGlossary(true)}
+        bodyClassName={isMobile ? 'p-1.5' : 'p-2 md:p-3'}
+      >
         <div className="flex-1 min-h-0" style={{ width: '100%', minWidth: 0, maxWidth: '100%' }}>
           <Line ref={chartRef} data={data} options={options} />
         </div>
@@ -736,12 +770,12 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
           initialTerm="Lactate Curve"
           initialCategory="Lactate"
         />
-      </div>
+      </CurveCard>
     );
   } catch (error) {
     console.error('Error calculating lactate curve:', error);
     return (
-      <div className={`w-full ${isMobile ? 'h-[400px]' : 'min-h-[500px] h-[600px]'} bg-white ${isMobile ? 'rounded-lg' : 'rounded-2xl'} shadow-lg ${isMobile ? 'p-3' : 'p-6'} flex flex-col`}>
+      <CurveCard isMobile={isMobile} meta={SPORT_NAME[mockData?.sport] || null} bodyClassName={isMobile ? 'p-3' : 'p-6'}>
         <div className="flex flex-col items-center justify-center flex-1">
           <div className={`text-red-500 mb-4 ${isMobile ? 'text-2xl' : 'text-4xl'}`}>⚠️</div>
         <p className={`text-red-500 text-center ${isMobile ? 'text-sm' : ''}`}>Error calculating lactate curve</p>
@@ -751,7 +785,7 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
             </p>
           )}
         </div>
-      </div>
+      </CurveCard>
     );
   }
 };

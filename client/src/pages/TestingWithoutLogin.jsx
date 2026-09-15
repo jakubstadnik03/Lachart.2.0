@@ -901,9 +901,7 @@ const TestingWithoutLogin = () => {
                   {hasValidData && (
                     <div className="mt-6 space-y-5">
                       {/* Free: the real lactate curve — the proof the tool works */}
-                      <div className="rounded-2xl overflow-hidden border border-gray-100">
-                        <LactateCurve mockData={prepareCalculatorData()} demoMode />
-                      </div>
+                      <LactateCurve mockData={prepareCalculatorData()} demoMode />
 
                       {/* Free teaser: LT2 value */}
                       {lt2Teaser && (

@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthProvider';
 import { resolveDistanceUnitSystem } from '../../utils/unitsConverter';
 import { resolveLtAnchorsFromTest } from './zoneCalculator';
+import { ScaleIcon } from '@heroicons/react/24/outline';
+import TestSection from './TestSection';
 
 const TestSelector = ({ tests = [], selectedTests = [], onTestSelect, selectedSport = 'all' }) => {
   const { user } = useAuth();
@@ -144,17 +146,8 @@ const TestSelector = ({ tests = [], selectedTests = [], onTestSelect, selectedSp
     }
   };
 
-  return (
-    <div className={`bg-white ${isMobile ? 'rounded-lg' : 'rounded-xl'} shadow-sm ${isMobile ? 'p-3' : 'p-6'}`}>
-      <div className={`flex ${isMobile ? 'flex-col' : 'justify-between items-center'} ${isMobile ? 'gap-2 mb-3' : 'mb-4'}`}>
-        <h2 className={`${isMobile ? 'text-base' : 'text-xl'} font-semibold`}>Previous Tests</h2>
-        <div className={`flex ${isMobile ? 'flex-col' : 'items-center'} ${isMobile ? 'gap-2' : 'gap-4'}`}>
-        <p className={`${isMobile ? 'text-xs' : 'text-sm'} text-gray-500`}>
-            Selected: {selectedTests.length}
-          {selectedTests.length > 0 && selectedTests[0] && ` (${selectedTests[0].sport})`}
-        </p>
-          {/* Sport Filter */}
-          <div className={`flex ${isMobile ? 'gap-1' : 'gap-2'} ${isMobile ? 'flex-wrap' : ''}`}>
+  const sportFilter = (
+          <div className={`flex ${isMobile ? 'gap-1' : 'gap-1.5'} ${isMobile ? 'flex-wrap' : ''}`}>
             <button
               onClick={() => {
                 setLocalSportFilter('all');
@@ -212,9 +205,19 @@ const TestSelector = ({ tests = [], selectedTests = [], onTestSelect, selectedSp
               Swim
             </button>
           </div>
-        </div>
-      </div>
-      
+  );
+
+  return (
+    <TestSection
+      id="compare-tests"
+      icon={ScaleIcon}
+      tint="sky"
+      title="Compare tests"
+      subtitle="Pick two or more tests to lay their curves over each other."
+      meta={selectedTests.length > 0 ? `${selectedTests.length} selected${selectedTests[0]?.sport ? ` · ${selectedTests[0].sport}` : ''}` : null}
+      actions={sportFilter}
+      collapsible
+    >
       {sortedTests.length === 0 ? (
         <p className={`${isMobile ? 'text-xs' : 'text-sm'} text-gray-500 text-center ${isMobile ? 'py-2' : 'py-4'}`}>
           No tests found for {localSportFilter === 'all' ? 'any sport' : localSportFilter}
@@ -344,8 +347,8 @@ const TestSelector = ({ tests = [], selectedTests = [], onTestSelect, selectedSp
           )}
         </>
       )}
-    </div>
+    </TestSection>
   );
 };
 
-export default TestSelector; 
+export default TestSelector;

@@ -15,8 +15,9 @@ import { useAuth } from '../../context/AuthProvider';
 import { getUserUnits, resolveDistanceUnitSystem } from '../../utils/unitsConverter';
 import { usePremium } from '../../hooks/usePremium';
 import UpgradeModal from '../UpgradeModal';
-import { LockClosedIcon } from '@heroicons/react/24/outline';
+import { LockClosedIcon, ClipboardDocumentListIcon } from '@heroicons/react/24/outline';
 import { trackEvent } from '../../utils/analytics';
+import TestSection from './TestSection';
 
 const KM_PER_MILE = 1.609344;
 
@@ -109,13 +110,13 @@ function buildPredictorTraining(externalActivities, sport) {
 
 function PremiumLockedCard({ title, description, onUpgrade, ctaLabel = 'Upgrade to Pro' }) {
   return (
-    <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-8 flex flex-col items-center justify-center gap-3 text-center min-h-[160px]">
+    <div className="rounded-2xl bg-white ring-1 ring-slate-200/70 shadow-sm p-8 flex flex-col items-center justify-center gap-3 text-center min-h-[160px]">
       <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
         <LockClosedIcon className="w-5 h-5 text-primary" />
       </div>
       <div>
-        <h3 className="font-semibold text-gray-900 text-sm mb-1">{title}</h3>
-        <p className="text-xs text-gray-500">{description}</p>
+        <h3 className="font-bold text-slate-900 text-sm mb-1">{title}</h3>
+        <p className="text-xs text-slate-500">{description}</p>
       </div>
       <button
         onClick={onUpgrade}
@@ -509,7 +510,7 @@ const PreviousTestingComponent = ({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="text-center py-4 text-gray-500"
+            className="rounded-2xl bg-white ring-1 ring-slate-200/70 shadow-sm text-center py-8 text-sm text-slate-500"
           >
             No tests available for {selectedSport === 'all' ? 'any sport' : selectedSport}
           </motion.div>
@@ -523,12 +524,21 @@ const PreviousTestingComponent = ({
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}
             transition={{ duration: 0.3 }}
-            className="flex flex-col lg:flex-row justify-center gap-4 lg:gap-6 mt-4 sm:mt-5"
+            className="flex flex-col lg:flex-row justify-center gap-4 lg:gap-6"
           >
             <div className={`${glucoseColumnHidden ? 'lg:flex-[2]' : 'lg:flex-[2.5]'} w-full`}>
               <LactateCurve mockData={currentTest} />
             </div>
-            <div className={`lg:flex-1 w-full bg-white rounded-2xl shadow-lg p-1 sm:p-2 md:p-6 min-h-[380px] sm:min-h-[500px] lg:h-[600px] flex flex-col overflow-hidden`}>
+            <TestSection
+              id="test-details"
+              icon={ClipboardDocumentListIcon}
+              tint="amber"
+              title="Test details"
+              subtitle="Stages as measured — edit, add rows, save."
+              flush
+              className="lg:flex-1 w-full min-h-[380px] sm:min-h-[500px] lg:h-[600px] flex flex-col overflow-hidden"
+              bodyClassName="flex-1 min-h-0 flex flex-col overflow-hidden p-1 sm:p-2 md:p-4"
+            >
               <TestingForm
                 testData={currentTest}
                 onSave={handleTestUpdate}
@@ -537,7 +547,7 @@ const PreviousTestingComponent = ({
                 onDelete={handleTestDelete}
                 isPremium={isPremium}
               />
-            </div>
+            </TestSection>
           </motion.div>
       )}
       </AnimatePresence>
@@ -622,7 +632,7 @@ const PreviousTestingComponent = ({
           >
             <Suspense
               fallback={
-                <div className="rounded-xl border border-gray-100 bg-white/80 p-4 text-center text-sm text-gray-500">
+                <div className="rounded-2xl bg-white ring-1 ring-slate-200/70 shadow-sm p-4 text-center text-sm text-slate-500">
                   Loading race predictor…
                 </div>
               }
@@ -669,7 +679,7 @@ const PreviousTestingComponent = ({
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}
             transition={{ duration: 0.3 }}
-            className="mt-6 overflow-visible"
+            className="overflow-visible"
           >
             <TestComparison tests={selectedTests} />
           </motion.div>

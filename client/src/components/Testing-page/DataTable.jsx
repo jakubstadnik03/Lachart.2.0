@@ -4321,11 +4321,14 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
     // Seznam metod, včetně Log-log
     const methods = [
       'Log-log',
+      // Metadata riding on the same object — not methods, never rows.
       ...Object.keys(thresholds).filter(k =>
         k !== 'Log-log' &&
         k !== 'heartRates' &&
         k !== 'lactates' &&
-        k !== 'testAnalysis'
+        k !== 'testAnalysis' &&
+        k !== 'confidence' &&
+        k !== 'engine'
       )
     ];
   

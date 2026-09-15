@@ -45,7 +45,7 @@ function DateButton({ test, date, isSelected, onClick, disambiguate }) {
       aria-pressed={isSelected}
       title={test?._id ? `ID: ${test._id}` : undefined}
       className={`px-2 sm:px-3 py-1.5 sm:py-2 my-auto rounded-md transition-colors whitespace-nowrap text-xs sm:text-sm touch-manipulation min-w-[60px] sm:min-w-[90px] text-center flex-shrink-0
-        ${isSelected ? "bg-zinc-50 font-semibold shadow-sm ring-1 ring-zinc-300" : "hover:bg-zinc-50 focus:bg-zinc-50 active:bg-zinc-50"}`}
+        ${isSelected ? "bg-white font-semibold text-slate-900 shadow-sm ring-1 ring-slate-200" : "text-slate-600 hover:bg-white/70 focus:bg-white/70 active:bg-white/70"}`}
     >
       {label}
     </button>
@@ -210,7 +210,12 @@ function DateSelector({ tests, onSelectTest, selectedTestId }) {
 
   return (
     <div className="relative w-full">
-      <div className="text-lg sm:text-xl font-semibold text-black mb-2 sm:mb-3">Previous testings</div>
+      <div className="mb-2 flex items-baseline gap-2 px-1">
+        <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Previous tests</span>
+        {Array.isArray(tests) && tests.length > 0 && (
+          <span className="text-[11px] text-slate-400 tabular-nums">{tests.length}</span>
+        )}
+      </div>
       <div className="relative">
         {/* Vlevo */}
         {((isMobile && customShowLeftArrow) || (!isMobile && showLeftArrow)) && (
@@ -231,7 +236,7 @@ function DateSelector({ tests, onSelectTest, selectedTestId }) {
         <div
           ref={scrollContainerRef}
           className={
-            'flex gap-1 sm:gap-1.5 items-center py-1.5 sm:py-2 mt-2 text-xs sm:text-sm whitespace-nowrap rounded-md bg-zinc-100 sm:bg-zinc-150 text-stone-500 sm:text-stone-600 overflow-x-auto scrollbar-hide touch-pan-x snap-x snap-mandatory relative ' +
+            'flex gap-1 sm:gap-1.5 items-center py-1.5 sm:py-2 text-xs sm:text-sm whitespace-nowrap rounded-xl bg-slate-100 ring-1 ring-slate-200/60 text-slate-600 overflow-x-auto scrollbar-hide touch-pan-x snap-x snap-mandatory relative ' +
             (isMobile ? 'pl-[52px] pr-[52px] justify-center' : 'pr-2 sm:pr-1 pl-2 sm:pl-1.5')
           }
           style={{

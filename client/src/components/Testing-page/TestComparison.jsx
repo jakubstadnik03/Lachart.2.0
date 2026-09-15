@@ -13,6 +13,8 @@ import {
 import { calculateThresholds, calculatePolynomialRegression, calculatePolynomialRegressionLactateToHR } from './DataTable';
 import { convertPowerToPace } from '../../utils/paceConverter';
 import { calculateZonesFromTest } from './zoneCalculator';
+import { ArrowsRightLeftIcon } from '@heroicons/react/24/outline';
+import TestSection from './TestSection';
 
 ChartJS.register(
   CategoryScale,
@@ -39,11 +41,11 @@ const TestComparison = ({ tests = [] }) => {
   // Early return if no tests or tests array is empty
   if (!tests || !Array.isArray(tests) || tests.length === 0) {
     return (
-      <div className="w-full p-2 sm:p-4 bg-white rounded-2xl shadow-lg overflow-visible">
-        <div className="text-center py-4 text-gray-500">
+      <TestSection id="test-comparison" icon={ArrowsRightLeftIcon} tint="sky" title="Curves side by side">
+        <div className="text-center py-4 text-slate-500">
           No tests selected for comparison
         </div>
-      </div>
+      </TestSection>
     );
   }
 
@@ -62,11 +64,11 @@ const TestComparison = ({ tests = [] }) => {
 
   if (validTests.length === 0) {
     return (
-      <div className="w-full p-2 sm:p-4 bg-white rounded-2xl shadow-lg overflow-visible">
-        <div className="text-center py-4 text-gray-500">
+      <TestSection id="test-comparison" icon={ArrowsRightLeftIcon} tint="sky" title="Curves side by side">
+        <div className="text-center py-4 text-slate-500">
           No valid test data available for comparison
         </div>
-      </div>
+      </TestSection>
     );
   }
 
@@ -390,32 +392,47 @@ const TestComparison = ({ tests = [] }) => {
     },
   };
 
+  const compareActions = (
+    <>
+      <button
+        type="button"
+        onClick={() => setShowHeartRateGraph(s => !s)}
+        className={`px-2.5 py-1.5 text-[11px] font-semibold rounded-lg border transition-colors ${
+          showHeartRateGraph ? 'bg-primary border-primary text-white' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+        }`}
+        title={showHeartRateGraph ? 'Switch to power/pace vs lactate' : 'Switch to heart rate vs lactate'}
+      >
+        HR vs La
+      </button>
+      <button
+        type="button"
+        onClick={() => setShowThresholdPoints(s => !s)}
+        className={`px-2.5 py-1.5 text-[11px] font-semibold rounded-lg border transition-colors ${
+          showThresholdPoints ? 'bg-primary border-primary text-white' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+        }`}
+        title={showThresholdPoints ? 'Hide LT1, LT2, OBLA and show only curves and points' : 'Show threshold points again'}
+      >
+        Thresholds
+      </button>
+    </>
+  );
+
+  const dateSpan = validTests.length > 1
+    ? `${new Date(validTests[0].date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })} → ${new Date(validTests[validTests.length - 1].date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}`
+    : new Date(validTests[0].date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+
   return (
-    <div className="w-full p-2 sm:p-4 bg-white rounded-2xl shadow-lg overflow-visible">
-      <div className="flex items-center justify-end gap-2 mb-2 flex-wrap">
-        <button
-          type="button"
-          onClick={() => setShowHeartRateGraph(s => !s)}
-          className={`px-2.5 py-1.5 text-xs font-medium rounded-lg border transition-colors ${
-            showHeartRateGraph ? 'bg-white border-gray-200 text-gray-700 shadow-sm' : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100'
-          }`}
-          title={showHeartRateGraph ? 'Switch to power/pace vs lactate' : 'Switch to heart rate vs lactate'}
-        >
-          {showHeartRateGraph ? <span><span className="hidden sm:inline">Show </span>Power/pace</span> : <span><span className="hidden sm:inline">Show </span>HR graph</span>}
-        </button>
-        <button
-          type="button"
-          onClick={() => setShowThresholdPoints(s => !s)}
-          className={`px-2.5 py-1.5 text-xs font-medium rounded-lg border transition-colors ${
-            showThresholdPoints
-              ? 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
-              : 'bg-gray-100 border-gray-200 text-gray-600'
-          }`}
-          title={showThresholdPoints ? 'Hide LTP1, LTP2, OBLA, etc. and show only curves and data points' : 'Show threshold points again'}
-        >
-          {showThresholdPoints ? <span><span className="hidden sm:inline">Hide </span>Thresholds</span> : <span><span className="hidden sm:inline">Show </span>Thresholds</span>}
-        </button>
-      </div>
+    <TestSection
+      id="test-comparison"
+      icon={ArrowsRightLeftIcon}
+      tint="sky"
+      title="Curves side by side"
+      meta={`${validTests.length} ${validTests.length === 1 ? 'test' : 'tests'} · ${dateSpan}`}
+      subtitle="Oldest to newest, LT1 and LT2 of each drawn in its colour; the zones table shows what moved between tests."
+      actions={compareActions}
+      collapsible
+      bodyClassName="!px-2 sm:!px-4"
+    >
       {/* Horizontal scroll only around the chart — avoid root overflow-x-auto (forces overflow-y: auto and can clip content below). */}
       <div className="relative w-full min-h-0 overflow-x-auto -mx-1 px-1">
       <div className="relative w-full h-[300px] sm:h-[450px] md:h-[450px] min-w-[280px]">
@@ -555,18 +572,18 @@ const TestComparison = ({ tests = [] }) => {
         };
 
         return (
-          <div className="mt-6 overflow-x-auto pb-2">
-            <h3 className="text-lg font-semibold mb-4">Training Zones Comparison</h3>
-            <p className="text-xs text-gray-500 mb-2">
-              <span className="inline-flex items-center gap-1"><span className="text-emerald-600 font-medium">↑ improvement</span></span>
+          <div className="mt-5 overflow-x-auto pb-2">
+            <h3 className="text-[13.5px] font-bold text-slate-900">Training zones, test by test</h3>
+            <p className="text-[11px] text-slate-500 mt-0.5 mb-2.5">
+              <span className="text-emerald-600 font-semibold">↑ improvement</span>
               {' · '}
-              <span className="inline-flex items-center gap-1"><span className="text-red-600 font-medium">↓ decline</span></span>
+              <span className="text-rose-600 font-semibold">↓ decline</span>
               {' · '}
-              Change columns = vs previous test.
+              change columns are against the previous test.
             </p>
-            <table className="min-w-full text-xs sm:text-sm border-collapse border border-gray-200 rounded-lg overflow-hidden">
+            <table className="min-w-full text-xs sm:text-sm border-collapse border border-slate-200 rounded-lg overflow-hidden">
               <thead>
-                <tr className="bg-gray-100 border-b-2 border-gray-200">
+                <tr className="bg-slate-50 border-b border-slate-200">
                   <th className="px-3 py-2 text-left font-semibold border-r border-gray-200">Zone</th>
                   {validTests.map((test, i) => (
                     <React.Fragment key={i}>
@@ -650,7 +667,7 @@ const TestComparison = ({ tests = [] }) => {
           </div>
         );
       })()}
-    </div>
+    </TestSection>
   );
 };
 
