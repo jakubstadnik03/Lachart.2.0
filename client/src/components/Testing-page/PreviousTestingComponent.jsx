@@ -534,7 +534,6 @@ const PreviousTestingComponent = ({
               icon={ClipboardDocumentListIcon}
               tint="amber"
               title="Test details"
-              subtitle="Stages as measured — edit, add rows, save."
               flush
               className="lg:flex-1 w-full min-h-[380px] sm:min-h-[500px] lg:h-[600px] flex flex-col overflow-hidden"
               bodyClassName="flex-1 min-h-0 flex flex-col overflow-hidden p-1 sm:p-2 md:p-4"
