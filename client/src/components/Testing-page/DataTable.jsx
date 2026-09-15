@@ -8,6 +8,7 @@ import { useAuth } from '../../context/AuthProvider';
 import { getEffectiveLactateInputMode, getLactateDisplayMode } from '../../utils/lactateTestInputMode';
 import { resolveDistanceUnitSystem } from '../../utils/unitsConverter';
 import { computeLactateThresholds } from './lactateThresholdSegmented';
+import { analyzeLactateTest } from '../../utils/lactateThresholdEngine';
 
 /** Dev: podrobné logy LT1/LT2 jsou ve vývoji zapnuté výchozí. Vypnout: `localStorage.setItem('lachart:debugThresholds','0')`. */
 export const isThresholdDebugEnabled = () => {
@@ -2952,7 +2953,18 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
       maxLactate: Number(mockData?.maxLactate ?? mockData?.recoveryLactate3min) || null,
       stageDurationSec: Number(mockData?.stageDurationSec) || null,
     };
-    const { ltp1, ltp2, ltp1Point, ltp2Point } = findLactateThresholds(sortedResults, baseLactate, sport, protocolMeta);
+    // LTP1 / LTP2 come from utils/lactateThresholdEngine — one engine, read
+    // off a monotone curve, tuned against the coach-corrected tests in the
+    // database (see its header). The pipeline below it, findLactateThresholds
+    // and the guards that follow, is the previous answer: it still runs only
+    // when the engine has nothing to say (fewer than three usable stages, or
+    // lactate falling with intensity), and the method table (Log-log, IAT,
+    // OBLA, Bsln) is computed either way. Skipping it is also what makes this
+    // function cheap: the legacy path bootstraps 200 regressions per call.
+    const engine = analyzeLactateTest({ sport, stages: sortedResults, baseLactate });
+    const { ltp1, ltp2, ltp1Point, ltp2Point } = engine
+      ? { ltp1: null, ltp2: null, ltp1Point: null, ltp2Point: null }
+      : findLactateThresholds(sortedResults, baseLactate, sport, protocolMeta);
 
     // Definice cílových laktátů. Stejná sanity check jako uvnitř
     // findLactateThresholds: baseLactate se nesmí dostat nad nejmenší naměřenou
@@ -3773,6 +3785,29 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
       }
     }
 
+    // ── The thresholds themselves ───────────────────────────────────────────
+    if (engine) {
+      const isPaceSportNow = sport === 'run' || sport === 'swim';
+      thresholds['LTP1'] = engine.lt1.value;
+      thresholds.lactates['LTP1'] = engine.lt1.lactate;
+      thresholds.heartRates['LTP1'] = engine.lt1.heartRate;
+      thresholds['LTP2'] = engine.lt2.value;
+      thresholds.lactates['LTP2'] = engine.lt2.lactate;
+      thresholds.heartRates['LTP2'] = engine.lt2.heartRate;
+      thresholds.confidence = engine.confidence;
+      // Same ratio the table always showed: LT2 over LT1 as intensities.
+      const ratio = engine.ratio;
+      const maxRatio = isPaceSportNow ? 2.5 : 1.5;
+      if (Number.isFinite(ratio) && ratio >= 1.03 && ratio <= maxRatio) thresholds['LTRatio'] = ratio.toFixed(2);
+      thresholds.engine = {
+        baseline: engine.baseline,
+        confidence: engine.confidence,
+        notes: engine.notes,
+        lt1: { candidates: engine.lt1.candidates, clamped: engine.lt1.clamped },
+        lt2: { candidates: engine.lt2.candidates, voters: engine.lt2.voters, fallback: engine.lt2.fallback },
+      };
+    }
+
     // ── Manual override: if coach/athlete pinned LT1 or LT2, apply now ──────────
     const ovr = mockData?.thresholdOverrides;
     if (ovr) {
@@ -3821,7 +3856,7 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
       }
     }
 
-    // ── LT2 upper-bound guard against polynomial overshoot ─────────────────
+    // ── LT2 upper-bound guard against polynomial overshoot (legacy path) ───
     // The cap chain above (MAX_LTP2_LACTATE, adaptiveLtp2Cap) checks the
     // POLYNOMIAL lactate at LT2. On tests with a flat aerobic baseline and a
     // sharp explosive finish (4.2 → 6.3 mmol in the last 10 sec/km), the
@@ -3831,7 +3866,7 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
     // checking the RAW interpolated lactate at the chosen LT2 and rewind to
     // OBLA 4.0 (or the slowest pace whose raw lactate ≤ 4.0) when it exceeds
     // 5.0 mmol.
-    try {
+    if (!engine) try {
       const rawLactateAtPowerForGuard = (P) => {
         if (!Number.isFinite(P)) return null;
         const pairs = (sortedResults || [])

@@ -4,6 +4,8 @@
  * - Focuses on deterministic threshold values for reports/emails
  */
 
+const { analyzeLactateTest } = require('./lactateThresholdEngine');
+
 // Linear interpolation helper
 function interpolate(x0, y0, x1, y1, targetY) {
   if (y1 === y0) return x0;
@@ -468,16 +470,35 @@ function calculateThresholds(testData) {
     }
   }
 
-  if (thresholds['LTP1'] && thresholds['LTP2'] && thresholds['LTP1'] > 0 && thresholds['LTP2'] > 0) {
-    const ratio = isPaceSport
-      ? (thresholds['LTP1'] / thresholds['LTP2'])
-      : (thresholds['LTP2'] / thresholds['LTP1']);
-    if (Number.isFinite(ratio) && ratio >= 1.05 && ratio <= (isPaceSport ? 2.5 : 1.5)) {
-      thresholds['LTRatio'] = ratio.toFixed(2);
+  // The thresholds themselves come from the shared engine (the generated
+  // copy of client/src/utils/lactateThresholdEngine.js), so a report e-mail
+  // and the calculator name the same LT1 and LT2. Everything above still
+  // fills the method table and stands in when the engine has nothing to
+  // read (fewer than three usable stages, lactate falling with intensity).
+  const engine = analyzeLactateTest({ sport, stages: sortedResults, baseLactate });
+  if (engine) {
+    thresholds['LTP1'] = engine.lt1.value;
+    thresholds.lactates['LTP1'] = engine.lt1.lactate;
+    thresholds.heartRates['LTP1'] = engine.lt1.heartRate;
+    thresholds['LTP2'] = engine.lt2.value;
+    thresholds.lactates['LTP2'] = engine.lt2.lactate;
+    thresholds.heartRates['LTP2'] = engine.lt2.heartRate;
+    thresholds.confidence = engine.confidence;
+    delete thresholds['LTRatio'];
+    if (Number.isFinite(engine.ratio) && engine.ratio >= 1.03 && engine.ratio <= (isPaceSport ? 2.5 : 1.5)) {
+      thresholds['LTRatio'] = engine.ratio.toFixed(2);
     }
+  } else {
+    if (thresholds['LTP1'] && thresholds['LTP2'] && thresholds['LTP1'] > 0 && thresholds['LTP2'] > 0) {
+      const ratio = isPaceSport
+        ? (thresholds['LTP1'] / thresholds['LTP2'])
+        : (thresholds['LTP2'] / thresholds['LTP1']);
+      if (Number.isFinite(ratio) && ratio >= 1.05 && ratio <= (isPaceSport ? 2.5 : 1.5)) {
+        thresholds['LTRatio'] = ratio.toFixed(2);
+      }
+    }
+    applyLt2UpperGuard(thresholds, sortedResults, isPaceSport);
   }
-
-  applyLt2UpperGuard(thresholds, sortedResults, isPaceSport);
 
   // Manual override: if coach/athlete pinned LT1 or LT2, apply over auto-calculation
   const ovr = testData?.thresholdOverrides;

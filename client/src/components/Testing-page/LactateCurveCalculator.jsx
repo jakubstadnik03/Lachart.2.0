@@ -3428,7 +3428,7 @@ const LactateCurveCalculator = ({
                     >
                       ?
                       <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-56 rounded-xl bg-gray-900 px-3 py-2 text-white text-[11px] leading-snug opacity-0 group-hover:opacity-100 group-focus:opacity-100 transition-opacity z-50 shadow-xl">
-                        Score 0–100 reflecting the quality of lactate data. Based on number of data points, consistency of the lactate curve, and how clearly the inflection points are defined. Higher = more reliable thresholds.
+                        Score 0–100: how closely OBLA 4.0, modified D-max and IAT agreed on LT2, how many stages the test had, whether it reached 4 mmol/L, how clean the readings were, and whether LT2/LT1 is a ratio a human produces. Higher = more reliable thresholds.
                         <span className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-900" />
                       </span>
                     </span>
@@ -3449,6 +3449,11 @@ const LactateCurveCalculator = ({
                     </span>
                     <span className="text-gray-400">/100</span>
                   </div>
+                )}
+                {thresholds.engine?.notes?.length > 0 && (
+                  <ul className="mt-1.5 space-y-0.5 text-[11px] text-gray-500 leading-snug">
+                    {thresholds.engine.notes.map((note) => <li key={note}>· {note}</li>)}
+                  </ul>
                 )}
               </div>
             </>
