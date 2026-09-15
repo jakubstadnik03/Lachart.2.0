@@ -131,38 +131,6 @@ function DeferredVercelTrackers() {
   );
 }
 
-/** Defer third-party BuyMeACoffee widget until idle. */
-function DeferredBuyMeACoffeeWidget() {
-  const [Widget, setWidget] = useState(null);
-
-  useEffect(() => {
-    if (isCapacitorNative() || process.env.NODE_ENV !== 'production') return undefined;
-    let cancelled = false;
-    let idleId;
-    let timeoutId;
-    const load = () => {
-      import('./components/BuyMeACoffeeWidget')
-        .then((m) => {
-          if (!cancelled) setWidget(() => m.default);
-        })
-        .catch(() => {});
-    };
-
-    if (typeof requestIdleCallback !== 'undefined') {
-      idleId = requestIdleCallback(() => load(), { timeout: 12000 });
-    } else {
-      timeoutId = setTimeout(load, 7000);
-    }
-    return () => {
-      cancelled = true;
-      if (idleId != null) cancelIdleCallback(idleId);
-      if (timeoutId != null) clearTimeout(timeoutId);
-    };
-  }, []);
-
-  if (!Widget) return null;
-  return <Widget />;
-}
 
 // Root route ("/"). On web this is the marketing About page. In the native app
 // "/" used to be the LoginPage unconditionally — so opening the app from the
@@ -553,7 +521,6 @@ function App() {
                   the native shell layout. */}
               <WorkoutResumeBanner />
               {isProd && <DeferredVercelTrackers />}
-              {isProd && <DeferredBuyMeACoffeeWidget />}
             </WorkoutSessionProvider>
           </TrainingProvider>
           </AthleteSelectionProvider>

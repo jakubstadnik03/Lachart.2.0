@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import { Helmet } from 'react-helmet';
 import { Link } from 'react-router-dom';
 import { blogPosts } from './blogPosts';
+import BackToTop from '../../components/About/BackToTop';
 import { ArrowRightIcon, ClockIcon, TagIcon, CalendarDaysIcon } from '@heroicons/react/24/outline';
 
 const CATEGORY_STYLE = {
@@ -302,6 +303,7 @@ const BlogIndex = () => {
 
         </div>
 
+        <BackToTop />
         {/* ── Footer ─────────────────────────────────────── */}
         <footer className="border-t border-gray-100 bg-gray-50">
           <div className="max-w-6xl mx-auto px-4 sm:px-6 py-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-gray-500">

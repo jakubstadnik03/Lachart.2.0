@@ -1,6 +1,7 @@
 import * as React from "react";
 import { Link } from "react-router-dom";
 import { isCapacitorNative } from "../utils/isNativeApp";
+import BackToTop from "./About/BackToTop";
 
 export default function Footer() {
   // App Store guideline 3.1.1 prohibits external donation links inside iOS
@@ -9,6 +10,8 @@ export default function Footer() {
   // hidden in the native shell. Web users keep the link.
   const isNative = isCapacitorNative();
   return (
+    <>
+    {!isNative && <BackToTop />}
     <div className="flex flex-wrap gap-4 sm:gap-10 justify-between items-center px-4 sm:px-6 py-4 w-full text-sm leading-none bg-white border-t border-gray-200">
       <Link to="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
         <img src="/images/LaChart.png" alt="LaChart" className="h-7 w-auto object-contain" />
@@ -34,5 +37,6 @@ export default function Footer() {
         )}
       </div>
     </div>
+    </>
   );
 }

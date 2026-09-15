@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { Helmet } from 'react-helmet';
 import { ArrowLeftIcon, ClockIcon, CalendarDaysIcon, TagIcon } from '@heroicons/react/24/outline';
 import { blogPosts } from './blogPosts';
+import BackToTop from '../../components/About/BackToTop';
 
 const CATEGORY_STYLE = {
   'Science & Technology': 'bg-violet-100 text-violet-700 border-violet-200',
@@ -317,6 +318,7 @@ const BlogPostLayout = ({
           </div>
         )}
 
+        <BackToTop />
         {/* ── Footer ────────────────────────────────────────────── */}
         <footer className="border-t border-gray-100 bg-gray-50">
           <div className="max-w-6xl mx-auto px-4 sm:px-6 py-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-gray-500">

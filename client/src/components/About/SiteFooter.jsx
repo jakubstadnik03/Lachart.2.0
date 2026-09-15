@@ -1,5 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
+import BackToTop from './BackToTop';
 
 const LC = {
   primaryDark: '#5E6590',
@@ -54,6 +55,8 @@ const linkStyle = { fontSize: 13.5, color: LC.muted, textDecoration: 'none' };
 
 export default function SiteFooter() {
   return (
+    <>
+    <BackToTop />
     <footer style={{ background: '#fff', borderTop: '1px solid ' + LC.border, padding: '40px 24px 24px', marginTop: 40 }}>
       <div
         className="lc-footer-grid"
@@ -101,5 +104,6 @@ export default function SiteFooter() {
         @media (max-width: 480px) { .lc-footer-grid { grid-template-columns: 1fr !important; } }
       `}</style>
     </footer>
+    </>
   );
 }
