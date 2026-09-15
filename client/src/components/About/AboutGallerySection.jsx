@@ -9,46 +9,60 @@ import 'swiper/css/autoplay';
 
 const galleryImages = [
   {
-    src: '/screenshots/dashboard-home.png',
-    webpSrcSet: '/screenshots/dashboard-home-640.webp 640w, /screenshots/dashboard-home-960.webp 960w, /screenshots/dashboard-home-1280.webp 1280w',
+    src: '/screenshots/2026/dashboard.jpg',
+    webpSrcSet: '/screenshots/2026/dashboard-640.webp 640w, /screenshots/2026/dashboard-960.webp 960w, /screenshots/2026/dashboard-1280.webp 1280w',
     sizes: '(min-width: 768px) 600px, (min-width: 640px) 450px, 300px',
-    alt: 'Dashboard Form & Fitness',
-    title: 'Dashboard · CTL / ATL / TSB'
+    alt: 'Dashboard with the week, the daily brief and upcoming races',
+    title: 'Dashboard · your week at a glance'
   },
   {
-    src: '/screenshots/lactate-testing-page.png',
-    webpSrcSet: '/screenshots/lactate-testing-page-640.webp 640w, /screenshots/lactate-testing-page-960.webp 960w, /screenshots/lactate-testing-page-1280.webp 1280w',
+    src: '/screenshots/2026/threshold-analysis.jpg',
+    webpSrcSet: '/screenshots/2026/threshold-analysis-640.webp 640w, /screenshots/2026/threshold-analysis-960.webp 960w, /screenshots/2026/threshold-analysis-1280.webp 1280w',
     sizes: '(min-width: 768px) 600px, (min-width: 640px) 450px, 300px',
-    alt: 'Lactate Testing',
-    title: 'Lactate Testing & LT Trends'
+    alt: 'Lactate test with LT1 and LT2 on the curve and every method side by side',
+    title: 'Lactate testing · threshold analysis'
   },
   {
-    src: '/images/lactate-curve-calculator.png',
-    webpSrcSet: '/images/lactate-curve-calculator-640.webp 640w, /images/lactate-curve-calculator-960.webp 960w, /images/lactate-curve-calculator-1280.webp 1280w',
+    src: '/screenshots/2026/training-detail.jpg',
+    webpSrcSet: '/screenshots/2026/training-detail-640.webp 640w, /screenshots/2026/training-detail-960.webp 960w, /screenshots/2026/training-detail-1280.webp 1280w',
     sizes: '(min-width: 768px) 600px, (min-width: 640px) 450px, 300px',
-    alt: 'Lactate Curve Calculator',
-    title: 'Lactate Curve Calculator'
+    alt: 'Training detail with power, heart rate and speed over distance',
+    title: 'Training · power, HR & speed'
   },
   {
-    src: '/images/Form-fitness-chart.png',
-    webpSrcSet: '/images/Form-fitness-chart-640.webp 640w, /images/Form-fitness-chart-960.webp 960w, /images/Form-fitness-chart-1280.webp 1280w',
+    src: '/screenshots/2026/training-laps.jpg',
+    webpSrcSet: '/screenshots/2026/training-laps-640.webp 640w, /screenshots/2026/training-laps-960.webp 960w, /screenshots/2026/training-laps-1280.webp 1280w',
     sizes: '(min-width: 768px) 600px, (min-width: 640px) 450px, 300px',
-    alt: 'Form & Fitness Chart',
-    title: 'Form & Fitness Trend'
+    alt: 'Training laps with a lactate sample on any interval',
+    title: 'Training · laps & lactate'
   },
   {
-    src: '/images/training-calendar.png',
-    webpSrcSet: '/images/training-calendar-640.webp 640w, /images/training-calendar-960.webp 960w, /images/training-calendar-1280.webp 1280w',
+    src: '/screenshots/2026/workout-builder.jpg',
+    webpSrcSet: '/screenshots/2026/workout-builder-640.webp 640w, /screenshots/2026/workout-builder-960.webp 960w, /screenshots/2026/workout-builder-1280.webp 1280w',
     sizes: '(min-width: 768px) 600px, (min-width: 640px) 450px, 300px',
-    alt: 'Training Calendar',
-    title: 'Training Calendar'
+    alt: 'Planned workout builder with warm-up, intervals and cool-down',
+    title: 'Planner · structured workout'
   },
   {
-    src: '/images/training-analytics.png',
-    webpSrcSet: '/images/training-analytics-640.webp 640w, /images/training-analytics-960.webp 960w, /images/training-analytics-1280.webp 1280w',
+    src: '/screenshots/2026/calendar.jpg',
+    webpSrcSet: '/screenshots/2026/calendar-640.webp 640w, /screenshots/2026/calendar-960.webp 960w, /screenshots/2026/calendar-1280.webp 1280w',
     sizes: '(min-width: 768px) 600px, (min-width: 640px) 450px, 300px',
-    alt: 'Training Analytics',
-    title: 'Analytics & TSS'
+    alt: 'Training calendar for a month with weekly summaries',
+    title: 'Training calendar'
+  },
+  {
+    src: '/screenshots/2026/workout-planner.jpg',
+    webpSrcSet: '/screenshots/2026/workout-planner-640.webp 640w, /screenshots/2026/workout-planner-960.webp 960w, /screenshots/2026/workout-planner-1280.webp 1280w',
+    sizes: '(min-width: 768px) 600px, (min-width: 640px) 450px, 300px',
+    alt: 'Workout planner with a template library and the week ahead',
+    title: 'Workout planner'
+  },
+  {
+    src: '/screenshots/2026/annual-plan.jpg',
+    webpSrcSet: '/screenshots/2026/annual-plan-640.webp 640w, /screenshots/2026/annual-plan-960.webp 960w, /screenshots/2026/annual-plan-1280.webp 1280w',
+    sizes: '(min-width: 768px) 600px, (min-width: 640px) 450px, 300px',
+    alt: 'Annual training plan with load, fitness and race peaks',
+    title: 'Annual training plan'
   },
 ];
 

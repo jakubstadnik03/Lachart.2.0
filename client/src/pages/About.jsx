@@ -503,16 +503,19 @@ export default function About() {
                     page no competitor's homepage shows, and the headline now
                     claims the platform in words rather than needing a
                     screenshot to do it — the badges carry the training half. */}
-                <BrowserFrame label="lachart.net — Lactate Curve">
-                  <img src="/about-design/hero-lactate-curve.jpg" alt="Lactate curve with LT1 and LT2 — LaChart" width="1536" height="1024" style={{ display: 'block', width: '100%', height: 'auto' }} />
+                <BrowserFrame label="lachart.net — Threshold analysis">
+                  <picture>
+                    <source type="image/webp" srcSet="/screenshots/2026/threshold-curve-640.webp 640w, /screenshots/2026/threshold-curve-960.webp 960w, /screenshots/2026/threshold-curve-1280.webp 1280w" sizes="(min-width: 1024px) 560px, 100vw" />
+                    <img src="/screenshots/2026/threshold-curve.jpg" alt="Lactate test with LT1 and LT2 on the curve — LaChart" width="1600" height="1012" style={{ display: 'block', width: '100%', height: 'auto' }} />
+                  </picture>
                 </BrowserFrame>
                 {/* Floating badges */}
                 <FloatingBadge cls="lc-float lc-hero-badge" style={{ top: -14, left: -22 }} icon={
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /></svg>
-                } label="LT2 Threshold" value="340 W" tint={LC.accent} />
+                } label="LT2 Threshold" value="3:33 /km" tint={LC.accent} />
                 <FloatingBadge cls="lc-float lc-hero-badge d2" style={{ bottom: -16, right: -18 }} icon={
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 12l2 2 4-4" /><circle cx="12" cy="12" r="9" /></svg>
-                } label="Zone 2 Power" value="187–255 W" tint={LC.primary} />
+                } label="Zone 2 Pace" value="4:15–4:40 /km" tint={LC.primary} />
                 {/* Was "La baseline 1.2 mmol/L" — a third lactate number on a
                     hero that now claims a whole platform. Form is the other
                     half of the story and the thing a coach checks daily. */}
@@ -672,11 +675,11 @@ export default function About() {
               }}>
                 <div style={{ position: 'relative', flex: 1, minHeight: 280, overflow: 'hidden',
                               background: 'linear-gradient(135deg, ' + LC.primaryTint + ' 0%, #fff 60%)' }}>
-                  <img src="/about-design/hero-lactate-curve.jpg"
+                  <img src="/screenshots/2026/threshold-curve-1280.webp"
                        alt="Lactate curve with LT1 and LT2 thresholds"
                        loading="lazy"
                        style={{ position: 'absolute', inset: 0, width: '100%', height: '100%',
-                                objectFit: 'cover', objectPosition: 'center' }} />
+                                objectFit: 'cover', objectPosition: 'left top' }} />
                 </div>
                 <div style={{ padding: '22px 26px 24px' }}>
                   <span style={{ fontSize: 10.5, fontWeight: 700, color: LC.primary, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
@@ -700,7 +703,7 @@ export default function About() {
               }}>
                 <div style={{ height: 140, overflow: 'hidden',
                               background: 'linear-gradient(135deg, #FFE6DF 0%, #fff 80%)' }}>
-                  <img src="/about-design/training-calendar.png"
+                  <img src="/screenshots/2026/workout-planner-1280.webp"
                        alt="Structured workout planner in the calendar"
                        loading="lazy"
                        style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'top' }} />
@@ -727,7 +730,7 @@ export default function About() {
               }}>
                 <div style={{ height: 140, overflow: 'hidden',
                               background: 'linear-gradient(135deg, #FEF3C7 0%, #fff 80%)' }}>
-                  <img src="/about-design/training-log-page.png"
+                  <img src="/screenshots/2026/training-laps-1280.webp"
                        alt="Per-interval lactate tagging"
                        loading="lazy"
                        style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'top' }} />
@@ -1614,7 +1617,7 @@ export default function About() {
                       lachart.net/lactate-curve-calculator
                     </span>
                   </div>
-                  <img src="/about-design/hero-lactate-curve.jpg"
+                  <img src="/screenshots/2026/threshold-curve-1280.webp"
                        alt="Lactate curve calculator preview"
                        loading="lazy"
                        style={{ display: 'block', width: '100%', height: 'auto' }} />
@@ -2285,12 +2288,12 @@ function PriceCard({ name, price, badge, highlighted, features, ctaLabel, ctaTo,
 
 /* ─── Data tables ─────────────────────────────────────────────────────── */
 const DEEPDIVES = [
-  { eb: 'Core feature', title: 'Lactate Curve <em>Generation</em>', lead: 'Enter your test values — power, heart rate, lactate, pace — and instantly generate the lactate curve. Calculate all critical thresholds in one interactive graph.', bullets: ['Step or ramp protocol — any test design', 'LT1, LT2, OBLA, IAT, D-max, log-log calculated in parallel', 'Baseline adjusts for individual resting lactate'], tags: ['LT1 & LT2', 'OBLA 2.0–3.5', 'IAT', 'D-max', 'Log-log'], img: '/images/lactate_testing-1280.webp', url: 'lachart.net — Lactate Curve · Power vs Lactate' },
+  { eb: 'Core feature', title: 'Lactate Curve <em>Generation</em>', lead: 'Enter your test values — power, heart rate, lactate, pace — and instantly generate the lactate curve. Calculate all critical thresholds in one interactive graph.', bullets: ['Step or ramp protocol — any test design', 'LT1, LT2, OBLA, IAT, D-max, log-log calculated in parallel', 'Baseline adjusts for individual resting lactate'], tags: ['LT1 & LT2', 'OBLA 2.0–3.5', 'IAT', 'D-max', 'Log-log'], img: '/screenshots/2026/threshold-analysis-1280.webp', url: 'lachart.net — Threshold analysis · Pace vs lactate' },
   { eb: 'Zones',         title: 'Train <em>inside your zones</em>, not someone else\'s', lead: 'Your zones are derived from your last lactate test — power, pace and heart rate side by side. Update the test, zones update everywhere.', bullets: ['5-zone or Seiler 3-zone models', 'Power, pace and HR per sport', 'Auto-updates when a new test is recorded'], img: 'zones-generator.png', url: 'lachart.net — Training Zones' },
   { eb: 'Progress tracking', title: 'Historical <em>test comparison</em>', lead: 'Overlay multiple lactate tests to visualize your progression. Watch your LT1 and LT2 move to higher intensities as your fitness improves.', bullets: ['Compare multiple test curves on one chart', 'Track zone shifts over training seasons', 'Visualize threshold improvements', 'Export comparison PDF reports'], img: 'lactate-testing-page.png', url: 'lachart.net — Lactate Testing' },
-  { eb: 'Form & fitness', title: 'Read your <em>fitness, fatigue and form</em> at a glance', lead: 'CTL, ATL and TSB tracked every day. A plain-English status word — fresh, optimal, productive, overreaching — so you always know what today\'s training should be.', bullets: ['Auto-updated from every Strava or FIT activity', '14-day, 6-week and 3-month views', 'Plan race peaks around predicted form'], img: 'dashboard-home.png', url: 'lachart.net — Dashboard' },
-  { eb: 'Training log',  title: 'Every interval, with <em>a lactate dot</em>', lead: 'Open any training and tag any interval with a blood sample. Empty dots are tap-to-log. Every sample feeds back into your curve and your zones.', bullets: ['Power, HR, cadence and pace per interval', 'Auto-detected laps from FIT and Strava', '"Ready for lactate" filter surfaces untagged sessions'], img: 'training-log-page.png', url: 'lachart.net — Training' },
-  { eb: 'Calendar',       title: 'Your whole training <em>week, month, season</em>', lead: 'An interactive calendar of every workout — completed, planned, with lactate, without. Click any day to see the session, intervals and zones.', bullets: ['Color-coded by sport and intensity', 'Strava and FIT activities appear automatically', 'Daily TSS bars track weekly load'], img: 'training-calendar.png', url: 'lachart.net — Calendar' },
+  { eb: 'Form & fitness', title: 'Read your <em>fitness, fatigue and form</em> at a glance', lead: 'CTL, ATL and TSB tracked every day. A plain-English status word — fresh, optimal, productive, overreaching — so you always know what today\'s training should be.', bullets: ['Auto-updated from every Strava or FIT activity', '14-day, 6-week and 3-month views', 'Plan race peaks around predicted form'], img: '/screenshots/2026/dashboard-1280.webp', url: 'lachart.net — Dashboard' },
+  { eb: 'Training log',  title: 'Every interval, with <em>a lactate dot</em>', lead: 'Open any training and tag any interval with a blood sample. Empty dots are tap-to-log. Every sample feeds back into your curve and your zones.', bullets: ['Power, HR, cadence and pace per interval', 'Auto-detected laps from FIT and Strava', '"Ready for lactate" filter surfaces untagged sessions'], img: '/screenshots/2026/training-laps-1280.webp', url: 'lachart.net — Training' },
+  { eb: 'Calendar',       title: 'Your whole training <em>week, month, season</em>', lead: 'An interactive calendar of every workout — completed, planned, with lactate, without. Click any day to see the session, intervals and zones.', bullets: ['Color-coded by sport and intensity', 'Strava and FIT activities appear automatically', 'Daily TSS bars track weekly load'], img: '/screenshots/2026/calendar-1280.webp', url: 'lachart.net — Calendar' },
   { eb: 'PDF reports',    title: 'Professional <em>test reports</em> in seconds', lead: 'Branded PDF with your lactate curve, HR overlay, color-coded zones, threshold table, previous-test comparison and training recommendations.', bullets: ['Curve + HR overlay on a single page', 'All thresholds (LTP1, LTP2, OBLA, IAT)', 'Stage-by-stage results table', 'Personalised training recommendations'], img: 'lachart-test-pdf.png', url: 'test_lisa_2026-04-12.pdf' },
 ];
 
