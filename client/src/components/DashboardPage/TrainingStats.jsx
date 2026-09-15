@@ -128,8 +128,9 @@ function computePaceAxisFromPaces(workPaces, slowPaces, sport) {
   return {
     minPace: minP,
     maxPace: maxP,
-    // Slow pace (higher sec) at top, fast at bottom — matches bar height (faster = taller).
-    paceValues: Array.from({ length: 6 }, (_, i) => Math.round(maxP - (i * (maxP - minP)) / 5)),
+    // Ticks run top to bottom. A faster lap is a taller bar, so the fast
+    // edge (fewest seconds) is the top tick and the slow edge the bottom one.
+    paceValues: Array.from({ length: 6 }, (_, i) => Math.round(minP + (i * (maxP - minP)) / 5)),
   };
 }
 
@@ -151,7 +152,7 @@ function computePaceAxisFromResults(rows, sport) {
   }
   const fastSet = workPaces.length >= 2 ? workPaces : allPaces;
   if (!fastSet.length) {
-    return { minPace: 180, maxPace: 330, paceValues: [330, 300, 270, 240, 210, 180] };
+    return { minPace: 180, maxPace: 330, paceValues: [180, 210, 240, 270, 300, 330] };
   }
   return computePaceAxisFromPaces(fastSet, allPaces.length ? allPaces : fastSet, sport);
 }
@@ -1166,7 +1167,7 @@ export function TrainingStats({
       if (!allRows.length) {
         return {
           powerValues: [],
-          paceValues: [330, 300, 270, 240, 210, 180],
+          paceValues: [180, 210, 240, 270, 300, 330],
           minPower: 0, maxPower: 100, minPace: 180, maxPace: 330,
         };
       }
