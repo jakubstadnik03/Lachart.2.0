@@ -1793,7 +1793,7 @@ export default function About() {
         </Suspense>
 
         {/* ── 23. Footer — shared with /privacy and /terms ─────────────── */}
-        <SiteFooter />
+        <SiteFooter backToTop={false} />
 
       </div>
 

@@ -53,10 +53,15 @@ const COLUMNS = [
 
 const linkStyle = { fontSize: 13.5, color: LC.muted, textDecoration: 'none' };
 
-export default function SiteFooter() {
+/**
+ * `backToTop={false}` for a page that already floats its own way up —
+ * /about has the ringed one with the scroll progress; two arrows stacked in
+ * the same corner was what the reader got otherwise.
+ */
+export default function SiteFooter({ backToTop = true }) {
   return (
     <>
-    <BackToTop />
+    {backToTop && <BackToTop />}
     <footer style={{ background: '#fff', borderTop: '1px solid ' + LC.border, padding: '40px 24px 24px', marginTop: 40 }}>
       <div
         className="lc-footer-grid"
