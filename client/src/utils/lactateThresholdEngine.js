@@ -23,6 +23,8 @@
  *    polynomial does, and every threshold is read off the same curve.
  * 4. Baseline = the lowest of the resting sample and the early stages: lactate
  *    usually dips below rest in the warm-up, and that dip is the true floor.
+ *    When the early stages sit well above the resting sample they are a
+ *    steady state — below LT1 by definition — and become the floor instead.
  * 5. LT1 (aerobic threshold) — where lactate has clearly left the floor.
  *    Seven tenths of the answer is the curve at baseline + 0.8 mmol/L (kept
  *    within 1.5–2.5, or up to 3.0 for an athlete whose floor is high — the
@@ -400,9 +402,16 @@ export function analyzeLactateTest({ sport = 'bike', stages = [], baseLactate = 
   const uMax = u[n - 1];
   const laMax = laIso[n - 1];
 
+  // The floor: the resting sample or the lowest of the early stages,
+  // whichever is lower — lactate usually dips below rest once the athlete is
+  // moving. Unless the early stages sit well above the resting sample: a
+  // flat 2.4 → 2.4 → 3.1 after a 1.5 at rest is a steady state at 2.4, and a
+  // steady state is below LT1 by definition; the rest sample was taken cold.
   const base = Number(baseLactate);
   const earlyMin = Math.min(...laRaw.slice(0, Math.max(2, Math.ceil(n / 2))));
-  const baseline = Number.isFinite(base) && base > 0 ? Math.min(base, earlyMin) : earlyMin;
+  const restIsCold = Number.isFinite(base) && base > 0 && earlyMin - base > 0.5;
+  const baseline = Number.isFinite(base) && base > 0 && !restIsCold ? Math.min(base, earlyMin) : earlyMin;
+  if (restIsCold) notes.push(`resting sample ${base.toFixed(1)} sits well below the first stages; the floor is taken from the stages (${earlyMin.toFixed(1)})`);
 
   // ── LT1 ──────────────────────────────────────────────────────────────────
   const seg = segmentedBreakpoints(u, laIso);

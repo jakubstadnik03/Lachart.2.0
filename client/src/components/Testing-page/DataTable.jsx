@@ -2802,6 +2802,17 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
       return true;
     });
 
+    // The engine reads every stage the athlete measured: its isotonic step
+    // pools a reading that dips below its neighbours instead of deleting it,
+    // and a final all-out stage is data. The pruning below is for the
+    // method table (Log-log, IAT, OBLA, Bsln), which interpolates between
+    // raw stages and has no such step.
+    const stagesForEngine = validResults.map((r) => ({
+      power: Number(String(r.power).replace(',', '.')),
+      lactate: Number(String(r.lactate).replace(',', '.')),
+      heartRate: r.heartRate != null && r.heartRate !== '' ? Number(r.heartRate) : null,
+    }));
+
     // Additional validation: detect and filter unrealistic lactate spikes followed by drops
     // This catches cases like 13.5 mmol/L followed by 6.2 mmol/L (measurement error)
     if (validResults.length > 2) {
@@ -2844,18 +2855,9 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
             }
           }
           
-          // Also check if previous value was much lower (spike of more than 5 mmol/L from previous)
-          if (i > 0) {
-            const prev = sortedByPower[i - 1];
-            const prevLactate = Number(prev.lactate?.toString().replace(',', '.'));
-            const spike = currentLactate - prevLactate;
-            
-            if (spike > 5 && prevLactate < 5) {
-              // Unrealistic spike from low value - likely measurement error
-              console.warn(`[DataTable] Filtering out unrealistic lactate spike: ${currentLactate} mmol/L (spike of ${spike.toFixed(1)} mmol/L from ${prevLactate} mmol/L)`);
-              continue; // Skip this value
-            }
-          }
+          // A jump from the previous stage on its own is not an error: the
+          // last stage of a test is all-out, and 4.7 → 10.5 mmol/L is what
+          // that looks like. Only a spike that drops again (above) is one.
         }
         
         filteredResults.push(current);
@@ -2961,7 +2963,7 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
     // lactate falling with intensity), and the method table (Log-log, IAT,
     // OBLA, Bsln) is computed either way. Skipping it is also what makes this
     // function cheap: the legacy path bootstraps 200 regressions per call.
-    const engine = analyzeLactateTest({ sport, stages: sortedResults, baseLactate });
+    const engine = analyzeLactateTest({ sport, stages: stagesForEngine, baseLactate });
     const { ltp1, ltp2, ltp1Point, ltp2Point } = engine
       ? { ltp1: null, ltp2: null, ltp1Point: null, ltp2Point: null }
       : findLactateThresholds(sortedResults, baseLactate, sport, protocolMeta);

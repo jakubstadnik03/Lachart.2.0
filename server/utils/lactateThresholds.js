@@ -286,7 +286,15 @@ function calculateThresholds(testData) {
       return true;
     });
 
-  // Filter unrealistic lactate spikes (matching client logic)
+  // The engine reads every stage the athlete measured (its isotonic step
+  // pools a dip instead of deleting it, and a final all-out stage is data);
+  // the pruning below is for the method table, which interpolates raw stages.
+  const stagesForEngine = validResults.map((r) => ({ power: r.power, lactate: r.lactate, heartRate: r.heartRate }));
+
+  // Filter unrealistic lactate spikes (matching client logic): a reading over
+  // 10 mmol/L that drops by more than 3 on the very next stage is a bad
+  // sample. A jump from the previous stage on its own is not — 4.7 → 10.5
+  // is what the last stage of a test looks like.
   if (validResults.length > 2) {
     const sortedByPower = [...validResults].sort((a, b) =>
       isPaceSport ? (b.power - a.power) : (a.power - b.power)
@@ -294,15 +302,9 @@ function calculateThresholds(testData) {
     const filteredResults = [];
     for (let i = 0; i < sortedByPower.length; i++) {
       const currentLactate = sortedByPower[i].lactate;
-      if (currentLactate > 10) {
-        if (i < sortedByPower.length - 1) {
-          const nextLactate = sortedByPower[i + 1].lactate;
-          if (currentLactate - nextLactate > 3) continue;
-        }
-        if (i > 0) {
-          const prevLactate = sortedByPower[i - 1].lactate;
-          if (currentLactate - prevLactate > 5 && prevLactate < 5) continue;
-        }
+      if (currentLactate > 10 && i < sortedByPower.length - 1) {
+        const nextLactate = sortedByPower[i + 1].lactate;
+        if (currentLactate - nextLactate > 3) continue;
       }
       filteredResults.push(sortedByPower[i]);
     }
@@ -475,7 +477,7 @@ function calculateThresholds(testData) {
   // and the calculator name the same LT1 and LT2. Everything above still
   // fills the method table and stands in when the engine has nothing to
   // read (fewer than three usable stages, lactate falling with intensity).
-  const engine = analyzeLactateTest({ sport, stages: sortedResults, baseLactate });
+  const engine = analyzeLactateTest({ sport, stages: stagesForEngine, baseLactate });
   if (engine) {
     thresholds['LTP1'] = engine.lt1.value;
     thresholds.lactates['LTP1'] = engine.lt1.lactate;

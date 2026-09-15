@@ -99,6 +99,30 @@ describe('a classic bike curve', () => {
   });
 });
 
+describe('a runner whose rest sample was cold', () => {
+  // 1.5 at rest, then a steady 2.4 → 2.4 before the rise, and an all-out
+  // last stage at 10.5 mmol/L (pace in s/mile).
+  const rows = [['9:23', 150, 2.4], ['8:57', 153, 2.4], ['8:42', 158, 3.1], ['8:20', 163, 3.4], ['8:00', 164, 4.6], ['7:42', 168, 5.1], ['7:19', 171, 4.7], ['6:59', 175, 10.5]];
+  const stages = rows.map(([p, heartRate, lactate]) => { const [m, sec] = p.split(':').map(Number); return { power: m * 60 + sec, heartRate, lactate }; });
+  const r = analyzeLactateTest({ sport: 'run', baseLactate: 1.5, stages });
+  const pace = (s) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}`;
+
+  it('takes the steady early stages as the floor, not the cold rest sample', () => {
+    expect(r.baseline).toBe(2.4);
+    expect(r.notes.join(' ')).toMatch(/resting sample/);
+    expect(r.lt1.clamped || '').not.toMatch(/first stage/);
+    expect(pace(r.lt1.value) >= '8:40' && pace(r.lt1.value) <= '8:52').toBe(true);
+  });
+
+  it('keeps the all-out last stage and still reads LT2 near 4 mmol/L', () => {
+    expect(r.stagesUsed).toBe(8);
+    expect(r.notes.join(' ')).toMatch(/exploded/);
+    expect(pace(r.lt2.value) >= '8:05' && pace(r.lt2.value) <= '8:15').toBe(true);
+    expect(r.lt2.lactate).toBeGreaterThan(3.7);
+    expect(r.lt2.lactate).toBeLessThan(4.3);
+  });
+});
+
 describe('edges', () => {
   it('a test that never reached 2.5 mmol/L says so and gives the last stage as a bound', () => {
     const r = analyzeLactateTest({ sport: 'bike', baseLactate: 1.0, stages: runStages([[100, 1.0], [150, 1.1], [200, 1.3], [250, 1.6], [300, 2.0]]) });

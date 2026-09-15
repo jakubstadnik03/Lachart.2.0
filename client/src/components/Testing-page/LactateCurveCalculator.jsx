@@ -1523,18 +1523,9 @@ const LactateCurveCalculator = ({
           }
         }
         
-        // Also check if previous value was much lower (spike of more than 5 mmol/L from previous)
-        if (i > 0) {
-          const prev = sortedByPower[i - 1];
-          const prevLactate = Number(prev.lactate?.toString().replace(',', '.'));
-          const spike = currentLactate - prevLactate;
-          
-          if (spike > 5 && prevLactate < 5) {
-            // Unrealistic spike from low value - likely measurement error
-            console.warn(`[LactateCurveCalculator] Filtering out unrealistic lactate spike: ${currentLactate} mmol/L (spike of ${spike.toFixed(1)} mmol/L from ${prevLactate} mmol/L)`);
-            continue; // Skip this value
-          }
-        }
+        // A jump from the previous stage on its own is not an error: the
+        // last stage of a test is all-out, and 4.7 → 10.5 mmol/L is what
+        // that looks like. Only a spike that drops again (above) is one.
       }
       
       filteredResults.push(current);
