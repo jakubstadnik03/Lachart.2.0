@@ -753,7 +753,10 @@ export default function About() {
                 boxShadow: '0 1px 3px rgba(15,23,42,0.04), 0 8px 22px rgba(15,23,42,0.04)',
               }}>
                 <div>
-                  <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 14 }}>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center', marginBottom: 14 }}>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4,
+                                   padding: '4px 10px', borderRadius: 999, background: '#E6F4FB',
+                                   color: '#007CC3', fontSize: 11, fontWeight: 700 }}>● Garmin</span>
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4,
                                    padding: '4px 10px', borderRadius: 999, background: '#FFEEE8',
                                    color: '#FC4C02', fontSize: 11, fontWeight: 700 }}>● Strava</span>
@@ -812,10 +815,10 @@ export default function About() {
               }}>
                 <div style={{ height: 140, overflow: 'hidden',
                               background: 'linear-gradient(135deg, #FFE6DF 0%, #fff 70%)' }}>
-                  <img src="/about-design/lachart-test-pdf.png"
+                  <img src="/images/lactate-pdf-report.jpg"
                        alt="Branded PDF lactate test report for athletes"
                        loading="lazy"
-                       style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'top' }} />
+                       style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center 35%' }} />
                 </div>
                 <div style={{ padding: '16px 18px 18px' }}>
                   <span style={{ fontSize: 10.5, fontWeight: 700, color: LC.accent, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
@@ -843,6 +846,25 @@ export default function About() {
                 were 280 px tall with white space + tiny text. Now image
                 heights, card padding and gap all scale down. */}
             <style>{`
+              /* A card lifts under the cursor and its picture leans in a
+                 touch — enough to say "this is a thing", not a bounce. */
+              .lc-bento-card {
+                transition: transform .28s cubic-bezier(.2,.7,.2,1), box-shadow .28s cubic-bezier(.2,.7,.2,1), border-color .28s ease;
+              }
+              .lc-bento-card > div:first-child > img { transition: transform .5s cubic-bezier(.2,.7,.2,1); }
+              @media (hover: hover) {
+                .lc-bento-card:hover {
+                  transform: translateY(-4px);
+                  box-shadow: 0 2px 6px rgba(15,23,42,0.05), 0 22px 44px -14px rgba(15,23,42,0.18) !important;
+                  border-color: rgba(118,126,181,0.35) !important;
+                }
+                .lc-bento-card:hover > div:first-child > img { transform: scale(1.035); }
+              }
+              @media (prefers-reduced-motion: reduce) {
+                .lc-bento-card, .lc-bento-card > div:first-child > img { transition: none; }
+                .lc-bento-card:hover { transform: none; }
+                .lc-bento-card:hover > div:first-child > img { transform: none; }
+              }
               @media (max-width: 1099px) {
                 .lc-bento { grid-template-columns: repeat(4, 1fr) !important; }
                 .lc-bento .lc-bento-hero { grid-column: span 4 !important; grid-row: span 1 !important; }
