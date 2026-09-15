@@ -188,7 +188,7 @@ const ForTesters = () => {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 20 }}>
           {[
             { img: '/about-design/lachart-test-pdf.png', label: 'The report', framed: false, cap: 'Every threshold method with the power, heart rate and lactate at each — so the number you chose is one you can defend.' },
-            { img: '/about-design/zones-generator.png', label: 'Their zones', framed: true, cap: 'Power, pace and heart-rate zones computed from the thresholds you just measured.' },
+            { img: '/screenshots/2026/laptop/threshold-analysis-960.webp', label: 'Their thresholds', framed: false, cap: 'Every method side by side on the curve, and the zones computed from the one you chose.' },
           ].map((g, i) => (
             <div key={g.label} ref={pushRef} className={`lc-reveal d${i + 1}`}>
               {g.framed ? (
@@ -233,12 +233,25 @@ const ForTesters = () => {
             <Link to="/features/training-zones" style={{ color: LC.primaryDark, fontWeight: 700 }}>zones &amp; thresholds</Link> in detail.
           </p>
         </div>
-        <div ref={pushRef} className="lc-reveal" style={{ display: 'flex', flexWrap: 'wrap', gap: 20, justifyContent: 'center' }}>
+        {/* All four in one row on a desktop: the cards give up their fixed
+            361 px and share the width, with the type a step smaller. */}
+        <div ref={pushRef} className="lc-reveal lc-live-four">
           <LactateTestCard />
           <ZonesCard />
           <ThresholdTrendCard />
           <TimeInZonesCard />
         </div>
+        <style>{`
+          .lc-live-four { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; align-items: start; }
+          .lc-live-four .lcui-card { width: 100%; max-width: none; padding: 14px; }
+          .lc-live-four .lcui-card-title { font-size: 16px; }
+          .lc-live-four .lcui-card-sub { font-size: 12px; margin-bottom: 8px; }
+          .lc-live-four .lcui-thresh { padding: 10px 12px; }
+          .lc-live-four .lcui-thresh-val { font-size: 22px; }
+          .lc-live-four .lcui-pill { font-size: 11px; padding: 5px 10px; }
+          @media (max-width: 1100px) { .lc-live-four { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+          @media (max-width: 600px) { .lc-live-four { grid-template-columns: 1fr; } .lc-live-four .lcui-card { max-width: 361px; margin: 0 auto; } }
+        `}</style>
       </section>
 
       {/* Price */}

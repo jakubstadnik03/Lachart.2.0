@@ -1,7 +1,7 @@
 import React, { useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { Helmet } from 'react-helmet';
-import { LC, STYLE, Eyebrow, BrowserFrame, useReveal } from '../components/About/marketingKit';
+import { LC, STYLE, Eyebrow, useReveal } from '../components/About/marketingKit';
 import {
   APP_CARDS_STYLE, PhotoShowcase, CalendarCard, SessionListCard, WeekTssCard,
   FormCard, TrainingHistoryCard, WorkoutGraphCard, LapsTableCard, PowerRadarCard,
@@ -250,16 +250,17 @@ const ForCoaches = () => {
           <p className="lc-lead">A calendar they can follow, zones that came from their own physiology, and sessions that explain themselves.</p>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 20 }}>
+          {/* Laptop-framed shots of the pages themselves — the frame is in
+              the picture, so no browser chrome around it. */}
           {[
-            { img: '/about-design/training-calendar.png', label: 'Training calendar', cap: 'Build the week, push it to their Garmin, and see what came back against it.' },
-            { img: '/about-design/training-log-page.png', label: 'Session analysis', cap: 'Laps, intervals, streams and load — and the same session every time they have done it.' },
-            { img: '/about-design/zones-generator.png', label: 'Training zones', cap: 'Power, heart-rate and pace zones straight from their lactate test.' },
+            { img: '/screenshots/2026/laptop/workout-planner-960.webp', label: 'Workout planner', cap: 'Build the week, push it to their Garmin, and see what came back against it.' },
+            { img: '/screenshots/2026/laptop/training-laps-960.webp', label: 'Session analysis', cap: 'Laps, intervals, streams and load — and the same session every time they have done it.' },
+            { img: '/screenshots/2026/laptop/threshold-analysis-960.webp', label: 'Thresholds & zones', cap: 'Power, heart-rate and pace zones straight from their lactate test.' },
           ].map((g, i) => (
             <div key={g.label} ref={pushRef} className={`lc-reveal d${i + 1}`}>
-              <BrowserFrame label={g.label}>
-                <img src={g.img} alt={`LaChart ${g.label}`} loading="lazy" style={{ display: 'block', width: '100%' }} />
-              </BrowserFrame>
-              <p style={{ color: LC.muted, fontSize: 13.5, margin: '12px 4px 0', lineHeight: 1.5 }}>{g.cap}</p>
+              <img src={g.img} alt={`LaChart ${g.label}`} loading="lazy" style={{ display: 'block', width: '100%', height: 'auto' }} />
+              <p style={{ color: LC.ink, fontSize: 14, fontWeight: 700, margin: '10px 4px 0' }}>{g.label}</p>
+              <p style={{ color: LC.muted, fontSize: 13.5, margin: '4px 4px 0', lineHeight: 1.5 }}>{g.cap}</p>
             </div>
           ))}
         </div>

@@ -1,7 +1,7 @@
 import React, { useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { Helmet } from 'react-helmet';
-import { LC, STYLE, Eyebrow, BrowserFrame, useReveal } from '../components/About/marketingKit';
+import { LC, STYLE, Eyebrow, useReveal } from '../components/About/marketingKit';
 import {
   APP_CARDS_STYLE, PhotoShowcase, FormCard, PowerRadarCard, TimeInZonesCard, ThresholdPairCard,
   CalendarCard, WeekTssCard, TrainingHistoryCard, WorkoutGraphCard, LapsTableCard,
@@ -255,16 +255,17 @@ const ForAthletes = () => {
           <h2 className="lc-big" style={{ margin: '14px 0 8px' }}>What you actually look at</h2>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 20 }}>
+          {/* Laptop-framed shots of the pages themselves — the frame is in
+              the picture, so no browser chrome around it. */}
           {[
-            { img: '/about-design/lactate-testing-page.png', label: 'Your curve', cap: 'LT1 and LT2 by every method, with the measured points on top.' },
-            { img: '/about-design/zones-generator.png', label: 'Your zones', cap: 'Power, pace and heart-rate zones straight out of the test.' },
-            { img: '/about-design/training-log-page.png', label: 'Every session', cap: 'Read back against the test — time at each threshold, heart rate versus test day.' },
+            { img: '/screenshots/2026/laptop/threshold-analysis-960.webp', label: 'Your curve', cap: 'LT1 and LT2 by every method, with the measured points on top.' },
+            { img: '/screenshots/2026/laptop/dashboard-960.webp', label: 'Your week', cap: 'What today asks of you, the week ahead, and the race it is all pointed at.' },
+            { img: '/screenshots/2026/laptop/training-detail-960.webp', label: 'Every session', cap: 'Read back against the test — power, heart rate and speed over the whole ride.' },
           ].map((g, i) => (
             <div key={g.label} ref={pushRef} className={`lc-reveal d${i + 1}`}>
-              <BrowserFrame label={g.label}>
-                <img src={g.img} alt={`LaChart ${g.label}`} loading="lazy" style={{ display: 'block', width: '100%' }} />
-              </BrowserFrame>
-              <p style={{ color: LC.muted, fontSize: 13.5, margin: '12px 4px 0', lineHeight: 1.5 }}>{g.cap}</p>
+              <img src={g.img} alt={`LaChart ${g.label}`} loading="lazy" style={{ display: 'block', width: '100%', height: 'auto' }} />
+              <p style={{ color: LC.ink, fontSize: 14, fontWeight: 700, margin: '10px 4px 0' }}>{g.label}</p>
+              <p style={{ color: LC.muted, fontSize: 13.5, margin: '4px 4px 0', lineHeight: 1.5 }}>{g.cap}</p>
             </div>
           ))}
         </div>
