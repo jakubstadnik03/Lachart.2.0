@@ -26,7 +26,7 @@ import { computePmcFromActivities } from '../utils/formFitnessFromActivities';
 import { attachStepsToPlannedWorkouts } from '../utils/planSessionSteps';
 import {
   getPlannedWorkouts, createPlannedWorkout, updatePlannedWorkout,
-  deletePlannedWorkout, getWorkoutTemplates,
+  deletePlannedWorkout, getWorkoutTemplates, deleteWorkoutTemplate,
 } from '../services/workoutPlannerApi';
 import api from '../services/api';
 import {
@@ -527,11 +527,22 @@ export default function WorkoutPlannerPage() {
       {!isMobile && (panels.library ? (
         <WorkoutTemplateLibrary
           templates={templates}
+          context={context}
           onClose={() => togglePanel('library')}
           onOpenTemplate={(tpl) => setModal({
             date: today,
             workout: { title: tpl.name, sport: tpl.sport, steps: tpl.steps },
           })}
+          onDeleteTemplate={async (tpl) => {
+            if (!window.confirm(`Delete the template “${tpl.name}”?`)) return;
+            try {
+              await deleteWorkoutTemplate(tpl.id);
+              setTemplates((prev) => prev.filter((t) => t._id !== tpl.id));
+              addNotification('Template deleted', 'success');
+            } catch {
+              addNotification('Failed to delete the template', 'error');
+            }
+          }}
         />
       ) : (
         <PanelRail side="left" label="Library" Icon={RectangleStackIcon} onClick={() => togglePanel('library')} />

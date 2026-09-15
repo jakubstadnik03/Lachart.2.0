@@ -15,6 +15,8 @@ import React, { useMemo, useState } from 'react';
 import { MagnifyingGlassIcon, ChevronLeftIcon } from '@heroicons/react/24/outline';
 import { PlannerSportIcon, plannerSportKey, plannerSportColor } from './WorkoutPlanModal';
 import { PRESET_CATALOG, PRESET_CATEGORY_LABELS, buildPresetSteps } from './WorkoutBuilder';
+import { WorkoutStepsSummary, WorkoutPreviewDialog } from './WorkoutStepsPreview';
+import HoverCard from '../shared/HoverCard';
 import { useCategories } from '../../context/CategoryContext';
 
 const SPORT_ORDER = ['bike', 'run', 'swim', 'strength', 'hike', 'ski', 'walk', 'brick', 'rowing', 'other'];
@@ -44,12 +46,13 @@ function fmtDur(secs) {
   return h > 0 ? `${h}h ${m}m` : `${m}m`;
 }
 
-/** One draggable, clickable row. */
+/** One draggable, clickable row: hover shows the laps, a click opens the preview. */
 function TemplateRow({ item, onOpen, categoryLabel }) {
   const dur = fmtDur(stepSecs(item.steps));
   const meta = [SPORT_LABELS[item.sportKey] || item.sportKey, dur, item.category ? categoryLabel(item.category) : null]
     .filter(Boolean).join(' · ');
   return (
+    <HoverCard content={<WorkoutStepsSummary title={item.name} sport={item.sport} steps={item.steps} note="Drag onto a day to plan it" />}>
     <div
       draggable
       onDragStart={(e) => {
@@ -60,7 +63,7 @@ function TemplateRow({ item, onOpen, categoryLabel }) {
         );
       }}
       onClick={() => onOpen?.(item)}
-      title={item.desc ? `${item.desc} — click to open, drag onto a day to plan` : 'Click to open & edit · drag onto a day to plan'}
+      title={item.desc ? `${item.desc} — click to see the laps, drag onto a day to plan` : 'Click to see the laps · drag onto a day to plan'}
       className="group flex items-center gap-2 pl-2 pr-2.5 py-2 rounded-xl ring-1 ring-slate-200/70 bg-white hover:ring-primary/40 hover:shadow-sm cursor-pointer transition-all"
       style={{ borderLeft: `3px solid ${item.color || plannerSportColor(item.sport)}` }}
     >
@@ -77,6 +80,7 @@ function TemplateRow({ item, onOpen, categoryLabel }) {
         <circle cx="9" cy="18" r="1" /><circle cx="15" cy="18" r="1" />
       </svg>
     </div>
+    </HoverCard>
   );
 }
 
@@ -88,10 +92,12 @@ const SELECT_ARROW = {
   paddingRight: 24,
 };
 
-export default function WorkoutTemplateLibrary({ templates = [], onOpenTemplate = null, onClose = null }) {
+export default function WorkoutTemplateLibrary({ templates = [], onOpenTemplate = null, onDeleteTemplate = null, onClose = null, context = {} }) {
   const [sport, setSport] = useState('all');
   const [cat, setCat] = useState('all');
   const [q, setQ] = useState('');
+  // A click shows the workout; planning it is the button inside the preview.
+  const [preview, setPreview] = useState(null);
   const { categories } = useCategories();
   const categoryLabel = (id) => (categories || []).find((c) => c.id === id)?.label || PRESET_CATEGORY_LABELS[id] || id;
 
@@ -187,7 +193,7 @@ export default function WorkoutTemplateLibrary({ templates = [], onOpenTemplate 
               <section>
                 <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 px-1 mb-1.5">My templates</p>
                 <div className="space-y-1.5">
-                  {mineShown.map((t) => <TemplateRow key={t.id} item={t} onOpen={onOpenTemplate} categoryLabel={categoryLabel} />)}
+                  {mineShown.map((t) => <TemplateRow key={t.id} item={t} onOpen={setPreview} categoryLabel={categoryLabel} />)}
                 </div>
               </section>
             )}
@@ -197,13 +203,24 @@ export default function WorkoutTemplateLibrary({ templates = [], onOpenTemplate 
                   Built-in workouts <span className="font-medium normal-case tracking-normal text-slate-300">· {builtInShown.length}</span>
                 </p>
                 <div className="space-y-1.5">
-                  {builtInShown.map((t) => <TemplateRow key={t.id} item={t} onOpen={onOpenTemplate} categoryLabel={categoryLabel} />)}
+                  {builtInShown.map((t) => <TemplateRow key={t.id} item={t} onOpen={setPreview} categoryLabel={categoryLabel} />)}
                 </div>
               </section>
             )}
           </>
         )}
       </div>
+      {preview && (
+        <WorkoutPreviewDialog
+          workout={preview}
+          context={context}
+          onClose={() => setPreview(null)}
+          onPlan={onOpenTemplate ? (w) => onOpenTemplate(w, 'plan') : null}
+          onEdit={onOpenTemplate ? (w) => onOpenTemplate(w, 'edit') : null}
+          onDelete={!preview.builtIn && onDeleteTemplate ? (w) => onDeleteTemplate(w) : null}
+          planLabel="Plan it"
+        />
+      )}
     </aside>
   );
 }

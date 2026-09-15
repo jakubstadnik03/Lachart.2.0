@@ -561,8 +561,11 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
   const navigate = useNavigate();
   const { categories } = useCategories();
   const dragControls = useDragControls();
-  // 'pick' = sport selector (new workouts only), 'build' = full builder
-  const [step, setStep]           = useState(isEdit ? 'build' : 'pick');
+  // 'pick' = sport selector (new workouts only), 'build' = full builder.
+  // A workout that arrives with its sport and steps — a template from the
+  // library — has nothing to pick; it opens on the builder, laps in place.
+  const arrivesBuilt = !isEdit && !!workout?.sport && Array.isArray(workout?.steps) && workout.steps.length > 0;
+  const [step, setStep]           = useState(isEdit || arrivesBuilt ? 'build' : 'pick');
   const [sport, setSport]         = useState(workout?.sport || 'bike');
   const [title, setTitle]         = useState(workout?.title || '');
   const [desc, setDesc]           = useState(workout?.description || '');
@@ -615,7 +618,7 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
   const [savedTemplateName, setSavedTemplateName] = useState('');
   const categoryLabel = (id) => (categories || []).find((c) => c.id === id)?.label || PRESET_CATEGORY_LABELS[id] || id;
   // Build workout section: collapsed until user clicks "Build Workout"
-  const [showBuilder, setShowBuilder] = useState(isEdit && (workout?.steps?.length > 0));
+  const [showBuilder, setShowBuilder] = useState((isEdit || arrivesBuilt) && (workout?.steps?.length > 0));
   // Planned manual stats (used when no builder steps)
   const [plannedDurStr, setPlannedDurStr] = useState(
     workout?.plannedDuration ? secsToHMS(workout.plannedDuration) : ''
@@ -640,8 +643,9 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
     setComment(workout?.comment || '');
     setPlannedDurStr(workout?.plannedDuration ? secsToHMS(workout.plannedDuration) : '');
     setPlannedDistStr(workoutDistToStr(workout));
-    setShowBuilder(Boolean(workout?._id && (workout?.steps?.length > 0)));
-    setStep(workout?._id ? 'build' : 'pick');
+    const built = !workout?._id && !!workout?.sport && Array.isArray(workout?.steps) && workout.steps.length > 0;
+    setShowBuilder(Boolean((workout?._id || built) && (workout?.steps?.length > 0)));
+    setStep(workout?._id || built ? 'build' : 'pick');
   }, [workout, workoutDistToStr]);
 
   const pickSport = (s) => {

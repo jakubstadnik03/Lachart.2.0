@@ -1267,10 +1267,10 @@ const SettingsPage = () => {
   // Sync all historical Garmin data (no date filter — downloads everything)
   const handleSyncGarminHistory = async () => {
     if (isSyncingGarminHistory || isSyncingGarmin) return;
-    // Garmin caps how far back this app may import (verified: 31 days). Promising
-    // "5 years" made a working import look broken — the server reports the real
-    // window back in res.maxHistoryDays / res.message.
-    const ok = window.confirm('This will import your recent Garmin activity history. Garmin currently allows apps to retrieve only about the last month of activities — older workouts cannot be imported. Continue?');
+    // The server asks Garmin for two years and starts wherever Garmin lets the
+    // app reach; the answer comes back in res.message. Activities arrive in the
+    // background, so the confirm says that rather than promising a count.
+    const ok = window.confirm('Import your Garmin activity history? LaChart asks Garmin for the last two years; Garmin decides how far back it lets an app reach. Activities arrive in the background over the next minutes. Continue?');
     if (!ok) return;
     let res;
     setGarminSyncError(null);

@@ -721,20 +721,19 @@ const GARMIN_BACKFILL_ENDPOINTS = ['activities', 'activityDetails'];
 const garminBackfillJobs = new Map();
 
 /**
- * How far back this consumer key may actually backfill.
+ * How far back a history import asks for.
  *
- * Verified against the live API (2026-08-03): a request starting earlier than
- * `now - 31d` is rejected with HTTP 400 "start … before min start time of
- * <ISO>", and direct pull (/rest/activities) is refused outright with
- * InvalidPullTokenException — so backfill is the ONLY path and it is capped.
- * Asking for 2 years therefore burned chunks of the 100 req/min quota that is
- * shared across every LaChart user, just to collect 400s before the skip-ahead
- * logic found the allowed window.
- *
- * Clamp the request to the permitted window instead. When Garmin grants
- * production access, raise GARMIN_BACKFILL_MAX_DAYS (e.g. 730) — no code change.
+ * Garmin answers a window older than the key's minimum with HTTP 400 "start …
+ * before min start time of <ISO>" — an evaluation key allowed 31 days
+ * (verified 2026-08-03). The job below reads that minimum out of the refusal
+ * and jumps straight to the allowed window, so asking for two years costs one
+ * refused request per endpoint, not a chunk at a time. This used to default
+ * to 31 as a pre-clamp, which meant that once the key was allowed more, the
+ * import still stopped at a month and nobody knew. Ask for what the athlete
+ * wants; let Garmin say what it permits. GARMIN_BACKFILL_MAX_DAYS narrows it
+ * when there is a reason to.
  */
-const GARMIN_BACKFILL_MAX_DAYS = Number(process.env.GARMIN_BACKFILL_MAX_DAYS || 31);
+const GARMIN_BACKFILL_MAX_DAYS = Number(process.env.GARMIN_BACKFILL_MAX_DAYS || 730);
 /** Margin: Garmin's minimum moves forward in real time, so never sit exactly on it. */
 const GARMIN_BACKFILL_MIN_MARGIN_SEC = 600;
 
@@ -4235,9 +4234,10 @@ router.post('/garmin/sync-history', verifyToken, async (req, res) => {
         status: 'backfill_started',
         message:
           `Garmin is importing your activity history${historyFromLabel ? ` from ${historyFromLabel}` : ''} ` +
-          `(${job.total} chunk(s) queued, rate-limit aware). Activities arrive via webhook over the next several minutes.` +
+          `(${job.total} request(s) queued, rate-limit aware). Activities arrive in the background over the next minutes — ` +
+          'a long history can take a while, and Garmin decides how far back it lets an app reach; the import starts at the oldest date it permits.' +
           (job.clampedByKeyLimit
-            ? ` Note: Garmin currently allows LaChart to import only the last ${job.maxHistoryDays} days of history — older activities cannot be retrieved.`
+            ? ` Note: this import is limited to the last ${job.maxHistoryDays} days.`
             : ''),
       });
     }

@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { PlusIcon } from '@heroicons/react/24/outline';
 import { buildChronologicalDayItems, pairPlannedWithActivities } from '../../utils/calendarDayOrdering';
 import PlannerWeekSummary from './PlannerWeekSummary';
+import HoverCard from '../shared/HoverCard';
+import { WorkoutStepsSummary } from './WorkoutStepsPreview';
 import {
   addDays,
   isSameDay,
@@ -31,6 +33,7 @@ function PlannedCard({ pw, onEdit, onDelete, onComplete, onStart, isMissed = fal
   const isSkipped = pw.status === 'skipped';
 
   return (
+    <HoverCard content={<WorkoutStepsSummary title={pw.title} sport={pw.sport} steps={pw.steps} note={pw.comment || pw.description || null} />}>
     <div
       className={`group relative rounded-xl bg-white ring-1 shadow-sm cursor-pointer overflow-hidden transition-all hover:shadow-md
         ${isMissed ? 'ring-red-200 bg-red-50' : 'ring-slate-200/70'}
@@ -73,10 +76,11 @@ function PlannedCard({ pw, onEdit, onDelete, onComplete, onStart, isMissed = fal
         </div>
       )}
     </div>
+    </HoverCard>
   );
 }
 
-function CompletedCard({ training, onOpen, paired = false, user, userProfile }) {
+function CompletedCard({ training, onOpen, paired = false, plan = null, user, userProfile }) {
   const sport = training.sport || training.type;
   const col = paired ? plannerSportColor(sport) : '#94a3b8';
   const title = training.title || training.name || training.titleManual || 'Activity';
@@ -84,7 +88,12 @@ function CompletedCard({ training, onOpen, paired = false, user, userProfile }) 
   const tss = completedTss(training, userProfile, user);
   const dist = completedDistM(training);
 
+  // A paired card shows the session; the plan it answered is a hover away.
+  const hover = plan?.steps?.length
+    ? <WorkoutStepsSummary title={`Planned: ${plan.title || 'session'}`} sport={plan.sport} steps={plan.steps} note={plan.comment || plan.description || null} />
+    : null;
   return (
+    <HoverCard content={hover}>
     <div
       className={`group relative rounded-xl ring-1 overflow-hidden transition-all ${paired ? 'bg-emerald-50/40 ring-emerald-200/60' : 'bg-slate-50 ring-slate-200/70'} ${onOpen ? 'cursor-pointer hover:shadow-md' : ''}`}
       onClick={onOpen ? () => onOpen(training) : undefined}
@@ -106,6 +115,7 @@ function CompletedCard({ training, onOpen, paired = false, user, userProfile }) 
         )}
       </div>
     </div>
+    </HoverCard>
   );
 }
 
@@ -222,6 +232,7 @@ export default function PlannerWeekRow({
                     key={pw._id}
                     training={matched}
                     paired
+                    plan={pw}
                     user={user}
                     userProfile={userProfile}
                     onOpen={(tr) => onOpenCompleted(tr, pw)}
