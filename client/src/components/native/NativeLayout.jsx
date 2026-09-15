@@ -333,7 +333,7 @@ function NativeTopBar({ user, onProfileTap, onBellTap, onGuideTap, guideActive, 
   return (
     <div
       data-native-bar="top"
-      className="nl-top-bar flex-shrink-0 bg-white border-b border-gray-100"
+      className="nl-top-bar lc-glass-bar flex-shrink-0"
       style={{ paddingTop: 'env(safe-area-inset-top)' }}
     >
       <div className="flex items-center justify-between px-4 h-11">

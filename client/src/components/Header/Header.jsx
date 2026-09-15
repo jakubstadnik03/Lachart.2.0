@@ -23,7 +23,7 @@ const Header = ({ isMenuOpen, setIsMenuOpen, user: propUser }) => {
   };
 
   return (
-    <div className="safe-top z-50 flex w-full shrink-0 flex-col bg-zinc-50 fixed top-0 lg:sticky">
+    <div className="lc-glass-bar safe-top z-50 flex w-full shrink-0 flex-col fixed top-0 lg:sticky">
       <div className="flex relative justify-between items-center px-3 sm:px-6 w-full border-b border-solid border-b-stone-300 custom-padding">
         {/* Menu Toggle Button */}
         <button

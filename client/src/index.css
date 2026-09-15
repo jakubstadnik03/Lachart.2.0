@@ -167,3 +167,33 @@ button, a, [role="button"] {
 .leaflet-container {
   font-family: inherit !important;
 }
+
+/* ── Liquid-glass surfaces ─────────────────────────────────────────────────
+   Translucent, blurred "glass" material for app-shell bars and panels — the
+   web/WebView equivalent of iOS's Liquid Glass (expo-glass-effect is an Expo/
+   React Native native module and cannot run in this Capacitor web app).
+   The base rule is a near-opaque tint so text stays readable where
+   backdrop-filter is unsupported; the @supports block layers the real blur on
+   top only when the browser/WebView can do it. */
+.lc-glass {
+  background: rgba(255, 255, 255, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  box-shadow: 0 8px 32px -14px rgba(10, 14, 26, 0.18);
+}
+.lc-glass-bar {
+  background: rgba(255, 255, 255, 0.82);
+  border-bottom: 1px solid rgba(226, 228, 235, 0.7);
+  box-shadow: 0 6px 24px -18px rgba(10, 14, 26, 0.16);
+}
+@supports ((backdrop-filter: blur(2px)) or (-webkit-backdrop-filter: blur(2px))) {
+  .lc-glass {
+    background: rgba(255, 255, 255, 0.6);
+    -webkit-backdrop-filter: blur(18px) saturate(180%);
+    backdrop-filter: blur(18px) saturate(180%);
+  }
+  .lc-glass-bar {
+    background: rgba(255, 255, 255, 0.62);
+    -webkit-backdrop-filter: blur(16px) saturate(180%);
+    backdrop-filter: blur(16px) saturate(180%);
+  }
+}
