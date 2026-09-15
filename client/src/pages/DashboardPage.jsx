@@ -49,6 +49,7 @@ import WeeklyCalendar from "../components/DashboardPage/WeeklyCalendar";
 import WorkoutPlanModal from "../components/WorkoutPlanner/WorkoutPlanModal";
 import { getPlannedWorkouts, createPlannedWorkout, updatePlannedWorkout, deletePlannedWorkout, getDayPlans, setDayPlan as apiSetDayPlan, deleteDayPlan as apiDeleteDayPlan, getPeriods, savePeriod as apiSavePeriod, deletePeriod as apiDeletePeriod, getWorkoutTemplates } from '../services/workoutPlannerApi';
 import DashboardEmptyWelcome from "../components/DashboardPage/DashboardEmptyWelcome";
+import { garminLinked } from '../utils/syncSources';
 import { Skeleton } from "../components/common/Skeleton";
 import { buildActivityMatcher, getActivityAppId, metricsPatchFromDetail, patchCalendarCache, upsertPlannedWorkoutList, removePlannedWorkoutFromList, notifyPlannedWorkoutUpdated, notifyPlannedWorkoutDeleted } from '../utils/activityEventPatches';
 import { TSS_DISPLAY_MODE_EVENT, clearFormFitnessCache } from '../utils/uiPrefs';
@@ -724,24 +725,28 @@ export default function DashboardPage() {
     const checkStravaConnection = async () => {
       if (!user) return;
       const hasLocalStravaConnection = Boolean(user?.strava?.accessToken || user?.strava?.athleteId);
+      // A Garmin athlete has a source already; the banner is not for them.
+      const hasLocalGarminConnection = garminLinked(user);
 
       // Trust local profile first to avoid false banner flashes on slow/intermittent API.
       if (hasLocalStravaConnection) {
         setStravaConnected(true);
         setShowStravaBanner(false);
       }
+      if (hasLocalGarminConnection) setShowStravaBanner(false);
       
       try {
         const status = await getIntegrationStatus();
         // Prefer positive local state over transient API false.
         const isConnected = Boolean(status?.stravaConnected) || hasLocalStravaConnection;
+        const hasAnySource = isConnected || Boolean(status?.garminConnected) || hasLocalGarminConnection;
         setStravaConnected(isConnected);
-        if (isConnected) {
+        if (hasAnySource) {
           setShowStravaBanner(false);
         }
         
-        // Show banner if not connected and user hasn't dismissed it recently
-        if (!isConnected) {
+        // Show banner if no source is connected and user hasn't dismissed it recently
+        if (!hasAnySource) {
           const dismissedKey = `strava_banner_dismissed_${user._id}`;
           const dismissedTimestamp = localStorage.getItem(dismissedKey);
           const oneWeekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
@@ -757,6 +762,7 @@ export default function DashboardPage() {
           setStravaConnected(true);
           setShowStravaBanner(false);
         }
+        if (hasLocalGarminConnection) setShowStravaBanner(false);
       }
     };
     
@@ -2972,9 +2978,9 @@ export default function DashboardPage() {
                           ? 'This athlete has no synced activities yet. They can connect Strava or upload FIT files from their account.'
                           : isCoachLikeRole
                             ? 'Select an athlete above to view their training calendar, or connect Strava to sync your own activities.'
-                            : stravaConnected
-                              ? 'Strava is connected. Try refreshing the calendar or syncing new activities.'
-                              : 'Connect Strava or upload a FIT file to fill the dashboard calendar.'
+                            : (stravaConnected || garminLinked(user))
+                              ? `${stravaConnected ? 'Strava' : 'Garmin'} is connected. Try refreshing the calendar or syncing new activities.`
+                              : 'Connect Strava or Garmin, or upload a FIT file to fill the dashboard calendar.'
                       )}
                     </div>
                   </div>
@@ -2992,7 +2998,7 @@ export default function DashboardPage() {
                       Retry
                     </button>
                   )}
-                  {!stravaConnected && !isCoachViewingOtherAthlete && (
+                  {!stravaConnected && !garminLinked(user) && !isCoachViewingOtherAthlete && (
                     <button
                       type="button"
                       onClick={handleConnectStrava}

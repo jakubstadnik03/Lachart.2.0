@@ -39,6 +39,7 @@ import NativeNewEpisodeSheet from '../components/Health/NativeNewEpisodeSheet';
 import { useAuth } from '../context/AuthProvider';
 import { useNotification } from '../context/NotificationContext';
 import UpgradeModal from '../components/UpgradeModal';
+import { garminLinked } from '../utils/syncSources';
 import { usePremium } from '../hooks/usePremium';
 import { isCapacitorNative } from '../utils/isNativeApp';
 import SimilarWorkoutsPanel from '../components/FitAnalysis/SimilarWorkoutsPanel';
@@ -4667,9 +4668,9 @@ const FitAnalysisPage = () => {
             <div>
               <div className="font-semibold">No calendar activities loaded yet</div>
               <div className="text-xs mt-0.5">
-                {stravaConnected
-                  ? 'Strava is connected. Try refreshing activities if a new upload is missing.'
-                  : 'Connect Strava or upload a FIT file to populate the analysis calendar.'}
+                {(stravaConnected || garminLinked(user))
+                  ? `${stravaConnected ? 'Strava' : 'Garmin'} is connected. Try refreshing activities if a new upload is missing.`
+                  : 'Connect Strava or Garmin, or upload a FIT file to populate the analysis calendar.'}
               </div>
             </div>
             <div className="flex gap-2">
@@ -4680,7 +4681,7 @@ const FitAnalysisPage = () => {
               >
                 Refresh
               </button>
-              {!stravaConnected && (
+              {!stravaConnected && !garminLinked(user) && (
                 <button
                   type="button"
                   onClick={() => navigate('/settings?tab=integrations')}

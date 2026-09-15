@@ -20,6 +20,7 @@ import RaceCountdownCard from '../components/DashboardPage/RaceCountdownCard';
 import PostRaceFeedbackCard from '../components/DashboardPage/PostRaceFeedbackCard';
 import PlannedWorkoutEditor from '../components/NativeDashboard/PlannedWorkoutEditor';
 import StravaConnectModal from '../components/NativeDashboard/StravaConnectModal';
+import { garminLinked } from '../utils/syncSources';
 import PremiumLock from '../components/PremiumLock';
 import { NATIVE_DASHBOARD_KEYFRAMES, cardEntry } from '../components/NativeDashboard/animations';
 import TrainingForm from '../components/TrainingForm';
@@ -793,12 +794,13 @@ export default function NativeDashboardPage({
         }
       } catch (_) { /* web / no plugin */ }
       if (cancelled) return;
-      if (!stravaConnected || appleHealthMissing) {
+      // A Garmin athlete has a source; only Apple Health can still be worth asking for.
+      if ((!stravaConnected && !garminLinked(user)) || appleHealthMissing) {
         setTimeout(() => { if (!cancelled) setShowStravaConnect(true); }, 600);
       }
     })();
     return () => { cancelled = true; };
-  }, [stravaConnected]);
+  }, [stravaConnected, user]);
   const dismissStravaConnect = useCallback(() => {
     try { localStorage.setItem('stravaConnectDismissedAt', String(Date.now())); } catch (_) {}
     setShowStravaConnect(false);

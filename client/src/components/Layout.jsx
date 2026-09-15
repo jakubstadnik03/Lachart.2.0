@@ -23,6 +23,7 @@ import { formatProfileFullName } from '../utils/profileName';
 import { setupStravaOAuthReturnListener } from "../utils/stravaOAuthReturn";
 import { nudgeStravaHistoryImport } from "../utils/stravaHistoryCatchUp";
 import { setupGarminOAuthReturnListener } from "../utils/garminOAuthReturn";
+import { hasSyncSource } from "../utils/syncSources";
 
 // Admin sees coach UI only when their role is not 'athlete'.
 const isCoachRole = (user) =>
@@ -230,7 +231,7 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
           // Use existing user data first to avoid blocking page load
           const isBasicProfileIncomplete = !user.dateOfBirth || !user.height || !user.weight || !user.sport;
           const hasNoTrainingZones = !user.powerZones?.cycling?.lt1 && !user.powerZones?.running?.lt1 && !user.powerZones?.swimming?.lt1;
-          const isStravaNotConnected = !user.strava?.athleteId;
+          const isStravaNotConnected = !hasSyncSource(user);
           const stravaSkipped = localStorage.getItem(`stravaConnectModalDone_${user._id}`) === 'true';
           const unitsAlreadyDone = user.onboarding?.unitsDone || localStorage.getItem(`unitsPreferencesModalDone_${user._id}`) === 'true';
           const basicProfileDone = user.onboarding?.basicProfileDone || localStorage.getItem(`basicProfileModalDone_${user._id}`) === 'true';
@@ -262,7 +263,7 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
                 const finalUser = finalResponse.data;
                 const stillBasicIncomplete = !finalUser.dateOfBirth || !finalUser.height || !finalUser.weight || !finalUser.sport;
                 const stillNoZones = !finalUser.powerZones?.cycling?.lt1 && !finalUser.powerZones?.running?.lt1 && !finalUser.powerZones?.swimming?.lt1;
-                const stillNotConnected = !finalUser.strava?.athleteId;
+                const stillNotConnected = !hasSyncSource(finalUser);
                 const finalStravaSkipped = localStorage.getItem(`stravaConnectModalDone_${finalUser._id}`) === 'true';
                 const finalUnitsDone = finalUser.onboarding?.unitsDone || localStorage.getItem(`unitsPreferencesModalDone_${finalUser._id}`) === 'true';
                 const finalBasicDone = finalUser.onboarding?.basicProfileDone || localStorage.getItem(`basicProfileModalDone_${finalUser._id}`) === 'true';
@@ -801,7 +802,7 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
             const hasNoZones = !zonesDone && !user.powerZones?.cycling?.lt1 && !user.powerZones?.running?.lt1 && !user.powerZones?.swimming?.lt1;
             if (hasNoZones) {
               setShowTrainingZonesModal(true);
-            } else if (!user.strava?.athleteId && localStorage.getItem(`stravaConnectModalDone_${user._id}`) !== 'true') {
+            } else if (!hasSyncSource(user) && localStorage.getItem(`stravaConnectModalDone_${user._id}`) !== 'true') {
               setShowStravaModal(true);
             }
           }}
@@ -818,7 +819,7 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
                   const zonesDone = response.data.onboarding?.trainingZonesDone || localStorage.getItem(`trainingZonesModalDone_${response.data._id}`) === 'true';
                   const hasNoZones = !zonesDone && !response.data.powerZones?.cycling?.lt1 && !response.data.powerZones?.running?.lt1 && !response.data.powerZones?.swimming?.lt1;
                   if (hasNoZones) setShowTrainingZonesModal(true);
-                  else if (!response.data.strava?.athleteId && localStorage.getItem(`stravaConnectModalDone_${response.data._id}`) !== 'true') setShowStravaModal(true);
+                  else if (!hasSyncSource(response.data) && localStorage.getItem(`stravaConnectModalDone_${response.data._id}`) !== 'true') setShowStravaModal(true);
                 } else {
                   setShowUnitsPreferencesModal(true);
                 }
@@ -849,7 +850,7 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
             const hasNoZones = !zonesDone && !user.powerZones?.cycling?.lt1 && !user.powerZones?.running?.lt1 && !user.powerZones?.swimming?.lt1;
             if (hasNoZones) {
               setShowTrainingZonesModal(true);
-            } else if (!user.strava?.athleteId && localStorage.getItem(`stravaConnectModalDone_${user._id}`) !== 'true') {
+            } else if (!hasSyncSource(user) && localStorage.getItem(`stravaConnectModalDone_${user._id}`) !== 'true') {
               setShowStravaModal(true);
             }
           }}
@@ -863,7 +864,7 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
                 const hasNoZones = !response.data.powerZones?.cycling?.lt1 && !response.data.powerZones?.running?.lt1 && !response.data.powerZones?.swimming?.lt1;
                 if (hasNoZones) {
                   setShowTrainingZonesModal(true);
-                } else if (!response.data.strava?.athleteId && localStorage.getItem(`stravaConnectModalDone_${response.data._id}`) !== 'true') {
+                } else if (!hasSyncSource(response.data) && localStorage.getItem(`stravaConnectModalDone_${response.data._id}`) !== 'true') {
                   setShowStravaModal(true);
                 }
                 addNotification('Units saved', 'success');
@@ -891,7 +892,7 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
                 .catch(() => {});
             }
             setShowTrainingZonesModal(false);
-            if (!user.strava?.athleteId && localStorage.getItem(`stravaConnectModalDone_${user._id}`) !== 'true') {
+            if (!hasSyncSource(user) && localStorage.getItem(`stravaConnectModalDone_${user._id}`) !== 'true') {
               setShowStravaModal(true);
             }
           }}
@@ -902,7 +903,7 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
               if (response.data) {
                 window.dispatchEvent(new CustomEvent('userUpdated', { detail: response.data }));
                 setShowTrainingZonesModal(false);
-                if (!response.data.strava?.athleteId && localStorage.getItem(`stravaConnectModalDone_${response.data._id}`) !== 'true') {
+                if (!hasSyncSource(response.data) && localStorage.getItem(`stravaConnectModalDone_${response.data._id}`) !== 'true') {
                   setShowStravaModal(true);
                 }
                 addNotification('Training zones updated successfully', 'success');

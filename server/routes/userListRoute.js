@@ -867,6 +867,24 @@ router.put("/edit-profile", verifyToken, async (req, res) => {
             updateData.excludeFromBenchmarks = req.body.excludeFromBenchmarks === true;
         }
 
+        // Profile photo: a small data URL from the picker (the client squares
+        // it to 256 px), or '' / null to go back to the generated one. An
+        // http(s) URL is what the Strava import stores and is accepted too;
+        // anything else — a script, a huge upload — is refused rather than
+        // saved into every profile response.
+        if (req.body.avatar !== undefined) {
+            const avatar = req.body.avatar;
+            if (avatar === null || avatar === '') {
+                updateData.avatar = null;
+            } else if (typeof avatar === 'string' && /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(avatar) && avatar.length <= 400 * 1024) {
+                updateData.avatar = avatar;
+            } else if (typeof avatar === 'string' && /^https:\/\/[^\s]+$/.test(avatar) && avatar.length <= 2048) {
+                updateData.avatar = avatar;
+            } else {
+                return res.status(400).json({ error: 'The photo must be a PNG, JPEG or WebP under 400 KB.' });
+            }
+        }
+
         // Coach branding (logo URL, title, trademark) — gated to Coach plan
         // and above. Pro/Free users silently drop the field rather than
         // erroring out, because the profile edit endpoint is shared with
@@ -1003,7 +1021,10 @@ router.put("/edit-profile", verifyToken, async (req, res) => {
             };
         }
 
-        console.log('Updating user profile:', { userId, updateData });
+        console.log('Updating user profile:', {
+            userId,
+            updateData: updateData.avatar ? { ...updateData, avatar: `[${updateData.avatar.length} chars]` } : updateData,
+        });
         if (updateData.coachBranding) {
           console.log('[BRANDING] Saving coachBranding:', JSON.stringify(updateData.coachBranding, null, 2));
         }

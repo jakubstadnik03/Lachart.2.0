@@ -9,6 +9,7 @@ import { API_ENDPOINTS, API_BASE_URL } from '../config/api.config';
 import { User, UserPlus, UserMinus, Trash2, Bell, CreditCard, Link as LinkIcon, Compass, Globe, Tag, Database, Users, Activity, Info, AlertTriangle, BarChart2, Target, MessageCircle, TrendingUp, Sparkles } from 'lucide-react';
 import FitUploadSection from '../components/FitAnalysis/FitUploadSection';
 import { usePremium } from '../hooks/usePremium';
+import ProfilePhotoPicker from '../components/Profile/ProfilePhotoPicker';
 import UpgradeModal from '../components/UpgradeModal';
 import EmptyStateCTA from '../components/common/EmptyStateCTA';
 import { Skeleton, SkeletonCard } from '../components/common/Skeleton';
@@ -1888,6 +1889,23 @@ const SettingsPage = () => {
             <div className={`bg-white ${isMobile ? 'rounded-md' : 'rounded-lg'} shadow-md ${isMobile ? 'p-2.5' : 'p-6'}`}>
               <h3 className={`${isMobile ? 'text-sm' : 'text-xl'} font-bold text-gray-900 ${isMobile ? 'mb-2' : 'mb-4'}`}>Profile Information</h3>
               <div className={`${isMobile ? 'space-y-1.5' : 'space-y-4'}`}>
+                <div>
+                  <label className={`block ${isMobile ? 'text-[10px]' : 'text-sm'} font-medium text-gray-700 ${isMobile ? 'mb-0.5' : 'mb-1'}`}>Photo</label>
+                  <ProfilePhotoPicker
+                    user={user}
+                    isMobile={isMobile}
+                    onSaved={(avatar, updated) => {
+                      const next = updated && updated._id ? updated : { ...user, avatar };
+                      saveUserToStorage(next);
+                      window.dispatchEvent(new CustomEvent('userUpdated', { detail: next }));
+                      addNotification(avatar ? 'Profile photo updated' : 'Profile photo removed', 'success');
+                    }}
+                    onError={(msg) => addNotification(msg, 'error')}
+                  />
+                  {stravaConnected && (
+                    <p className={`${isMobile ? 'text-[10px]' : 'text-xs'} text-gray-400 mt-1`}>Or take it from Strava in Integrations.</p>
+                  )}
+                </div>
                 <div>
                   <label className={`block ${isMobile ? 'text-[10px]' : 'text-sm'} font-medium text-gray-700 ${isMobile ? 'mb-0.5' : 'mb-1'}`}>Name</label>
                   {editingName ? (
