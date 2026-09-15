@@ -15,7 +15,7 @@ import React, { useMemo, useState } from 'react';
 import { MagnifyingGlassIcon, ChevronLeftIcon } from '@heroicons/react/24/outline';
 import { PlannerSportIcon, plannerSportKey, plannerSportColor } from './WorkoutPlanModal';
 import { PRESET_CATALOG, PRESET_CATEGORY_LABELS, buildPresetSteps } from './WorkoutBuilder';
-import { WorkoutStepsSummary, WorkoutPreviewDialog } from './WorkoutStepsPreview';
+import { WorkoutStepsSummary } from './WorkoutStepsPreview';
 import HoverCard from '../shared/HoverCard';
 import { useCategories } from '../../context/CategoryContext';
 
@@ -46,8 +46,8 @@ function fmtDur(secs) {
   return h > 0 ? `${h}h ${m}m` : `${m}m`;
 }
 
-/** One draggable, clickable row: hover shows the laps, a click opens the preview. */
-function TemplateRow({ item, onOpen, categoryLabel }) {
+/** One draggable, clickable row: hover shows the laps, a click opens it in the planner. */
+function TemplateRow({ item, onOpen, onDelete, categoryLabel }) {
   const dur = fmtDur(stepSecs(item.steps));
   const meta = [SPORT_LABELS[item.sportKey] || item.sportKey, dur, item.category ? categoryLabel(item.category) : null]
     .filter(Boolean).join(' · ');
@@ -63,7 +63,7 @@ function TemplateRow({ item, onOpen, categoryLabel }) {
         );
       }}
       onClick={() => onOpen?.(item)}
-      title={item.desc ? `${item.desc} — click to see the laps, drag onto a day to plan` : 'Click to see the laps · drag onto a day to plan'}
+      title={item.desc ? `${item.desc} — click to plan it, drag onto a day` : 'Click to plan it · drag onto a day'}
       className="group flex items-center gap-2 pl-2 pr-2.5 py-2 rounded-xl ring-1 ring-slate-200/70 bg-white hover:ring-primary/40 hover:shadow-sm cursor-pointer transition-all"
       style={{ borderLeft: `3px solid ${item.color || plannerSportColor(item.sport)}` }}
     >
@@ -74,6 +74,17 @@ function TemplateRow({ item, onOpen, categoryLabel }) {
         <div className="text-[12.5px] font-semibold text-slate-800 truncate">{item.name}</div>
         <div className="text-[10.5px] text-slate-400 truncate">{meta}</div>
       </div>
+      {onDelete && !item.builtIn && (
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onDelete(item); }}
+          aria-label={`Delete template ${item.name}`}
+          title="Delete this template"
+          className="hidden group-hover:flex w-5 h-5 items-center justify-center rounded text-slate-300 hover:text-red-500 hover:bg-red-50 shrink-0"
+        >
+          <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12h10l1-12M9 7V4h6v3" /></svg>
+        </button>
+      )}
       <svg className="w-3.5 h-3.5 text-slate-300 group-hover:text-primary/50 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
         <circle cx="9" cy="6" r="1" /><circle cx="15" cy="6" r="1" />
         <circle cx="9" cy="12" r="1" /><circle cx="15" cy="12" r="1" />
@@ -92,12 +103,13 @@ const SELECT_ARROW = {
   paddingRight: 24,
 };
 
-export default function WorkoutTemplateLibrary({ templates = [], onOpenTemplate = null, onDeleteTemplate = null, onClose = null, context = {} }) {
+export default function WorkoutTemplateLibrary({ templates = [], onOpenTemplate = null, onDeleteTemplate = null, onClose = null }) {
   const [sport, setSport] = useState('all');
   const [cat, setCat] = useState('all');
   const [q, setQ] = useState('');
-  // A click shows the workout; planning it is the button inside the preview.
-  const [preview, setPreview] = useState(null);
+  // A click opens the workout in the planner — laps in the builder, the day
+  // to plan it on in the header (today until changed).
+  const openInPlanner = (item) => onOpenTemplate?.(item, 'plan');
   const { categories } = useCategories();
   const categoryLabel = (id) => (categories || []).find((c) => c.id === id)?.label || PRESET_CATEGORY_LABELS[id] || id;
 
@@ -193,7 +205,7 @@ export default function WorkoutTemplateLibrary({ templates = [], onOpenTemplate 
               <section>
                 <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 px-1 mb-1.5">My templates</p>
                 <div className="space-y-1.5">
-                  {mineShown.map((t) => <TemplateRow key={t.id} item={t} onOpen={setPreview} categoryLabel={categoryLabel} />)}
+                  {mineShown.map((t) => <TemplateRow key={t.id} item={t} onOpen={openInPlanner} onDelete={onDeleteTemplate} categoryLabel={categoryLabel} />)}
                 </div>
               </section>
             )}
@@ -203,24 +215,13 @@ export default function WorkoutTemplateLibrary({ templates = [], onOpenTemplate 
                   Built-in workouts <span className="font-medium normal-case tracking-normal text-slate-300">· {builtInShown.length}</span>
                 </p>
                 <div className="space-y-1.5">
-                  {builtInShown.map((t) => <TemplateRow key={t.id} item={t} onOpen={setPreview} categoryLabel={categoryLabel} />)}
+                  {builtInShown.map((t) => <TemplateRow key={t.id} item={t} onOpen={openInPlanner} categoryLabel={categoryLabel} />)}
                 </div>
               </section>
             )}
           </>
         )}
       </div>
-      {preview && (
-        <WorkoutPreviewDialog
-          workout={preview}
-          context={context}
-          onClose={() => setPreview(null)}
-          onPlan={onOpenTemplate ? (w) => onOpenTemplate(w, 'plan') : null}
-          onEdit={onOpenTemplate ? (w) => onOpenTemplate(w, 'edit') : null}
-          onDelete={!preview.builtIn && onDeleteTemplate ? (w) => onDeleteTemplate(w) : null}
-          planLabel="Plan it"
-        />
-      )}
     </aside>
   );
 }

@@ -569,6 +569,11 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
   const [step, setStep]           = useState(isEdit || arrivesBuilt ? 'build' : 'pick');
   const [sport, setSport]         = useState(workout?.sport || 'bike');
   const [title, setTitle]         = useState(workout?.title || '');
+  // The day the plan goes on. Opened from a day it is that day; opened from
+  // the library it is today — and either way it can be changed here.
+  const [planDate, setPlanDate]   = useState(() => toLocalISO(date));
+  useEffect(() => { setPlanDate(toLocalISO(date)); }, [date]);
+  const planDateObj = (() => { const d = new Date(`${planDate}T12:00:00`); return isNaN(d.getTime()) ? date : d; })();
   const [desc, setDesc]           = useState(workout?.description || '');
   // The coach's notes grow to fit what is in them.
   //
@@ -665,7 +670,7 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
     const estTss   = steps.length > 0 ? computeEstTSS(steps, { ...effContext, sport }) : null;
     try {
       await onSave({
-        date: toLocalISO(date),
+        date: planDate,
         sport,
         title: title.trim(),
         description: desc,
@@ -809,10 +814,23 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
                 <SportOptIcon opt={selectedSportMeta} size={20} />
               </span>
             )}
-            <div>
-              <p className="text-[11px] text-slate-400 font-medium">
-                {date.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}
-              </p>
+            <div className="min-w-0">
+              {step === 'build' ? (
+                <label className="flex items-center gap-1.5 text-[11px] text-slate-400 font-medium cursor-pointer">
+                  <span>{planDateObj.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}</span>
+                  <input
+                    type="date"
+                    value={planDate}
+                    onChange={(e) => { if (e.target.value) setPlanDate(e.target.value); }}
+                    aria-label="Planned for"
+                    className="text-[11px] text-primary font-semibold bg-transparent border-0 p-0 cursor-pointer outline-none w-[112px]"
+                  />
+                </label>
+              ) : (
+                <p className="text-[11px] text-slate-400 font-medium">
+                  {date.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}
+                </p>
+              )}
               <h2 className="text-[15px] font-bold text-slate-900 leading-tight">
                 {step === 'pick' ? 'Add a workout' : isEdit ? 'Edit planned workout' : `Plan a ${selectedSportMeta?.label || sport} workout`}
               </h2>

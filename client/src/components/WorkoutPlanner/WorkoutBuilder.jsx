@@ -783,6 +783,29 @@ export function resolvePaceForSport(target, context) {
   return null;
 }
 
+/**
+ * The LT1 / LT2 reference as the athlete reads it: watts on the bike, pace
+ * for running and swimming. The preview used to print "LT2 = 402W" over a
+ * swim set — the pseudo-watts its bars are scaled by, not a number anyone
+ * swims to. Null when the sport has no reference to show.
+ */
+export function ltReferenceLabels(context) {
+  const sport = context?.sport;
+  if (sport === 'run' || sport === 'swim') {
+    const lt2 = sport === 'run' ? (context.lt2Pace || context.runningZones?.lt2) : (context.lt2Swim || context.swimmingZones?.lt2);
+    const lt1 = sport === 'run' ? (context.lt1Pace || context.runningZones?.lt1) : (context.lt1Swim || context.swimmingZones?.lt1);
+    const unit = viewerPaceSuffix(sport);
+    return {
+      lt2: lt2 > 0 ? `${fmtPace(lt2, sport)}${unit}` : null,
+      lt1: lt1 > 0 ? `${fmtPace(lt1, sport)}${unit}` : null,
+    };
+  }
+  return {
+    lt2: context?.lt2Power ? `${Math.round(context.lt2Power)}W` : null,
+    lt1: context?.lt1Power ? `${Math.round(context.lt1Power)}W` : null,
+  };
+}
+
 /** Estimate chart duration from distance + intensity target (run/swim). */
 export function estimateSecondsFromDistance(meters, target, context) {
   if (!meters || meters <= 0) return 0;
@@ -1357,6 +1380,7 @@ export function WorkoutChart({ steps, context, onStepResize, onStepClick, onStep
   const W = SVG_W, H = SVG_H;
   const allWatts = expanded.map(s => resolveTargetWatts(s.powerTarget, context));
   const maxW = Math.max(...allWatts, 1);
+  const ltLabels = ltReferenceLabels(context);
   const FLOOR = 0.06;
 
   let cx = 0;
@@ -1525,27 +1549,29 @@ export function WorkoutChart({ steps, context, onStepResize, onStepClick, onStep
           );
         })}
 
-        {/* LT reference lines with watt labels */}
-        {context.lt2Power && (() => {
+        {/* LT reference lines — watts on the bike, pace for run and swim */}
+        {context.lt2Power && ltLabels.lt2 && (() => {
           const y = H - (context.lt2Power / maxW) * H;
+          const lw = Math.max(50, ltLabels.lt2.length * 5.2 + 24);
           return (
             <g>
               <line x1={0} y1={y} x2={W} y2={y} stroke="#f87171" strokeWidth={1} strokeDasharray="5 4" opacity={0.7}/>
-              <rect x={W - 52} y={y - 9} width={50} height={12} rx={3} fill="#fef2f2" opacity={0.9}/>
-              <text x={W - 27} y={y + 0.5} textAnchor="middle" fontSize={8} fill="#ef4444" fontWeight="700" fontFamily="system-ui,sans-serif">
-                LT2 {Math.round(context.lt2Power)}W
+              <rect x={W - lw - 2} y={y - 9} width={lw} height={12} rx={3} fill="#fef2f2" opacity={0.9}/>
+              <text x={W - 2 - lw / 2} y={y + 0.5} textAnchor="middle" fontSize={8} fill="#ef4444" fontWeight="700" fontFamily="system-ui,sans-serif">
+                LT2 {ltLabels.lt2}
               </text>
             </g>
           );
         })()}
-        {context.lt1Power && (() => {
+        {context.lt1Power && ltLabels.lt1 && (() => {
           const y = H - (context.lt1Power / maxW) * H;
+          const lw = Math.max(50, ltLabels.lt1.length * 5.2 + 24);
           return (
             <g>
               <line x1={0} y1={y} x2={W} y2={y} stroke="#34d399" strokeWidth={1} strokeDasharray="5 4" opacity={0.7}/>
-              <rect x={W - 52} y={y - 9} width={50} height={12} rx={3} fill="#f0fdf4" opacity={0.9}/>
-              <text x={W - 27} y={y + 0.5} textAnchor="middle" fontSize={8} fill="#16a34a" fontWeight="700" fontFamily="system-ui,sans-serif">
-                LT1 {Math.round(context.lt1Power)}W
+              <rect x={W - lw - 2} y={y - 9} width={lw} height={12} rx={3} fill="#f0fdf4" opacity={0.9}/>
+              <text x={W - 2 - lw / 2} y={y + 0.5} textAnchor="middle" fontSize={8} fill="#16a34a" fontWeight="700" fontFamily="system-ui,sans-serif">
+                LT1 {ltLabels.lt1}
               </text>
             </g>
           );
@@ -1606,6 +1632,7 @@ export function WorkoutChart({ steps, context, onStepResize, onStepClick, onStep
                   <div className="max-h-[168px] overflow-y-auto -mx-1 px-1">
                     {hoveredBlock.steps.map((bs, i) => {
                       const bw = resolveTargetWatts(bs.powerTarget, context);
+                      const bp = resolvePaceForSport(bs.powerTarget, context);
                       const isHovered = bs.clientId === hoveredInfo.s.clientId;
                       return (
                         <div
@@ -1616,7 +1643,11 @@ export function WorkoutChart({ steps, context, onStepResize, onStepClick, onStep
                           <span className="text-[11px] text-slate-700 tabular-nums">
                             {fmtDuration(bs.durationSeconds || 0)}
                           </span>
-                          {bw > 0 && (
+                          {bp ? (
+                            <span className="text-[11px] font-semibold text-slate-900 tabular-nums ml-auto">
+                              {bp.label}{bp.unit}
+                            </span>
+                          ) : (context.sport === 'run' || context.sport === 'swim') ? null : bw > 0 && (
                             <span className="text-[11px] font-semibold text-slate-900 tabular-nums ml-auto">
                               {Math.round(bw)} W
                             </span>
@@ -3084,12 +3115,16 @@ export default function WorkoutBuilder({ initialSteps = [], context = {}, sport 
                 <span className="w-2.5 h-2.5 rounded-sm inline-block" style={{backgroundColor:v.bg}}/>{k}
               </span>
             ))}
-            {(ctx.lt2Power || ctx.lt1Power) && (
-              <span className="flex items-center gap-2 ml-auto text-[10px] text-slate-400">
-                {ctx.lt2Power && <span className="flex items-center gap-1"><span className="inline-block w-4 border-t-2 border-red-400 border-dashed"/><span className="text-red-400">LT2 = {Math.round(ctx.lt2Power)}W</span></span>}
-                {ctx.lt1Power && <span className="flex items-center gap-1"><span className="inline-block w-4 border-t-2 border-emerald-400 border-dashed"/><span className="text-emerald-600">LT1 = {Math.round(ctx.lt1Power)}W</span></span>}
-              </span>
-            )}
+            {(() => {
+              const lt = ltReferenceLabels(ctx);
+              if (!lt.lt2 && !lt.lt1) return null;
+              return (
+                <span className="flex items-center gap-2 ml-auto text-[10px] text-slate-400">
+                  {ctx.lt2Power && lt.lt2 && <span className="flex items-center gap-1"><span className="inline-block w-4 border-t-2 border-red-400 border-dashed"/><span className="text-red-400">LT2 = {lt.lt2}</span></span>}
+                  {ctx.lt1Power && lt.lt1 && <span className="flex items-center gap-1"><span className="inline-block w-4 border-t-2 border-emerald-400 border-dashed"/><span className="text-emerald-600">LT1 = {lt.lt1}</span></span>}
+                </span>
+              );
+            })()}
           </div>
         </div>
       </div>

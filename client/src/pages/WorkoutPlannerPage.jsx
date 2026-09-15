@@ -529,7 +529,6 @@ export default function WorkoutPlannerPage() {
       {!isMobile && (panels.library ? (
         <WorkoutTemplateLibrary
           templates={templates}
-          context={context}
           onClose={() => togglePanel('library')}
           onOpenTemplate={(tpl) => setModal({
             date: today,
