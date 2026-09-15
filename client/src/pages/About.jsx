@@ -1080,7 +1080,11 @@ export default function About() {
                   )}
                 </div>
                 <div ref={pushRef} className={`lc-reveal ${i % 2 === 1 ? 'left' : 'right'}`} style={{ direction: 'ltr' }}>
-                  {d.laptop ? (
+                  {d.photo ? (
+                    /* A photograph, not a screen — rounded and shadowed like
+                       the frames beside it, without a browser bar on top. */
+                    <img src={d.img} alt={d.title.replace(/<[^>]+>/g, '')} loading="lazy" style={{ display: 'block', width: '100%', height: 'auto', borderRadius: 20, boxShadow: '0 30px 60px -20px rgba(15,23,41,.25)' }} />
+                  ) : d.laptop ? (
                     /* The laptop is in the picture (webp with alpha), so no
                        browser frame around it; the page crop is the fallback. */
                     <picture>
@@ -2307,7 +2311,7 @@ const DEEPDIVES = [
   { eb: 'Form & fitness', title: 'Read your <em>fitness, fatigue and form</em> at a glance', lead: 'CTL, ATL and TSB tracked every day. A plain-English status word — fresh, optimal, productive, overreaching — so you always know what today\'s training should be.', bullets: ['Auto-updated from every Strava or FIT activity', '14-day, 6-week and 3-month views', 'Plan race peaks around predicted form'], img: '/screenshots/2026/dashboard-1280.webp', laptop: 'dashboard', url: 'lachart.net — Dashboard' },
   { eb: 'Training log',  title: 'Every interval, with <em>a lactate dot</em>', lead: 'Open any training and tag any interval with a blood sample. Empty dots are tap-to-log. Every sample feeds back into your curve and your zones.', bullets: ['Power, HR, cadence and pace per interval', 'Auto-detected laps from FIT and Strava', '"Ready for lactate" filter surfaces untagged sessions'], img: '/screenshots/2026/training-laps-1280.webp', laptop: 'training-laps', url: 'lachart.net — Training' },
   { eb: 'Calendar',       title: 'Your whole training <em>week, month, season</em>', lead: 'An interactive calendar of every workout — completed, planned, with lactate, without. Click any day to see the session, intervals and zones.', bullets: ['Color-coded by sport and intensity', 'Strava and FIT activities appear automatically', 'Daily TSS bars track weekly load'], img: '/screenshots/2026/calendar-1280.webp', laptop: 'calendar', url: 'lachart.net — Calendar' },
-  { eb: 'PDF reports',    title: 'Professional <em>test reports</em> in seconds', lead: 'Branded PDF with your lactate curve, HR overlay, color-coded zones, threshold table, previous-test comparison and training recommendations.', bullets: ['Curve + HR overlay on a single page', 'All thresholds (LTP1, LTP2, OBLA, IAT)', 'Stage-by-stage results table', 'Personalised training recommendations'], img: 'lachart-test-pdf.png', url: 'test_lisa_2026-04-12.pdf' },
+  { eb: 'PDF reports',    title: 'Professional <em>test reports</em> in seconds', lead: 'Branded PDF with your lactate curve, HR overlay, color-coded zones, threshold table, previous-test comparison and training recommendations.', bullets: ['Curve + HR overlay on a single page', 'All thresholds (LTP1, LTP2, OBLA, IAT)', 'Stage-by-stage results table', 'Personalised training recommendations'], img: '/images/lactate-pdf-report.jpg', photo: true, url: 'test_lisa_2026-04-12.pdf' },
 ];
 
 const METHODS = [
