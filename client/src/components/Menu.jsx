@@ -307,7 +307,7 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
           className="flex items-center justify-center h-14 border-b border-gray-200 flex-shrink-0"
         >
           <img src={BRAND_LOGO_SRC} alt="LaChart Logo" className="h-8 w-auto mr-2 object-contain" />
-          <h1 className="text-xl font-bold text-primary">LaChart</h1>
+          <span className="text-xl font-bold text-primary">LaChart</span>
         </div>
 
         {!user?.role ? (

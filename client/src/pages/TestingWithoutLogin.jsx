@@ -28,6 +28,7 @@ import {
 } from '@heroicons/react/24/outline';
 import TestSection from '../components/Testing-page/TestSection';
 import { PUBLIC_TOOLS } from '../constants/publicTools';
+import { CALCULATOR_GUIDES } from '../content/calculatorGuides';
 
 // ─── Calculator helpers ────────────────────────────────────────────────────────
 const secsToHMS = (s) => {
@@ -581,6 +582,7 @@ const CALC_HEAD = {
   zones:   { title: 'Training zones',         sub: 'Power, heart rate and run pace zones from your threshold values.' },
   env:     { title: 'Heat & altitude',        sub: 'Race pacing targets adjusted for heat, humidity and altitude.' },
   weight:  { title: 'Weight & performance',   sub: 'What a change in body weight does to W/kg, flat speed and climbing.' },
+  zone2:   { title: 'Zone 2 from your lactate test', sub: 'Enter your step test — LT1 is the ceiling of Zone 2, and the curve shows where it sits.' },
 };
 
 const PATH_TO_TAB = Object.fromEntries(TABS.map(t => [t.path, t.id]));
@@ -616,6 +618,7 @@ const SEO_H1 = {
   zones:   { h1: 'Training Zones Calculator',                 sub: 'Power, heart rate and run pace zones from your threshold values' },
   env:     { h1: 'Heat & Altitude Performance Calculator',    sub: 'Adjust race pace targets for temperature, humidity and elevation' },
   weight:  { h1: 'Weight & Power Calculator',                 sub: 'See how body weight changes affect your W/kg and climbing speed' },
+  zone2:   { h1: 'Zone 2 Calculator',                          sub: 'Find the top of your aerobic base from a lactate test — power, pace and heart rate' },
 };
 
 // ─── Main component ───────────────────────────────────────────────────────────
@@ -630,6 +633,7 @@ const TestingWithoutLogin = () => {
   // SEO key can diverge from the UI tab — see PATH_TO_SEO_KEY comment.
   const seoKey = PATH_TO_SEO_KEY[location.pathname] || activeTab;
   const activeTabMeta = SEO_META[seoKey] || SEO_META.lactate;
+  const guide = CALCULATOR_GUIDES[seoKey] || CALCULATOR_GUIDES[activeTab] || null;
   const [showRegister, setShowRegister] = useState(false);
 
   // Lactate test state
@@ -768,6 +772,13 @@ const TestingWithoutLogin = () => {
         <meta property="og:title" content={activeTabMeta.title} />
         <meta property="og:type" content="website" />
         <meta property="og:url" content={activeTabMeta.canonical} />
+        {guide && (
+          <script type="application/ld+json">{JSON.stringify({
+            '@context': 'https://schema.org',
+            '@type': 'FAQPage',
+            mainEntity: guide.faq.map(([q, a]) => ({ '@type': 'Question', name: q, acceptedAnswer: { '@type': 'Answer', text: a } })),
+          })}</script>
+        )}
       </Helmet>
 
       {/* Menu */}
@@ -795,10 +806,10 @@ const TestingWithoutLogin = () => {
                   Free tools · no account needed
                 </div>
                 <h1 className="text-2xl font-extrabold leading-tight tracking-tight sm:text-3xl lg:text-4xl">
-                  {(SEO_H1[activeTab] || SEO_H1.lactate).h1}
+                  {(SEO_H1[seoKey] || SEO_H1[activeTab] || SEO_H1.lactate).h1}
                 </h1>
                 <p className="mt-2 text-sm text-white/80 sm:text-[15px]">
-                  {(SEO_H1[activeTab] || SEO_H1.lactate).sub}
+                  {(SEO_H1[seoKey] || SEO_H1[activeTab] || SEO_H1.lactate).sub}
                 </p>
               </div>
               {/* One door here; the header and the sidebar already hold both. */}
@@ -837,7 +848,7 @@ const TestingWithoutLogin = () => {
               where they came from. */}
           {(() => {
             const tab = TABS.find((t) => t.id === activeTab) || TABS[0];
-            const head = CALC_HEAD[tab.id] || CALC_HEAD.lactate;
+            const head = CALC_HEAD[seoKey] || CALC_HEAD[tab.id] || CALC_HEAD.lactate;
             const calc = {
               ftp:    <FTPCalc onUnlock={()=>setShowRegister(true)}/>,
               vo2max: <VO2maxCalc onUnlock={()=>setShowRegister(true)}/>,
@@ -924,6 +935,26 @@ const TestingWithoutLogin = () => {
               </div>
             );
           })()}
+
+          {/* ── What this tool is, in words — one page about one thing,
+              so the nine calculator URLs stop reading as one page. ── */}
+          {guide && (
+            <section className="mt-8 rounded-2xl bg-white p-5 ring-1 ring-slate-200/70 shadow-sm sm:p-7">
+              <h2 className="text-lg font-bold text-slate-900 sm:text-xl">{guide.heading}</h2>
+              <div className="mt-3 space-y-3 text-[14px] leading-relaxed text-slate-600">
+                {guide.paras.map((t) => <p key={t.slice(0, 40)}>{t}</p>)}
+              </div>
+              <h3 className="mt-6 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Questions</h3>
+              <dl className="mt-2 divide-y divide-slate-100">
+                {guide.faq.map(([q, a]) => (
+                  <div key={q} className="py-3">
+                    <dt className="text-[14px] font-bold text-slate-900">{q}</dt>
+                    <dd className="mt-1 text-[13.5px] leading-relaxed text-slate-600">{a}</dd>
+                  </div>
+                ))}
+              </dl>
+            </section>
+          )}
 
           {/* ── What the account adds ── */}
           <section className="mt-8 grid grid-cols-2 gap-3 sm:grid-cols-4">
