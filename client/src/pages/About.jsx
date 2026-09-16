@@ -329,7 +329,7 @@ export default function About() {
                 ['/for-testers',  'For testers'],
                 ['/for-coaches',  'For coaches'],
                 ['/for-athletes', 'For athletes'],
-                ['features',    'Features'],
+                ['/features',   'Features'],
                 ['download',    'App'],           // iOS launch hero section
                 ['pricing',     'Pricing'],
               ].map(([id, label]) => (
@@ -402,7 +402,7 @@ export default function About() {
                 ['/for-testers',  'For testers'],
                 ['/for-coaches',  'For coaches'],
                 ['/for-athletes', 'For athletes'],
-                ['features',    'Features'],
+                ['/features',   'Features'],
                 ['download',    'App'],
                 ['pricing',     'Pricing'],
               ].map(([id, label]) => {

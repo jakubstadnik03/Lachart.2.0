@@ -20,7 +20,7 @@ const COLUMNS = [
   {
     h: 'Product',
     l: [
-      ['Features', '/about#features'],
+      ['Features', '/features'],
       ['Pricing', '/about#pricing'],
       ['Calculator', '/lactate-curve-calculator'],
       ['Tutorials', '/how-to-use'],

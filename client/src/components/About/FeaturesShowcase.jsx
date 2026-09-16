@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import {
   MARKETING_FEATURE_CATEGORIES,
   MARKETING_FEATURES,
@@ -118,31 +119,58 @@ export default function FeaturesShowcase({ revealRef, pushRef }) {
     return () => window.removeEventListener('lachart:feature-filter', onFilter);
   }, []);
 
+  // Each row is a door to the page that explains that feature properly —
+  // the list is the summary, /features/<page> is the detail.
   const renderFeatures = (items) => (
     <div className="lc-feat-list">
-      {items.map((f) => (
-        <div key={f.title} style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-          <span
-            aria-hidden="true"
-            style={{
-              width: 34, height: 34, borderRadius: 10, flexShrink: 0,
-              background: LC.primaryTint, color: LC.primary,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-            }}
-          >
-            <FeatIcon d={f.icon} />
-          </span>
-          <div style={{ minWidth: 0 }}>
-            <h4 style={{ fontSize: 14.5, fontWeight: 700, color: LC.ink, margin: '5px 0 4px' }}>{f.title}</h4>
-            <p style={{ fontSize: 13.5, color: LC.muted, lineHeight: 1.55, margin: 0 }}>{f.body}</p>
-          </div>
-        </div>
-      ))}
+      {items.map((f) => {
+        const inner = (
+          <>
+            <span
+              aria-hidden="true"
+              className="lc-feat-ic"
+              style={{
+                width: 34, height: 34, borderRadius: 10, flexShrink: 0,
+                background: LC.primaryTint, color: LC.primary,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                transition: 'background .2s, color .2s',
+              }}
+            >
+              <FeatIcon d={f.icon} />
+            </span>
+            <div style={{ minWidth: 0 }}>
+              <h4 className="lc-feat-t" style={{ fontSize: 14.5, fontWeight: 700, color: LC.ink, margin: '5px 0 4px', transition: 'color .2s' }}>
+                {f.title}
+                {f.page && <span className="lc-feat-arrow" aria-hidden="true"> →</span>}
+              </h4>
+              <p style={{ fontSize: 13.5, color: LC.muted, lineHeight: 1.55, margin: 0 }}>{f.body}</p>
+            </div>
+          </>
+        );
+        const style = { display: 'flex', gap: 12, alignItems: 'flex-start', textDecoration: 'none', color: 'inherit' };
+        return f.page ? (
+          <Link key={f.title} to={`/features/${f.page}`} className="lc-feat-row" style={style} aria-label={`${f.title} — read more`}>
+            {inner}
+          </Link>
+        ) : (
+          <div key={f.title} style={style}>{inner}</div>
+        );
+      })}
     </div>
   );
 
   return (
     <section id="features">
+      <style>{`
+        .lc-feat-row { border-radius: 12px; margin: -6px; padding: 6px; transition: background .2s; }
+        .lc-feat-arrow { display: inline-block; opacity: 0; transform: translateX(-4px); transition: opacity .2s, transform .2s; color: ${LC.primary}; }
+        @media (hover: hover) {
+          .lc-feat-row:hover { background: ${LC.primaryTint}; }
+          .lc-feat-row:hover .lc-feat-t { color: ${LC.primaryDark}; }
+          .lc-feat-row:hover .lc-feat-ic { background: ${LC.primary}; color: #fff; }
+          .lc-feat-row:hover .lc-feat-arrow { opacity: 1; transform: none; }
+        }
+      `}</style>
       <div className="lc-sectpad">
         <div ref={revealRef} className="lc-reveal" style={{ textAlign: 'center', maxWidth: 720, margin: '0 auto 34px' }}>
           <span style={{ fontSize: 11, fontWeight: 800, color: LC.primary, textTransform: 'uppercase', letterSpacing: '0.1em' }}>
@@ -153,7 +181,8 @@ export default function FeaturesShowcase({ revealRef, pushRef }) {
           </h2>
           <p className="lc-lead" style={{ margin: '0 auto' }}>
             {MARKETING_FEATURES.length} features, grouped by what you're actually trying to do.
-            Open the part that matters to you.
+            Open the part that matters to you, or{' '}
+            <Link to="/features" style={{ color: LC.primaryDark, fontWeight: 700 }}>read every feature in detail →</Link>
           </p>
         </div>
 
