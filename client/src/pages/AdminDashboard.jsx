@@ -3387,20 +3387,40 @@ const AdminDashboard = () => {
                                     ? sub.plan.charAt(0).toUpperCase() + sub.plan.slice(1)
                                     : 'Paid';
                                   const isTrial = sub.status === 'trialing';
-                                  const trialEndStr = isTrial && sub.trialEnd
-                                    ? new Date(sub.trialEnd).toLocaleDateString()
-                                    : null;
+                                  const cancelled = !!sub.cancelAtPeriodEnd || sub.status === 'canceled';
+                                  // Access ends at the trial end while trialing, otherwise at the paid period end.
+                                  const endRaw = isTrial ? sub.trialEnd : sub.currentPeriodEnd;
+                                  const endDate = endRaw ? new Date(endRaw) : null;
+                                  const endStr = endDate ? endDate.toLocaleDateString() : null;
+                                  const daysLeft = endDate ? Math.ceil((endDate - new Date()) / 86400000) : null;
                                   return (
-                                    <span
-                                      className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                                        isTrial ? 'bg-blue-100 text-blue-900' : 'bg-green-100 text-green-900'
-                                      }`}
-                                      title={isTrial
-                                        ? `Free trial${trialEndStr ? ` until ${trialEndStr}` : ''}`
-                                        : 'Active paid subscription'}
-                                    >
-                                      {isTrial ? '🎁' : '✓'} {planLabel}{isTrial ? ' (trial)' : ''}
-                                    </span>
+                                    <div className="flex flex-col items-start gap-0.5">
+                                      <span
+                                        className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                                          cancelled ? 'bg-red-100 text-red-800'
+                                            : isTrial ? 'bg-blue-100 text-blue-900'
+                                            : 'bg-green-100 text-green-900'
+                                        }`}
+                                        title={cancelled
+                                          ? `Cancelled${endStr ? ` — access until ${endStr}` : ''}`
+                                          : isTrial
+                                            ? `Free trial${endStr ? ` until ${endStr}` : ''}`
+                                            : 'Active paid subscription'}
+                                      >
+                                        {cancelled ? '✕' : isTrial ? '🎁' : '✓'} {planLabel}{isTrial ? ' (trial)' : ''}
+                                      </span>
+                                      {cancelled ? (
+                                        <span className="text-[11px] font-semibold text-red-600">
+                                          Cancelled{endStr ? ` · ends ${endStr}` : ''}
+                                        </span>
+                                      ) : isTrial && endStr ? (
+                                        <span className={`text-[11px] ${daysLeft != null && daysLeft <= 3 ? 'text-red-600 font-semibold' : 'text-gray-500'}`}>
+                                          Trial ends {endStr}{daysLeft != null && daysLeft >= 0 ? ` (${daysLeft === 0 ? 'today' : `${daysLeft}d`})` : ''}
+                                        </span>
+                                      ) : endStr ? (
+                                        <span className="text-[11px] text-gray-500">Renews {endStr}</span>
+                                      ) : null}
+                                    </div>
                                   );
                                 }
                                 if (source === 'beta') {
