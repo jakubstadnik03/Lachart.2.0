@@ -1392,18 +1392,31 @@ function AgainstYourZones({ data, athleteId, anchor, kind, storageMode, governin
 
   return (
     <>
-      {data.retest && (
-        <div className="mt-4 rounded-2xl px-3.5 py-3" style={{ background: 'rgba(255,149,0,0.12)' }}>
-          <div className="text-[15px] font-semibold" style={{ color: '#B25000' }}>Worth retesting</div>
-          <p className="mt-1 text-[13px] leading-[1.45]" style={{ color: IOS.label }}>
-            Across {data.retest.sessions} recent sessions your threshold reads{' '}
-            {Math.abs(data.retest.trendPct).toFixed(1)}% {data.retest.direction === 'up' ? 'above' : 'below'}{' '}
-            the {fmtDemand(thresholdToDemand(anchor?.lt2, { kind, storageMode }), kind, storageMode)} on file
-            {data.retest.testAgeDays ? `, and that test is ${Math.round(data.retest.testAgeDays / 7)} weeks old` : ''}.
-            Your zones are probably {data.retest.direction === 'up' ? 'too easy' : 'too hard'}.
-          </p>
-        </div>
-      )}
+      {data.retest && (() => {
+        // Derive the banner's direction and % from the SAME projected LT2 the
+        // cards below (and "Worth rewriting your zones") show, so "too easy /
+        // too hard" and "above / below" can never contradict the numbers. The
+        // server's own retest.trendPct is computed separately and had drifted
+        // out of sign with the projection. Fall back to it only if the
+        // projection is missing.
+        const anchorLt2 = thresholdToDemand(anchor?.lt2, { kind, storageMode });
+        const projLt2 = data.projection?.lt2?.fromDemand ?? null;
+        const havePair = anchorLt2 > 0 && projLt2 > 0;
+        const pct = havePair ? ((projLt2 - anchorLt2) / anchorLt2) * 100 : (data.retest.trendPct ?? 0);
+        const up = havePair ? pct > 0 : data.retest.direction === 'up';
+        return (
+          <div className="mt-4 rounded-2xl px-3.5 py-3" style={{ background: 'rgba(255,149,0,0.12)' }}>
+            <div className="text-[15px] font-semibold" style={{ color: '#B25000' }}>Worth retesting</div>
+            <p className="mt-1 text-[13px] leading-[1.45]" style={{ color: IOS.label }}>
+              Across {data.retest.sessions} recent sessions your threshold reads{' '}
+              {Math.abs(pct).toFixed(1)}% {up ? 'above' : 'below'}{' '}
+              the {fmtDemand(anchorLt2, kind, storageMode)} on file
+              {data.retest.testAgeDays ? `, and that test is ${Math.round(data.retest.testAgeDays / 7)} weeks old` : ''}.
+              Your zones are probably {up ? 'too easy' : 'too hard'}.
+            </p>
+          </div>
+        );
+      })()}
 
       <ProjectedThresholds projection={data.projection} anchor={anchor} kind={kind} storageMode={storageMode} />
 

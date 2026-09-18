@@ -1454,43 +1454,40 @@ function LapChart({ laps, color, isBike, isRun, isSwim, unitSystem = 'metric', s
         // Inflate the range by 35% so the highest peak sits ~74% up the chart
         // instead of touching the top edge — gives the terrain visible headroom.
         const altRange = (altMax - altMin) * 1.35;
-        // Bars are laid out by DISTANCE for run/swim, by TIME for bike — match it.
-        // Records carry `timeFromStart` (older shape) OR an ISO `timestamp`; the
-        // current record builder only sets `timestamp`, so derive seconds from
-        // start when timeFromStart is absent. Without this the bike branch fell
-        // through to distance while the denominator stayed time-based, piling the
-        // whole elevation onto the far-right edge.
+        // Put every record on the SAME axis the bars use. The bars are laid out
+        // by cumulative lap weight (distance for run/swim, moving time for bike),
+        // so a record's x is found by locating which lap it fell in and
+        // interpolating within that lap's bar slot. The previous version drew the
+        // terrain on a linear elapsed-time axis normalised to the record extent,
+        // which drifts away from the weight-based bars whenever a lap's elapsed
+        // span ≠ its bar weight (stops, moving time) — the visible misalignment.
+        const useDist = (isRun || isSwim);
+        // Bar-edge x (0..100), one per lap boundary, from the exact weights the
+        // bars render with — barEdges[i]..barEdges[i+1] is lap i's slot.
+        const barEdges = [0];
+        { let c = 0; for (const e of entries) { c += capWeight(e.weight); barEdges.push((c / totalWeight) * 100); } }
+        // Lap boundaries in the record's own dimension, so records bucket into
+        // the right lap: distance for run/swim, elapsed seconds for bike.
+        const lapCum = [0];
+        { let c = 0; for (const l of laps) { c += Math.max(0, useDist ? Number(l.distance || l.totalDistance || 0) : Number(l.elapsed_time || lapMovingSecs(l) || 0)); lapCum.push(c); } }
         const t0ms = altRecs[0].timestamp != null ? new Date(altRecs[0].timestamp).getTime() : NaN;
-        const getTimeSec = altRecs[0].timeFromStart != null
-          ? (r) => r.timeFromStart
-          : (!isNaN(t0ms) ? (r) => (new Date(r.timestamp).getTime() - t0ms) / 1000 : null);
-        const hasTime = getTimeSec != null;
-        const hasDist = altRecs.some(r => r.distance != null);
-        const preferDist = (isRun || isSwim) && hasDist;
-        const getX = preferDist
-          ? (r) => r.distance
-          : hasTime
-            ? getTimeSec
-            : hasDist
-              ? (r) => r.distance
-              : (_, i) => i;
+        const recVal = useDist
+          ? (r) => Number(r.distance ?? 0)
+          : altRecs[0].timeFromStart != null
+            ? (r) => Number(r.timeFromStart ?? 0)
+            : (!isNaN(t0ms) ? (r) => (new Date(r.timestamp).getTime() - t0ms) / 1000 : (_r, i) => i);
+        const xForVal = (v) => {
+          let i = 0;
+          while (i < laps.length - 1 && v > lapCum[i + 1]) i += 1;
+          const seg = (lapCum[i + 1] - lapCum[i]) || 1;
+          const f = Math.max(0, Math.min(1, (v - lapCum[i]) / seg));
+          return barEdges[i] + f * (barEdges[i + 1] - barEdges[i]);
+        };
         const step = Math.max(1, Math.floor(altRecs.length / 300));
         const sampled = altRecs.filter((_, i) => i % step === 0 || i === altRecs.length - 1);
         const clamp = (v) => Math.max(0, Math.min(100, v));
-        // Normalise x by the records' OWN extent so the terrain ALWAYS spans the
-        // full chart width — never cropped to the right. Using the bars' total
-        // weight as the denominator looked right only when the record span ==
-        // Σ lap weights; with synthesised/moving-time records (common on mobile)
-        // the last point landed well short of 100% and the elevation appeared
-        // chopped off. The record stream is uniform over the activity, so the
-        // bars' total and the record extent line up to the same shape anyway.
-        const rawXs = sampled.map((r, si) => getX(r, si * step));
-        const xMin = Math.min(...rawXs, 0);
-        const xMax = Math.max(...rawXs);
-        const xSpan = (xMax - xMin) || 1;
         const pts = sampled.map((r, si) => {
-          const xv = rawXs[si];
-          const x = clamp(((xv - xMin) / xSpan) * 100).toFixed(1);
+          const x = clamp(xForVal(recVal(r, si * step))).toFixed(1);
           const y = ((1 - (r.altitude - altMin) / altRange) * (CHART_H - 8) + 4).toFixed(1);
           return `${x},${y}`;
         });
