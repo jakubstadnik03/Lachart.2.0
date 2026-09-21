@@ -781,21 +781,23 @@ export default function NativeDashboardPage({
     const recentlyDismissed = dismissedAt && (Date.now() - dismissedAt) <= WEEK;
     if (recentlyDismissed) return undefined;
 
-    // Prompt when there's still a data source worth connecting: no Strava,
-    // or (on iOS) Apple Health not connected yet for recovery data.
+    // Only prompt when the athlete has connected NOTHING yet. If any source is
+    // already linked — Strava, Garmin OR (on iOS) Apple Health — don't pop the
+    // sheet; they can still add the others from Settings. Previously an
+    // unconnected Apple Health alone re-triggered it even for Strava/Garmin users.
     (async () => {
-      let appleHealthMissing = false;
+      let appleHealthConnected = false;
       try {
         const { isAppleHealthSupported } = await import('../services/appleHealthCapacitor');
         if (isAppleHealthSupported()) {
           const { getAppleHealthStatus } = await import('../services/api');
           const st = await getAppleHealthStatus().catch(() => null);
-          appleHealthMissing = !st?.connected;
+          appleHealthConnected = !!st?.connected;
         }
       } catch (_) { /* web / no plugin */ }
       if (cancelled) return;
-      // A Garmin athlete has a source; only Apple Health can still be worth asking for.
-      if ((!stravaConnected && !garminLinked(user)) || appleHealthMissing) {
+      const hasAnyIntegration = stravaConnected || garminLinked(user) || appleHealthConnected;
+      if (!hasAnyIntegration) {
         setTimeout(() => { if (!cancelled) setShowStravaConnect(true); }, 600);
       }
     })();
