@@ -712,7 +712,7 @@ router.post("/complete-registration/:token", async (req, res) => {
             const jwtToken = jwt.sign(
                 { userId: String(invited._id), role: invited.role },
                 JWT_SECRET,
-                { expiresIn: '24h' }
+                { expiresIn: process.env.AUTH_TOKEN_TTL || '90d' }
             );
             return res.status(200).json({
                 message: "Registration complete",
@@ -2568,7 +2568,7 @@ router.post("/google-auth", async (req, res) => {
         const token = jwt.sign(
             { userId: String(user._id), role: user.role },
             JWT_SECRET,
-            { expiresIn: '24h' }
+            { expiresIn: process.env.AUTH_TOKEN_TTL || '90d' }
         );
 
         // Update lastLogin + loginCount for all Google sign-ins (existing + new users)
@@ -2743,7 +2743,7 @@ router.post("/apple-auth", async (req, res) => {
         const token = jwt.sign(
             { userId: String(user._id), role: user.role },
             JWT_SECRET,
-            { expiresIn: '24h' }
+            { expiresIn: process.env.AUTH_TOKEN_TTL || '90d' }
         );
 
         await User.findByIdAndUpdate(user._id, {

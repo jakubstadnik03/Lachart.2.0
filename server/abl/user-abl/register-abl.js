@@ -120,7 +120,8 @@ class RegisterAbl {
             const token = jwt.sign(
                 { userId: newUser._id, email: newUser.email, role: newUser.role },
                 JWT_SECRET,
-                { expiresIn: "24h" }
+                // Long-lived session (see login-abl) — avoid daily logouts.
+                { expiresIn: process.env.AUTH_TOKEN_TTL || "90d" }
             );
 
             // Registration hands back a token and the client is signed in from

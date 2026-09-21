@@ -16,7 +16,8 @@ const login = async (req, res) => {
         const token = jwt.sign(
             { userId: user._id, role: user.role },
             process.env.JWT_SECRET,
-            { expiresIn: '24h' }
+            // Long-lived session (see login-abl) — avoid daily logouts.
+            { expiresIn: process.env.AUTH_TOKEN_TTL || '90d' }
         );
 
         // Vrátit token a základní info o uživateli

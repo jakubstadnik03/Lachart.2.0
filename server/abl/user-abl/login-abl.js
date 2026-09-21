@@ -53,7 +53,10 @@ class LoginAbl {
                     role: user.role
                 },
                 JWT_SECRET,
-                { expiresIn: "24h" }
+                // Long-lived session so users aren't logged out daily. No refresh
+                // flow yet, and the token lives in localStorage, so a short TTL
+                // meant a re-login every 24h. Tune via AUTH_TOKEN_TTL.
+                { expiresIn: process.env.AUTH_TOKEN_TTL || "90d" }
             );
 
             console.log("Token generated successfully");

@@ -79,7 +79,8 @@ router.get('/email-login', async (req, res) => {
     const token = jwt.sign(
       { userId: String(user._id), role: user.role },
       JWT_SECRET,
-      { expiresIn: '24h' },
+      // Long-lived session (see login-abl) — avoid daily logouts.
+      { expiresIn: process.env.AUTH_TOKEN_TTL || '90d' },
     );
 
     await User.updateOne(
