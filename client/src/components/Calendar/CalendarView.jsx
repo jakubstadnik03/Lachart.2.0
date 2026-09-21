@@ -2,6 +2,7 @@ import React, { useMemo, useState, useEffect, useLayoutEffect, useCallback, useR
 import { useNavigate } from 'react-router-dom';
 import MoveCostDialog, { shouldConfirm } from './MoveCostDialog';
 import { assessMoveCost } from '../../utils/moveCost';
+import { resolveSportKey } from '../../utils/sportKey';
 import ReactDOM from 'react-dom';
 import TrainingFormComponent from '../TrainingForm';
 import SessionProgressChart from '../training/SessionProgressChart';
@@ -658,12 +659,21 @@ function PlannedWorkoutCard({ pw, onSelect, onStart, compact = false, showDescri
   const [menuOpen, setMenuOpen] = React.useState(false);
   const [repeatOpen, setRepeatOpen] = React.useState(false);
   const [pairOpen, setPairOpen] = React.useState(false);
-  // Sessions this plan could stand for: the day's, minus the one it has.
+  // Sessions this plan could stand for: the day's, minus the one it has, and
+  // only in the plan's own sport — a Bike plan must never suggest a Swim.
+  // Unresolvable-sport activities are kept; an unknown plan sport skips the filter.
   const pairOptions = React.useMemo(() => {
     if (!onPair || !Array.isArray(pairCandidates)) return [];
     const linkedId = linkedActivity ? getActivityAppId(linkedActivity) : null;
-    return pairCandidates.filter((a) => getActivityAppId(a) !== linkedId);
-  }, [onPair, pairCandidates, linkedActivity]);
+    const planKind = resolveSportKey(pw?.sport);
+    const activityKind = (a) => resolveSportKey(a?.sport ?? a?.sport_type ?? a?.type ?? a?.activityType ?? '');
+    return pairCandidates.filter((a) => {
+      if (getActivityAppId(a) === linkedId) return false;
+      if (planKind === 'other') return true;
+      const k = activityKind(a);
+      return k === 'other' || k === planKind;
+    });
+  }, [onPair, pairCandidates, linkedActivity, pw?.sport]);
   const [menuPos, setMenuPos] = React.useState({ top: 0, right: 0 });
   const menuBtnRef = React.useRef(null);
   const { getCategory, getCategoryStyle: getCatStyle } = useCategories();

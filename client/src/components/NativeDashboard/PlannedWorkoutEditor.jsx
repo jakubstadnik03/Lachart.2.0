@@ -373,12 +373,20 @@ export default function PlannedWorkoutEditor({
 
   const isCompleted = !!linkedActivity;
 
-  // Pairing by hand — which session this plan stands for is the athlete's
-  // call, not the sport matcher's. Unpair leaves the plan alone (it will not
-  // take the next session of its sport either); pairing points it at one.
+  // Pairing by hand — the athlete taps which of the day's sessions this plan
+  // stands for. Only same-sport sessions are offered though: a Bike plan must
+  // never suggest a Swim. Activities whose sport can't be resolved are kept
+  // rather than hidden, and an unknown plan sport disables the filter entirely.
   const linkedId = linkedActivity ? getActivityAppId(linkedActivity) : null;
+  const planKind = normSport(sport);
+  const activityKind = (a) => normSport(a?.sport ?? a?.sport_type ?? a?.type ?? a?.activityType ?? '');
   const pairOptions = (Array.isArray(dayActivities) ? dayActivities : [])
-    .filter((a) => getActivityAppId(a) !== linkedId);
+    .filter((a) => getActivityAppId(a) !== linkedId)
+    .filter((a) => {
+      if (planKind === 'other') return true;
+      const k = activityKind(a);
+      return k === 'other' || k === planKind;
+    });
   const setPlanPairing = async (act) => {
     if (!plannedWorkout?._id || pairing) return;
     setPairing(true);
