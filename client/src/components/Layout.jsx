@@ -330,7 +330,11 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
 
   // Dashboard / charts can request the zones setup modal at any time — for
   // the athlete themselves, or for a coach on an athlete's profile.
+  // On native, NativeLayout owns this modal; Layout also renders NativeLayout,
+  // so listening here too made one request open the sheet TWICE (dismiss one,
+  // the second is behind it). Let NativeLayout be the sole handler on native.
   useEffect(() => {
+    if (isCapacitorNative()) return undefined;
     const onOpenZones = (e) => {
       const { force, athleteId, profile, sport, prefill } = e?.detail || {};
       if (!user?._id) return;
