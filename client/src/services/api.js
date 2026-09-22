@@ -525,22 +525,32 @@ function buildGetCacheKey(url, config) {
 
 // URL patterns that benefit from longer in-memory TTL + localStorage persistence.
 // These endpoints return large or stable data that rarely changes during a session.
+//
+// `lsTtl` is how long the localStorage copy survives — it is what actually saves
+// the server, because within that window the app serves the phone's own copy
+// instead of re-downloading everything on every open/navigation. Every mutation
+// invalidates the relevant caches (invalidateTestCaches / invalidateTrainingCaches
+// / invalidateProfileCaches), so freshness is event-driven and the TTL can be
+// generous for data the user rarely changes. Stable, self-owned data (tests,
+// zones, profile) gets hours; data a background sync or a coach can change
+// (trainings, activities, form/fitness) stays shorter so it isn't stale for long.
+const MIN = 60 * 1000;
 const LONG_CACHE_PATTERNS = [
-  { pattern: /\/test\/list\//, ttl: 120000, lsKey: 'api_cache_tests' },
-  { pattern: /\/user\/athlete\/[^/]+\/trainings$/, ttl: 120000, lsKey: 'api_cache_trainings' },
-  { pattern: /\/api\/fit\/trainings$/, ttl: 120000, lsKey: 'api_cache_fit_trainings' },
-  { pattern: /\/api\/fit\/trainings\/with-lactate/, ttl: 120000, lsKey: 'api_cache_fit_lactate' },
-  { pattern: /\/api\/fit\/trainings\/monthly-analysis/, ttl: 120000, lsKey: 'api_cache_fit_monthly' },
-  { pattern: /\/api\/fit\/power-metrics/, ttl: 120000, lsKey: 'api_cache_power_metrics' },
+  { pattern: /\/test\/list\//, ttl: 120000, lsKey: 'api_cache_tests', lsTtl: 2 * 60 * MIN },
+  { pattern: /\/user\/athlete\/[^/]+\/trainings$/, ttl: 120000, lsKey: 'api_cache_trainings', lsTtl: 30 * MIN },
+  { pattern: /\/api\/fit\/trainings$/, ttl: 120000, lsKey: 'api_cache_fit_trainings', lsTtl: 30 * MIN },
+  { pattern: /\/api\/fit\/trainings\/with-lactate/, ttl: 120000, lsKey: 'api_cache_fit_lactate', lsTtl: 30 * MIN },
+  { pattern: /\/api\/fit\/trainings\/monthly-analysis/, ttl: 120000, lsKey: 'api_cache_fit_monthly', lsTtl: 30 * MIN },
+  { pattern: /\/api\/fit\/power-metrics/, ttl: 120000, lsKey: 'api_cache_power_metrics', lsTtl: 60 * MIN },
   { pattern: /\/api\/integrations\/status$/, ttl: 60000 },
-  { pattern: /\/api\/integrations\/activities$/, ttl: 120000, lsKey: 'api_cache_ext_activities' },
-  { pattern: /\/api\/lactate-session\/zones\/latest/, ttl: 120000, lsKey: 'api_cache_zones_latest' },
-  { pattern: /\/user\/athlete\/[^/]+\/form-fitness/, ttl: 300000, lsKey: 'api_cache_form_fitness' },
-  { pattern: /\/user\/athlete\/[^/]+\/weekly-training-load/, ttl: 300000, lsKey: 'api_cache_weekly_load' },
+  { pattern: /\/api\/integrations\/activities$/, ttl: 120000, lsKey: 'api_cache_ext_activities', lsTtl: 30 * MIN },
+  { pattern: /\/api\/lactate-session\/zones\/latest/, ttl: 120000, lsKey: 'api_cache_zones_latest', lsTtl: 2 * 60 * MIN },
+  { pattern: /\/user\/athlete\/[^/]+\/form-fitness/, ttl: 300000, lsKey: 'api_cache_form_fitness', lsTtl: 60 * MIN },
+  { pattern: /\/user\/athlete\/[^/]+\/weekly-training-load/, ttl: 300000, lsKey: 'api_cache_weekly_load', lsTtl: 60 * MIN },
   { pattern: /\/user\/athlete\/[^/]+\/today-metrics/, ttl: 120000 },
-  { pattern: /\/user\/profile$/, ttl: 60000, lsKey: 'api_cache_profile' },
+  { pattern: /\/user\/profile$/, ttl: 60000, lsKey: 'api_cache_profile', lsTtl: 60 * MIN },
 ];
-const LS_CACHE_MAX_AGE = 10 * 60 * 1000; // localStorage entries valid for 10 minutes
+const LS_CACHE_MAX_AGE = 10 * 60 * 1000; // default localStorage lifetime when an entry has no lsTtl
 
 function matchLongCache(url) {
   for (const entry of LONG_CACHE_PATTERNS) {
@@ -556,12 +566,12 @@ function lsCacheKey(baseKey, url, config) {
   return `${baseKey}_${uid}_${url}_${params}`;
 }
 
-function lsCacheRead(key) {
+function lsCacheRead(key, maxAge = LS_CACHE_MAX_AGE) {
   try {
     const raw = localStorage.getItem(key);
     if (!raw) return null;
     const { ts, data } = JSON.parse(raw);
-    if (Date.now() - ts > LS_CACHE_MAX_AGE) {
+    if (Date.now() - ts > maxAge) {
       localStorage.removeItem(key);
       return null;
     }
@@ -605,7 +615,7 @@ api.get = (url, config = {}) => {
 
   // 2. Check localStorage cache (for heavy endpoints) before network
   if (longEntry?.lsKey && !noCache) {
-    const lsData = lsCacheRead(lsCacheKey(longEntry.lsKey, url, config));
+    const lsData = lsCacheRead(lsCacheKey(longEntry.lsKey, url, config), longEntry.lsTtl || LS_CACHE_MAX_AGE);
     if (lsData) {
       const syntheticResp = { data: lsData, status: 200, statusText: 'OK', headers: {}, config: { ...config, url, __cached: true, __startTime: now } };
       // Populate in-memory cache with shorter TTL to avoid repeated LS reads
