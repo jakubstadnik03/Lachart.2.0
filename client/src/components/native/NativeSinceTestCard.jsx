@@ -253,20 +253,43 @@ function PredictedCurve({ anchor, training, history, kind, storageMode, mode, on
 export default function NativeSinceTestCard({
   test: openTest, tests = [], athleteId = null, onOpenFull = null,
 }) {
-  const kind = sportKind(openTest?.sport);
+  const openKind = sportKind(openTest?.sport);
+
+  // Latest bike / run test with a usable anchor; when both exist the athlete can
+  // toggle the card between them (bike and run fitness move independently).
+  const sportTests = useMemo(() => {
+    const pick = (s) => {
+      const list = (tests || []).filter((t) => sportKind(t?.sport) === s && t?.date);
+      if (!list.length) return null;
+      const newest = list.reduce((a, b) => (new Date(b.date) > new Date(a.date) ? b : a));
+      return extractLactateThresholds(newest)?.lt2 > 0 ? newest : null;
+    };
+    return { bike: pick('bike'), run: pick('run') };
+  }, [tests]);
+  const showSportToggle = Boolean(sportTests.bike && sportTests.run);
+  const defaultSport = (openKind === 'bike' || openKind === 'run') ? openKind
+    : (sportTests.bike ? 'bike' : sportTests.run ? 'run' : openKind);
+  const [sport, setSport] = useState(defaultSport);
+  const openTestId = openTest?._id;
+  useEffect(() => {
+    setSport(defaultSport);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openTestId]);
+  const kind = (sport === 'bike' || sport === 'run') ? sport : openKind;
   const supported = kind === 'bike' || kind === 'run';
 
   /**
-   * The latest test of this sport, which is the only one the drift walk can
-   * speak about — it gathers sessions after the newest test and nothing
-   * before it. See the desktop panel for the full reasoning.
+   * The latest test of the shown sport, the only one the drift walk can speak
+   * about (it gathers sessions after the newest test, nothing before it). On
+   * the open test's own sport the open test wins if it is newer; on the other
+   * it is simply the latest test of that sport. See the desktop panel.
    */
   const test = useMemo(() => {
-    const sameSport = (tests || []).filter((t) => sportKind(t?.sport) === kind && t?.date);
-    if (!sameSport.length) return openTest;
-    const newest = sameSport.reduce((a, b) => (new Date(b.date) > new Date(a.date) ? b : a));
-    return new Date(newest.date) > new Date(openTest?.date || 0) ? newest : openTest;
-  }, [tests, kind, openTest]);
+    const forSport = sportTests[kind];
+    if (!forSport) return kind === openKind ? openTest : null;
+    if (kind !== openKind) return forSport;
+    return new Date(forSport.date) > new Date(openTest?.date || 0) ? forSport : openTest;
+  }, [sportTests, kind, openTest, openKind]);
 
   const isViewingOlder = String(test?._id || '') !== String(openTest?._id || '');
   const anchor = useMemo(() => (test ? extractLactateThresholds(test) : null), [test]);
@@ -356,6 +379,27 @@ export default function NativeSinceTestCard({
           </span>
         ) : null}
       </div>
+
+      {showSportToggle && (
+        <div style={{ display: 'inline-flex', background: 'rgba(120,120,128,0.12)', borderRadius: 10, padding: 2, marginBottom: 10 }}>
+          {['bike', 'run'].map((s) => (
+            <button
+              key={s}
+              type="button"
+              onClick={() => setSport(s)}
+              style={{
+                border: 'none', borderRadius: 8, padding: '5px 14px', fontSize: 12.5, fontWeight: 700,
+                fontFamily: 'inherit', cursor: 'pointer', WebkitTapHighlightColor: 'transparent',
+                background: kind === s ? '#fff' : 'transparent',
+                color: kind === s ? '#111827' : '#6B7280',
+                boxShadow: kind === s ? '0 1px 2px rgba(10,14,26,0.12)' : 'none',
+              }}
+            >
+              {s === 'bike' ? 'Bike' : 'Run'}
+            </button>
+          ))}
+        </div>
+      )}
 
       {isViewingOlder && (
         <div style={{

@@ -524,30 +524,50 @@ function useZoneSplit(athleteId, testDate, kind, enabled) {
 export default function TrainingSinceTestPanel({
   test: openTest, tests = [], athleteId = null, onOpenTest = null, className = '',
 }) {
-  const kind = sportKind(openTest?.sport);
+  const openKind = sportKind(openTest?.sport);
+
+  // The latest bike / run test that carries a usable lactate anchor. When both
+  // exist the athlete can toggle the whole panel between them — a triathlete's
+  // running fitness and cycling fitness move independently, so one prediction
+  // can't stand for the other.
+  const sportTests = useMemo(() => {
+    const pick = (s) => {
+      const list = (tests || []).filter((t) => sportKind(t?.sport) === s && t?.date);
+      if (!list.length) return null;
+      const newest = list.reduce((a, b) => (new Date(b.date) > new Date(a.date) ? b : a));
+      return extractLactateThresholds(newest)?.lt2 > 0 ? newest : null;
+    };
+    return { bike: pick('bike'), run: pick('run') };
+  }, [tests]);
+  const showSportToggle = Boolean(sportTests.bike && sportTests.run);
+  const defaultSport = (openKind === 'bike' || openKind === 'run') ? openKind
+    : (sportTests.bike ? 'bike' : sportTests.run ? 'run' : openKind);
+
+  // The sport being shown. Defaults to the open test's, resets only when a
+  // different test is opened (not on every `tests` refresh, which would undo a
+  // manual toggle).
+  const [sport, setSport] = useState(defaultSport);
+  const openTestId = openTest?._id;
+  useEffect(() => {
+    setSport(defaultSport);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openTestId]);
+  const kind = (sport === 'bike' || sport === 'run') ? sport : openKind;
   const supported = kind === 'bike' || kind === 'run';
 
   /**
-   * The test everything is measured against: the most recent one of this sport.
-   *
-   * Not necessarily the one open on the page. The drift walk only ever gathers
-   * sessions after the newest test — a ride from before it describes a
-   * different athlete — so asking it about an older test would return the
-   * newest test's sessions measured against the older test's curve, which is
-   * a number about nothing. And re-anchoring the walk per test is not a fix:
-   * every cached read is stamped with the test it was made against, so flipping
-   * between two tests would re-fetch a season of streams each way.
-   *
-   * So the panel is honest instead: it reads against the latest test, and when
-   * the athlete is looking at an older one it says which test it is talking
-   * about and offers to take them there.
+   * The test everything is measured against: the most recent one of the shown
+   * sport. When that sport is the open test's own, the open test wins if it is
+   * newer; on the other sport it is simply the latest test of that sport.
+   * (The drift walk only gathers sessions after the newest test, so an older
+   * test would read the newest test's sessions against the wrong curve.)
    */
   const governingTest = useMemo(() => {
-    const sameSport = (tests || []).filter((t) => sportKind(t?.sport) === kind && t?.date);
-    if (!sameSport.length) return openTest;
-    const newest = sameSport.reduce((a, b) => (new Date(b.date) > new Date(a.date) ? b : a));
-    return new Date(newest.date) > new Date(openTest?.date || 0) ? newest : openTest;
-  }, [tests, kind, openTest]);
+    const forSport = sportTests[kind];
+    if (!forSport) return kind === openKind ? openTest : null;
+    if (kind !== openKind) return forSport;
+    return new Date(forSport.date) > new Date(openTest?.date || 0) ? forSport : openTest;
+  }, [sportTests, kind, openTest, openKind]);
 
   const isViewingOlder = String(governingTest?._id || '') !== String(openTest?._id || '');
   const test = governingTest;
@@ -677,6 +697,23 @@ export default function TrainingSinceTestPanel({
       collapsible
       className={className}
     >
+
+      {showSportToggle && (
+        <div className="mb-4 inline-flex rounded-xl bg-slate-100 p-0.5">
+          {['bike', 'run'].map((s) => (
+            <button
+              key={s}
+              type="button"
+              onClick={() => setSport(s)}
+              className={`rounded-[10px] px-4 py-1.5 text-[13px] font-semibold transition-colors ${
+                kind === s ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              {s === 'bike' ? 'Bike' : 'Run'}
+            </button>
+          ))}
+        </div>
+      )}
 
       {isViewingOlder && (
         <div className="mb-4 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-xl border border-sky-200 bg-sky-50/70 px-3 py-2 text-[12px] leading-relaxed text-sky-900">
