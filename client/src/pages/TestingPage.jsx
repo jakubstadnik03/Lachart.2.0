@@ -206,6 +206,21 @@ const TestingPage = () => {
     });
   };
 
+  // Switching the sport tab must also switch the open test/curve: otherwise the
+  // filter changed to Cycling while the big lactate curve still showed a Run
+  // test. Jump to the latest test of the chosen sport (unless the open one
+  // already matches, or "All" is selected).
+  const handleSportChange = (sport) => {
+    setSelectedSport(sport);
+    if (sport === 'all' || !Array.isArray(tests) || tests.length === 0) return;
+    const current = tests.find((t) => String(t._id) === String(testIdFromUrl));
+    if (current && normalizeTestSportKey(current.sport) === sport) return;
+    const latestOfSport = [...tests]
+      .filter((t) => normalizeTestSportKey(t.sport) === sport)
+      .sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0))[0];
+    if (latestOfSport) handleUrlTestSelection(latestOfSport._id);
+  };
+
   const sports = [
     { id: "all", name: "All Sports" },
     { id: "run", name: "Running" },
@@ -1433,7 +1448,7 @@ const TestingPage = () => {
             <SportsSelector
               sports={sports}
               selectedSport={selectedSport}
-              onSportChange={setSelectedSport}
+              onSportChange={handleSportChange}
             />
           </div>
 
