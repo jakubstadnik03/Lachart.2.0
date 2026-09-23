@@ -362,6 +362,23 @@ export const STYLE = `
   .lc-nav-link.active { color: ${LC.primaryDark}; }
   .lc-nav-link.active::after { transform: scaleX(1); }
 
+  /* Hover dropdown for nav items that have sub-pages (Features). */
+  .lc-navdd { position: relative; display: inline-flex; }
+  .lc-navdd::after { content: ''; position: absolute; top: 100%; left: 0; right: 0; height: 12px; }
+  .lc-navdd-menu {
+    position: absolute; top: 100%; left: 0; margin-top: 10px; min-width: 240px;
+    background: #fff; border: 1px solid rgba(180,190,210,.28); border-radius: 14px;
+    box-shadow: 0 18px 44px -18px rgba(20,26,54,.30); padding: 6px; z-index: 200;
+    opacity: 0; visibility: hidden; transform: translateY(4px);
+    transition: opacity .14s ease, transform .14s ease; pointer-events: none;
+  }
+  .lc-navdd:hover .lc-navdd-menu, .lc-navdd:focus-within .lc-navdd-menu {
+    opacity: 1; visibility: visible; transform: translateY(0); pointer-events: auto;
+  }
+  .lc-navdd-item { display: block; padding: 9px 12px; border-radius: 10px; text-decoration: none; color: ${LC.ink || '#1b2138'}; font-size: 14px; font-weight: 600; }
+  .lc-navdd-item:hover { background: ${LC.primaryTint}; }
+  .lc-navdd-item span { display: block; font-weight: 500; font-size: 12px; color: ${LC.muted}; margin-top: 1px; }
+
   /* Scroll progress bar — pinned under the nav, fills as you scroll. */
   .lc-progress {
     position: fixed; top: 0; left: 0; right: 0;

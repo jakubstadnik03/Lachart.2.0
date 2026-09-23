@@ -34,6 +34,7 @@ import { createCheckoutSession } from '../services/api';
 import SiteFooter from '../components/About/SiteFooter';
 import { ATHLETE_PLAN_PRICE_LABEL, COACH_PLAN_PRICE_LABEL } from '../constants/planPricing';
 import { LC, STYLE, Eyebrow, BrowserFrame, useReveal, useScrollSettle } from '../components/About/marketingKit';
+import { FEATURES } from './features/featureCatalog';
 
 const AboutGallerySection = React.lazy(() => import('../components/About/AboutGallerySection'));
 const IOSGalleryCarousel = React.lazy(() => import('../components/About/IOSGalleryCarousel'));
@@ -332,11 +333,27 @@ export default function About() {
                 ['/features',   'Features'],
                 ['download',    'App'],           // iOS launch hero section
                 ['pricing',     'Pricing'],
-              ].map(([id, label]) => (
-                id.startsWith('/')
+              ].map(([id, label]) => {
+                // "Features" opens a hover dropdown of its sub-pages.
+                if (id === '/features') {
+                  return (
+                    <div key={id} className="lc-navdd">
+                      <Link to={id} className="lc-nav-link">{label}</Link>
+                      <div className="lc-navdd-menu" role="menu">
+                        {FEATURES.map((f) => (
+                          <Link key={f.slug} to={`/features/${f.slug}`} className="lc-navdd-item" role="menuitem">
+                            {f.nav || f.eyebrow}
+                            {f.eyebrow && f.nav && f.eyebrow !== f.nav ? <span>{f.eyebrow}</span> : null}
+                          </Link>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                }
+                return id.startsWith('/')
                   ? <Link key={id} to={id} className="lc-nav-link">{label}</Link>
-                  : <a key={id} href={`#${id}`} className={`lc-nav-link${activeSection === id ? ' active' : ''}`}>{label}</a>
-              ))}
+                  : <a key={id} href={`#${id}`} className={`lc-nav-link${activeSection === id ? ' active' : ''}`}>{label}</a>;
+              })}
             </div>
             <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
               <Link to="/login" style={{ color: LC.muted, textDecoration: 'none', fontSize: 14, fontWeight: 500, padding: '8px 12px' }} className="lc-nav-ghost">Sign in</Link>
