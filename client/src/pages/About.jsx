@@ -17,7 +17,6 @@
 //   14. Methodology — 4 threshold methods
 //   15. Integrations (Strava / FIT / Manual)
 //   16. Testimonials
-//   17. What's new (changelog)
 //   5b. Workspaces tabs (Athlete / Coach / Tester) — moved up
 //   19. App download (App Store + Play badges)
 //   20. Pricing — Free / Athlete / Coach
@@ -1346,45 +1345,6 @@ export default function About() {
             <style>{`
               @media (max-width: 900px) { .lc-voices-grid { grid-template-columns: 1fr !important; } }
             `}</style>
-          </div>
-        </section>
-
-        {/* ── 17. What's new — timeline ─────────────────────────────────── */}
-        <section>
-          <div className="lc-sectpad">
-            <div ref={pushRef} className="lc-reveal" style={{ maxWidth: 680, marginBottom: 36 }}>
-              <Eyebrow>What's new</Eyebrow>
-              <h2 className="lc-big" style={{ margin: '18px 0 12px' }}>Latest <em>shipping notes</em></h2>
-              <p className="lc-lead" style={{ margin: 0 }}>The most-recent additions to LaChart. Quarterly releases, plus one-off updates whenever something useful is ready.</p>
-            </div>
-            <div className="lc-timeline" style={{ maxWidth: 720 }}>
-              {[
-                { date: 'Jun 2026',  title: 'iOS app — now on the App Store',             title2: 'Mobile',     body: 'LaChart for iPhone is live. Native dashboard widget, today\'s training, Apple Health sync, push notifications and on-device lactate recording — free download.', cta: 'Download from the App Store →', href: 'https://apps.apple.com/cz/app/lachart/id6764768876?l=cs' },
-                { date: 'May 2026',  title: 'iOS app — public TestFlight',                title2: 'Mobile',     body: 'Native iOS shell with pull-to-refresh, push notifications, Apple Health import and on-device lactate recording.', cta: 'Open mobile app', href: '/download' },
-                { date: 'Mar 2026',  title: 'Professional PDF reports from lactate tests', title2: 'Reports',    body: 'Generate branded PDFs with lactate + HR curves, color-coded zones, threshold tables, previous test comparison graphs and training recommendations.', cta: 'Try the calculator →', href: '/lactate-curve-calculator' },
-                { date: 'Nov 2025',  title: 'Bulk Strava interval detection',              title2: 'Integration',body: 'Detect every power fluctuation, auto-create Strava laps, and analyze threshold blocks instantly. Works on a whole month of activities at once.', cta: 'See FIT analysis →', href: '/training-calendar' },
-                { date: 'Oct 2025',  title: 'Responsive lactate calculator revamp',        title2: 'Tools',      body: 'The free testing-without-login flow loads faster, scales on mobile, and preserves manual adjustments.', cta: 'Open calculator →', href: '/lactate-curve-calculator' },
-              ].map((u, i) => (
-                <article
-                  key={u.title}
-                  ref={pushRef}
-                  className={`lc-reveal d${i+1} lc-timeline-item`}
-                  style={{ background: 'rgba(255,255,255,.55)', border: '1px solid ' + LC.border, borderRadius: 14, marginBottom: 14 }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8, flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: 10.5, fontWeight: 800, color: LC.primaryDark, textTransform: 'uppercase', letterSpacing: '0.1em', padding: '3px 10px', borderRadius: 9999, background: LC.primaryTint }}>{u.date}</span>
-                    <span style={{ fontSize: 10.5, fontWeight: 700, color: LC.muted, textTransform: 'uppercase', letterSpacing: '0.08em' }}>· {u.title2}</span>
-                  </div>
-                  <h4 style={{ fontSize: 16, fontWeight: 800, color: LC.ink, margin: '0 0 8px', letterSpacing: '-0.01em' }}>{u.title}</h4>
-                  <p style={{ fontSize: 13.5, color: LC.muted, lineHeight: 1.6, margin: '0 0 10px' }}>{u.body}</p>
-                  {u.cta && (
-                    u.href.startsWith('/')
-                      ? <Link to={u.href} onClick={() => track(`whatsnew_${i}`)} style={{ fontSize: 12.5, fontWeight: 700, color: LC.primary, textDecoration: 'none' }}>{u.cta}</Link>
-                      : <a href={u.href} style={{ fontSize: 12.5, fontWeight: 700, color: LC.primary, textDecoration: 'none' }}>{u.cta}</a>
-                  )}
-                </article>
-              ))}
-            </div>
           </div>
         </section>
 
