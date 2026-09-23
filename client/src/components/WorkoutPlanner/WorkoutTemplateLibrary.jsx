@@ -59,7 +59,7 @@ function TemplateRow({ item, onOpen, onDelete, categoryLabel }) {
         e.dataTransfer.effectAllowed = 'copy';
         e.dataTransfer.setData(
           'application/x-lachart-template',
-          JSON.stringify({ name: item.name, sport: item.sport, steps: item.steps, description: item.builtIn ? '' : item.desc, category: item.category || '' }),
+          JSON.stringify({ name: item.name, sport: item.sport, steps: item.steps, description: item.builtIn ? '' : item.desc, comment: item.builtIn ? '' : (item.comment || ''), category: item.category || '' }),
         );
       }}
       onClick={() => onOpen?.(item)}
@@ -107,6 +107,8 @@ export default function WorkoutTemplateLibrary({ templates = [], onOpenTemplate 
   const [sport, setSport] = useState('all');
   const [cat, setCat] = useState('all');
   const [q, setQ] = useState('');
+  // "Saved only" drops the built-in catalogue so the coach sees just their own.
+  const [savedOnly, setSavedOnly] = useState(false);
   // A click opens the workout in the planner — laps in the builder, the day
   // to plan it on in the header (today until changed).
   const openInPlanner = (item) => onOpenTemplate?.(item, 'plan');
@@ -120,7 +122,7 @@ export default function WorkoutTemplateLibrary({ templates = [], onOpenTemplate 
   })), []);
   const mine = useMemo(() => (templates || []).filter((t) => t && !t.isDefault).map((t) => ({
     id: t._id, name: t.name, sport: t.sport, sportKey: plannerSportKey(t.sport),
-    category: (Array.isArray(t.tags) && t.tags[0]) || null, desc: t.description || '', steps: t.steps || [], builtIn: false,
+    category: (Array.isArray(t.tags) && t.tags[0]) || null, desc: t.description || '', comment: t.comment || '', steps: t.steps || [], builtIn: false,
   })), [templates]);
 
   const sports = useMemo(() => {
@@ -144,7 +146,7 @@ export default function WorkoutTemplateLibrary({ templates = [], onOpenTemplate 
     && (effectiveCat === 'all' || t.category === effectiveCat)
     && (!needle || `${t.name} ${t.desc || ''} ${t.category ? categoryLabel(t.category) : ''}`.toLowerCase().includes(needle));
   const mineShown = mine.filter(matches);
-  const builtInShown = builtIn.filter(matches);
+  const builtInShown = savedOnly ? [] : builtIn.filter(matches);
 
   return (
     <aside className="w-64 shrink-0 border-r border-slate-200/70 bg-white flex flex-col h-screen sticky top-0">
@@ -192,12 +194,23 @@ export default function WorkoutTemplateLibrary({ templates = [], onOpenTemplate 
             </select>
           </label>
         </div>
+        <label className="flex items-center gap-2 mt-2 text-[11px] font-semibold text-slate-500 select-none cursor-pointer">
+          <input
+            type="checkbox"
+            checked={savedOnly}
+            onChange={(e) => setSavedOnly(e.target.checked)}
+            className="w-3.5 h-3.5 rounded border-slate-300 text-primary focus:ring-primary/30"
+          />
+          Show only my saved workouts
+        </label>
       </div>
 
       <div className="flex-1 overflow-y-auto p-2 space-y-3">
         {mineShown.length === 0 && builtInShown.length === 0 ? (
           <div className="text-[12px] text-slate-400 px-2 py-4 text-center">
-            Nothing matches — try another word, sport or category.
+            {savedOnly
+              ? 'No saved workouts yet — build one and hit “Save template”, or untick to see the built-ins.'
+              : 'Nothing matches — try another word, sport or category.'}
           </div>
         ) : (
           <>

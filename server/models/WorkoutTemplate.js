@@ -81,6 +81,9 @@ const workoutTemplateSchema = new mongoose.Schema({
   },
   name:        { type: String, required: true, trim: true },
   description: String,
+  // Short note the coach writes on the calendar card. Kept with the template
+  // so a session planned from it starts with the same note, not just the steps.
+  comment:     String,
   tags:        [String],
   steps:       [workoutStepSchema],
   isPublic:    { type: Boolean, default: false },

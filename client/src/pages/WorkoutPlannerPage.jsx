@@ -463,6 +463,7 @@ export default function WorkoutPlannerPage() {
         title: tpl.name,
         steps: tpl.steps,
         description: tpl.description || undefined,
+        comment: tpl.comment || undefined,
         category: tpl.category || undefined,
         plannedDuration: stepTotalSecs(tpl.steps) || undefined,
       };
@@ -534,7 +535,9 @@ export default function WorkoutPlannerPage() {
             date: today,
             workout: {
               title: tpl.name, sport: tpl.sport, steps: tpl.steps,
-              description: tpl.builtIn ? '' : (tpl.desc || ''), category: tpl.category || '',
+              description: tpl.builtIn ? '' : (tpl.desc || ''),
+              comment: tpl.builtIn ? '' : (tpl.comment || ''),
+              category: tpl.category || '',
             },
           })}
           onDeleteTemplate={async (tpl) => {

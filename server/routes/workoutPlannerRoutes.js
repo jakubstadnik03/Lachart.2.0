@@ -110,12 +110,12 @@ router.get('/templates/:id', verifyToken, async (req, res) => {
 /** POST /api/workout-planner/templates */
 router.post('/templates', verifyToken, requirePlanWorkouts, async (req, res) => {
   try {
-    const { name, sport, description, tags, steps, isPublic } = req.body;
+    const { name, sport, description, comment, tags, steps, isPublic } = req.body;
     if (!name || !sport) return res.status(400).json({ error: 'name and sport are required' });
 
     const tpl = await WorkoutTemplate.create({
       createdBy:   String(req.user.userId),
-      name, sport, description, tags, steps,
+      name, sport, description, comment, tags, steps,
       isPublic:    Boolean(isPublic),
     });
     res.status(201).json(tpl);
@@ -133,10 +133,11 @@ router.put('/templates/:id', verifyToken, requirePlanWorkouts, async (req, res) 
     if (String(tpl.createdBy) !== String(req.user.userId)) {
       return res.status(403).json({ error: 'Forbidden' });
     }
-    const { name, sport, description, tags, steps, isPublic } = req.body;
+    const { name, sport, description, comment, tags, steps, isPublic } = req.body;
     if (name)        tpl.name        = name;
     if (sport)       tpl.sport       = sport;
     if (description !== undefined) tpl.description = description;
+    if (comment !== undefined) tpl.comment = comment;
     if (tags)        tpl.tags        = tags;
     if (steps)       tpl.steps       = steps;
     if (isPublic !== undefined) tpl.isPublic = Boolean(isPublic);

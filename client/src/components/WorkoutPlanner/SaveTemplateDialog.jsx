@@ -9,12 +9,13 @@ import { XMarkIcon, BookmarkIcon } from '@heroicons/react/24/outline';
  * is filed by — name, category, description — with the plan's values ready.
  */
 export default function SaveTemplateDialog({
-  initialName = '', initialCategory = '', initialDescription = '',
+  initialName = '', initialCategory = '', initialDescription = '', initialComment = '',
   categories = [], saving = false, onSave, onClose,
 }) {
   const [name, setName] = useState(initialName);
   const [category, setCategory] = useState(initialCategory || '');
   const [description, setDescription] = useState(initialDescription || '');
+  const [comment, setComment] = useState(initialComment || '');
 
   useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape') onClose?.(); };
@@ -25,7 +26,7 @@ export default function SaveTemplateDialog({
   const submit = (e) => {
     e?.preventDefault?.();
     if (!name.trim() || saving) return;
-    onSave?.({ name: name.trim(), category: category || '', description: description.trim() });
+    onSave?.({ name: name.trim(), category: category || '', description: description.trim(), comment: comment.trim() });
   };
 
   const field = 'w-full text-sm px-3 py-2 rounded-xl border border-slate-200 bg-white text-slate-800 outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/20';
@@ -73,6 +74,16 @@ export default function SaveTemplateDialog({
               className={`${field} resize-y`}
             />
             <span className="block text-[10px] text-slate-400 mt-1">Kept with the template and filled in whenever it is planned.</span>
+          </label>
+          <label className="block">
+            <span className="block text-[11px] font-semibold uppercase tracking-wide text-slate-400 mb-1">Comment <span className="normal-case font-normal text-slate-300">· shown on the calendar card</span></span>
+            <textarea
+              value={comment}
+              onChange={(e) => setComment(e.target.value)}
+              rows={2}
+              placeholder="Short note that lands on the day card…"
+              className={`${field} resize-y`}
+            />
           </label>
         </div>
         <div className="px-4 pb-4 flex justify-end gap-2">

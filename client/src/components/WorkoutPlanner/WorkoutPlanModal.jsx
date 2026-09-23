@@ -621,6 +621,8 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
   useEffect(() => { setMyTemplates(templates); }, [templates]);
   const [tplQuery, setTplQuery] = useState('');
   const [tplCat, setTplCat] = useState('all');
+  // "Saved only" hides the built-in catalogue so the coach sees just their own.
+  const [tplSavedOnly, setTplSavedOnly] = useState(false);
   const [savedTemplateName, setSavedTemplateName] = useState('');
   const [saveTemplateOpen, setSaveTemplateOpen] = useState(false);
   const [savingTemplate, setSavingTemplate] = useState(false);
@@ -713,6 +715,9 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
     const tplDescription = tpl.description || '';
     const tplCategory = tpl.category || (Array.isArray(tpl.tags) && tpl.tags[0]) || '';
     if (!desc && tplDescription) setDesc(tplDescription);
+    // The template's calendar-card comment comes across too, unless the coach
+    // has already written one for this plan.
+    if (!comment && tpl.comment) setComment(tpl.comment);
     if (!category && tplCategory) setCategory(tplCategory);
     const newSport = tpl.sport || sport || 'bike';
     if (!sport) setSport(newSport);
@@ -1188,7 +1193,7 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
                           const matches = (name, desc, cat) => (tplCat === 'all' || cat === tplCat)
                             && (!q || `${name} ${desc || ''} ${categoryLabel(cat || '')}`.toLowerCase().includes(q));
                           const mineShown = mine.filter((t) => matches(t.name, t.description, tplCategory(t)));
-                          const presetsShown = presets.filter((p) => matches(p.name, p.desc, p.cat));
+                          const presetsShown = tplSavedOnly ? [] : presets.filter((p) => matches(p.name, p.desc, p.cat));
                           return (
                             <>
                               <div className="flex flex-col gap-2">
@@ -1202,6 +1207,15 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
                                     className="w-full pl-9 pr-3 py-2 text-sm rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-primary/30"
                                   />
                                 </div>
+                                <label className="flex items-center gap-2 text-[11px] font-semibold text-slate-500 select-none cursor-pointer">
+                                  <input
+                                    type="checkbox"
+                                    checked={tplSavedOnly}
+                                    onChange={(e) => setTplSavedOnly(e.target.checked)}
+                                    className="w-3.5 h-3.5 rounded border-slate-300 text-primary focus:ring-primary/30"
+                                  />
+                                  Show only my saved workouts
+                                </label>
                                 {cats.length > 1 && (
                                   <div className="flex gap-1.5 overflow-x-auto pb-0.5" style={{ WebkitOverflowScrolling: 'touch' }}>
                                     {[{ id: 'all', label: 'All' }, ...cats.map((c) => ({ id: c, label: categoryLabel(c) }))].map((c) => (
@@ -1238,7 +1252,14 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
                                 </div>
                               )}
 
+                              {tplSavedOnly && mineShown.length === 0 && (
+                                <p className="text-xs text-slate-400 py-4 text-center">
+                                  No saved {presetSport} workouts yet — build one and hit “Save template”, or untick to see the built-ins.
+                                </p>
+                              )}
+
                               {/* Built-in presets */}
+                              {!tplSavedOnly && (
                               <div>
                                 <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-2">Built-in workouts</p>
                                 {presetsShown.length === 0 && mineShown.length === 0 ? (
@@ -1263,6 +1284,7 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
                                   })}
                                 </div>
                               </div>
+                              )}
                             </>
                           );
                         })()}
@@ -1310,13 +1332,14 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
                     initialName={title}
                     initialCategory={category || ''}
                     initialDescription={desc}
+                    initialComment={comment}
                     categories={categories || []}
                     saving={savingTemplate}
                     onClose={() => setSaveTemplateOpen(false)}
-                    onSave={async ({ name, category: tplCategory, description }) => {
+                    onSave={async ({ name, category: tplCategory, description, comment: tplComment }) => {
                       setSavingTemplate(true);
                       try {
-                        const saved = await createWorkoutTemplate({ name, sport, steps, description, tags: tplCategory ? [tplCategory] : [] });
+                        const saved = await createWorkoutTemplate({ name, sport, steps, description, comment: tplComment, tags: tplCategory ? [tplCategory] : [] });
                         if (saved?._id) setMyTemplates((prev) => [saved, ...prev.filter((t) => t._id !== saved._id)]);
                         onTemplateSaved?.(saved);
                         setSavedTemplateName(name);
