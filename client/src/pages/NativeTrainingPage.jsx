@@ -13,7 +13,7 @@ import React, { useState, useEffect, useMemo, useRef, useCallback, lazy, Suspens
 import ReactDOM from 'react-dom';
 import useNativeTabScrollToTop from '../hooks/useNativeTabScrollToTop';
 import PremiumLock from '../components/PremiumLock';
-import { dominantRadarSport, hasRadar } from '../utils/radarSport';
+import { hasRadar } from '../utils/radarSport';
 import { resolveActivitySource, seedForLinkedSource } from '../utils/activitySourceId';
 
 import {
@@ -3421,7 +3421,10 @@ export default function NativeTrainingPage({
               <Suspense fallback={<div style={{ height: 280 }} />}>
                 <SpiderChart
                   trainings={filtered}
-                  sport={hasRadar(selectedSport) ? selectedSport : dominantRadarSport(filtered)}
+                  /* Only a real filter pins the radar. On "all" (or swim) it
+                     picks its own sport — the dominant one in this list, and
+                     the one that actually has data once that is known. */
+                  sport={hasRadar(selectedSport) ? selectedSport : null}
                   athleteId={athleteId || null}
                 />
               </Suspense>

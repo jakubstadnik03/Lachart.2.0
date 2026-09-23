@@ -4,7 +4,7 @@ import { Radar } from "react-chartjs-2";
 import { useNavigate } from "react-router-dom";
 import api from "../../services/api";
 import { useAuth } from "../../context/AuthProvider";
-import { hasRadar, resolveRadarSport } from "../../utils/radarSport";
+import { hasRadar, resolveRadarSport, dominantRadarSport } from "../../utils/radarSport";
 import { defaultMonthRange, monthKeysBetween, rangeEnds } from "../../utils/monthRange";
 import { SPORT_ICON_COLORS } from "../shared/SportIcon";
 import { paceToViewer, viewerPaceSuffix } from '../../utils/viewerUnits';
@@ -288,8 +288,13 @@ export default function SpiderChart({
   // value — an athlete looking at "all" wants to flip between the two radars
   // without touching the filter above.
   const [sport, setSport] = useState(() => {
-    try { return resolveRadarSport(sportProp, localStorage.getItem('powerRadar_sport')); }
-    catch { return resolveRadarSport(sportProp, null); }
+    // With nobody dictating and nothing stored, start on the sport these
+    // sessions are mostly made of rather than on the bike by default.
+    let stored = null;
+    try { stored = localStorage.getItem('powerRadar_sport'); } catch {}
+    if (hasRadar(sportProp)) return sportProp;
+    if (hasRadar(stored)) return stored;
+    return dominantRadarSport(trainings, null);
   });
   useEffect(() => {
     if (hasRadar(sportProp)) setSport(sportProp);
