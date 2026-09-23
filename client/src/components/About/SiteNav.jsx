@@ -1,5 +1,5 @@
 import React from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { LC } from './marketingKit';
 import { FEATURES } from '../../pages/features/featureCatalog';
 
@@ -21,7 +21,32 @@ const DEFAULT_LINKS = [
   ['/about#pricing', 'Pricing'],
 ];
 
-const SiteNav = ({ links = DEFAULT_LINKS, ctaHref = '/signup' }) => (
+const SiteNav = ({ links = DEFAULT_LINKS, ctaHref = '/signup', showBanner = true }) => {
+  const { pathname } = useLocation();
+  // Which top-level link matches the page we're on. The Features item also owns
+  // its sub-pages (/features/planning etc.), so it stays lit while you browse them.
+  const isActive = (href) => {
+    if (!href.startsWith('/') || href.includes('#')) return false;
+    if (href === '/features') return pathname === '/features' || pathname.startsWith('/features/');
+    return pathname === href;
+  };
+  return (
+  <>
+  {/* Free-demo banner — the same strip About.jsx shows, so it stays put when
+      the reader moves onto /for-coaches, /features, etc. */}
+  {showBanner && (
+    <div style={{
+      background: `linear-gradient(90deg, ${LC.primary}, ${LC.secondary})`,
+      color: '#fff', padding: '10px 16px', textAlign: 'center', fontSize: 13.5,
+      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 14, flexWrap: 'wrap',
+    }}>
+      <span>Try calculating lactate thresholds for free — <b>no sign-up needed</b></span>
+      <Link to="/lactate-curve-calculator" style={{
+        padding: '5px 14px', borderRadius: 8, background: '#fff', color: LC.primaryDark,
+        textDecoration: 'none', fontSize: 12.5, fontWeight: 700,
+      }}>Try demo</Link>
+    </div>
+  )}
   <nav
     style={{
       position: 'sticky', top: 0, zIndex: 100,
@@ -44,7 +69,7 @@ const SiteNav = ({ links = DEFAULT_LINKS, ctaHref = '/signup' }) => (
           if (href === '/features') {
             return (
               <div key={href} className="lc-navdd">
-                <Link to={href} className="lc-nav-link">{label}</Link>
+                <Link to={href} className={`lc-nav-link${isActive(href) ? ' active' : ''}`}>{label}</Link>
                 <div className="lc-navdd-menu" role="menu">
                   {FEATURES.map((f) => (
                     <Link key={f.slug} to={`/features/${f.slug}`} className="lc-navdd-item" role="menuitem">
@@ -57,7 +82,7 @@ const SiteNav = ({ links = DEFAULT_LINKS, ctaHref = '/signup' }) => (
             );
           }
           return href.startsWith('/') && !href.includes('#')
-            ? <Link key={href} to={href} className="lc-nav-link">{label}</Link>
+            ? <Link key={href} to={href} className={`lc-nav-link${isActive(href) ? ' active' : ''}`}>{label}</Link>
             : <a key={href} href={href} className="lc-nav-link">{label}</a>;
         })}
       </div>
@@ -71,6 +96,8 @@ const SiteNav = ({ links = DEFAULT_LINKS, ctaHref = '/signup' }) => (
       </div>
     </div>
   </nav>
-);
+  </>
+  );
+};
 
 export default SiteNav;
