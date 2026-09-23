@@ -65,6 +65,7 @@ describe('athleteIdInPath', () => {
     expect(athleteIdInPath(`/training/${A}`)).toBe(A);
     expect(athleteIdInPath(`/testing/${A}`)).toBe(A);
     expect(athleteIdInPath(`/athlete/${A}`)).toBe(A);
+    expect(athleteIdInPath(`/profile/${A}`)).toBe(A);
   });
 
   it('does not mistake an activity for an athlete', () => {
@@ -74,6 +75,7 @@ describe('athleteIdInPath', () => {
 
   it('answers null for a section that names nobody', () => {
     expect(athleteIdInPath('/dashboard')).toBeNull();
+    expect(athleteIdInPath('/profile')).toBeNull();
     expect(athleteIdInPath('/health')).toBeNull();
     expect(athleteIdInPath('/dashboard/not-an-id')).toBeNull();
     expect(athleteIdInPath('')).toBeNull();
@@ -179,10 +181,10 @@ describe('AthleteSelectionProvider · URL and selection', () => {
  * Where picking an athlete takes you.
  *
  * The menu's athlete list and the coach's athlete bar each had their own answer
- * and they disagreed. On /profile the menu went to /athlete/<id> — which works
- * — while the bar did nothing at all, leaving the ring on the athlete and the
- * page showing the coach's own profile, because ProfilePage calls /user/profile
- * with no athlete parameter and reads no selection.
+ * and they disagreed. On /profile the menu went to /athlete/<id> while the bar
+ * did nothing at all, leaving the ring on the athlete and the page showing the
+ * coach's own profile. ProfilePage now takes an athlete in its own URL, so
+ * both controls keep the coach on the profile they are reading.
  */
 describe('athleteRouteFor', () => {
   const ME = 'f'.repeat(24);
@@ -194,13 +196,18 @@ describe('athleteRouteFor', () => {
     expect(athleteRouteFor(`/athlete/${A}`, B)).toBe(`/athlete/${B}`);
   });
 
-  it('leaves the profile page for one that can show an athlete', () => {
-    expect(athleteRouteFor('/profile', B)).toBe(`/athlete/${B}`);
+  it('shows the selected athlete on the profile page itself', () => {
+    expect(athleteRouteFor('/profile', B)).toBe(`/profile/${B}`);
+    expect(athleteRouteFor(`/profile/${A}`, B)).toBe(`/profile/${B}`);
+  });
+
+  it('leaves the athlete list for a page that can show one athlete', () => {
     expect(athleteRouteFor('/athletes', B)).toBe(`/athlete/${B}`);
   });
 
   it('sends you to your own profile when the athlete is you', () => {
     expect(athleteRouteFor('/profile', ME, ME)).toBe('/profile');
+    expect(athleteRouteFor(`/profile/${A}`, ME, ME)).toBe('/profile');
     expect(athleteRouteFor('/athletes', ME, ME)).toBe('/profile');
     // /athlete/<id> is the coach's view OF someone else; aimed at yourself it
     // asks the athlete endpoint for the coach.

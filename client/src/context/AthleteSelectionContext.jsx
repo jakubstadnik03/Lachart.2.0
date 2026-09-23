@@ -29,7 +29,7 @@ const STORAGE_KEY = 'global_selectedAthleteId';
  * activity id (`/training-calendar/:activityId`), and rewriting it would break
  * every deep link into a session.
  */
-const ATHLETE_URL_SECTIONS = ['dashboard', 'training', 'testing', 'athlete'];
+const ATHLETE_URL_SECTIONS = ['dashboard', 'training', 'testing', 'athlete', 'profile'];
 
 const OBJECT_ID = /^[a-f0-9]{24}$/;
 
@@ -45,11 +45,11 @@ export function athleteIdInPath(pathname) {
  *
  * The menu's athlete list and the coach's athlete bar each carried their own
  * version of this, and they disagreed. The bar's list named four sections and
- * did nothing anywhere else, so on /profile — a page that is always your own,
- * calls /user/profile with no athlete parameter and ignores the selection
- * entirely — clicking an athlete moved the ring and left you looking at
- * yourself. The menu's list on the same screen went to /athlete/<id>, which
- * works. One rule now, so the two controls cannot answer differently.
+ * did nothing anywhere else, so on /profile clicking an athlete moved the ring
+ * and left you looking at yourself. The menu's list on the same screen went to
+ * /athlete/<id>. One rule now, so the two controls cannot answer differently —
+ * and /profile now takes the athlete in its own URL, so selecting one keeps
+ * the coach on the page they were already reading.
  *
  * @returns {string|null} where to go, or null to stay put — the sections that
  * read the selection out of this context take no id, and navigating them would
@@ -61,15 +61,15 @@ export function athleteRouteFor(pathname, athleteId, selfId = null) {
   const isSelf = selfId != null && String(athleteId) === String(selfId);
 
   if (ATHLETE_URL_SECTIONS.includes(section)) {
-    // /athlete/<id> is the coach's view OF somebody else. Pointed at yourself
-    // it asks the athlete endpoint for the coach, which is not a thing.
-    if (section === 'athlete' && isSelf) return '/profile';
+    // /athlete/<id> is the coach's view OF somebody else, and /profile/<id>
+    // carries an athlete only while it is not you. Pointed at yourself either
+    // one asks the athlete endpoint for the coach, which is not a thing.
+    if ((section === 'athlete' || section === 'profile') && isSelf) return '/profile';
     return `/${section}/${athleteId}`;
   }
 
-  // Neither of these can show someone else: one is always you, the other is a
-  // list. Selecting an athlete goes where an athlete can actually be shown.
-  if (section === 'profile' || section === 'athletes') {
+  // A list cannot show one athlete. Selecting one goes where they can be shown.
+  if (section === 'athletes') {
     return isSelf ? '/profile' : `/athlete/${athleteId}`;
   }
 

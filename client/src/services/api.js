@@ -1159,9 +1159,13 @@ export const deleteAthleteWithTests = async (athleteId) => {
 };
 
 // Zones history – track progression of power & HR zones over time
-export const getZoneHistory = async () => {
+// athleteId: a coach reading the zone history of one of their athletes; omit
+// for your own.
+export const getZoneHistory = async (athleteId = null) => {
   try {
-    const response = await api.get('/user/zones/history');
+    const response = await api.get('/user/zones/history', {
+      params: athleteId ? { athleteId } : {},
+    });
     return response.data;
   } catch (error) {
     console.error('Error fetching zone history:', error);

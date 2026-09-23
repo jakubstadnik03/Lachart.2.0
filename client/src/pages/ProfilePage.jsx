@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import ReactDOM from 'react-dom';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import WeeklyCalendar from '../components/DashboardPage/WeeklyCalendar';
 import TrainingGraph from '../components/DashboardPage/TrainingGraph';
 import SpiderChart from "../components/DashboardPage/SpiderChart";
@@ -14,6 +14,7 @@ import { getPlannedWorkouts, createPlannedWorkout, updatePlannedWorkout, deleteP
 import { upsertPlannedWorkoutList } from '../utils/activityEventPatches';
 import { usePremium } from '../hooks/usePremium';
 import { useAuth } from '../context/AuthProvider';
+import { useAthleteSelection } from '../context/AthleteSelectionContext';
 import { getAvatarBySportAndGender } from '../utils/avatarUtils';
 import { 
   PencilIcon, 
@@ -45,9 +46,27 @@ function sortAndLimitCalendarActivities(combined) {
   return [...combined].sort((a, b) => tMs(b) - tMs(a)).slice(0, MAX_PROFILE_CALENDAR_ACTIVITIES);
 }
 
+const COACH_LIKE_ROLES = ['coach', 'tester', 'testing', 'admin'];
+
 const ProfilePage = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
+  // Whose profile this is. A coach lands here with an athlete selected in the
+  // bar more often than not, and the page used to answer /user/profile
+  // regardless — so it showed the coach while the bar ringed the athlete, and
+  // the /profile/:athleteId route it is mounted on did nothing at all.
+  const params = useParams();
+  const { selectedAthleteId, setSelectedAthleteId } = useAthleteSelection();
+  const isCoachLike = COACH_LIKE_ROLES.includes(String(user?.role || '').toLowerCase());
+  const viewedAthleteId = useMemo(() => {
+    // An athlete can only ever be looking at themselves; the server would
+    // refuse anything else, and the URL is not a permission.
+    if (!isCoachLike) return null;
+    const candidate = params.athleteId || params.id || selectedAthleteId || null;
+    if (!candidate || String(candidate) === String(user?._id)) return null;
+    return String(candidate);
+  }, [isCoachLike, params.athleteId, params.id, selectedAthleteId, user?._id]);
+  const isViewingAthlete = Boolean(viewedAthleteId);
   const { isPremium, gate, UpgradeModalProps } = usePremium();
   const [userInfo, setUserInfo] = useState(null);
   const [trainings, setTrainings] = useState([]);
@@ -439,43 +458,45 @@ const [selectedTitle, setSelectedTitle] = useState(null);
   const loadProfilePlannedWorkouts = useCallback(async (athleteId) => {
     if (!athleteId) return;
     try {
+      // Same shape the dashboard uses: no athleteId means "mine".
+      const opts = viewedAthleteId ? { athleteId: viewedAthleteId } : {};
       const [pw, dp, ps] = await Promise.all([
-        getPlannedWorkouts({}),
-        getDayPlans({}).catch(() => []),
-        getPeriods({}).catch(() => []),
+        getPlannedWorkouts(opts),
+        getDayPlans(opts).catch(() => []),
+        getPeriods(opts).catch(() => []),
       ]);
       setPlannedWorkouts(Array.isArray(pw) ? pw : []);
       setDayPlans(Array.isArray(dp) ? dp : []);
       setPeriods(Array.isArray(ps) ? ps : []);
     } catch (_) {}
-  }, []);
+  }, [viewedAthleteId]);
 
   const handleDayPlanSave = useCallback(async (dateStr, payload) => {
-    const result = await apiSetDayPlan(dateStr, payload || {}, null);
+    const result = await apiSetDayPlan(dateStr, payload || {}, viewedAthleteId);
     setDayPlans(prev => {
       const without = prev.filter(p => p.date !== dateStr);
       if (result?.deleted) return without;
       return [...without, result];
     });
     return result;
-  }, []);
+  }, [viewedAthleteId]);
 
   const handleDayPlanDelete = useCallback(async (dateStr) => {
-    await apiDeleteDayPlan(dateStr, null);
+    await apiDeleteDayPlan(dateStr, viewedAthleteId);
     setDayPlans(prev => prev.filter(p => p.date !== dateStr));
-  }, []);
+  }, [viewedAthleteId]);
 
   const handleProfilePlanSave = useCallback(async (data) => {
     // Errors reach the modal, which reports them next to its Save button.
     if (planModal?.workout?._id) {
-      const updated = await updatePlannedWorkout(planModal.workout._id, data, null, { inline: true });
+      const updated = await updatePlannedWorkout(planModal.workout._id, data, viewedAthleteId, { inline: true });
       setPlannedWorkouts(prev => prev.map(p => p._id === updated._id ? updated : p));
     } else {
-      const created = await createPlannedWorkout(data, null, { inline: true });
+      const created = await createPlannedWorkout(data, viewedAthleteId, { inline: true });
       setPlannedWorkouts(prev => [...prev, created]);
     }
     setPlanModal(null);
-  }, [planModal]);
+  }, [planModal, viewedAthleteId]);
 
   const handleProfilePlanDelete = useCallback(async (pw) => {
     if (!window.confirm('Delete this planned workout?')) return;
@@ -489,10 +510,10 @@ const [selectedTitle, setSelectedTitle] = useState(null);
   const handleProfileCopyPlan = useCallback(async (pw, newDateStr) => {
     try {
       const { _id, status, executionData, ...rest } = pw;
-      const created = await createPlannedWorkout({ ...rest, date: newDateStr, status: 'planned' });
+      const created = await createPlannedWorkout({ ...rest, date: newDateStr, status: 'planned' }, viewedAthleteId);
       setPlannedWorkouts(prev => [...prev, created]);
     } catch (_) {}
-  }, []);
+  }, [viewedAthleteId]);
 
   const profileAthleteId = userInfo?._id || user?._id || null;
   const hasCalendarData = Array.isArray(calendarData) && calendarData.length > 0;
@@ -513,9 +534,13 @@ const [selectedTitle, setSelectedTitle] = useState(null);
       setLoading(true);
       setError(null);
 
-      const profileResponse = await api.get(`/user/profile`);
+      // The athlete endpoint is the one that carries zones and units; the
+      // bare /athlete/:id strips them.
+      const profileResponse = await api.get(
+        viewedAthleteId ? `/user/athlete/${viewedAthleteId}/profile` : `/user/profile`
+      );
       const profileData = profileResponse.data;
-      const historyPromise = getZoneHistory().catch(() => ({ powerZonesHistory: [], heartRateZonesHistory: [] }));
+      const historyPromise = getZoneHistory(viewedAthleteId).catch(() => ({ powerZonesHistory: [], heartRateZonesHistory: [] }));
 
       // Use the new utility function to get avatar
       const avatar = getAvatarBySportAndGender(profileData);
@@ -534,6 +559,7 @@ const [selectedTitle, setSelectedTitle] = useState(null);
         sport: profileData.sport || 'Not set',
         specialization: profileData.specialization || 'Not set',
         title: profileData.role === 'coach' ? 'Coach' : profileData.specialization || 'Not set',
+        notes: profileData.notes || '',
         avatar: avatar,
         _id: profileData._id,
         role: profileData.role,
@@ -574,7 +600,7 @@ const [selectedTitle, setSelectedTitle] = useState(null);
     } finally {
       setLoading(false);
     }
-  }, [loadCalendarData, loadProfilePlannedWorkouts]);
+  }, [viewedAthleteId, loadCalendarData, loadProfilePlannedWorkouts]);
 
   useEffect(() => {
     loadProfileData();
@@ -626,8 +652,12 @@ const [selectedTitle, setSelectedTitle] = useState(null);
         weight: updatedData.weight ? Number(updatedData.weight) : undefined,
       };
 
-      const response = await updateUserProfile(dataToSend);
-      const updatedUser = response.data;
+      // A coach saving an athlete's profile — zones included — writes through
+      // the coach endpoint; updateUserProfile would have edited the coach.
+      const response = viewedAthleteId
+        ? await api.put(`/user/coach/edit-athlete/${viewedAthleteId}`, dataToSend)
+        : await updateUserProfile(dataToSend);
+      const updatedUser = (viewedAthleteId ? response.data?.athlete : response.data) || {};
 
       setUserInfo({
         name: updatedUser.name || '',
@@ -642,8 +672,10 @@ const [selectedTitle, setSelectedTitle] = useState(null);
         address: updatedUser.address || '',
         sport: updatedUser.sport || '',
         specialization: updatedUser.specialization || '',
-        title: updatedUser.specialization || '',
+        title: updatedUser.role === 'coach' ? 'Coach' : updatedUser.specialization || '',
         avatar: getAvatarBySportAndGender(updatedUser),
+        _id: updatedUser._id || userInfo._id,
+        role: updatedUser.role || userInfo.role,
         gender: updatedUser.gender || 'male',
         powerZones: updatedUser.powerZones || userInfo.powerZones, // Keep power zones
         heartRateZones: updatedUser.heartRateZones || userInfo.heartRateZones, // Keep heart rate zones
@@ -652,7 +684,7 @@ const [selectedTitle, setSelectedTitle] = useState(null);
 
       setIsEditModalOpen(false);
       setIsZonesModalOpen(false);
-      const historyData = await getZoneHistory().catch(() => ({ powerZonesHistory: [], heartRateZonesHistory: [] }));
+      const historyData = await getZoneHistory(viewedAthleteId).catch(() => ({ powerZonesHistory: [], heartRateZonesHistory: [] }));
       setZoneHistory({
         powerZonesHistory: historyData?.powerZonesHistory || [],
         heartRateZonesHistory: historyData?.heartRateZonesHistory || []
@@ -709,6 +741,25 @@ const [selectedTitle, setSelectedTitle] = useState(null);
       animate={{ opacity: 1 }}
       className="mx-auto w-full max-w-[1600px] px-2 sm:px-4 py-4 md:p-6 space-y-4 overflow-x-hidden"
     >
+      {/* Whose profile this is. Without it the page is indistinguishable from
+          your own, and everything you edit here lands on the athlete. */}
+      {isViewingAthlete && (
+        <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 rounded-xl bg-violet-50 border border-violet-100">
+          <p className="text-sm text-violet-900">
+            Viewing <strong className="font-semibold">{formatProfileFullName(userInfo, 'this athlete')}</strong> — changes you make here are theirs.
+          </p>
+          {/* Going back means dropping the selection too — the page reads it,
+              so /profile alone would land right back on the athlete. */}
+          <button
+            type="button"
+            onClick={() => { setSelectedAthleteId(user?._id || null); navigate('/profile'); }}
+            className="text-xs font-semibold text-violet-700 hover:text-violet-900 whitespace-nowrap"
+          >
+            Back to my profile →
+          </button>
+        </div>
+      )}
+
       {/* ── HERO CARD ── */}
       <motion.div
         initial={{ opacity: 0, y: -16 }}
@@ -728,13 +779,16 @@ const [selectedTitle, setSelectedTitle] = useState(null);
             <PencilIcon className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">Edit</span>
           </button>
-          <button
-            onClick={() => setIsPasswordModalOpen(true)}
-            className="p-1.5 rounded-lg bg-white/80 backdrop-blur-sm text-gray-700 hover:bg-white shadow-sm transition-all"
-            title="Change password"
-          >
-            <KeyIcon className="w-4 h-4" />
-          </button>
+          {/* Nobody else's password is yours to change. */}
+          {!isViewingAthlete && (
+            <button
+              onClick={() => setIsPasswordModalOpen(true)}
+              className="p-1.5 rounded-lg bg-white/80 backdrop-blur-sm text-gray-700 hover:bg-white shadow-sm transition-all"
+              title="Change password"
+            >
+              <KeyIcon className="w-4 h-4" />
+            </button>
+          )}
         </div>
 
         <div className="px-4 sm:px-6 pb-4 sm:pb-5">
@@ -803,8 +857,10 @@ const [selectedTitle, setSelectedTitle] = useState(null);
         </div>
       </motion.div>
 
-      {/* ── TRAINING ZONES ── */}
-      {availableZoneSports.length > 0 && (
+      {/* ── TRAINING ZONES ──
+          Rendered even with nothing configured: hiding the card left a coach
+          on an athlete with no zones with no way to give them any. */}
+      {(
         <motion.div
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
@@ -853,6 +909,20 @@ const [selectedTitle, setSelectedTitle] = useState(null);
               </div>
             </div>
           </div>
+
+          {availableZoneSports.length === 0 && (
+            <div className="px-3 sm:px-6 pb-4">
+              <p className="text-sm text-gray-500">
+                No training zones yet{isViewingAthlete ? ' for this athlete' : ''}. Set them here, or let a lactate test fill them in.
+              </p>
+              <button
+                onClick={() => setIsZonesModalOpen(true)}
+                className="mt-3 px-3 py-1.5 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition-all shadow-sm text-xs font-medium"
+              >
+                Set training zones
+              </button>
+            </div>
+          )}
 
           {['cycling', 'running', 'swimming'].map((sport) => {
             if (!hasConfiguredZonesForSport(sport) || selectedZoneSport !== sport) return null;
@@ -1079,6 +1149,9 @@ const [selectedTitle, setSelectedTitle] = useState(null);
           <SpiderChart
             trainings={trainings}
             selectedSport={selectedSport}
+            /* Peak power is fetched server-side per athlete; without this the
+               card showed the coach's bests on the athlete's profile. */
+            athleteId={viewedAthleteId}
             className="w-full"
           />
         </motion.div>

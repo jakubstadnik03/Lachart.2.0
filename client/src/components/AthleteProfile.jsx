@@ -7,6 +7,8 @@ import TrainingGraph from './DashboardPage/TrainingGraph';
 import UserTrainingsTable from './Training-log/UserTrainingsTable';
 import PreviousTestingComponent from './Testing-page/PreviousTestingComponent';
 import SportsSelector from './Header/SportsSelector';
+import TrainingZonesPanel from './Profile/TrainingZonesPanel';
+import EditProfileModal from './Profile/EditProfileModal';
 import api from '../services/api';
 import { motion } from 'framer-motion';
 import { XMarkIcon } from '@heroicons/react/24/outline';
@@ -29,6 +31,10 @@ export default function AthleteProfile() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  // The zones the coach coaches by. The bare athlete endpoint strips them, so
+  // they come from /athlete/:id/profile alongside everything else here.
+  const [athleteProfile, setAthleteProfile] = useState(null);
+  const [isZonesModalOpen, setIsZonesModalOpen] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
     surname: '',
@@ -65,7 +71,11 @@ export default function AthleteProfile() {
         // The bare athlete endpoint strips zones; the /profile one carries
         // them. A coach on an athlete with none is asked for them right here.
         api.get(`/user/athlete/${athleteId}/profile`)
-          .then((res) => { if (res?.data) maybePromptAthleteZonesSetup(user, res.data); })
+          .then((res) => {
+            if (!res?.data) return;
+            setAthleteProfile(res.data);
+            maybePromptAthleteZonesSetup(user, res.data);
+          })
           .catch(() => {});
       } catch (error) {
         console.error('Error fetching athlete data:', error);
@@ -150,6 +160,27 @@ export default function AthleteProfile() {
       console.error('Error updating athlete:', error);
       const errorMessage = error.response?.data?.error || error.response?.data?.message || 'Failed to update athlete';
       addNotification(errorMessage, 'error');
+    }
+  };
+
+  const handleZonesSubmit = async (updatedData) => {
+    try {
+      const { data } = await api.put(`/user/coach/edit-athlete/${athleteId}`, {
+        powerZones: updatedData.powerZones,
+        heartRateZones: updatedData.heartRateZones,
+        zonesSource: 'coach',
+      });
+      const saved = data?.athlete || {};
+      setAthleteProfile((prev) => ({
+        ...(prev || {}),
+        powerZones: saved.powerZones,
+        heartRateZones: saved.heartRateZones,
+      }));
+      setIsZonesModalOpen(false);
+      addNotification('Training zones updated', 'success');
+    } catch (error) {
+      const message = error.response?.data?.error || error.response?.data?.message || 'Failed to update training zones';
+      addNotification(message, 'error');
     }
   };
 
@@ -384,6 +415,21 @@ export default function AthleteProfile() {
                   </div>
                 </motion.div>
               </motion.div>
+
+              {/* Training zones — the coach's, to read and to fix. */}
+              <motion.div
+                initial={{ y: 20, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                transition={{ duration: 0.5, delay: 1.9 }}
+                className="mt-4 sm:mt-6"
+              >
+                <TrainingZonesPanel
+                  powerZones={athleteProfile?.powerZones}
+                  heartRateZones={athleteProfile?.heartRateZones}
+                  onEdit={() => setIsZonesModalOpen(true)}
+                  emptyHint={`No training zones set for ${athlete.name || 'this athlete'} yet. Add them here, or let a lactate test fill them in.`}
+                />
+              </motion.div>
             </motion.div>
           </motion.div>
         </motion.div>
@@ -451,6 +497,20 @@ export default function AthleteProfile() {
           />
         </motion.div>
       </motion.div>
+
+      {isZonesModalOpen && (
+        <EditProfileModal
+          isOpen={isZonesModalOpen}
+          onClose={() => setIsZonesModalOpen(false)}
+          onSubmit={handleZonesSubmit}
+          zonesOnly={true}
+          userData={{
+            ...(athleteProfile || athlete || {}),
+            powerZones: athleteProfile?.powerZones,
+            heartRateZones: athleteProfile?.heartRateZones,
+          }}
+        />
+      )}
 
       {isModalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 sm:p-4">

@@ -1117,9 +1117,28 @@ router.get("/zones/history", verifyToken, async (req, res) => {
             return res.status(404).json({ error: "User not found" });
         }
 
+        // ?athleteId= — a coach looking at one of their athletes. The zones
+        // themselves already come from /athlete/:id/profile; without this the
+        // history panel next to them was always the coach's own.
+        const { athleteId } = req.query;
+        let subject = user;
+        if (athleteId && String(athleteId) !== String(req.user.userId)) {
+            if (!['coach', 'tester', 'testing'].includes(user.role)) {
+                return res.status(403).json({ error: "You are not authorized to view this history" });
+            }
+            const athlete = await userDao.findById(athleteId);
+            if (!athlete) {
+                return res.status(404).json({ error: "Athlete not found" });
+            }
+            if (!athleteHasCoachUser(athlete, req.user.userId)) {
+                return res.status(403).json({ error: "This athlete does not belong to your team" });
+            }
+            subject = athlete;
+        }
+
         res.status(200).json({
-            powerZonesHistory: user.powerZonesHistory || [],
-            heartRateZonesHistory: user.heartRateZonesHistory || []
+            powerZonesHistory: subject.powerZonesHistory || [],
+            heartRateZonesHistory: subject.heartRateZonesHistory || []
         });
     } catch (error) {
         console.error("Error fetching zone history:", error);

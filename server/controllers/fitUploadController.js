@@ -8,6 +8,7 @@ const { notifyCoachesOfAthlete, notifyAthlete } = require('../utils/notification
 const { invalidateFitCacheForUser } = require('../utils/fitRouteCache');
 const { sanitizeSavedAutoLaps } = require('../utils/sanitizeSavedAutoLaps');
 const { normalizeSportForNotif } = require('../utils/sportNotif');
+const { athleteHasCoachUser } = require('../utils/athleteCoachAccess');
 const {
   resolveAnalysisSportKey,
   resolveFitSportKey,
@@ -3102,8 +3103,11 @@ async function getPowerMetrics(req, res) {
       if (!athlete) {
         return res.status(404).json({ error: 'Athlete not found' });
       }
-      // Admins may view any athlete; coaches/testers must own the coachId link
-      if (requesterRole !== 'admin' && (!athlete.coachId || athlete.coachId.toString() !== userId.toString())) {
+      // Admins may view any athlete; coaches/testers must be linked to them.
+      // Reading the legacy coachId alone refused every athlete linked through
+      // coachIds — the multi-coach field — so the coach's own athlete came
+      // back as "Access denied" on their power card.
+      if (requesterRole !== 'admin' && !athleteHasCoachUser(athlete, userId)) {
         return res.status(403).json({ error: 'Access denied' });
       }
     }
@@ -3746,10 +3750,22 @@ async function getRunMetrics(req, res) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
     let athleteId = userId;
-    if (req.query.athleteId) {
+    if (req.query.athleteId && String(req.query.athleteId) !== String(userId)) {
       const role = String(req.user?.role || '').toLowerCase();
       const isCoach = ['coach', 'tester', 'testing', 'admin'].includes(role) || req.user?.admin;
-      if (isCoach) athleteId = req.query.athleteId;
+      if (!isCoach) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+      // Being a coach is not the same as being THIS athlete's coach — the bike
+      // endpoint checks the link and this one took the id on trust.
+      const athlete = await User.findById(req.query.athleteId);
+      if (!athlete) {
+        return res.status(404).json({ error: 'Athlete not found' });
+      }
+      if (role !== 'admin' && !req.user?.admin && !athleteHasCoachUser(athlete, userId)) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+      athleteId = req.query.athleteId;
     }
     const athleteIdStr = String(athleteId);
 
