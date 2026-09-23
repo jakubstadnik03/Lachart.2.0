@@ -10,6 +10,7 @@ import Modal from '../components/Modal';
 import { useAthleteSelection } from '../context/AthleteSelectionContext';
 import { usePremium } from '../hooks/usePremium';
 import UpgradeModal from '../components/UpgradeModal';
+import { FREE_COACH_ATHLETE_LIMIT } from '../constants/planLimits';
 import { isCapacitorNative } from '../utils/isNativeApp';
 
 const AthletesPage = () => {
@@ -23,7 +24,7 @@ const AthletesPage = () => {
     if (isPremium) return true;
     // Free coaches: max 1 athlete
     const activeAthletes = athletes.filter(a => !a.invitationPending && a.coachLinkStatus !== 'pending');
-    if (activeAthletes.length >= 1) {
+    if (activeAthletes.length >= FREE_COACH_ATHLETE_LIMIT) {
       gate('Multiple athletes — upgrade to add more', 'coach');
       return false;
     }

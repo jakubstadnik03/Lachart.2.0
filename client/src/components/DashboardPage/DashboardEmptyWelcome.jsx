@@ -52,16 +52,19 @@ export default function DashboardEmptyWelcome({ user, stravaConnected, onConnect
       Icon: UserCircleIcon
     },
     {
+      // Garmin leads, Strava is the alternative. Both import activities, but
+      // only Garmin takes a planned session back out to the watch — so the
+      // athlete who connects it gets the whole loop instead of half of it.
       key: 'strava',
-      title: 'Connect Strava or Garmin',
-      body: 'Sync activities automatically — laps, pace, heart rate and history import.',
+      title: 'Connect Garmin or Strava',
+      body: 'Activities sync in automatically. With Garmin, planned workouts also go back out to your watch.',
       done: stravaDone,
-      cta: stravaDone ? 'Connected' : 'Connect Strava',
-      onClick: stravaDone ? undefined : onConnectStrava,
+      cta: stravaDone ? 'Connected' : 'Connect Garmin',
+      onClick: stravaDone ? undefined : connectGarmin,
       Icon: LinkIcon,
       secondary: stravaDone ? undefined : {
-        label: 'Connect Garmin',
-        onClick: connectGarmin
+        label: 'Connect Strava',
+        onClick: onConnectStrava
       }
     },
     {

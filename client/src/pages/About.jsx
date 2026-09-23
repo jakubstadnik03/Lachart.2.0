@@ -32,6 +32,7 @@ import { trackEvent, trackCheckoutStarted } from '../utils/analytics';
 import { createCheckoutSession } from '../services/api';
 import SiteFooter from '../components/About/SiteFooter';
 import { ATHLETE_PLAN_PRICE_LABEL, COACH_PLAN_PRICE_LABEL } from '../constants/planPricing';
+import { FREE_FEATURES, PLAN_FEATURES, trackLabel } from '../constants/planFeatures';
 import { LC, STYLE, Eyebrow, BrowserFrame, useReveal, useScrollSettle } from '../components/About/marketingKit';
 import { FEATURES } from './features/featureCatalog';
 
@@ -1677,8 +1678,10 @@ export default function About() {
               <Eyebrow>Pricing</Eyebrow>
               <h2 className="lc-big" style={{ margin: '14px 0 12px' }}>Start free. Go Pro when you're ready.</h2>
               <p className="lc-lead" style={{ margin: '0 auto' }}>
-                Test lactate and see your curve for free. Unlock unlimited tests, full history and analytics on Athlete —
-                or run your whole roster on Coach with <b style={{ color: LC.text }}>2 weeks free</b>. Cancel anytime.
+                Your first three lactate tests, your curve and your zones are free — long enough to watch a threshold move.
+                Athlete adds unlimited tests, the full history behind them, and a calendar that pushes structured workouts
+                to your Garmin. Coach does all of it for a whole roster. Both start with{' '}
+                <b style={{ color: LC.text }}>2 weeks free</b>. Cancel anytime.
               </p>
             </div>
             <div ref={pushRef} className="lc-reveal lc-card" style={{ padding: 20, marginBottom: 22, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 16, background: 'linear-gradient(135deg, ' + LC.primaryTint + ', #fff)', border: '1px solid ' + LC.primary + '33' }}>
@@ -1694,19 +1697,13 @@ export default function About() {
               <Link to="/signup" onClick={() => track('pricing_signup_banner')} className="lc-btn-primary" style={{ flexShrink: 0 }}>Start free →</Link>
             </div>
             <div className="lc-price-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 18 }}>
-              {/* Keep feature lists in sync with PLANS_UI in SettingsPage.jsx,
-                  PLAN_DETAILS in UpgradeModal.jsx, and planPricing.js. */}
+              {/* Feature copy lives in constants/planFeatures.js — shared with
+                  SettingsPage, UpgradeModal and WelcomePaywallModal. */}
               <PriceCard
                 planId="free"
                 name="Free"
                 price="€0"
-                features={[
-                  '1 lactate test',
-                  'Strava & Garmin sync',
-                  'Add lactate values to intervals',
-                  'Connect with your coach',
-                  'Basic analytics',
-                ]}
+                features={FREE_FEATURES}
                 ctaLabel="Get started free"
                 ctaTo="/signup"
                 track={track}
@@ -1716,17 +1713,8 @@ export default function About() {
                 name="Athlete"
                 price={ATHLETE_PLAN_PRICE_LABEL}
                 highlighted
-                features={[
-                  'Unlimited lactate tests',
-                  'Plan workouts in the calendar',
-                  'Start trainings from the app',
-                  'Connect to your smart trainer',
-                  'Advanced analytics & charts',
-                  'Population comparison',
-                  'PDF export',
-                  'Priority support',
-                  'Everything in Free',
-                ]}
+                valueLines={PLAN_FEATURES.pro.valueLines}
+                groups={PLAN_FEATURES.pro.groups}
                 ctaLabel="Start 2-week free trial"
                 ctaTo="/signup"
                 track={track}
@@ -1735,14 +1723,8 @@ export default function About() {
                 planId="coach"
                 name="Coach"
                 price={COACH_PLAN_PRICE_LABEL}
-                features={[
-                  'Unlimited athletes',
-                  'Plan workouts for your athletes',
-                  'Unlimited PDF report generation',
-                  'PDF branding — your logo, title & address',
-                  'Coach dashboard & overview',
-                  'Everything in Athlete',
-                ]}
+                valueLines={PLAN_FEATURES.coach.valueLines}
+                groups={PLAN_FEATURES.coach.groups}
                 ctaLabel="Start 2-week free trial"
                 ctaTo="/signup"
                 track={track}
@@ -2206,7 +2188,7 @@ function FloatingBadge({ icon, label, value, tint, style, cls }) {
 }
 
 /* ─── Pricing card subcomponent ──────────────────────────────────────── */
-function PriceCard({ name, price, badge, highlighted, features, ctaLabel, ctaTo, planId, track }) {
+function PriceCard({ name, price, badge, highlighted, features, valueLines, groups, ctaLabel, ctaTo, planId, track }) {
   const { isAuthenticated } = useAuth();
   const [loading, setLoading] = useState(false);
 
@@ -2278,13 +2260,31 @@ function PriceCard({ name, price, badge, highlighted, features, ctaLabel, ctaTo,
         )}
         {badge && !isPaidPlan && <p style={{ fontSize: 12, color: LC.primary, fontWeight: 600, margin: '6px 0 0' }}>Free during early access</p>}
       </div>
-      <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 8, flex: 1 }}>
-        {features.map(f => (
-          <li key={f} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 13.5, color: LC.muted }}>
-            <span style={{ color: LC.primary, fontWeight: 700, flexShrink: 0 }}>✓</span> {f}
-          </li>
+      {valueLines && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {valueLines.map(line => (
+            <p key={line.track} style={{ margin: 0, fontSize: 13.5, lineHeight: 1.45, color: LC.text }}>{line.text}</p>
+          ))}
+        </div>
+      )}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14, flex: 1 }}>
+        {(groups || [{ track: null, items: features }]).map((group, gi) => (
+          <div key={group.track ?? gi}>
+            {group.track && (
+              <p style={{ margin: '0 0 6px', fontSize: 10.5, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', color: LC.muted }}>
+                {trackLabel(group.track)}
+              </p>
+            )}
+            <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {group.items.map(f => (
+                <li key={f} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 13.5, color: LC.muted }}>
+                  <span style={{ color: LC.primary, fontWeight: 700, flexShrink: 0 }}>✓</span> {f}
+                </li>
+              ))}
+            </ul>
+          </div>
         ))}
-      </ul>
+      </div>
       {isPaidPlan ? (
         <button
           type="button"

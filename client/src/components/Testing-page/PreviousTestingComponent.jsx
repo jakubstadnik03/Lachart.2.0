@@ -18,6 +18,7 @@ import UpgradeModal from '../UpgradeModal';
 import { LockClosedIcon, ClipboardDocumentListIcon } from '@heroicons/react/24/outline';
 import { trackEvent } from '../../utils/analytics';
 import TestSection from './TestSection';
+import { FREE_TEST_LIMIT } from '../../constants/planLimits';
 
 const KM_PER_MILE = 1.609344;
 
@@ -479,7 +480,7 @@ const PreviousTestingComponent = ({
             exit={{ opacity: 0, y: -20 }}
             transition={{ duration: 0.3 }}
           >
-        {(isPremium || filteredTests.length <= 1) ? (
+        {(isPremium || filteredTests.length <= FREE_TEST_LIMIT) ? (
           <DateSelector
             tests={filteredTests}
             onSelectTest={handleDateSelectorTestSelect}
@@ -487,15 +488,9 @@ const PreviousTestingComponent = ({
           />
         ) : (
           <PremiumLockedCard
-            title={
-              uniqueTests.length > 1
-                ? `You've saved ${uniqueTests.length} tests`
-                : 'Your test history'
-            }
+            title={`You've saved ${uniqueTests.length} tests`}
             description={
-              uniqueTests.length > 1
-                ? `Free shows only your latest. Unlock your full history to switch between all ${uniqueTests.length} tests and track how your thresholds change over time.`
-                : 'Switch between all your past tests and track how your thresholds change. Free shows your latest test only.'
+              `Free covers your first ${FREE_TEST_LIMIT}. Unlock your full history to switch between all ${uniqueTests.length} tests and watch your thresholds move over time.`
             }
             ctaLabel="Unlock full history"
             onUpgrade={() => {

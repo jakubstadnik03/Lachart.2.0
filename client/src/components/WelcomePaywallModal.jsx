@@ -5,6 +5,7 @@ import { isCapacitorNative } from '../utils/isNativeApp';
 import { trackCheckoutStarted } from '../utils/analytics';
 import { createCheckoutSession } from '../services/api';
 import { ATHLETE_PLAN_PRICE_LABEL, COACH_PLAN_PRICE_LABEL } from '../constants/planPricing';
+import { PLAN_FEATURES, trackLabel } from '../constants/planFeatures';
 
 /**
  * WelcomePaywallModal
@@ -19,6 +20,8 @@ import { ATHLETE_PLAN_PRICE_LABEL, COACH_PLAN_PRICE_LABEL } from '../constants/p
  * per-user localStorage flag so it only appears once.
  */
 
+// What each plan promises comes from constants/planFeatures.js — shared with
+// UpgradeModal, Settings and the public pricing page.
 const PLANS = [
   {
     id: 'pro',
@@ -27,16 +30,8 @@ const PLANS = [
     tagline: 'For serious athletes',
     accent: 'from-primary to-primary/80',
     border: 'border-primary',
-    features: [
-      'Unlimited lactate tests',
-      'Plan workouts in the calendar',
-      'Start trainings from the app',
-      'Connect to your smart trainer',
-      'Advanced analytics & charts',
-      'PDF export of test reports',
-      'Priority support',
-    ],
     badge: 'Most popular',
+    ...PLAN_FEATURES.pro,
   },
   {
     id: 'coach',
@@ -45,14 +40,7 @@ const PLANS = [
     tagline: 'For coaches & teams',
     accent: 'from-purple-600 to-purple-500',
     border: 'border-purple-500',
-    features: [
-      'Unlimited athletes',
-      'Plan workouts for your athletes',
-      'Unlimited PDF report generation',
-      'PDF branding — logo, title & address',
-      'Coach dashboard & overview',
-      'Everything in Athlete',
-    ],
+    ...PLAN_FEATURES.coach,
   },
 ];
 
@@ -151,14 +139,29 @@ export default function WelcomePaywallModal({ open, onClose, userName }) {
                   <p className="text-xs text-gray-400 mt-0.5">then {plan.price} / month</p>
                 </div>
 
-                <ul className="space-y-1.5 mb-5 flex-1">
-                  {plan.features.map((f) => (
-                    <li key={f} className="flex items-start gap-2 text-xs text-gray-700">
-                      <CheckIcon className="w-4 h-4 text-primary shrink-0 mt-0.5" />
-                      <span>{f}</span>
-                    </li>
+                <div className="mb-4 space-y-1.5">
+                  {plan.valueLines.map((line) => (
+                    <p key={line.track} className="text-xs leading-snug text-gray-800">{line.text}</p>
                   ))}
-                </ul>
+                </div>
+
+                <div className="space-y-3 mb-5 flex-1">
+                  {plan.groups.map((group) => (
+                    <div key={group.track}>
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400 mb-1">
+                        {trackLabel(group.track)}
+                      </p>
+                      <ul className="space-y-1.5">
+                        {group.items.map((f) => (
+                          <li key={f} className="flex items-start gap-2 text-xs text-gray-700">
+                            <CheckIcon className="w-4 h-4 text-primary shrink-0 mt-0.5" />
+                            <span>{f}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ))}
+                </div>
 
                 <button
                   onClick={() => startTrial(plan.id)}

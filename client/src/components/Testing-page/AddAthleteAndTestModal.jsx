@@ -4,6 +4,7 @@ import api from '../../services/api';
 import { useNotification } from '../../context/NotificationContext';
 import { usePremium } from '../../hooks/usePremium';
 import UpgradeModal from '../UpgradeModal';
+import { FREE_COACH_ATHLETE_LIMIT } from '../../constants/planLimits';
 
 const AddAthleteAndTestModal = ({ isOpen, onClose, onAthleteCreated, athleteCount = 0 }) => {
   const { addNotification } = useNotification();
@@ -35,7 +36,7 @@ const AddAthleteAndTestModal = ({ isOpen, onClose, onAthleteCreated, athleteCoun
     }
 
     // ── Premium gate: free plan allows only 1 athlete ──────────────────────
-    if (!isPremium && athleteCount >= 1) {
+    if (!isPremium && athleteCount >= FREE_COACH_ATHLETE_LIMIT) {
       gate('Multiple Athletes', 'coach');
       return;
     }

@@ -72,8 +72,15 @@ const FEATURE_MATRIX = {
  */
 const QUOTA_LIMITS = {
   // Total lactate tests a free athlete can create (lifetime). The UI advertises
-  // "1 lactate test" — we enforce the cap at create time.
-  tests:    { free: 1, pro: -1, coach: -1, team: -1, enterprise: -1 },
+  // "3 lactate tests" — we enforce the cap at create time.
+  //
+  // Three, not one: an athlete with two or more tests subscribes about three
+  // times as often as one with a single test, because the second test is the
+  // first time LaChart shows something a lab printout cannot — a threshold
+  // that moved. A cap of one gated exactly the act that earns the payment.
+  // Keep in step with client/src/constants/planLimits.js and PLANS.limits in
+  // server/controllers/subscriptionController.js.
+  tests:    { free: 3, pro: -1, coach: -1, team: -1, enterprise: -1 },
   // Linked athletes a coach can have. Free gets 1 (a taste); Pro is a solo
   // athlete plan so it gets 0; Coach is unlimited. Matches the client and the
   // /coach/invite-athlete cap.

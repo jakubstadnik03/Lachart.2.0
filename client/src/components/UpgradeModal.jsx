@@ -8,6 +8,7 @@ import {
   ATHLETE_PLAN_PRICE_LABEL,
   COACH_PLAN_PRICE_LABEL,
 } from '../constants/planPricing';
+import { PLAN_FEATURES, trackLabel } from '../constants/planFeatures';
 import { createCheckoutSession } from '../services/api';
 import { useAuth } from '../context/AuthProvider';
 import { planForUser } from '../utils/planForUser';
@@ -15,33 +16,21 @@ import { planForUser } from '../utils/planForUser';
 const SWIPE_THRESHOLD = 80;
 const SWIPE_VEL_THRESHOLD = 400;
 
+// Names and prices live here; what each plan promises comes from
+// constants/planFeatures.js so this modal, the welcome paywall, Settings and
+// the public pricing page cannot drift apart.
 const PLAN_DETAILS = {
   pro: {
     name: 'Athlete',
     price: ATHLETE_PLAN_PRICE_LABEL,
     color: 'from-primary to-primary/80',
-    features: [
-      'Unlimited lactate tests',
-      'Plan workouts in the calendar',
-      'Start trainings from the app',
-      'Connect to your smart trainer',
-      'Advanced analytics & charts',
-      'PDF export of test reports',
-      'Priority support',
-    ],
+    ...PLAN_FEATURES.pro,
   },
   coach: {
     name: 'Coach',
     price: COACH_PLAN_PRICE_LABEL,
     color: 'from-purple-600 to-purple-500',
-    features: [
-      'Unlimited athletes',
-      'Plan workouts for your athletes',
-      'Unlimited PDF report generation',
-      'PDF branding — your logo, title & address',
-      'Coach dashboard & overview',
-      'Everything in Athlete',
-    ],
+    ...PLAN_FEATURES.coach,
   },
 };
 
@@ -275,17 +264,28 @@ export default function UpgradeModal({ isOpen, onClose, feature = 'This feature'
               If you already have access from your account on lachart.net, make sure you&apos;re signed in here with the same email.
             </p>
 
-            <p style={{ margin: '0 0 10px', fontSize: 12, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-              What&apos;s included
-            </p>
-            <ul style={{ margin: '0 0 20px', padding: 0, listStyle: 'none' }}>
-              {plan.features.map((f) => (
-                <li key={f} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 8, fontSize: 14, color: '#374151' }}>
-                  <SparklesIcon style={{ width: 16, height: 16, color: '#2563eb', flexShrink: 0, marginTop: 2 }} />
-                  <span>{f}</span>
-                </li>
-              ))}
-            </ul>
+            {plan.valueLines.map((line) => (
+              <p key={line.track} style={{ margin: '0 0 8px', fontSize: 14, lineHeight: 1.45, color: '#111827' }}>
+                {line.text}
+              </p>
+            ))}
+
+            {plan.groups.map((group) => (
+              <div key={group.track} style={{ marginTop: 14 }}>
+                <p style={{ margin: '0 0 8px', fontSize: 12, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  {trackLabel(group.track)}
+                </p>
+                <ul style={{ margin: 0, padding: 0, listStyle: 'none' }}>
+                  {group.items.map((f) => (
+                    <li key={f} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 8, fontSize: 14, color: '#374151' }}>
+                      <SparklesIcon style={{ width: 16, height: 16, color: '#2563eb', flexShrink: 0, marginTop: 2 }} />
+                      <span>{f}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+            <div style={{ height: 20 }} />
 
             <p style={{ margin: 0, fontSize: 12, lineHeight: 1.5, color: '#9ca3af' }}>
               Subscriptions are managed outside the iOS app. Apple In-App Purchase is not used for LaChart plans.
@@ -348,14 +348,34 @@ export default function UpgradeModal({ isOpen, onClose, feature = 'This feature'
             <span className="text-gray-400 text-sm mb-1">/ month after 2-week free trial</span>
           </div>
 
-          <ul className="space-y-1.5 mb-5">
-            {plan.features.map((f) => (
-              <li key={f} className="flex items-start gap-2 text-sm text-gray-700">
-                <SparklesIcon className="w-4 h-4 text-primary shrink-0 mt-0.5" />
-                <span>{f}</span>
-              </li>
+          {/* Two value lines, then the same promise as checkable items. People
+              buy LaChart for two different reasons and a single lactate-shaped
+              list only ever spoke to one of them. */}
+          <div className="mb-4 space-y-1.5">
+            {plan.valueLines.map((line) => (
+              <p key={line.track} className="text-sm text-gray-800 leading-snug">
+                {line.text}
+              </p>
             ))}
-          </ul>
+          </div>
+
+          <div className="space-y-4 mb-5">
+            {plan.groups.map((group) => (
+              <div key={group.track}>
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 mb-1.5">
+                  {trackLabel(group.track)}
+                </p>
+                <ul className="space-y-1.5">
+                  {group.items.map((f) => (
+                    <li key={f} className="flex items-start gap-2 text-sm text-gray-700">
+                      <SparklesIcon className="w-4 h-4 text-primary shrink-0 mt-0.5" />
+                      <span>{f}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
 
           <button
             type="button"

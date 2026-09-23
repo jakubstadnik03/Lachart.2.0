@@ -63,8 +63,10 @@ const PLANS = {
     interval: 'month',
     currency: 'eur',
     features: ['basic_testing', 'basic_analytics'],
+    // Keep in step with QUOTA_LIMITS in server/middleware/featureGate.js
+    // (the gate that enforces it) and client/src/constants/planLimits.js.
     limits: {
-      tests: 1,
+      tests: 3,
       athletes: 1
     }
   },

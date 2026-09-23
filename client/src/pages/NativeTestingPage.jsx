@@ -23,6 +23,7 @@ import NativePredictedCurveCard from '../components/native/NativePredictedCurveC
 import LT2TrendSparkline from '../components/DashboardPage/LT2TrendSparkline';
 import { usePremium } from '../hooks/usePremium';
 import UpgradeModal from '../components/UpgradeModal';
+import { FREE_TEST_LIMIT } from '../constants/planLimits';
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -465,7 +466,7 @@ export default function NativeTestingPage({ user, athleteId: externalAthleteId }
           </div>
           <button
             onClick={() => {
-              if (!isPremium && tests.length >= 1) {
+              if (!isPremium && tests.length >= FREE_TEST_LIMIT) {
                 gate('Unlimited tests — upgrade to add more', 'pro');
                 return;
               }
@@ -544,7 +545,7 @@ export default function NativeTestingPage({ user, athleteId: externalAthleteId }
                 profile={user}
                 athleteId={athleteId}
                 onAddTest={() => {
-                  if (!isPremium && tests.length >= 1) {
+                  if (!isPremium && tests.length >= FREE_TEST_LIMIT) {
                     gate('Unlimited tests — upgrade to add more', 'pro');
                     return;
                   }

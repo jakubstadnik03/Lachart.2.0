@@ -8,6 +8,7 @@ import {
 } from '@heroicons/react/24/outline';
 import { isCapacitorNative } from '../utils/isNativeApp';
 import { ATHLETE_PLAN_PRICE_LABEL, COACH_PLAN_PRICE_LABEL } from '../constants/planPricing';
+import { FREE_FEATURES, PLAN_FEATURES, trackLabel } from '../constants/planFeatures';
 
 /* ── FAQ accordion item ─────────────────────────────────────────────────────── */
 const FAQItem = ({ question, answer, isOpen, onClick }) => (
@@ -265,23 +266,45 @@ const SupportPage = () => {
           question: "What are the available plans?",
           answer: (
             <div className="space-y-3">
+              {/* Feature copy comes from constants/planFeatures.js. This answer
+                  used to carry its own hand-written list and had drifted badly —
+                  it promised "5 lactate tests/month" and capped Coach at 10
+                  athletes, neither of which was ever true of the shipped plans. */}
               {[
-                { name: "Free", price: "€0", features: ["Up to 5 lactate tests/month", "Basic training log", "Strava sync (manual)", "Public lactate calculator"] },
-                { name: "Athlete", price: `${ATHLETE_PLAN_PRICE_LABEL}/mo`, features: ["Unlimited lactate tests", "PDF export", "Advanced analytics", "FIT file upload", "Auto-sync (Strava & Garmin)", "Priority support"] },
-                { name: "Coach", price: `${COACH_PLAN_PRICE_LABEL}/mo`, features: ["Everything in Athlete", "Coach dashboard", "Up to 10 athletes", "Athlete progress tracking"] },
+                { name: "Free", price: "€0", groups: [{ track: null, items: FREE_FEATURES }] },
+                { name: "Athlete", price: `${ATHLETE_PLAN_PRICE_LABEL}/mo`, ...PLAN_FEATURES.pro },
+                { name: "Coach", price: `${COACH_PLAN_PRICE_LABEL}/mo`, ...PLAN_FEATURES.coach },
               ].map(plan => (
                 <div key={plan.name} className="p-3 rounded-lg bg-gray-50 border border-gray-100">
                   <div className="flex items-baseline gap-2 mb-1.5">
                     <span className="font-semibold text-gray-900">{plan.name}</span>
                     <span className="text-sm font-medium text-primary">{plan.price}</span>
                   </div>
-                  <ul className="space-y-0.5">
-                    {plan.features.map(f => (
-                      <li key={f} className="flex items-center gap-2 text-xs text-gray-600">
-                        <CheckCircleIcon className="w-3.5 h-3.5 text-green-500 shrink-0" />{f}
-                      </li>
+                  {plan.valueLines && (
+                    <div className="mb-2 space-y-1">
+                      {plan.valueLines.map(line => (
+                        <p key={line.track} className="text-xs leading-snug text-gray-700">{line.text}</p>
+                      ))}
+                    </div>
+                  )}
+                  <div className="space-y-2">
+                    {plan.groups.map((group, gi) => (
+                      <div key={group.track ?? gi}>
+                        {group.track && (
+                          <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400 mb-0.5">
+                            {trackLabel(group.track)}
+                          </p>
+                        )}
+                        <ul className="space-y-0.5">
+                          {group.items.map(f => (
+                            <li key={f} className="flex items-center gap-2 text-xs text-gray-600">
+                              <CheckCircleIcon className="w-3.5 h-3.5 text-green-500 shrink-0" />{f}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
                     ))}
-                  </ul>
+                  </div>
                 </div>
               ))}
             </div>
