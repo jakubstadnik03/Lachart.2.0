@@ -59,6 +59,10 @@ const ProfilePage = () => {
   const { selectedAthleteId, setSelectedAthleteId } = useAthleteSelection();
   const isCoachLike = COACH_LIKE_ROLES.includes(String(user?.role || '').toLowerCase());
   const viewedAthleteId = useMemo(() => {
+    // The native page reads the selection itself and keeps "me" and "the
+    // athlete I am looking at" apart — handing it the athlete as `userInfo`
+    // would make it edit the coach's own profile with the athlete's data.
+    if (isCapacitorNative()) return null;
     // An athlete can only ever be looking at themselves; the server would
     // refuse anything else, and the URL is not a permission.
     if (!isCoachLike) return null;
@@ -728,6 +732,7 @@ const [selectedTitle, setSelectedTitle] = useState(null);
   if (isCapacitorNative()) {
     return (
       <NativeProfilePage
+        user={user}
         userInfo={userInfo}
         calendarData={calendarData}
         onProfileUpdated={loadProfileData}

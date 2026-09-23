@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import {
   XMarkIcon,
@@ -190,7 +191,12 @@ export default function WhatsNewModal({ open, onClose, userName, mode = 'whatsne
     touchStart.current = null;
   };
 
-  return (
+  // Rendered into <body>, not where it is mounted. The header carries a
+  // backdrop-filter, and a filtered ancestor becomes the containing block for
+  // fixed children and traps their z-index: opened from the ✨ button the
+  // modal was laid out inside the 72px bar and painted under the page — open,
+  // with nothing to see.
+  return createPortal(
     <div
       className="fixed inset-0 z-[11500] flex items-start sm:items-start justify-center pt-[56px] sm:pt-[72px] px-3 sm:px-4 pb-4 overflow-y-auto"
       onClick={(e) => { if (e.target === e.currentTarget) onClose?.(); }}
@@ -327,7 +333,8 @@ export default function WhatsNewModal({ open, onClose, userName, mode = 'whatsne
           to   { opacity: 1; transform: translateY(0); }
         }
       `}</style>
-    </div>
+    </div>,
+    document.body
   );
 }
 

@@ -301,6 +301,10 @@ export default function SpiderChart({
     try { const s = localStorage.getItem('powerRadar_selectedMonths'); return s ? JSON.parse(s) : []; } catch { return []; }
   });
   const [isTableExpanded, setIsTableExpanded] = useState(false);
+  // Whether the person has touched the Bike/Run toggle. Once they have, the
+  // radar stops second-guessing them.
+  const userPickedSportRef = useRef(false);
+  const autoSwitchedRef = useRef(false);
 
   // Bike API state
   const [bikeMetrics, setBikeMetrics] = useState(emptyBikeMetrics);
@@ -427,6 +431,8 @@ export default function SpiderChart({
     allTimeReqRef.current += 1;
     metricsReqRef.current += 1;
     runReqRef.current += 1;
+    // A different athlete deserves a fresh answer to "which radar has data".
+    autoSwitchedRef.current = false;
   }, [targetAthleteId]);
 
   // ── Bike: all-time reference load ─────────────────────────────────────────
@@ -907,6 +913,62 @@ export default function SpiderChart({
   const isLoadingRun  = sport === 'run'  && !runReady && !manualRunMetrics?.hasData;
   const isEmpty = sport === 'run' ? (!runHasData && !isLoadingRun) : (!bikeReady || !chartData);
 
+  // ── Open on the sport the athlete actually has data for ──────────────────
+  // The radar starts on the bike because that is the sport it was built for,
+  // so a runner — or a coach whose athlete only runs — met an empty chart and
+  // had to know to press "Run" to see anything. If the sport on screen has
+  // nothing and the other one does, move there once. A page that dictates the
+  // sport, and a person who has touched the toggle, both outrank this.
+  const bikeHasData = useMemo(
+    () => BIKE_KEYS.some((k) => Number(bikeAllTimeBest?.[k]) > 0),
+    [bikeAllTimeBest]
+  );
+  useEffect(() => {
+    if (autoSwitchedRef.current || userPickedSportRef.current) return;
+    if (hasRadar(sportProp)) return;
+    if (isLoadingBike || isLoadingRun) return;
+
+    const currentHasData = sport === 'bike' ? bikeHasData : Boolean(runHasData);
+    if (currentHasData) {
+      // Nothing to fix, and nothing to reconsider later either.
+      autoSwitchedRef.current = true;
+      return;
+    }
+
+    const other = sport === 'bike' ? 'run' : 'bike';
+
+    // Runs entered by hand are already in this component; no request needed.
+    if (other === 'run' && manualRunMetrics?.hasData) {
+      autoSwitchedRef.current = true;
+      setSport('run');
+      return;
+    }
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const params = new URLSearchParams({ comparePeriod: 'alltime' });
+        if (targetAthleteId) params.append('athleteId', targetAthleteId);
+        const path = other === 'bike' ? 'power-metrics' : 'run-metrics';
+        const resp = await api.get(`/api/fit/${path}?${params}`);
+        const allTime = resp?.data?.allTime || {};
+        const otherHasData = other === 'bike'
+          ? BIKE_KEYS.some((k) => extractVal(allTime[k]) > 0)
+          : Object.values(allTime).some((v) => extractVal(v) > 0);
+        if (cancelled) return;
+        // Either way this question is answered for this athlete.
+        autoSwitchedRef.current = true;
+        if (otherHasData) setSport(other);
+      } catch {
+        // A refusal or an outage is not a reason to move the radar.
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [
+    sport, sportProp, isLoadingBike, isLoadingRun,
+    bikeHasData, runHasData, manualRunMetrics, targetAthleteId,
+  ]);
+
   return (
     <div className="w-full h-full flex flex-col bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
 
@@ -927,7 +989,7 @@ export default function SpiderChart({
             {[{ id: 'bike', label: 'Bike', icon: '/icon/bike.svg' }, { id: 'run', label: 'Run', icon: '/icon/run.svg' }].map(s => (
               <button
                 key={s.id}
-                onClick={() => setSport(s.id)}
+                onClick={() => { userPickedSportRef.current = true; setSport(s.id); }}
                 className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
                   sport === s.id ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
                 }`}
