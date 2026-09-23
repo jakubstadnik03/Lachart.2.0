@@ -560,6 +560,76 @@ router.post('/predicted-curve/send-batch', verifyToken, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── "Your coach saved a curve and you never opened it" ──────────────────────
+//
+// Admin-driven only: no scheduler, no cron, nothing auto-sends. The pool is a
+// finite backlog rather than a flow, so it is worked through by hand — look at
+// the list, read one, send yourself a test copy, then send for real.
+
+const savedCurve = require('../services/savedCurveCampaignService');
+
+// GET /api/email/saved-curve/status — the backlog, and why people fall out of it.
+router.get('/saved-curve/status', verifyToken, async (req, res) => {
+  try {
+    if (!(await requireAdmin(req, res))) return;
+    res.json(await savedCurve.getCampaignStats());
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/email/saved-curve/candidates — who would get one, with their numbers.
+router.get('/saved-curve/candidates', verifyToken, async (req, res) => {
+  try {
+    if (!(await requireAdmin(req, res))) return;
+    const limit = Math.min(300, Math.max(1, Number(req.query.limit) || 100));
+    res.json(await savedCurve.listCandidates({ limit }));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/email/saved-curve/preview/:userId — that person's actual email, rendered.
+// ?html=1 returns it as a page so it can be eyeballed in a browser tab.
+router.get('/saved-curve/preview/:userId', verifyToken, async (req, res) => {
+  try {
+    if (!(await requireAdmin(req, res))) return;
+    const data = await savedCurve.previewForUser(req.params.userId);
+    if (!data) return res.status(404).json({ error: 'User not found' });
+    if (data.error) return res.status(400).json(data);
+    if (req.query.html === '1') return res.set('Content-Type', 'text/html').send(data.html);
+    res.json(data);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/email/saved-curve/send-test/:userId — their curve, the admin's inbox.
+// Never stamps the athlete, so the real send is still available afterwards.
+router.post('/saved-curve/send-test/:userId', verifyToken, async (req, res) => {
+  try {
+    const me = await requireAdmin(req, res);
+    if (!me) return;
+    const result = await savedCurve.sendToUser(req.params.userId, { testTo: me.email });
+    res.status(result.sent ? 200 : 400).json(result);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/email/saved-curve/send/:userId — one real send to the athlete.
+router.post('/saved-curve/send/:userId', verifyToken, async (req, res) => {
+  try {
+    if (!(await requireAdmin(req, res))) return;
+    const result = await savedCurve.sendToUser(req.params.userId);
+    res.status(result.sent ? 200 : 400).json(result);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/email/saved-curve/send-batch — { userIds: [...] }, max 25 per call.
+// Capped and paced on purpose: this goes out over a shared mailbox, and a
+// hundred identical sends in a minute is how a sending domain gets burned.
+router.post('/saved-curve/send-batch', verifyToken, async (req, res) => {
+  try {
+    if (!(await requireAdmin(req, res))) return;
+    const ids = Array.isArray(req.body?.userIds) ? req.body.userIds : [];
+    if (!ids.length) return res.status(400).json({ error: 'No recipients selected' });
+    res.json(await savedCurve.sendToMany(ids));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ─── Public unsubscribe — no auth, only the signed token. ────────────────────
 //
 // Both GET (clickable link in the email body) and POST (Gmail / Apple Mail

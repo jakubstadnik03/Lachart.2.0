@@ -467,6 +467,11 @@ const userSchema = new mongoose.Schema({
      *  recorded so a later run cannot repeat itself for the other one. */
     predictedCurveSent:       { type: Date, default: null },
     predictedCurveSport:      { type: String, default: null },
+    /** One-time "your coach saved a real test and you have never opened it"
+     *  email, carrying that athlete's own curve. The mirror image of
+     *  predictedCurve: that one is for people with no test, this one for
+     *  people with a test and no account use. Sent once ever. */
+    savedCurveSent:           { type: Date, default: null },
     milestones: {
       firstTestSent:              { type: Boolean, default: false },
       fiveTestsSent:              { type: Boolean, default: false },
