@@ -105,10 +105,27 @@ export default function About() {
   // Escape for keyboard users.
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   useEffect(() => {
-    if (!mobileNavOpen) return;
+    if (!mobileNavOpen) return undefined;
     const onKey = (e) => { if (e.key === 'Escape') setMobileNavOpen(false); };
     document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
+
+    // Lock the page behind the panel. Without this the menu floats over a page
+    // that still scrolls under your thumb, so a missed tap slides the content
+    // instead of following a link — and the open panel drifts with it.
+    const { body } = document;
+    const prevOverflow = body.style.overflow;
+    const prevPaddingRight = body.style.paddingRight;
+    // Desktop browsers with a classic scrollbar reflow when overflow goes
+    // hidden; pad by the width that disappears so nothing shifts sideways.
+    const gap = window.innerWidth - document.documentElement.clientWidth;
+    body.style.overflow = 'hidden';
+    if (gap > 0) body.style.paddingRight = `${gap}px`;
+
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      body.style.overflow = prevOverflow;
+      body.style.paddingRight = prevPaddingRight;
+    };
   }, [mobileNavOpen]);
 
   // Cross-page hash landing — e.g. arriving at /about#pricing from the header
@@ -318,7 +335,10 @@ export default function About() {
           boxShadow: navScrolled ? '0 4px 18px -8px rgba(15,23,41,.12)' : 'none',
           transition: 'box-shadow .25s',
         }}>
-          <div style={{ maxWidth: 1280, margin: '0 auto', padding: '14px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
+          {/* position/z-index: the scrim is a child of this same sticky <nav>,
+              which is its own stacking context — so without lifting the bar it
+              gets dimmed along with the page behind it. The header stays lit. */}
+          <div style={{ position: 'relative', zIndex: 102, background: 'inherit', maxWidth: 1280, margin: '0 auto', padding: '14px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
             <Link to="/" style={{ display: 'inline-flex', alignItems: 'center', gap: 10, fontWeight: 700, color: LC.primaryDark, fontSize: 18, textDecoration: 'none' }}>
               <img src="/about-design/lachart-logo.png" alt="LaChart" style={{ height: 32, width: 'auto' }} />
               <span>LaChart</span>
@@ -357,7 +377,7 @@ export default function About() {
             </div>
             <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
               <Link to="/login" style={{ color: LC.muted, textDecoration: 'none', fontSize: 14, fontWeight: 500, padding: '8px 12px' }} className="lc-nav-ghost">Sign in</Link>
-              <Link to="/signup" onClick={() => track('nav_start_free')} style={{
+              <Link to="/signup" onClick={() => track('nav_start_free')} className="lc-nav-cta" style={{
                 padding: '10px 18px', borderRadius: 10, background: LC.primaryDark, color: '#fff',
                 textDecoration: 'none', fontSize: 14, fontWeight: 700,
                 boxShadow: '0 4px 12px -4px rgba(118,126,181,.5)',
@@ -401,61 +421,132 @@ export default function About() {
             </div>
           </div>
 
-          {/* Mobile dropdown panel — slides down under the sticky nav when
-              the hamburger is open. Same link list as the desktop row, but
-              full-width tap targets and an explicit "Sign in" entry since
-              the top-bar ghost link is hidden on mobile. */}
+          {/* Mobile menu — a sheet under the sticky bar, over a scrim.
+              It used to be a bare white dropdown with no backdrop on a page
+              that kept scrolling behind it, so it read as part of the content
+              rather than as a layer above it. Now: the page dims and locks,
+              a tap anywhere outside closes, and the panel scrolls internally
+              if the list ever outgrows the screen. */}
           {mobileNavOpen && (
-            <div
-              className="lc-mobile-nav"
-              style={{
-                background: '#fff',
-                borderTop: '1px solid rgba(180,190,210,.18)',
-                padding: '8px 16px 14px',
-                boxShadow: '0 8px 20px -10px rgba(10,14,26,0.12)',
-              }}
-            >
-              {[
-                ['/for-testers',  'For testers'],
-                ['/for-coaches',  'For coaches'],
-                ['/for-athletes', 'For athletes'],
-                ['/features',   'Features'],
-                ['download',    'App'],
-                ['pricing',     'Pricing'],
-              ].map(([id, label]) => {
-                const isRoute = id.startsWith('/');
-                const baseStyle = {
-                  display: 'block',
-                  padding: '12px 10px',
-                  borderRadius: 10,
-                  color: LC.text,
-                  textDecoration: 'none',
-                  fontSize: 15, fontWeight: 600,
-                };
-                const onClick = () => setMobileNavOpen(false);
-                return isRoute
-                  ? <Link key={id} to={id} style={baseStyle} onClick={onClick}>{label}</Link>
-                  : <a key={id} href={`#${id}`} style={baseStyle} onClick={onClick}>{label}</a>;
-              })}
-              <div style={{ height: 1, background: 'rgba(180,190,210,.18)', margin: '8px 0' }} />
-              <Link
-                to="/login"
+            <>
+              <div
+                className="lc-mobile-scrim"
+                aria-hidden
                 onClick={() => setMobileNavOpen(false)}
-                style={{
-                  display: 'block', padding: '12px 10px', borderRadius: 10,
-                  color: LC.primaryDark, textDecoration: 'none',
-                  fontSize: 15, fontWeight: 700,
-                }}
-              >
-                Sign in
-              </Link>
-            </div>
+              />
+              <div className="lc-mobile-nav" id="lc-mobile-nav">
+                <div className="lc-mobile-nav-inner">
+                  {[
+                    ['/for-testers',  'For testers',  'Step tests and a report to hand over'],
+                    ['/for-coaches',  'For coaches',  'A roster, plans and shared history'],
+                    ['/for-athletes', 'For athletes', 'Your curve, your zones, your week'],
+                    ['/features',     'Features',     null],
+                    ['download',      'App',          null],
+                    ['pricing',       'Pricing',      null],
+                  ].map(([id, label, hint]) => {
+                    const isRoute = id.startsWith('/');
+                    const close = () => setMobileNavOpen(false);
+                    const body = (
+                      <>
+                        <span className="lc-mnav-label">{label}</span>
+                        {hint && <span className="lc-mnav-hint">{hint}</span>}
+                      </>
+                    );
+                    return isRoute
+                      ? <Link key={id} to={id} className="lc-mnav-row" onClick={close}>{body}</Link>
+                      : <a key={id} href={`#${id}`} className="lc-mnav-row" onClick={close}>{body}</a>;
+                  })}
+
+                  <div className="lc-mnav-foot">
+                    <Link
+                      to="/login"
+                      className="lc-mnav-signin"
+                      onClick={() => setMobileNavOpen(false)}
+                    >
+                      Sign in
+                    </Link>
+                    <Link
+                      to="/signup"
+                      className="lc-mnav-cta"
+                      onClick={() => { track('nav_start_free_mobile'); setMobileNavOpen(false); }}
+                    >
+                      Start free
+                    </Link>
+                  </div>
+                </div>
+              </div>
+            </>
           )}
 
           <style>{`
             @media (max-width: 880px) {
               .lc-nav-links, .lc-nav-ghost { display: none !important; }
               .lc-nav-burger { display: inline-flex !important; }
+              /* The bar carries logo + CTA + burger on a 360 px screen, so the
+                 CTA loses its roomy desktop padding rather than wrapping. */
+              .lc-nav-cta { padding: 9px 14px !important; font-size: 13.5px !important; }
+            }
+
+            /* ── mobile menu ─────────────────────────────────────────── */
+            .lc-mobile-scrim {
+              position: fixed; inset: 0; z-index: 90;
+              background: rgba(12, 16, 30, .42);
+              -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px);
+              animation: lcScrimIn .18s ease-out both;
+            }
+            @keyframes lcScrimIn { from { opacity: 0 } to { opacity: 1 } }
+
+            .lc-mobile-nav {
+              position: relative; z-index: 101;
+              background: #fff;
+              border-top: 1px solid rgba(180,190,210,.22);
+              box-shadow: 0 18px 40px -22px rgba(10,14,26,.5);
+              /* Never taller than the screen under the bar. dvh so the panel
+                 does not jump when mobile Safari's toolbars collapse. */
+              max-height: 72vh;
+              max-height: 72dvh;
+              overflow-y: auto;
+              -webkit-overflow-scrolling: touch;
+              overscroll-behavior: contain;
+              animation: lcSheetIn .2s cubic-bezier(.2,.7,.3,1) both;
+            }
+            @keyframes lcSheetIn {
+              from { opacity: 0; transform: translateY(-8px) }
+              to   { opacity: 1; transform: none }
+            }
+            .lc-mobile-nav-inner {
+              padding: 6px 12px calc(14px + env(safe-area-inset-bottom));
+            }
+
+            .lc-mnav-row {
+              display: flex; flex-direction: column; gap: 2px;
+              padding: 12px 12px; border-radius: 12px;
+              text-decoration: none; color: ${LC.text};
+              -webkit-tap-highlight-color: transparent;
+            }
+            .lc-mnav-row + .lc-mnav-row { box-shadow: inset 0 1px 0 rgba(180,190,210,.18); }
+            .lc-mnav-row:active { background: ${LC.primaryTint}; }
+            .lc-mnav-label { font-size: 16px; font-weight: 650; letter-spacing: -.01em; }
+            .lc-mnav-hint  { font-size: 12.5px; color: ${LC.muted}; line-height: 1.35; }
+
+            .lc-mnav-foot {
+              display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+              margin-top: 12px; padding-top: 12px;
+              border-top: 1px solid rgba(180,190,210,.22);
+            }
+            .lc-mnav-signin, .lc-mnav-cta {
+              display: flex; align-items: center; justify-content: center;
+              padding: 13px 12px; border-radius: 12px;
+              font-size: 14.5px; font-weight: 700; text-decoration: none;
+              -webkit-tap-highlight-color: transparent;
+            }
+            .lc-mnav-signin { color: ${LC.primaryDark}; border: 1px solid rgba(180,190,210,.4); }
+            .lc-mnav-cta    { color: #fff; background: ${LC.primaryDark}; }
+            .lc-mnav-signin:active { background: ${LC.primaryTint}; }
+            .lc-mnav-cta:active    { filter: brightness(.94); }
+
+            @media (prefers-reduced-motion: reduce) {
+              .lc-mobile-scrim, .lc-mobile-nav { animation: none !important; }
             }
           `}</style>
         </nav>

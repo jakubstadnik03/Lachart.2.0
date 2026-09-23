@@ -79,6 +79,23 @@ export function useScrollSettle(enabled = true) {
   useEffect(() => {
     if (!enabled || reduce) return undefined;
 
+    // Touch devices are excluded outright.
+    //
+    // This settle is a trackpad nicety: it waits for IDLE ms of quiet and then
+    // eases the page onto a section edge. On a phone that premise is wrong.
+    // iOS keeps scrolling after the finger leaves — momentum runs for up to a
+    // second — and during the tail of a fling the scroll events thin out past
+    // the 140 ms idle window. The settle then starts animating into a scroll
+    // the system is still driving, and the two take turns calling scrollTo:
+    // what the reader sees is the page twitching backwards under their thumb.
+    // `touchstart` cancels it, but nothing fires between touchend and the end
+    // of momentum, which is exactly when it goes wrong.
+    //
+    // There is no version of this that is pleasant on a phone — a small screen
+    // means the nearest section edge is almost always within REACH, so it
+    // would fire on nearly every scroll. Desktop keeps it; touch does not.
+    if (window.matchMedia?.('(pointer: coarse)')?.matches) return undefined;
+
     const NAV = 76;          // sticky nav height — a heading must clear it
     const IDLE = 140;        // ms of quiet before we consider settling
     const REACH = 0.26;      // settle only within this fraction of the viewport

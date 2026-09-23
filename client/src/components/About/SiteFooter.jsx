@@ -62,12 +62,12 @@ export default function SiteFooter({ backToTop = true }) {
   return (
     <>
     {backToTop && <BackToTop />}
-    <footer style={{ background: '#fff', borderTop: '1px solid ' + LC.border, padding: '40px 24px 24px', marginTop: 40 }}>
+    <footer className="lc-footer" style={{ background: '#fff', borderTop: '1px solid ' + LC.border }}>
       <div
         className="lc-footer-grid"
         style={{ maxWidth: 1280, margin: '0 auto', display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr', gap: 30 }}
       >
-        <div>
+        <div className="lc-footer-brand">
           <div style={{ display: 'inline-flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
             <img src="/about-design/lachart-logo.png" alt="LaChart" style={{ height: 28 }} />
             <span style={{ fontSize: 16, fontWeight: 700, color: LC.primaryDark }}>LaChart</span>
@@ -78,7 +78,7 @@ export default function SiteFooter({ backToTop = true }) {
         </div>
 
         {COLUMNS.map((col) => (
-          <div key={col.h}>
+          <div key={col.h} className="lc-footer-col">
             <h6 style={{ fontSize: 11.5, fontWeight: 800, color: LC.primaryDark, textTransform: 'uppercase', letterSpacing: '0.12em', margin: '0 0 12px' }}>
               {col.h}
             </h6>
@@ -99,14 +99,38 @@ export default function SiteFooter({ backToTop = true }) {
         ))}
       </div>
 
-      <div style={{ maxWidth: 1280, margin: '24px auto 0', paddingTop: 18, borderTop: '1px solid ' + LC.border, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+      <div className="lc-footer-base" style={{ maxWidth: 1280, margin: '24px auto 0', paddingTop: 18, borderTop: '1px solid ' + LC.border, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
         <span style={{ fontSize: 12, color: LC.muted }}>© {new Date().getFullYear()} LaChart. All rights reserved.</span>
-        <span style={{ fontSize: 12, color: LC.muted }}>Made for athletes who measure.</span>
+        <span className="lc-footer-tagline" style={{ fontSize: 12, color: LC.muted }}>Made for athletes who measure.</span>
       </div>
 
       <style>{`
-        @media (max-width: 720px) { .lc-footer-grid { grid-template-columns: 1fr 1fr !important; } }
-        @media (max-width: 480px) { .lc-footer-grid { grid-template-columns: 1fr !important; } }
+        .lc-footer { padding: 40px 24px 24px; margin-top: 40px; }
+
+        @media (max-width: 720px) {
+          .lc-footer-grid { grid-template-columns: 1fr 1fr !important; gap: 22px !important; }
+        }
+
+        /* Phones.
+           This used to collapse to a single column at 480 px, which stacked the
+           brand block and four link lists — fourteen links, one under another —
+           into a footer taller than the screen it sat under. Two columns halve
+           it, the brand paragraph goes (the reader has just come down the whole
+           page; it tells them nothing new), and the padding stops being desktop
+           padding. */
+        @media (max-width: 560px) {
+          .lc-footer { padding: 24px 18px 18px; margin-top: 24px; }
+          .lc-footer-grid { grid-template-columns: 1fr 1fr !important; gap: 18px 16px !important; }
+          .lc-footer-brand { grid-column: 1 / -1; }
+          .lc-footer-brand p { display: none; }
+          .lc-footer-col h6 { margin-bottom: 8px !important; font-size: 11px !important; }
+          .lc-footer-col ul { gap: 6px !important; }
+          .lc-footer-col a { font-size: 13px !important; }
+          .lc-footer-base { margin-top: 16px !important; padding-top: 12px !important; }
+          /* Two strap lines side by side wrap into four rows on a narrow
+             screen; the copyright is the one that has to be there. */
+          .lc-footer-tagline { display: none; }
+        }
       `}</style>
     </footer>
     </>
