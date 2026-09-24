@@ -62,6 +62,24 @@ const plannedWorkoutSchema = new mongoose.Schema({
     required: true,
     index: true,
   },
+  /**
+   * Wall-clock start, "HH:mm", or null when the session is simply "that day".
+   *
+   * Kept apart from `date` rather than folded into it: of 329 planned workouts
+   * 321 sit at exactly 00:00, so a time inside `date` cannot tell "the athlete
+   * chose midnight" from "nobody chose anything" — and the calendar feed has to
+   * know the difference. Local wall-clock, not UTC: a session planned for 06:30
+   * is 06:30 wherever the athlete wakes up, which is also why the ICS event is
+   * written as floating time.
+   */
+  startTime: {
+    type: String,
+    default: null,
+    validate: {
+      validator: (v) => v == null || /^([01]\d|2[0-3]):[0-5]\d$/.test(v),
+      message: 'startTime must be HH:mm',
+    },
+  },
   /** Manual stack order within a calendar day (0 = top). */
   dayOrder: { type: Number, default: 0 },
   sport: {

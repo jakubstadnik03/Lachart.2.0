@@ -47,6 +47,18 @@ function maybeMirrorUpcomingToGarmin(athleteId) {
  */
 const requirePlanWorkouts = requireFeature('plan_workouts');
 
+/**
+ * "HH:mm", or null for a session with no time on it. Anything unparseable is
+ * treated as "no time" rather than rejected: a bad clock value should not stop
+ * a coach saving the workout itself.
+ */
+function normalizeStartTime(v) {
+  if (v == null || v === '') return null;
+  const m = /^([01]?\d|2[0-3]):([0-5]\d)$/.exec(String(v).trim());
+  if (!m) return null;
+  return `${String(m[1]).padStart(2, '0')}:${m[2]}`;
+}
+
 // Answering a plan — done, skipped, paired, a note — is free; writing one is
 // not. See utils/planProgress for the line between the two.
 function requirePlanWorkoutsUnlessProgress(req, res, next) {
@@ -257,7 +269,7 @@ router.get('/planned/:id', verifyToken, async (req, res) => {
 router.post('/planned', verifyToken, requirePlanWorkouts, async (req, res) => {
   try {
     const { athleteId } = await resolveAthleteId(req);
-    const { date, sport, title, description, templateId, steps,
+    const { date, startTime, sport, title, description, templateId, steps,
             coachNotes, comment, targetTss,
             plannedDuration, plannedDistance, isLactateTest, category } = req.body;
 
@@ -281,6 +293,7 @@ router.post('/planned', verifyToken, requirePlanWorkouts, async (req, res) => {
       athleteId,
       createdBy: String(req.user.userId),
       date: new Date(date),
+      startTime: normalizeStartTime(startTime),
       dayOrder,
       sport: normalizedSport, title, description,
       templateId: templateId || null,
@@ -326,11 +339,12 @@ router.put('/planned/:id', verifyToken, requirePlanWorkoutsUnlessProgress, async
     const previousDate = pw.date ? new Date(pw.date) : null;
     const coachEditing = String(req.user.userId) !== String(athleteId);
 
-    const fields = ['date','sport','title','description','steps','status',
+    const fields = ['date','startTime','sport','title','description','steps','status',
                     'completedTrainingId','unpaired','coachNotes','comment','targetTss',
                     'plannedDuration','plannedDistance','isLactateTest','category',
                     'executionData','fitTrainingId','stravaActivityId','dayOrder'];
     fields.forEach(f => { if (req.body[f] !== undefined) pw[f] = req.body[f]; });
+    if (req.body.startTime !== undefined) pw.startTime = normalizeStartTime(req.body.startTime);
     if (req.body.date) {
       const newDate = new Date(req.body.date);
       const oldKey = pw.date ? new Date(pw.date).toISOString().slice(0, 10) : '';

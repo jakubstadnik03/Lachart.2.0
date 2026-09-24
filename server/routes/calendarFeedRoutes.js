@@ -20,6 +20,7 @@ const router = express.Router();
 const verifyToken = require('../middleware/verifyToken');
 const User = require('../models/UserModel');
 const PlannedWorkout = require('../models/PlannedWorkout');
+const { getClientUrl } = require('../utils/emailTemplate');
 const {
   expandSteps,
   resolveTargetWatts,
@@ -112,6 +113,30 @@ function icsDate(d) {
   return new Date(d).toISOString().slice(0, 10).replace(/-/g, '');
 }
 
+/**
+ * A floating "YYYYMMDDTHHMMSS" — deliberately with no Z and no TZID.
+ *
+ * A session planned for 06:30 is 06:30 where the athlete is, not 06:30 UTC
+ * shifted into their evening when they travel. Floating time is the one ICS
+ * form that means exactly that, and calendars honour it.
+ */
+function icsDateTime(dayLike, minutesFromMidnight) {
+  const d = new Date(dayLike);
+  const y = d.getUTCFullYear();
+  const mo = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const da = String(d.getUTCDate()).padStart(2, '0');
+  const mins = Math.max(0, Math.round(minutesFromMidnight));
+  const hh = String(Math.floor(mins / 60) % 24).padStart(2, '0');
+  const mm = String(mins % 60).padStart(2, '0');
+  return `${y}${mo}${da}T${hh}${mm}00`;
+}
+
+/** "HH:mm" → minutes past midnight; null when there is no time set. */
+function startMinutes(pw) {
+  const m = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(String(pw.startTime || ''));
+  return m ? Number(m[1]) * 60 + Number(m[2]) : null;
+}
+
 function fmtDur(sec) {
   const m = Math.round(sec / 60);
   if (m < 60) return `${m}min`;
@@ -174,18 +199,34 @@ function buildEvent(pw, ctx, now) {
   if (laps.length) descParts.push(['Laps:', ...laps].join('\n'));
   if (pw.coachNotes) descParts.push(`Coach: ${pw.coachNotes}`);
 
-  const start = icsDate(pw.date);
-  const endDate = new Date(pw.date);
-  endDate.setDate(endDate.getDate() + 1);
+  // Timed rather than all-day, even when no time was set.
+  //
+  // An all-day event cannot be dragged to an hour, so an athlete who wanted to
+  // pencil the session in at seven had to go back into LaChart to do it. A
+  // workout with no time starts the day at 00:00 and can be moved in the
+  // calendar like anything else. (The feed is read-only, so moving it there
+  // changes how it looks, not the plan — the plan is moved in LaChart.)
+  const mins = startMinutes(pw);
+  const startMin = mins == null ? 0 : mins;
+  // A block as long as the session itself, so the calendar shows the shape of
+  // the day rather than a pin at one instant.
+  const durMin = Math.max(15, Math.round((totalSec || 3600) / 60));
+
+  // getClientUrl, not publicBaseUrl: the link is for a person to tap, so it has
+  // to land on the app at lachart.net, not on the API host that serves the feed.
+  const link = `${getClientUrl().replace(/\/+$/, '')}/training-calendar?workout=${pw._id}`;
+  const descWithLink = [...descParts, `Open in LaChart: ${link}`];
 
   return [
     'BEGIN:VEVENT',
     `UID:${pw._id}@lachart`,
     `DTSTAMP:${now}`,
-    `DTSTART;VALUE=DATE:${start}`,
-    `DTEND;VALUE=DATE:${icsDate(endDate)}`,
+    `DTSTART:${icsDateTime(pw.date, startMin)}`,
+    `DTEND:${icsDateTime(pw.date, startMin + durMin)}`,
     icsFold(`SUMMARY:${icsEscape(summary)}`),
-    ...(descParts.length ? [icsFold(`DESCRIPTION:${icsEscape(descParts.join('\n\n'))}`)] : []),
+    icsFold(`DESCRIPTION:${icsEscape(descWithLink.join('\n\n'))}`),
+    // Apple and Google both surface this as a tappable link on the event.
+    icsFold(`URL:${link}`),
     ...(pw.status === 'skipped' ? ['STATUS:CANCELLED'] : []),
     'END:VEVENT',
   ];
@@ -241,4 +282,8 @@ router.get('/:token/lachart.ics', async (req, res) => {
   }
 });
 
+// buildEvent is exported alongside the router so the ICS a calendar will
+// actually receive can be asserted in a test, rather than inferred.
 module.exports = router;
+module.exports.buildEvent = buildEvent;
+module.exports.icsDateTime = icsDateTime;

@@ -572,6 +572,10 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
   // The day the plan goes on. Opened from a day it is that day; opened from
   // the library it is today — and either way it can be changed here.
   const [planDate, setPlanDate]   = useState(() => toLocalISO(date));
+  // "" means "that day, no particular hour" — which the calendar feed turns
+  // into a midnight block the athlete can drag, rather than an all-day banner
+  // that cannot be moved to an hour at all.
+  const [planTime, setPlanTime]   = useState(() => workout?.startTime || '');
   useEffect(() => { setPlanDate(toLocalISO(date)); }, [date]);
   const planDateObj = (() => { const d = new Date(`${planDate}T12:00:00`); return isNaN(d.getTime()) ? date : d; })();
   const [desc, setDesc]           = useState(workout?.description || '');
@@ -673,6 +677,7 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
     try {
       await onSave({
         date: planDate,
+        startTime: planTime || null,
         sport,
         title: title.trim(),
         description: desc,
@@ -829,6 +834,15 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
                     onChange={(e) => { if (e.target.value) setPlanDate(e.target.value); }}
                     aria-label="Planned for"
                     className="text-[11px] text-primary font-semibold bg-transparent border-0 p-0 cursor-pointer outline-none w-[112px]"
+                  />
+                  <span className="text-slate-300">·</span>
+                  <input
+                    type="time"
+                    value={planTime}
+                    onChange={(e) => setPlanTime(e.target.value)}
+                    aria-label="Start time (optional)"
+                    title="Start time — leave empty for no set time"
+                    className="text-[11px] text-primary font-semibold bg-transparent border-0 p-0 cursor-pointer outline-none w-[62px]"
                   />
                 </label>
               ) : (
@@ -1420,7 +1434,8 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
                       if (title.trim()) {
                         setSaving(true);
                         await onSave({
-                          _id: workout._id, date, sport, title: title.trim(),
+                          _id: workout._id, date, startTime: planTime || null,
+                          sport, title: title.trim(),
                           description: desc, targetTss: Number(tss) || 0,
                           steps, category: category || null,
                           plannedDuration: 0, plannedDistance: 0,
