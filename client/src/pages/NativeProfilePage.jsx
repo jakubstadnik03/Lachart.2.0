@@ -23,6 +23,7 @@ import { formatProfileFullName } from '../utils/profileName';
 import { ltZoneBounds, zonesFromBounds } from '../utils/trainingZoneBounds';
 import { paceToViewer, viewerPaceSuffix } from '../utils/viewerUnits';
 import { maybePromptAthleteZonesSetup, requestTrainingZonesModal, ATHLETE_PROFILE_UPDATED_EVENT } from '../utils/trainingZonesSetup';
+import { saveUserToStorage } from '../utils/userStorage';
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -280,6 +281,51 @@ export default function NativeProfilePage({ user, userInfo, calendarData = [], o
   const fullName  = formatProfileFullName(u);
   const initials  = fullName.split(' ').map(s => s.charAt(0).toUpperCase()).slice(0, 2).join('') || 'A';
   const avatarUrl = u.profilePicture || u.avatar || null;
+
+  /**
+   * Same crop-and-shrink as the web picker: a centre square at 256 px, JPEG.
+   * Phone photos are several megabytes and the profile endpoint refuses
+   * anything over 400 KB, so resizing here is what makes the upload possible
+   * at all rather than a nicety.
+   */
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const onPickPhoto = (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file || !/^image\//.test(file.type)) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const img = new Image();
+      img.onload = async () => {
+        const side = Math.min(img.naturalWidth || img.width, img.naturalHeight || img.height);
+        if (!side) return;
+        const SIZE = 256;
+        const canvas = document.createElement('canvas');
+        canvas.width = SIZE; canvas.height = SIZE;
+        canvas.getContext('2d').drawImage(
+          img,
+          ((img.naturalWidth || img.width) - side) / 2,
+          ((img.naturalHeight || img.height) - side) / 2,
+          side, side, 0, 0, SIZE, SIZE,
+        );
+        const avatar = canvas.toDataURL('image/jpeg', 0.86);
+        setPhotoBusy(true);
+        try {
+          const res = await updateUserProfile({ avatar });
+          const updated = res?.data?.user || res?.data;
+          const next = updated && updated._id ? updated : { ...u, avatar };
+          saveUserToStorage(next);
+          window.dispatchEvent(new CustomEvent('userUpdated', { detail: next }));
+        } catch (_) {
+          /* the picture simply stays as it was */
+        } finally {
+          setPhotoBusy(false);
+        }
+      };
+      img.src = ev.target.result;
+    };
+    reader.readAsDataURL(file);
+  };
   const role      = u.role || 'Athlete';
   const ftp       = u.ftp || u.powerZones?.cycling?.lt2 || null;
   const restingHR = u.restingHR || u.restingHeartRate || null;
@@ -406,11 +452,43 @@ export default function NativeProfilePage({ user, userInfo, calendarData = [], o
 
         {/* ─── Header — avatar + name + role ─── */}
         <div style={{ ...styles.header, ...cardEntry(0), ...snap }}>
-          <div style={styles.avatar}>
-            {avatarUrl
-              ? <img src={avatarUrl} alt={fullName} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-              : <span style={{ fontSize: 22, fontWeight: 800, color: '#fff' }}>{initials}</span>}
-          </div>
+          {/* Tapping the avatar changes it, the same as on the web. A coach
+              looking at somebody else's profile gets the plain picture: their
+              photo is theirs to change, not the coach's. */}
+          {isViewingOtherAthlete ? (
+            <div style={styles.avatar}>
+              {avatarUrl
+                ? <img src={avatarUrl} alt={fullName} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                : <span style={{ fontSize: 22, fontWeight: 800, color: '#fff' }}>{initials}</span>}
+            </div>
+          ) : (
+            <label
+              style={{ ...styles.avatar, position: 'relative', cursor: 'pointer', WebkitTapHighlightColor: 'transparent' }}
+              aria-label="Change profile photo"
+            >
+              {avatarUrl
+                ? <img src={avatarUrl} alt={fullName} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                : <span style={{ fontSize: 22, fontWeight: 800, color: '#fff' }}>{initials}</span>}
+              <span style={{
+                position: 'absolute', right: -1, bottom: -1,
+                width: 20, height: 20, borderRadius: '50%',
+                background: '#5E6590', border: '2px solid #fff',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                opacity: photoBusy ? 0.5 : 1,
+              }}>
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round">
+                  <path d="M12 5v14M5 12h14" />
+                </svg>
+              </span>
+              <input
+                type="file"
+                accept="image/*"
+                disabled={photoBusy}
+                onChange={onPickPhoto}
+                style={{ position: 'absolute', inset: 0, opacity: 0, width: '100%', height: '100%' }}
+              />
+            </label>
+          )}
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={styles.name}>{fullName}</div>
             <div style={styles.role}>{role.charAt(0).toUpperCase() + role.slice(1)}</div>
