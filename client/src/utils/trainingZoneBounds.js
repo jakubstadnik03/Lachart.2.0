@@ -32,11 +32,31 @@ function enforceOrder(bounds, ascending) {
  *                                  (watts, bpm, km/h); false for pace seconds
  * @param {number} [o.floorFactor]  bottom of Z1 as a fraction of LT1
  * @param {number} [o.topFactor]    top of Z5 as a fraction of LT2
- * @param {number} [o.top]          explicit ceiling (e.g. a measured max HR);
- *                                  wins over topFactor when it is a usable number
+ * @param {number} [o.top]          explicit ceiling (e.g. a measured max HR).
+ *                                  Only ever RAISES the top of Z5.
  * @returns {number[]|null} six boundaries b0..b5, or null if the thresholds
  *                          are missing or the wrong way round
  */
+/**
+ * Top of Z5, per metric. One source for the chart on the testing page and for
+ * the zones written into the profile — the two used to disagree, so an athlete
+ * saw one zone five under their curve and a different one in the calendar.
+ *
+ * Z5 is the only zone with no threshold above it to close it, so its ceiling is
+ * a judgement. It had been narrowed to 1.10-1.20 x LT2, which put a 300 W
+ * cyclist's zone five at 330-360 W — under their five-minute power, let alone a
+ * sprint — so the zone meant to hold every hard effort held almost none.
+ *
+ * Power stretches furthest above threshold; pace much less, since nobody runs
+ * half again as fast as their threshold; heart rate least of all, because LT2
+ * already sits at 88-92 % of maximum.
+ */
+export const TOP_FACTOR = {
+  power: 1.5,      // watts
+  pace: 1.3,       // pace seconds are divided, so this reads as "faster by"
+  heartRate: 1.12,
+};
+
 export function ltZoneBounds({ lt1, lt2, ascending, floorFactor = 0.5, topFactor = 1.1, top = null }) {
   const a = Number(lt1);
   const b = Number(lt2);
@@ -45,8 +65,20 @@ export function ltZoneBounds({ lt1, lt2, ascending, floorFactor = 0.5, topFactor
   if (ascending ? b <= a : b >= a) return null;
 
   const scale = (anchor, f) => (ascending ? anchor * f : anchor / f);
+  const byFactor = scale(b, topFactor);
   const explicitTop = Number(top);
-  const ceiling = Number.isFinite(explicitTop) && explicitTop > 0 ? explicitTop : scale(b, topFactor);
+  // An explicit ceiling may raise the top of Z5; it must never squeeze it.
+  //
+  // `top` is usually the highest heart rate recorded during the step test, and
+  // a step test is stopped when the athlete has had enough — often only a beat
+  // or two above LT2. Taking that literally produced zone fives like 162-163
+  // bpm: a band nobody can train in, sitting where the hardest work belongs.
+  // The factor sets the floor for the ceiling; the measurement raises it when
+  // the athlete really did go higher. Pace runs backwards, so "higher" there is
+  // the smaller number.
+  const ceiling = Number.isFinite(explicitTop) && explicitTop > 0
+    ? (ascending ? Math.max(explicitTop, byFactor) : Math.min(explicitTop, byFactor))
+    : byFactor;
 
   return enforceOrder(
     [

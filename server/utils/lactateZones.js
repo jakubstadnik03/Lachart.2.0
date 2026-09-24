@@ -4,7 +4,7 @@
  */
 
 const { calculateThresholds } = require('./lactateThresholds');
-const { ltZoneBounds, zonesFromBounds, measuredMaxHr } = require('./trainingZoneBounds');
+const { ltZoneBounds, zonesFromBounds, measuredMaxHr, TOP_FACTOR } = require('./trainingZoneBounds');
 
 function formatPace(seconds) {
   const s = Math.max(0, Math.round(Number(seconds) || 0));
@@ -65,7 +65,8 @@ function calculateZonesFromTest(testData) {
   // Z5 stops at the heart rate the athlete actually reached in this test.
   const heartRate = hasHR
     ? zonesFromBounds(ltZoneBounds({
-        lt1: hr1, lt2: hr2, ascending: true, floorFactor: 0.70, top: measuredMaxHr(testData),
+        lt1: hr1, lt2: hr2, ascending: true, floorFactor: 0.70,
+        topFactor: TOP_FACTOR.heartRate, top: measuredMaxHr(testData),
       }))
     : null;
 
@@ -75,7 +76,7 @@ function calculateZonesFromTest(testData) {
       lt1,
       lt2,
       power: zonesFromBounds(ltZoneBounds({
-        lt1, lt2, ascending: true, floorFactor: 0.70, topFactor: 1.20,
+        lt1, lt2, ascending: true, floorFactor: 0.70, topFactor: TOP_FACTOR.power,
       })),
       heartRate
     };
@@ -84,7 +85,7 @@ function calculateZonesFromTest(testData) {
   // Pace seconds run backwards (more seconds = slower), hence ascending: false.
   // Unrounded so the /km values keep sub-second precision for minSeconds.
   const paceSeconds = zonesFromBounds(ltZoneBounds({
-    lt1, lt2, ascending: false, floorFactor: 0.70, topFactor: 1.20, round: false,
+    lt1, lt2, ascending: false, floorFactor: 0.70, topFactor: TOP_FACTOR.pace, round: false,
   }));
 
   return {

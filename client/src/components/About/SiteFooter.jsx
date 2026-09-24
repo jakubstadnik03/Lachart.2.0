@@ -48,8 +48,16 @@ const COLUMNS = [
       ['Contact', 'mailto:lachart@lachart.net'],
     ],
   },
-  { h: 'Legal', l: [['Privacy', '/privacy'], ['Terms', '/terms']] },
 ];
+
+/**
+ * Legal sits under the brand paragraph rather than in a column of its own.
+ *
+ * As a fifth child of a four-column grid it wrapped onto a second row, so two
+ * links — Privacy and Terms — bought themselves a full extra grid row and the
+ * empty band beside it. In the brand cell they cost one line.
+ */
+const LEGAL = [['Privacy', '/privacy'], ['Terms', '/terms']];
 
 const linkStyle = { fontSize: 13.5, color: LC.muted, textDecoration: 'none' };
 
@@ -75,6 +83,14 @@ export default function SiteFooter({ backToTop = true }) {
           <p style={{ fontSize: 13, color: LC.muted, lineHeight: 1.6, maxWidth: 320 }}>
             Lactate testing for endurance athletes and coaches. Calculate thresholds, build zones, generate PDF reports.
           </p>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 14 }}>
+            {LEGAL.map(([label, href], i) => (
+              <React.Fragment key={label}>
+                {i > 0 && <span aria-hidden style={{ color: LC.border, fontSize: 12 }}>·</span>}
+                <Link to={href} style={linkStyle}>{label}</Link>
+              </React.Fragment>
+            ))}
+          </div>
         </div>
 
         {COLUMNS.map((col) => (

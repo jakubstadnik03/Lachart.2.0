@@ -1812,7 +1812,11 @@ router.post("/coach/invite-athlete", verifyToken, async (req, res) => {
             if (!isAdminInvite) {
                 const fullCoach = await User.findById(coachId).populate('subscriptionId');
                 const plan = fullCoach?.subscriptionId?.plan || 'free';
-                const ATHLETE_LIMITS = { free: 1, pro: 0, coach: 10, team: 25, enterprise: 60 };
+                // Mirrors QUOTA_LIMITS.athletes in middleware/featureGate.js.
+                // Coach was capped at 10 here while the gate, the pricing page
+                // and the upgrade modal all promise unlimited — a paying coach
+                // hit a wall the product had told them did not exist.
+                const ATHLETE_LIMITS = { free: 1, pro: 0, coach: -1, team: 25, enterprise: 60 };
                 const limit = ATHLETE_LIMITS[plan] !== undefined ? ATHLETE_LIMITS[plan] : 1;
                 // Count linked AND pending (invited-not-yet-accepted) athletes —
                 // otherwise a coach can invite unlimited athletes since invites

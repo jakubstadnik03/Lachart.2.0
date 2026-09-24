@@ -270,36 +270,30 @@ router.post(
             const d = new Date(payload.date);
             if (!isNaN(d.getTime())) payload.date = d;
         }
-        // ── Subscription-plan test limit ──────────────────────────────────
-        if (process.env.SUBSCRIPTION_ENABLED === 'true') {
-            const fullUser = await User.findById(req.user.userId).populate('subscriptionId');
-            const userRole = String(fullUser?.role || '').toLowerCase();
-            const isAdmin  = userRole === 'admin' || fullUser?.admin === true;
-
-            if (!isAdmin) {
-                const plan = fullUser?.subscriptionId?.plan || 'free';
-                // Coach plan and above have unlimited tests; pro has unlimited; free has 1
-                const unlimitedPlans = ['pro', 'coach', 'team', 'enterprise'];
-                if (!unlimitedPlans.includes(plan)) {
-                    // free plan: 1 test total per athlete
-                    const targetAthleteId = payload.athleteId || String(req.user.userId);
-                    const existingCount = await Test.countDocuments({ athleteId: String(targetAthleteId) });
-                    if (existingCount >= 1) {
-                        return res.status(403).json({
-                            error: 'FREE_PLAN_LIMIT',
-                            feature: 'tests',
-                            message: 'Free plan allows only 1 test. Upgrade to Pro for unlimited tests.',
-                            upgradeUrl: '/settings?tab=subscription'
-                        });
-                    }
-                }
-            }
-        }
-        // ─────────────────────────────────────────────────────────────────
+        // The free-plan cap lives in requireQuotaSlot('tests') above, which reads
+        // QUOTA_LIMITS in middleware/featureGate.js. A second copy used to sit
+        // here with the limit written out as `>= 1`; when the free plan moved to
+        // three tests it kept rejecting the second one, so the change never
+        // reached anybody. One gate, one number.
 
         const test = await testAbl.createTest(payload);
         console.log(`[Test] Test saved for user ${req.user.userId} → testId=${test._id}, sport=${test.sport}, title="${test.title}"`);
-        res.status(201).json(test);
+
+        // Adopt the zones this test implies, when the athlete has none yet.
+        // Never blocks the save: a test that is stored but whose zones failed to
+        // apply is a smaller problem than a save that 500s over a side effect.
+        let zonesResult = { applied: false, reason: 'not_attempted' };
+        try {
+            const { applyZonesFromTest } = require('../utils/applyZonesFromTest');
+            zonesResult = await applyZonesFromTest(test);
+        } catch (e) {
+            console.warn('[Test] zones-from-test failed:', e?.message || e);
+        }
+
+        res.status(201).json({
+            ...(typeof test.toObject === 'function' ? test.toObject() : test),
+            zonesFromTest: zonesResult,
+        });
     } catch (error) {
         console.error(`[Test] Failed to save test for user ${req.user?.userId}:`, error.error || error.message);
         res.status(error.status || 400).json({ 

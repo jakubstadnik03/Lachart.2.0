@@ -1313,6 +1313,13 @@ const TestingPage = () => {
       const testId = response.data._id;
       setTests(prev => [...prev, response.data]);
       setShowNewTesting(false);
+
+      // The server adopts this test's zones when the athlete had none. Say so —
+      // a profile that silently rewrites itself on save is worse than one that
+      // never did. Nothing is shown when zones were left alone.
+      if (response.data?.zonesFromTest?.applied) {
+        addNotification('Training zones updated from this test', 'success');
+      }
       try {
         await logTestCreated(processedTest.sport || 'bike', (processedTest.results || []).length, user?._id);
       } catch (e) {
