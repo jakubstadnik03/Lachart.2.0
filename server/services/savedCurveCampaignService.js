@@ -317,8 +317,74 @@ function thresholdRow(label, value, hr, color) {
     </td>`;
 }
 
+/**
+ * The plain-text half of the message.
+ *
+ * Sent alongside the HTML, not instead of it. A message with no text/plain part
+ * is a small mark against it at every filter — mail-tester docks it under "the
+ * body of your message contains errors" — and it is what a screen reader, a
+ * watch and a text-only client actually read. It says the same things in the
+ * same order, minus the drawing.
+ */
+/**
+ * Names arrive from the profile as typed, and plenty were typed in caps —
+ * "MICAELA", "GIANNIS PSARELIS". Greeting somebody in block capitals reads as a
+ * mail merge, which is the one thing this email must not look like.
+ *
+ * Only strings that are entirely uppercase are touched: a name the person
+ * capitalised themselves (McBride, van der Berg) is left exactly as written,
+ * because guessing at those does more harm than the caps ever did.
+ */
+function prettyName(raw) {
+  const v = String(raw || '').trim().replace(/\s+/g, ' ');
+  if (!v) return '';
+  if (v !== v.toUpperCase()) return v;
+  return v
+    .toLowerCase()
+    .replace(/(^|[\s'\u2019-])([a-zà-ÿ])/g, (m, sep, ch) => sep + ch.toUpperCase());
+}
+
+function renderText(d) {
+  const first = prettyName(d.user.name).split(' ')[0];
+  const sportWord = SPORT_WORD[d.sport] || d.sport;
+  const when = fmtDate(d.test.date);
+  const lt1 = fmtIntensity(d.lt1, d.sport, d.unitSystem);
+  const lt2 = fmtIntensity(d.lt2, d.sport, d.unitSystem);
+
+  const lines = [
+    first ? `Hi ${first},` : 'Hi there,',
+    '',
+    'This is the curve measured on you.',
+    '',
+    d.coachName
+      ? `${prettyName(d.coachName)} saved your ${sportWord} step test from ${when} in LaChart, with your thresholds and training zones worked out from it. You have not opened it yet, so here it is.`
+      : `Your ${sportWord} step test from ${when} is saved in LaChart, with your thresholds and training zones worked out from it. You have not opened it yet, so here it is.`,
+  ];
+
+  if (lt1 || lt2) {
+    lines.push('');
+    if (lt1) lines.push(`LT1 (aerobic threshold): ${lt1}${d.lt1Hr ? ` at ${Math.round(d.lt1Hr)} bpm` : ''}`);
+    if (lt2) lines.push(`LT2 (anaerobic threshold): ${lt2}${d.lt2Hr ? ` at ${Math.round(d.lt2Hr)} bpm` : ''}`);
+  }
+
+  lines.push(
+    '',
+    'Open your curve:',
+    openCurveUrl(d.user._id),
+    'That link signs you in — there is no password to remember.',
+    '',
+    'What is in there: your curve and both thresholds, the training zones that follow'
+      + ' from them, and — once you connect Garmin or Strava — every session you ride or'
+      + ' run measured against those zones.',
+    '',
+    `You are getting this because ${prettyName(d.coachName) || 'a coach'} created a LaChart account for you when your test was saved.`,
+    `Unsubscribe: ${unsubscribeUrlFor(d.user._id)}`,
+  );
+  return lines.join('\n');
+}
+
 async function renderHtml(d) {
-  const first = (d.user.name || '').trim().split(/\s+/)[0];
+  const first = prettyName(d.user.name).split(' ')[0];
   const greet = first ? `Hi ${escapeHtml(first)},` : 'Hi there,';
   const sportWord = SPORT_WORD[d.sport] || d.sport;
   const when = fmtDate(d.test.date);
@@ -342,7 +408,7 @@ async function renderHtml(d) {
   const hasThresholds = Boolean(lt1Txt || lt2Txt);
 
   const who = d.coachName
-    ? `${escapeHtml(d.coachName)} saved your ${escapeHtml(sportWord)} step test from ${when} in LaChart`
+    ? `${escapeHtml(prettyName(d.coachName))} saved your ${escapeHtml(sportWord)} step test from ${when} in LaChart`
     : `Your ${escapeHtml(sportWord)} step test from ${when} is saved in LaChart`;
 
   const more = d.testCount > 1
@@ -409,7 +475,7 @@ async function renderHtml(d) {
 
         <tr><td style="padding:22px 26px 26px;">
           <p style="margin:0;font:400 13px/1.6 -apple-system,Segoe UI,Roboto,sans-serif;color:${BRAND.muted};">
-            You are getting this because ${d.coachName ? `${escapeHtml(d.coachName)} created` : 'a coach created'} a LaChart account for you when your test was saved.
+            You are getting this because ${d.coachName ? `${escapeHtml(prettyName(d.coachName))} created` : 'a coach created'} a LaChart account for you when your test was saved.
             <a href="${unsub}" style="color:${BRAND.muted};text-decoration:underline;">Unsubscribe</a> ·
             <a href="${getClientUrl()}" style="color:${BRAND.muted};text-decoration:underline;">lachart.net</a>
           </p>
@@ -439,6 +505,7 @@ async function sendSavedCurve(user, {
 
   const subject = subjectFor(d);
   const html = await renderHtml(d);
+  const text = renderText(d);
   if (dryRun) return { sent: false, reason: 'dry_run', subject, sport: d.sport };
 
   const transporter = createCampaignTransporter();
@@ -451,6 +518,7 @@ async function sendSavedCurve(user, {
       to,
       subject: testTo ? `[TEST → ${user.email}] ${subject}` : subject,
       html,
+      text,
       headers: {
         'List-Unsubscribe': `<${unsubscribeUrlFor(user._id)}>`,
         'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
@@ -605,6 +673,7 @@ module.exports = {
   getCampaignStats,
   subjectFor,
   renderHtml,
+  renderText,
   unsubscribeUrlFor,
   SENT_KEY,
 };
