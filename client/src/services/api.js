@@ -681,6 +681,14 @@ export function invalidateCache(urlPattern) {
 
 function invalidateProfileCaches() {
   invalidateCache('/user/profile');
+  // The persisted copy has to be named directly. invalidateCache matches a
+  // substring against the key, and the localStorage key is the short alias
+  // 'api_cache_profile' — which does not contain '/user/profile', so the URL
+  // pattern alone never touched it. The in-memory entry went, the stored one
+  // stayed, and for the next hour any reload served the profile from before
+  // the change: a new photo appeared, then came back as the old one.
+  // The test and training helpers below already name their keys this way.
+  invalidateCache('api_cache_profile');
   __getCache.delete(PROFILE_IN_FLIGHT_KEY);
 }
 
