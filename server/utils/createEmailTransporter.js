@@ -156,5 +156,64 @@ function createEmailTransporter() {
   });
 }
 
-module.exports = { createEmailTransporter };
+/**
+ * Transporter for bulk mail: campaigns, outreach, digests.
+ *
+ * WHY A SECOND ONE
+ * Transactional mail — the verification link, the test report, the receipt —
+ * has to arrive, and it arrives because lachart.net has spent months building a
+ * reputation with the receivers. Bulk mail is what puts that reputation at
+ * risk: a cold outreach run that people mark as spam teaches Gmail something
+ * about the sending domain, and the next password reset pays for it.
+ *
+ * So the two are split. Transactional keeps going out over Zoho from
+ * lachart.net. Bulk goes out over whatever CAMPAIGN_SMTP_* points at — Brevo,
+ * from the mail.lachart.net subdomain, which is authenticated separately and
+ * whose reputation is its own.
+ *
+ * There is a practical reason too: Zoho Mail is a mailbox, not a bulk sender.
+ * It cut a 53-recipient campaign off at thirty with
+ * "550 5.4.6 Unusual sending activity detected".
+ *
+ * FALLBACK
+ * With no CAMPAIGN_* variables set this returns the ordinary transporter, so
+ * nothing changes until the switch is deliberately thrown. That also means a
+ * half-finished migration degrades to "everything over Zoho" rather than to
+ * silence.
+ */
+function createCampaignTransporter() {
+  const user = sanitizeEnvValue(process.env.CAMPAIGN_EMAIL_USER);
+  const pass = sanitizeEnvValue(process.env.CAMPAIGN_EMAIL_APP_PASSWORD);
+  const host = sanitizeEnvValue(process.env.CAMPAIGN_SMTP_HOST);
+  const portRaw = sanitizeEnvValue(process.env.CAMPAIGN_SMTP_PORT);
+
+  if (!user || !pass || !host || !portRaw) return createEmailTransporter();
+
+  const port = Number(portRaw);
+  const secureEnv = process.env.CAMPAIGN_SMTP_SECURE;
+  const secure = typeof secureEnv !== 'undefined'
+    ? String(secureEnv).toLowerCase() === 'true'
+    : port === 465;
+
+  console.log('[CampaignTransporter]', { host, port, secure, from: campaignSender().address });
+  return nodemailer.createTransport({ host, port, secure, auth: { user, pass } });
+}
+
+/**
+ * The From for bulk mail.
+ *
+ * This is NOT the SMTP login: Brevo authenticates with a machine account
+ * (something@smtp-brevo.com) while the message has to come From the domain that
+ * was authenticated in its dashboard, or SPF and DKIM align against the wrong
+ * one and every check fails. Hence a separate variable.
+ */
+function campaignSender() {
+  const address = sanitizeEnvValue(process.env.CAMPAIGN_EMAIL_FROM)
+    || sanitizeEnvValue(process.env.EMAIL_USER);
+  const name = sanitizeEnvValue(process.env.CAMPAIGN_EMAIL_FROM_NAME) || 'LaChart';
+  return { name, address };
+}
+
+module.exports = { createEmailTransporter, createCampaignTransporter, campaignSender };
+
 

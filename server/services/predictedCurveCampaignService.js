@@ -28,7 +28,7 @@ const Test = require('../models/test');
 const StravaActivity = require('../models/StravaActivity');
 const GarminActivity = require('../models/GarminActivity');
 const FitTraining = require('../models/fitTraining');
-const { createEmailTransporter } = require('../utils/createEmailTransporter');
+const { createCampaignTransporter, campaignSender } = require('../utils/createEmailTransporter');
 const { getClientUrl } = require('../utils/emailTemplate');
 const { buildLactateCurveSvg, svgToEmailImgSrc, escapeHtml } = require('../utils/lactateReportSvgs');
 const { estimateAnchorFromTraining } = require('../utils/estimateAnchorFromTraining');
@@ -370,12 +370,12 @@ async function sendToUser(userId, { force = false, notify = true, testTo = null 
     unsubscribeUrl: unsubscribeUrlFor(user._id),
   });
 
-  const transporter = createEmailTransporter();
+  const transporter = createCampaignTransporter();
   if (!transporter) return { sent: false, reason: 'transporter_unavailable' };
 
   try {
     const info = await transporter.sendMail({
-      from: { name: 'LaChart', address: process.env.EMAIL_USER },
+      from: { ...campaignSender(), name: 'LaChart' },
       to: recipient,
       subject: testTo ? `[TEST] ${subject}` : subject,
       html,
@@ -590,12 +590,12 @@ async function sendPredictedCurve(user, {
 
   if (dryRun) return { sent: false, reason: 'dry_run', sport: kind, subject };
 
-  const transporter = createEmailTransporter();
+  const transporter = createCampaignTransporter();
   if (!transporter) return { sent: false, reason: 'transporter_unavailable' };
 
   try {
     const info = await transporter.sendMail({
-      from: { name: 'LaChart', address: process.env.EMAIL_USER },
+      from: { ...campaignSender(), name: 'LaChart' },
       to: user.email,
       subject,
       html,

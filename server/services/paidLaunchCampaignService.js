@@ -7,7 +7,7 @@
  */
 
 const crypto = require('crypto');
-const { createEmailTransporter } = require('../utils/createEmailTransporter');
+const { createCampaignTransporter, campaignSender } = require('../utils/createEmailTransporter');
 const User = require('../models/UserModel');
 
 const CAMPAIGN_KEY = 'paidLaunchJul2026Sent';
@@ -293,12 +293,12 @@ async function sendOne(user, { dryRun = false } = {}) {
 
   if (dryRun) return { sent: false, reason: 'dry_run', lang: 'en', subject };
 
-  const transporter = createEmailTransporter();
+  const transporter = createCampaignTransporter();
   if (!transporter) return { sent: false, reason: 'transporter_unavailable' };
 
   try {
     const sendInfo = await transporter.sendMail({
-      from: { name: 'Jakub from LaChart', address: process.env.EMAIL_USER },
+      from: { ...campaignSender(), name: 'Jakub from LaChart' },
       replyTo: REPLY_TO,
       to: user.email,
       subject,

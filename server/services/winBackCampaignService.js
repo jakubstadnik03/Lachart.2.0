@@ -16,7 +16,7 @@ const crypto = require('crypto');
 const User = require('../models/UserModel');
 const Test = require('../models/test');
 const PlannedWorkout = require('../models/PlannedWorkout');
-const { createEmailTransporter } = require('../utils/createEmailTransporter');
+const { createCampaignTransporter, campaignSender } = require('../utils/createEmailTransporter');
 const { getClientUrl } = require('../utils/emailTemplate');
 const { resolvePremiumForUserDocument } = require('../utils/premiumAccess');
 
@@ -190,12 +190,12 @@ async function sendWinBack(user, segment, { dryRun = false, track = true, previe
 
   if (dryRun) return { sent: false, reason: 'dry_run', segment, subject };
 
-  const transporter = createEmailTransporter();
+  const transporter = createCampaignTransporter();
   if (!transporter) return { sent: false, reason: 'transporter_unavailable' };
 
   try {
     const info = await transporter.sendMail({
-      from: { name: 'LaChart', address: process.env.EMAIL_USER },
+      from: { ...campaignSender(), name: 'LaChart' },
       to: user.email,
       subject,
       html,

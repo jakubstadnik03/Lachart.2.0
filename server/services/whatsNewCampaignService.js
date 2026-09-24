@@ -19,7 +19,7 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const { createEmailTransporter } = require('../utils/createEmailTransporter');
+const { createCampaignTransporter, campaignSender } = require('../utils/createEmailTransporter');
 const User = require('../models/UserModel');
 
 const TEMPLATE_DIR = path.join(__dirname, '..', 'templates', 'whatsNewMay2026');
@@ -139,7 +139,7 @@ async function sendOne(user, { dryRun = false } = {}) {
     return { sent: false, reason: 'dry_run', lang, subject };
   }
 
-  const transporter = createEmailTransporter();
+  const transporter = createCampaignTransporter();
   if (!transporter) return { sent: false, reason: 'transporter_unavailable' };
 
   try {
@@ -152,7 +152,7 @@ async function sendOne(user, { dryRun = false } = {}) {
     //   rejected  — recipients the relay rejected
     //   response  — final SMTP server response string
     const sendInfo = await transporter.sendMail({
-      from: { name: 'LaChart', address: process.env.EMAIL_USER },
+      from: { ...campaignSender(), name: 'LaChart' },
       to: user.email,
       subject,
       html,

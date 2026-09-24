@@ -14,7 +14,7 @@
 
 'use strict';
 
-const { createEmailTransporter } = require('../utils/createEmailTransporter');
+const { createCampaignTransporter, campaignSender } = require('../utils/createEmailTransporter');
 const { getClientUrl }           = require('../utils/emailTemplate');
 const User = require('../models/UserModel');
 const Test = require('../models/test');
@@ -192,10 +192,10 @@ function testRow(test, lt2, i) {
 async function send({ to, subject, html }) {
   if (!to) return false;
   try {
-    const transporter = await createEmailTransporter();
+    const transporter = await createCampaignTransporter();
     if (!transporter) return false;
     await transporter.sendMail({
-      from: `"LaChart" <${process.env.EMAIL_USER}>`,
+      from: { ...campaignSender(), name: 'LaChart' },
       to,
       subject,
       html

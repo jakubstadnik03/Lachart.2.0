@@ -25,7 +25,7 @@
 const crypto = require('crypto');
 const User = require('../models/UserModel');
 const Test = require('../models/test');
-const { createEmailTransporter } = require('../utils/createEmailTransporter');
+const { createCampaignTransporter, campaignSender } = require('../utils/createEmailTransporter');
 
 const BRAND = {
   primary: '#767EB5',
@@ -615,12 +615,12 @@ async function sendToPerson(person, { force = false, overrideEmail = null } = {}
 
   const preview = previewFromPerson(person);
 
-  const transporter = createEmailTransporter();
+  const transporter = createCampaignTransporter();
   if (!transporter) return { sent: false, reason: 'email_not_configured' };
 
   try {
     await transporter.sendMail({
-      from: { name: 'Jakub — LaChart', address: process.env.EMAIL_USER },
+      from: { ...campaignSender(), name: 'Jakub — LaChart' },
       to: overrideEmail || person.email,
       replyTo: process.env.EMAIL_USER,
       subject: preview.subject,

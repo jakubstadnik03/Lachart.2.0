@@ -11,7 +11,7 @@
 
 const crypto = require('crypto');
 const User = require('../models/UserModel');
-const { createEmailTransporter } = require('../utils/createEmailTransporter');
+const { createCampaignTransporter, campaignSender } = require('../utils/createEmailTransporter');
 const { getClientUrl } = require('../utils/emailTemplate');
 
 const APP_STORE_URL = 'https://apps.apple.com/cz/app/lachart/id6764768876?l=cs';
@@ -342,14 +342,14 @@ async function sendStep(user, step, { dryRun = false, track = true, preview = fa
     return { sent: false, reason: 'dry_run', step, subject };
   }
 
-  const transporter = createEmailTransporter();
+  const transporter = createCampaignTransporter();
   if (!transporter) {
     return { sent: false, reason: 'transporter_unavailable' };
   }
 
   try {
     const sendInfo = await transporter.sendMail({
-      from: { name: 'LaChart', address: process.env.EMAIL_USER },
+      from: { ...campaignSender(), name: 'LaChart' },
       to: user.email,
       subject,
       html,

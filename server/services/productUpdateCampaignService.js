@@ -23,7 +23,7 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const { createEmailTransporter } = require('../utils/createEmailTransporter');
+const { createCampaignTransporter, campaignSender } = require('../utils/createEmailTransporter');
 const User = require('../models/UserModel');
 
 const ROOT = path.join(__dirname, '..', 'templates', 'productUpdate');
@@ -201,12 +201,12 @@ async function sendOne(user, issueId, { dryRun = false } = {}) {
 
   if (dryRun) return { sent: false, reason: 'dry_run', subject };
 
-  const transporter = createEmailTransporter();
+  const transporter = createCampaignTransporter();
   if (!transporter) return { sent: false, reason: 'transporter_unavailable' };
 
   try {
     const sendInfo = await transporter.sendMail({
-      from: { name: 'LaChart', address: process.env.EMAIL_USER },
+      from: { ...campaignSender(), name: 'LaChart' },
       to: user.email,
       subject,
       html,

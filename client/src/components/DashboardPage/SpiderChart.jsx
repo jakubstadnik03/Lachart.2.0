@@ -4,7 +4,7 @@ import { Radar } from "react-chartjs-2";
 import { useNavigate } from "react-router-dom";
 import api from "../../services/api";
 import { useAuth } from "../../context/AuthProvider";
-import { hasRadar, dominantRadarSport } from "../../utils/radarSport";
+import { hasRadar, resolveRadarSport, dominantRadarSport } from "../../utils/radarSport";
 import { defaultMonthRange, monthKeysBetween, rangeEnds } from "../../utils/monthRange";
 import { SPORT_ICON_COLORS } from "../shared/SportIcon";
 import { paceToViewer, viewerPaceSuffix } from '../../utils/viewerUnits';

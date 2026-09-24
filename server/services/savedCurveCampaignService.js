@@ -38,7 +38,7 @@
 const crypto = require('crypto');
 const User = require('../models/UserModel');
 const Test = require('../models/test');
-const { createEmailTransporter } = require('../utils/createEmailTransporter');
+const { createCampaignTransporter, campaignSender } = require('../utils/createEmailTransporter');
 const { getClientUrl } = require('../utils/emailTemplate');
 const { buildLactateCurveSvg, svgToEmailImgSrc, escapeHtml } = require('../utils/lactateReportSvgs');
 const { calculateThresholds } = require('../utils/lactateThresholds');
@@ -441,13 +441,13 @@ async function sendSavedCurve(user, {
   const html = await renderHtml(d);
   if (dryRun) return { sent: false, reason: 'dry_run', subject, sport: d.sport };
 
-  const transporter = createEmailTransporter();
+  const transporter = createCampaignTransporter();
   if (!transporter) return { sent: false, reason: 'transporter_unavailable' };
 
   const to = testTo || user.email;
   try {
     const info = await transporter.sendMail({
-      from: { name: 'LaChart', address: process.env.EMAIL_USER },
+      from: { ...campaignSender(), name: 'LaChart' },
       to,
       subject: testTo ? `[TEST → ${user.email}] ${subject}` : subject,
       html,
