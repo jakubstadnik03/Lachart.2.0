@@ -7,11 +7,19 @@ export const getAvatarBySportAndGender = (user) => {
   const av = user?.avatar;
   if (av && typeof av === 'string') {
     const a = av.trim();
-    // Strava / CDN / uploaded file under public path
+    // Strava / CDN / a file under the public path — and a data: URL, which is
+    // what the photo picker produces.
+    //
+    // That last one was missing, so an uploaded photo failed every test here
+    // and the function fell through to the drawn avatar. The picture was saved
+    // and showed in Settings (which reads user.avatar straight), while every
+    // header and menu that goes through this helper kept the cartoon — which
+    // read as "the upload did not work".
     if (
       a.startsWith('http://') ||
       a.startsWith('https://') ||
-      a.startsWith('/')
+      a.startsWith('/') ||
+      a.startsWith('data:image/')
     ) {
       return a;
     }
