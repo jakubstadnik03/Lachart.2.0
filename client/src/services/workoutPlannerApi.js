@@ -31,9 +31,9 @@ function normalizePlannedPayload(payload = {}) {
 
 // ── Templates ──────────────────────────────────────────────────────────────
 
-export const getWorkoutTemplates = async (sport) => {
+export const getWorkoutTemplates = async (sport, { force = false } = {}) => {
   const params = sport ? { sport } : {};
-  const { data } = await api.get(`${BASE}/templates`, { params });
+  const { data } = await api.get(`${BASE}/templates`, { params, ...(force ? { noCache: true } : {}) });
   return data;
 };
 
@@ -73,17 +73,31 @@ function invalidatePlannedWorkoutsCache() {
 
 /**
  * @param {{ from?: string, to?: string, athleteId?: string }} opts
+ * @param {{ force?: boolean }} [flags]  force: skip every cache layer.
+ *
+ * `force` exists because pull-to-refresh had no way through here. Three caches
+ * sit in front of this list — this module's 60 s map, the shared in-flight
+ * promise, and axios's own 15 s entry — and an explicit refresh cleared none of
+ * them. So the one gesture people use when their plans are missing returned the
+ * same missing plans, for up to a minute, and looked like a dead button.
  */
-export const getPlannedWorkouts = async (opts = {}) => {
+export const getPlannedWorkouts = async (opts = {}, { force = false } = {}) => {
   const key = JSON.stringify(opts || {});
-  const hit = _plannedCache.get(key);
-  if (hit && Date.now() - hit.ts < PLANNED_CACHE_MS) {
-    return hit.data;
+  if (force) {
+    _plannedCache.delete(key);
+    _plannedInflight.delete(key);
+  } else {
+    const hit = _plannedCache.get(key);
+    if (hit && Date.now() - hit.ts < PLANNED_CACHE_MS) {
+      return hit.data;
+    }
+    if (_plannedInflight.has(key)) return _plannedInflight.get(key);
   }
-  if (_plannedInflight.has(key)) return _plannedInflight.get(key);
 
   const genAtStart = _plannedCacheGen;
-  const req = api.get(`${BASE}/planned`, { params: opts, cacheTtlMs: 15000 })
+  const req = api.get(`${BASE}/planned`, force
+    ? { params: opts, noCache: true }
+    : { params: opts, cacheTtlMs: 15000 })
     .then(({ data }) => {
       if (genAtStart === _plannedCacheGen) {
         _plannedCache.set(key, { data, ts: Date.now() });
@@ -222,8 +236,8 @@ export const exportPlannedWorkout = async (id, { format = 'tcx', athleteId = nul
 /**
  * @param {{ from?: string, to?: string, athleteId?: string }} opts
  */
-export const getDayPlans = async (opts = {}) => {
-  const { data } = await api.get(`${BASE}/day-plans`, { params: opts });
+export const getDayPlans = async (opts = {}, { force = false } = {}) => {
+  const { data } = await api.get(`${BASE}/day-plans`, { params: opts, ...(force ? { noCache: true } : {}) });
   return data;
 };
 
@@ -252,8 +266,8 @@ export const deleteDayPlan = async (date, athleteId) => {
 /**
  * @param {{ from?: string, to?: string, athleteId?: string }} opts
  */
-export const getPeriods = async (opts = {}) => {
-  const { data } = await api.get(`${BASE}/periods`, { params: opts });
+export const getPeriods = async (opts = {}, { force = false } = {}) => {
+  const { data } = await api.get(`${BASE}/periods`, { params: opts, ...(force ? { noCache: true } : {}) });
   return data;
 };
 

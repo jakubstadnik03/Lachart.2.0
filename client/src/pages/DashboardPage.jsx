@@ -36,7 +36,7 @@ import { computePmcFromActivities } from '../utils/formFitnessFromActivities';
 import { PMC_MAX_VIEW_DAYS } from '../utils/pmcChartAxes';
 import { mergeProfileZones } from '../utils/inferThresholdsFromActivities';
 import { maybePromptTrainingZonesSetup } from '../utils/trainingZonesSetup';
-import api, { getFitTrainings, listExternalActivities, autoSyncStravaActivities, getIntegrationStatus, getStravaAuthUrl, addTraining, updateTraining, getStravaActivityDetail, getFormFitnessData, getTodayMetrics, updateUserProfile } from '../services/api';
+import api, { getFitTrainings, listExternalActivities, autoSyncStravaActivities, getIntegrationStatus, getStravaAuthUrl, addTraining, updateTraining, getStravaActivityDetail, getFormFitnessData, getTodayMetrics, updateUserProfile, invalidateTrainingCaches } from '../services/api';
 import { RELEASE_TAG } from '../content/whatsNewSlides';
 import { dedupeMergedCalendarActivities } from '../utils/dedupeMergedCalendarActivities';
 import { notifyCalendarDataUpdated } from '../utils/calendarActivitiesForPmc';
@@ -1852,26 +1852,39 @@ export default function DashboardPage() {
   const rememberTemplate = useCallback((tpl) => {
     if (tpl?._id) setPlanTemplates((prev) => [tpl, ...prev.filter((t) => t._id !== tpl._id)]);
   }, []);
-  const loadDashboardPlannedWorkouts = useCallback(async () => {
+  /**
+   * @param {{ force?: boolean }} [opts]  force: bypass the planner caches.
+   *
+   * The failure is reported now rather than swallowed. When this threw — the
+   * usual cause being a dropped connection mid-load — the dashboard kept
+   * whatever plans it already had and said nothing, so an athlete whose plans
+   * had not arrived saw an empty day and no reason for it.
+   */
+  const loadDashboardPlannedWorkouts = useCallback(async ({ force = false } = {}) => {
     try {
       const role = String(user?.role || '').toLowerCase();
       const isCoachLike = ['coach', 'tester', 'testing', 'admin'].includes(role);
       const loadFor = isCoachLike && selectedAthleteId ? selectedAthleteId : user?._id;
       const opts = isCoachLike && selectedAthleteId ? { athleteId: selectedAthleteId } : {};
+      const flags = { force };
       const [pw, dp, ps, tpls] = await Promise.all([
-        getPlannedWorkouts(opts),
-        getDayPlans(opts).catch(() => []),
-        getPeriods(opts).catch(() => []),
+        getPlannedWorkouts(opts, flags),
+        getDayPlans(opts, flags).catch(() => []),
+        getPeriods(opts, flags).catch(() => []),
         // The plan modal's Templates tab: without these, a template saved
         // on the phone never showed up there.
-        getWorkoutTemplates().catch(() => []),
+        getWorkoutTemplates(undefined, flags).catch(() => []),
       ]);
-      if (String(loadFor) !== String(activeDataAthleteRef.current)) return;
+      if (String(loadFor) !== String(activeDataAthleteRef.current)) return { ok: true, stale: true };
       setPlannedWorkouts(Array.isArray(pw) ? pw : []);
       setDayPlans(Array.isArray(dp) ? dp : []);
       setPeriods(Array.isArray(ps) ? ps : []);
       setPlanTemplates(Array.isArray(tpls) ? tpls : []);
-    } catch (_) {}
+      return { ok: true };
+    } catch (e) {
+      console.warn('[Dashboard] planned workouts failed to load:', e?.message || e);
+      return { ok: false, error: e };
+    }
   }, [selectedAthleteId, user?.role, user?._id]);
 
   useEffect(() => { loadDashboardPlannedWorkouts(); }, [loadDashboardPlannedWorkouts]);
@@ -2128,6 +2141,11 @@ export default function DashboardPage() {
     if (!targetId) return null;
 
     clearFormFitnessCache();
+    // An explicit refresh has to reach past every cache, not just the calendar
+    // one below. The athlete's trainings are held for up to 30 minutes in the
+    // api layer's localStorage copy, so pulling to refresh used to re-read the
+    // same half-hour-old list it was trying to replace.
+    invalidateTrainingCaches();
     setFormMetricsLoading(true);
     // An explicit refresh re-reads everything, so whatever it returns is the
     // truth even if it is a shorter list than before — an activity may have
@@ -2158,10 +2176,16 @@ export default function DashboardPage() {
 
     const trainingsResult = await loadTrainings(targetId);
     const acts = await loadCalendarData(targetId, trainingsResult?.regularTrainings, trainingsResult?.allTrainings);
-    await loadDashboardPlannedWorkouts();
+    const plannedResult = await loadDashboardPlannedWorkouts({ force: true });
 
     if (!recomputeFormFitness(acts || calendarDataRef.current, getFitnessProfile())) {
       setFormMetricsLoading(false);
+    }
+
+    if (!plannedResult?.ok) {
+      const err = new Error('Planned workouts could not be refreshed');
+      err.partial = true;
+      throw err;
     }
 
     return acts;
@@ -2179,13 +2203,19 @@ export default function DashboardPage() {
   const performManualStravaSync = useCallback(async () => {
     try {
       const acts = await refreshNativeDashboard({ syncStrava: !!user?.strava?.accessToken });
-      if (acts?.length) {
-        addNotification('Dashboard refreshed.', 'info');
-      }
+      // Confirm it every time. Saying nothing when the refresh found no
+      // activities is indistinguishable from the gesture not working at all,
+      // which is exactly how it read to someone whose data had not loaded.
+      addNotification(acts?.length ? 'Dashboard refreshed.' : 'Up to date.', 'info');
       return acts;
     } catch (e) {
       console.log('Dashboard refresh failed:', e);
-      addNotification('Refresh failed. Please try again.', 'error');
+      addNotification(
+        e?.partial
+          ? 'Could not load your planned workouts — check your connection and pull again.'
+          : 'Refresh failed. Please try again.',
+        'error',
+      );
       return { imported: 0, updated: 0, error: e?.message };
     }
   }, [user?.strava?.accessToken, refreshNativeDashboard, addNotification]);
