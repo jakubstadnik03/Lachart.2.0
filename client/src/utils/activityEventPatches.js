@@ -228,8 +228,35 @@ export function removePlannedWorkoutFromList(prev, id) {
   return list.filter((p) => String(p._id) !== String(id));
 }
 
+/**
+ * Drop the cached calendar payloads after a planned workout changes.
+ *
+ * patchCalendarCache surgically rewrites these blobs, but only for completed
+ * activity metrics — a plan edit never touched them. So the typed duration,
+ * distance or TSS changed on the server and in the open screen's state, while
+ * the dashboard, the week strip and the summary kept reading the copy written
+ * before the edit. Restarting the app was the only way through.
+ *
+ * Dropping rather than patching is deliberate: these blobs hold several shapes
+ * (calendar days, training lists) and a planned workout sits differently in
+ * each. A wrong patch leaves data that looks right and is not; a missing key
+ * only costs one refetch.
+ */
+export function dropCalendarCaches() {
+  try {
+    const toRemove = [];
+    for (let i = 0; i < localStorage.length; i += 1) {
+      const key = localStorage.key(i);
+      if (!key) continue;
+      if (key.startsWith('athleteTrainings_v3_') || key.startsWith('calendarData_')) toRemove.push(key);
+    }
+    toRemove.forEach((k) => localStorage.removeItem(k));
+  } catch { /* storage unavailable — the in-memory patch still applies */ }
+}
+
 export function notifyPlannedWorkoutUpdated(planned) {
   if (!planned?._id) return;
+  dropCalendarCaches();
   try {
     window.dispatchEvent(new CustomEvent('plannedWorkoutUpdated', { detail: { planned } }));
   } catch { /* ignore */ }
@@ -237,6 +264,7 @@ export function notifyPlannedWorkoutUpdated(planned) {
 
 export function notifyPlannedWorkoutDeleted(id) {
   if (!id) return;
+  dropCalendarCaches();
   try {
     window.dispatchEvent(new CustomEvent('plannedWorkoutDeleted', { detail: { id: String(id) } }));
   } catch { /* ignore */ }
