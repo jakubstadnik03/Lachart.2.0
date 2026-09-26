@@ -397,6 +397,33 @@ api.interceptors.response.use(
     }
     // Clear one-time network error flag so future failures are logged again after recovery
     if (typeof sessionStorage !== 'undefined') sessionStorage.removeItem('api_network_error_logged');
+
+    // Any successful write to the profile drops the cached profile — wherever
+    // it came from.
+    //
+    // updateUserProfile invalidates, but thirty call sites across onboarding,
+    // the zones modal and the login flow call api.put('/user/edit-profile')
+    // directly and none of them did. The result was the avatar bug's shape
+    // again: saved on the server, dispatched to the open screen, and served
+    // stale from localStorage on the next read. Doing it here covers the ones
+    // that exist and the ones somebody adds next.
+    try {
+      const cfg = response.config || {};
+      const method = String(cfg.method || '').toLowerCase();
+      const url = String(cfg.url || '');
+      if ((method === 'put' || method === 'post') && url.includes('/user/edit-profile')) {
+        invalidateProfileCaches();
+        // Zones change what every zone breakdown, TSS figure and weekly load
+        // means, so those have to go too — but only when zones were actually
+        // part of the write.
+        const body = typeof cfg.data === 'string' ? cfg.data : '';
+        if (body.includes('powerZones') || body.includes('heartRateZones')
+            || body.includes('trainingPreferences')) {
+          invalidateTrainingCaches();
+        }
+      }
+    } catch { /* never let cache bookkeeping break a response */ }
+
     return response;
   },
   (error) => {
