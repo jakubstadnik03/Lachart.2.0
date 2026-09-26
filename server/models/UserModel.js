@@ -183,6 +183,25 @@ const userSchema = new mongoose.Schema({
     // Last time a Garmin Health API wellness summary (sleep/RHR/HRV) landed.
     lastWellnessSyncAt: { type: Date, default: null }
   },
+  /**
+   * "We lost your watch" — set when a provider revokes us.
+   *
+   * Deliberately NOT inside `strava` / `garmin`: the Strava refresh path wipes
+   * `user.strava` wholesale when the athlete de-authorises us, so a flag living
+   * there would be erased by the very event it records.
+   */
+  integrationAlerts: {
+    strava: {
+      needsReconnectAt: { type: Date, default: null },
+      reason: { type: String, default: null },
+      notifiedAt: { type: Date, default: null },
+    },
+    garmin: {
+      needsReconnectAt: { type: Date, default: null },
+      reason: { type: String, default: null },
+      notifiedAt: { type: Date, default: null },
+    },
+  },
   appleHealth: {
     connectedAt: { type: Date, default: null },
     lastWellnessSyncAt: { type: Date, default: null },

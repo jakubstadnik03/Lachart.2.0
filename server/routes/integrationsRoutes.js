@@ -35,6 +35,12 @@ const { isAdminUser } = require('../utils/isAdminUser');
 // Every Strava read goes through this so the shared budget sees it — see
 // utils/stravaRequest for why hand-rolled axios.get calls were a problem.
 const { stravaGetInteractive } = require('../utils/stravaRequest');
+const {
+  flagNeedsReconnect,
+  clearNeedsReconnect,
+  reconnectState,
+  isReconnectableAuthError,
+} = require('../utils/integrationReconnect');
 const router = express.Router();
 
 // Process-wide token bucket so no single hot path can drain Strava's quota.
@@ -520,6 +526,7 @@ async function fetchGarminWellnessActivitiesByDay(user, tokenData, path, startSe
         );
       }
       if (status === 401 || status === 403) {
+        await flagNeedsReconnect(user?._id, 'garmin', 'unauthorized');
         throw new Error(
           `Garmin API access denied (${status}). Try reconnecting your Garmin account. ` +
           `Error: ${bodyStr || apiErr.message}`
@@ -951,12 +958,14 @@ async function fetchGarminActivitiesForSync(user, since = null) {
       backfillPending: true,
       backfillChunks: job.total,
       backfillError: job.lastError,
+      // This message is read by athletes, not by whoever configures the server.
+      // The old wording opened with "not configured on the server" and closed
+      // with developer-portal instructions, so a working import read like a
+      // fault report. The configuration detail belongs in the log above.
       message:
-        'Garmin direct pull is not configured on the server (Health API needs a pull token). ' +
-        `Queued a backfill of ${job.total} chunk(s) in the background (rate-limit aware) — ` +
-        'data arrives via Garmin Push/Ping within minutes. ' +
-        'Ensure Push or Ping is configured in the Garmin developer portal to ' +
-        'https://lachart.onrender.com/api/integrations/garmin/webhook — or use Connect with credentials in Settings.',
+        `Garmin is sending your activities (${job.total} batch${job.total === 1 ? '' : 'es'} requested) — `
+        + 'they usually arrive within a few minutes. Nothing else to do; '
+        + 'your calendar fills in on its own.',
     };
   }
 }
@@ -1180,6 +1189,10 @@ async function processGarminWebhookPayload(payload) {
       // Delivery diagnostic — surfaced in /garmin/status as webhookLastEventAt.
       User.updateOne({ _id: user._id }, { $set: { 'garmin.webhookLastEventAt': new Date() } })
         .catch(() => {});
+      // Garmin is pushing us this athlete's data, so whatever failed earlier has
+      // healed — a stale "reconnect Garmin" prompt would now be a lie. This is
+      // also the only self-healing path for a 401 caused by something temporary.
+      clearNeedsReconnect(user._id, 'garmin').catch(() => {});
 
       // Health API wellness push (dailies / sleeps / hrv). Inline summary or a
       // ping with callbackURL → fetch the array of summaries, then upsert each.
@@ -1878,6 +1891,7 @@ router.get('/strava/callback', async (req, res) => {
     if (connectAvatar) user.avatar = connectAvatar;
     user.strava.avatarRefreshedAt = new Date();
     await user.save();
+    await clearNeedsReconnect(user._id, 'strava');
 
     // Pull recent activities immediately so the calendar has data while the
     // year-long backfill runs progressively in the background.
@@ -1929,7 +1943,7 @@ router.get('/strava/callback', async (req, res) => {
 // push subscription has gone silently stale.
 router.get('/strava/status', verifyToken, async (req, res) => {
   try {
-    const user = await User.findById(req.user.userId).select('strava').lean();
+    const user = await User.findById(req.user.userId).select('strava integrationAlerts').lean();
     if (!user) return res.status(404).json({ error: 'User not found' });
     const s = user.strava || {};
     const connected = !!s.accessToken && !!s.athleteId;
@@ -1961,6 +1975,10 @@ router.get('/strava/status', verifyToken, async (req, res) => {
 
     res.json({
       connected,
+      // Strava revoked our refresh token: the connection is gone and, until
+      // now, nothing said so. `connected` is false in that case, which reads as
+      // "never connected" — this distinguishes the two.
+      ...reconnectState(user, 'strava'),
       autoSync: !!s.autoSync,
       lastSyncDate: s.lastSyncDate || null,
       backfillState: s.backfillState || null,
@@ -3446,6 +3464,9 @@ router.get('/garmin/callback', async (req, res) => {
     } catch (_) { /* ignore */ }
 
     await user.save();
+    // Whatever was broken, this connect is the fix — drop the "reconnect Garmin"
+    // prompt so the card and the bell stop asking for something already done.
+    await clearNeedsReconnect(user._id, 'garmin');
 
     // If the account has Health API access, queue a wellness backfill so the
     // recovery cards fill in immediately (no-op without HEALTH_EXPORT).
@@ -3570,7 +3591,8 @@ router.post('/garmin/login', verifyToken, async (req, res) => {
     };
     
     await user.save();
-    
+    await clearNeedsReconnect(user._id, 'garmin');
+
     res.json({ success: true, message: 'Garmin account connected' });
   } catch (error) {
     console.error('Garmin login error:', error);
@@ -3702,12 +3724,12 @@ async function getGarminActivities(user, since = null) {
     }
 
     const job = triggerGarminBackfillQueued(user, startSec, nowSec);
+    console.log('[Garmin] direct pull unavailable (no GARMIN_PULL_TOKEN); '
+      + `queued ${job.total} backfill chunk(s) — delivery goes through Push/Ping.`);
     const err = new Error(
-      'Garmin direct pull is not configured on the server (Health API needs a pull token). ' +
-      `Queued a backfill of ${job.total} chunk(s) in the background (rate-limit aware) — ` +
-      'data arrives via Garmin Push/Ping within minutes. ' +
-      'Ensure Push or Ping is configured in the Garmin developer portal to ' +
-      'https://lachart.onrender.com/api/integrations/garmin/webhook — or use Connect with credentials in Settings.'
+      `Garmin is sending your activities (${job.total} batch${job.total === 1 ? '' : 'es'} requested) — `
+      + 'they usually arrive within a few minutes. Nothing else to do; '
+      + 'your calendar fills in on its own.'
     );
     err.backfillPending = true;
     err.backfillChunks = job.total;
@@ -3810,12 +3832,23 @@ async function getValidGarminToken(user) {
     grant_type: 'refresh_token',
     refresh_token: refreshToken
   };
-  const tokenResp = await requestGarminToken({
-    tokenUrl,
-    clientId,
-    clientSecret,
-    params: tokenParams
-  });
+  let tokenResp;
+  try {
+    tokenResp = await requestGarminToken({
+      tokenUrl,
+      clientId,
+      clientSecret,
+      params: tokenParams
+    });
+  } catch (refreshErr) {
+    // A revoked refresh token is permanent: every later sync, scheduled or
+    // manual, fails the same way. Say so once instead of failing in silence
+    // until the athlete notices a fortnight of missing rides.
+    if (isReconnectableAuthError(refreshErr)) {
+      await flagNeedsReconnect(user._id, 'garmin', 'revoked');
+    }
+    throw refreshErr;
+  }
 
   const tokenData = tokenResp.data || {};
   const nextAccessToken = tokenData.access_token || tokenData.accessToken || null;
@@ -3834,6 +3867,7 @@ async function getValidGarminToken(user) {
     expiresAt: expiresIn ? Math.floor(Date.now() / 1000) + expiresIn : user.garmin?.expiresAt || null
   };
   await user.save();
+  await clearNeedsReconnect(user._id, 'garmin');
 
   return { accessToken: nextAccessToken, tokenType };
 }
@@ -4472,12 +4506,15 @@ router.put('/garmin/auto-sync', verifyToken, async (req, res) => {
 // GET /api/integrations/garmin/status — connection + sync health for Settings card
 router.get('/garmin/status', verifyToken, async (req, res) => {
   try {
-    const user = await User.findById(req.user.userId).select('garmin').lean();
+    const user = await User.findById(req.user.userId).select('garmin integrationAlerts').lean();
     if (!user) return res.status(404).json({ error: 'User not found' });
     const g = user.garmin || {};
     const connected = !!g.accessToken;
     res.json({
       connected,
+      // Garmin revoked us and nothing new is arriving. The card turns this into
+      // a visible "Reconnect" prompt instead of an unexplained empty calendar.
+      ...reconnectState(user, 'garmin'),
       autoSync: g.autoSync !== undefined ? !!g.autoSync : false,
       lastSyncDate: g.lastSyncDate || null,
       athleteId: g.athleteId || null,

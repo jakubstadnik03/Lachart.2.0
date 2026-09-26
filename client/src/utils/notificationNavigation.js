@@ -74,6 +74,14 @@ export function resolveNotificationTarget(input = {}) {
     return { path: '/dashboard' };
   }
 
+  // "Garmin disconnected" has exactly one useful destination: the card with the
+  // Reconnect button on it. Landing on the dashboard would leave the athlete
+  // hunting for the fix they were just asked to apply.
+  if (type === 'integration_reconnect' || rt === 'settings' || screen === 'settings') {
+    const tab = data.tab || 'integrations';
+    return { path: `/settings?tab=${encodeURIComponent(tab)}` };
+  }
+
   /**
    * Anything about a lactate curve opens the curve.
    *

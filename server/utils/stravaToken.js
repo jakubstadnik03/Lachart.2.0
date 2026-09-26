@@ -75,6 +75,10 @@ async function getValidStravaToken(user) {
     user.strava.refreshToken = resp.data.refresh_token || user.strava.refreshToken;
     user.strava.expiresAt = resp.data.expires_at;
     await user.save();
+    try {
+      const { clearNeedsReconnect } = require('./integrationReconnect');
+      await clearNeedsReconnect(user._id, 'strava');
+    } catch { /* the token is what mattered */ }
     return user.strava.accessToken;
   } catch (error) {
     const body = error.response?.data;
@@ -96,9 +100,19 @@ async function getValidStravaToken(user) {
     // user doesn't lose their integration over a 5-second Strava blip.
     if ((status === 400 || status === 401) && (invalidGrant || refreshRevoked)) {
       console.log('[stravaToken] refresh rejected (invalid_grant); clearing Strava connection for user', String(user._id));
+      const userId = String(user._id);
       user.strava = undefined;
       try { await user.save(); } catch (saveErr) {
         console.error('[stravaToken] failed to save user after wipe:', saveErr.message);
+      }
+      // The wipe used to be the end of it: the card said "Not connected", new
+      // rides stopped arriving, and the athlete was told nothing. Flag it after
+      // the save — the alert lives outside `user.strava`, which we just erased.
+      try {
+        const { flagNeedsReconnect } = require('./integrationReconnect');
+        await flagNeedsReconnect(userId, 'strava', 'revoked');
+      } catch (alertErr) {
+        console.error('[stravaToken] reconnect alert failed:', alertErr.message);
       }
       return null;
     }

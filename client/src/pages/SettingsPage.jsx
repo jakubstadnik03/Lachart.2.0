@@ -21,7 +21,7 @@ import CalendarFeedCard from '../components/Settings/CalendarFeedCard';
 import CategoryManager from '../components/Settings/CategoryManager';
 import ExternalActivityList from '../components/Settings/ExternalActivityList';
 import { RowButton, SettingsRow, SettingsSection, ToggleRow } from '../components/Settings/HealthSettingsRows';
-import { getIntegrationStatus, invalidateCache, listExternalActivities, uploadFitFile, getStravaAuthUrl, startGarminAuth, syncStravaActivities, backfillStravaHistory, autoSyncStravaActivities, updateAvatarFromStrava, syncGarminActivities, syncGarminHistory, autoSyncGarminActivities, fetchGdprExportJson, getCurrentSubscription, createCheckoutSession, getSubscriptionPortalUrl, cancelSubscription, reactivateSubscription, resetStravaBudget, updateUserProfile, syncSubscriptionFromStripe, fetchUserProfile, fetchStravaStatus } from '../services/api';
+import { getIntegrationStatus, invalidateCache, listExternalActivities, uploadFitFile, getStravaAuthUrl, startGarminAuth, syncStravaActivities, backfillStravaHistory, autoSyncStravaActivities, updateAvatarFromStrava, syncGarminActivities, syncGarminHistory, autoSyncGarminActivities, fetchGdprExportJson, getCurrentSubscription, createCheckoutSession, getSubscriptionPortalUrl, cancelSubscription, reactivateSubscription, resetStravaBudget, updateUserProfile, syncSubscriptionFromStripe, fetchUserProfile, fetchStravaStatus, fetchGarminStatus } from '../services/api';
 import { saveUserToStorage } from '../utils/userStorage';
 import { isCapacitorNative } from '../utils/isNativeApp';
 import {
@@ -145,6 +145,43 @@ function getStravaSyncHealth(status) {
   };
 }
 
+/**
+ * "We lost your watch" banner.
+ *
+ * The provider revoked us, so nothing new has arrived since `since`. This used
+ * to be entirely invisible: Strava's card fell back to "Not connected" and
+ * Garmin's stayed green while delivering nothing, and the athlete's first clue
+ * was a gap in their calendar they blamed on LaChart.
+ */
+function IntegrationReconnectBanner({ alert, provider, isMobile, onReconnect }) {
+  if (!alert?.needsReconnect) return null;
+  const label = provider === 'garmin' ? 'Garmin' : 'Strava';
+  const cause = alert.reason === 'revoked'
+    ? `${label} access was revoked`
+    : alert.reason === 'unauthorized'
+      ? `${label} no longer accepts our connection`
+      : `the ${label} connection expired`;
+  return (
+    <div className={`mb-2 rounded border border-red-200 bg-red-50 ${isMobile ? 'px-2 py-1.5' : 'px-3 py-2'}`}>
+      <p className={`flex gap-1.5 items-start ${isMobile ? 'text-[9px]' : 'text-xs'} text-red-700`}>
+        <AlertTriangle className="shrink-0 mt-0.5" size={13} aria-hidden />
+        <span>
+          <strong>Not syncing.</strong> {cause.charAt(0).toUpperCase() + cause.slice(1)}, so new
+          activities have stopped arriving{alert.since ? ` (since ${new Date(alert.since).toLocaleDateString()})` : ''}.
+          Reconnect to resume — everything already imported stays where it is.
+        </span>
+      </p>
+      <button
+        type="button"
+        onClick={onReconnect}
+        className={`mt-1.5 ${isMobile ? 'px-2.5 py-1 text-[10px] w-full' : 'px-3 py-1.5 text-xs'} bg-red-600 text-white rounded hover:bg-red-700`}
+      >
+        Reconnect {label}
+      </button>
+    </div>
+  );
+}
+
 const SettingsPage = () => {
   const { user, logout, login } = useAuth();
   const location = useLocation();
@@ -174,6 +211,12 @@ const SettingsPage = () => {
   // {webhookHealthy:boolean, webhookLastEventAt:string|null}
   const [stravaWebhookStatus, setStravaWebhookStatus] = useState(null);
   const [stravaWebhookStatusLoading, setStravaWebhookStatusLoading] = useState(false);
+  // "Strava/Garmin revoked us" — the provider dropped the connection and new
+  // activities stopped arriving. Held separately from `*Connected` because a
+  // revoked Strava connection is wiped server-side, so it reads as "never
+  // connected" and the athlete has no way to tell the two apart.
+  // { strava: {needsReconnect, reconnectReason, needsReconnectSince}, garmin: {…} }
+  const [integrationAlerts, setIntegrationAlerts] = useState({ strava: null, garmin: null });
   const [garminAutoSync, setGarminAutoSync] = useState(false);
   const [isSyncingStrava, setIsSyncingStrava] = useState(false);
   const [isTogglingStravaAutoSync, setIsTogglingStravaAutoSync] = useState(false);
@@ -379,6 +422,31 @@ const SettingsPage = () => {
     })();
     return () => { cancelled = true; };
   }, [activeTab, stravaConnected, stravaAutoSync, refreshStravaWebhookStatus, addNotification]);
+
+  // Ask both providers whether they have dropped us, whenever Integrations is
+  // opened. Deliberately not gated on `*Connected`: a revoked Strava connection
+  // has already been erased server-side, and that is exactly the case worth
+  // explaining.
+  useEffect(() => {
+    if (activeTab !== 'integrations') return;
+    let cancelled = false;
+    (async () => {
+      const [s, g] = await Promise.all([
+        fetchStravaStatus().catch(() => null),
+        fetchGarminStatus().catch(() => null),
+      ]);
+      if (cancelled) return;
+      const pick = (r) => (r?.needsReconnect
+        ? {
+          needsReconnect: true,
+          reason: r.reconnectReason || null,
+          since: r.needsReconnectSince || null,
+        }
+        : null);
+      setIntegrationAlerts({ strava: pick(s), garmin: pick(g) });
+    })();
+    return () => { cancelled = true; };
+  }, [activeTab]);
 
   const fetchMyCoaches = useCallback(async () => {
     try {
@@ -3404,6 +3472,13 @@ const SettingsPage = () => {
                     </span>
                   </div>
                   
+                  <IntegrationReconnectBanner
+                    alert={integrationAlerts.garmin}
+                    provider="garmin"
+                    isMobile={isMobile}
+                    onReconnect={handleConnectGarmin}
+                  />
+
                   {garminConnected && (
                     <SettingsSection title="Automation settings" isMobile={isMobile} className={isMobile ? 'mb-2.5' : 'mb-4'}>
                       <ToggleRow
@@ -3611,7 +3686,14 @@ const SettingsPage = () => {
                       {stravaConnected ? 'Connected' : 'Not connected'}
                     </span>
                   </div>
-                  
+
+                  <IntegrationReconnectBanner
+                    alert={integrationAlerts.strava}
+                    provider="strava"
+                    isMobile={isMobile}
+                    onReconnect={handleConnectStrava}
+                  />
+
                   {stravaConnected && (
                     <>
                       {/* Real-time sync health panel. */}

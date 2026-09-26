@@ -1799,6 +1799,16 @@ export const fetchStravaStatus = async () => {
   }
 };
 
+export const fetchGarminStatus = async () => {
+  try {
+    const { data } = await api.get('/api/integrations/garmin/status', { timeout: 10000 });
+    return data;
+  } catch (e) {
+    console.warn('[garmin status] fetch failed:', e?.response?.data || e?.message);
+    return null;
+  }
+};
+
 export const autoSyncStravaActivities = async ({ force = false } = {}) => {
   // Prevent multiple simultaneous syncs
   if (stravaAutoSyncInFlight) {
