@@ -38,7 +38,7 @@ import SportIcon, { SportGlyph } from '../shared/SportIcon';
 import HoverCard from '../shared/HoverCard';
 import { DurationPickerField, DurationPickerSheet } from '../shared/DurationWheelPicker.jsx';
 import { zoneContextFromProfile } from '../../utils/zoneContext';
-import api, { getSimilarActivities, getRaceEvents, fetchWeeklyReviews, saveWeeklyReview } from '../../services/api';
+import api, { getSimilarActivities, getRaceEvents, fetchWeeklyReviews, saveWeeklyReview , updateAthleteTraining } from '../../services/api';
 import {
   formatDistance,
   formatDistanceFieldDisplay,
@@ -2538,7 +2538,7 @@ function CompareContent({ merged, athleteId, onOpen }) {
             onSubmit={async (data) => {
               try {
                 const id = editTarget._id;
-                if (id) await api.put(`/api/users/athlete/${athleteId}/trainings/${id}`, data);
+                if (id) await updateAthleteTraining(athleteId, id, data);
                 setEditTarget(null);
                 setResults(prev => prev.map(r => (String(r.id) === String(id) || String(r._id) === String(id)) ? { ...r, ...data } : r));
               } catch (e) { console.warn('save training failed', e); }

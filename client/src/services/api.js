@@ -327,6 +327,20 @@ export const addTraining = (trainingData) => api.post('/training', trainingData)
 export const updateTraining = (id, trainingData) => api.put(`/training/${id}`, trainingData).then(r => { invalidateTrainingCaches(); return r; });
 export const deleteTraining = (id) => api.delete(`/training/${id}`).then(r => { invalidateTrainingCaches(); return r; });
 
+/**
+ * Edit one of an athlete's trainings (the calendar's edit sheet).
+ *
+ * Exists so the calendar stops calling api.put directly. Doing so skipped
+ * invalidateTrainingCaches, and the caches it would have cleared are the ones
+ * the rest of the app reads: the week's trainings, weekly load and form/fitness
+ * are held for 30 to 60 minutes. The calendar row updated because the component
+ * also patched its own state, so the edit looked half-applied — changed here,
+ * unchanged on the dashboard — until a reload.
+ */
+export const updateAthleteTraining = (athleteId, id, data) =>
+  api.put(`/api/users/athlete/${athleteId}/trainings/${id}`, data)
+    .then(r => { invalidateTrainingCaches(); return r; });
+
 // Test endpoints
 export const getUserTests = () => api.get('/test/user');
 export const getAllTests = () => api.get('/test');
@@ -698,7 +712,13 @@ function invalidateTestCaches() {
   invalidateCache('api_cache_zones_latest');
 }
 
-function invalidateTrainingCaches() {
+/**
+ * Exported so the sync runners can call it. A background import writes on the
+ * server, and nothing else tells the browser its cached week is now wrong —
+ * trainings, weekly load and form/fitness are held for 30 to 60 minutes, so an
+ * activity that arrived while the app was open stayed invisible until a reload.
+ */
+export function invalidateTrainingCaches() {
   invalidateCache('/training/');
   invalidateCache('/trainings');
   invalidateCache('api_cache_trainings');

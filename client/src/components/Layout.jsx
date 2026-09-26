@@ -4,7 +4,7 @@ import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import Header from "./Header/Header";
 import Menu from "./Menu";
 import Footer from "./Footer";
-import api, { autoSyncGarminActivities, autoSyncStravaActivities } from "../services/api";
+import api, { autoSyncGarminActivities, autoSyncStravaActivities, invalidateTrainingCaches } from "../services/api";
 import { useNotification } from "../context/NotificationContext";
 import { LAYOUT_DESKTOP_MIN_PX } from "../constants/layoutBreakpoints";
 import CoachAthleteBar from "./CoachAthleteBar";
@@ -410,6 +410,9 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
         localStorage.setItem(syncKey, now.toString());
         console.log('[Garmin] auto-sync response:', result);
         if (result.imported > 0 || result.updated > 0) {
+          // Drop the cached week before announcing it: a listener that refetches
+          // straight away would otherwise be handed the same stale copy.
+          invalidateTrainingCaches();
           window.dispatchEvent(new CustomEvent('garminSyncComplete', { detail: result }));
         }
       } catch (error) {
@@ -490,6 +493,7 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
         localStorage.setItem(lsKey, now.toString());
         if (result?.imported > 0 || result?.updated > 0) {
           console.log(`[Strava] auto-sync: ${result.imported} imported, ${result.updated} updated`);
+          invalidateTrainingCaches();
           window.dispatchEvent(new CustomEvent('stravaSyncComplete', { detail: result }));
         }
       } catch (err) {
