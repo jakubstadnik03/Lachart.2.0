@@ -37,9 +37,15 @@ export function plannedWorkoutDurationSecs(pw, completedSecs = 0) {
   const explicit = Number(pw.plannedDuration || 0);
   const fromSteps = planStepTotalSecs(pw.steps) || 0;
   if (explicit > 0) {
-    const healed = healLegacyPlannedDurationSecs(explicit, completedSecs);
-    if (fromSteps > healed) return fromSteps;
-    return healed;
+    // A typed duration wins, even when the steps add up to more.
+    //
+    // It used to lose to the longer step total, which made the number in the
+    // editor and the number in the summary disagree with no way to reconcile
+    // them: you could type 2:30, save it, reopen the editor and see 2:30, and
+    // the summary would still say 2:57:57 — the steps' total — as though the
+    // edit had not saved. Somebody who types a duration is saying what the
+    // session is for; the step total is what to show when nobody said.
+    return healLegacyPlannedDurationSecs(explicit, completedSecs);
   }
   return fromSteps;
 }
