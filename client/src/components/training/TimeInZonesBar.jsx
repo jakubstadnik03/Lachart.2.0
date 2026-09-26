@@ -14,6 +14,7 @@
 
 import React, { useMemo, useState, useEffect } from 'react';
 import { paceToViewer, viewerPaceSuffix } from '../../utils/viewerUnits';
+import { requestTrainingZonesModal } from '../../utils/trainingZonesSetup';
 
 const ZONE_DEFS = [
   { id: 'Z1', label: 'Recovery',  color: '#60a5fa' },
@@ -275,8 +276,19 @@ export default function TimeInZonesBar({ records, sport, authUser }) {
       </div>
 
       {!result ? (
-        <div className="text-[10px] text-gray-400 italic py-2">
-          No {METRIC_LABELS[metric].toLowerCase()} zones configured — set them in Profile to see the breakdown.
+        // Telling somebody where the setting lives is one step short of useful:
+        // the zones editor can be opened from here, so it is.
+        <div className="flex flex-col items-start gap-2 py-2">
+          <div className="text-[10px] text-gray-400 italic">
+            No {METRIC_LABELS[metric].toLowerCase()} zones configured — the breakdown needs them.
+          </div>
+          <button
+            type="button"
+            onClick={() => requestTrainingZonesModal({ source: 'time-in-zones' })}
+            className="px-3 py-1.5 rounded-lg text-[11px] font-semibold bg-primary text-white hover:bg-primary-dark active:scale-95 transition-all"
+          >
+            Set up zones
+          </button>
         </div>
       ) : (
       <>

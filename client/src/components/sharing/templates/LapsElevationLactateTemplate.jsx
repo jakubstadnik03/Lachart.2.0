@@ -1,6 +1,8 @@
 /**
  * Laps share card — mirrors LapsBarChart (in-app laps tab): Y-axis, coloured
- * duration/distance-proportional bars, lactate caps. No elevation overlay.
+ * duration/distance-proportional bars, lactate caps, and the elevation profile
+ * behind them. The card is offered as "Laps + elevation + lactate"; it used to
+ * draw the first and the third.
  */
 
 import React, { useMemo } from 'react';
@@ -54,6 +56,7 @@ function lapAvgPower(lap) {
 export default function LapsElevationLactateTemplate({
   activity = {},
   laps = [],
+  records = [],
   accent = '#FC4C02',
   transparent = false,
   theme = 'dark',
@@ -74,6 +77,37 @@ export default function LapsElevationLactateTemplate({
     () => lapShareScales(entries),
     [entries],
   );
+
+  /**
+   * The elevation profile, as a filled area under the bars.
+   *
+   * Sampled down to at most ELEV_SAMPLES points: a two-hour ride carries
+   * thousands of records and an SVG path with all of them bloats the exported
+   * image for detail nobody can see at this size. Returns null when the stream
+   * carries no usable altitude, so a card for a trainer ride simply has no
+   * profile rather than a flat line pretending to be one.
+   */
+  const elevationPath = useMemo(() => {
+    const src = Array.isArray(records) ? records : [];
+    if (src.length < 8) return null;
+    const alts = [];
+    for (const r of src) {
+      const a = Number(r?.altitude ?? r?.elevation ?? r?.alt);
+      if (Number.isFinite(a)) alts.push(a);
+    }
+    if (alts.length < 8) return null;
+    const lo = Math.min(...alts);
+    const hi = Math.max(...alts);
+    // A few metres of drift is noise, not a profile.
+    if (!(hi - lo > 5)) return null;
+
+    const ELEV_SAMPLES = 160;
+    const step = Math.max(1, Math.floor(alts.length / ELEV_SAMPLES));
+    const pts = [];
+    for (let i = 0; i < alts.length; i += step) pts.push(alts[i]);
+    if (pts.length < 2) return null;
+    return { pts, lo, hi };
+  }, [records]);
 
   const chartGeom = useMemo(() => {
     const plotX0 = PAD_X + Y_AXIS_W;
@@ -179,6 +213,38 @@ export default function LapsElevationLactateTemplate({
         stroke={baselineStroke}
         strokeWidth="2"
       />
+
+      {/* Elevation profile, behind the bars and deliberately quiet: it is
+          context for the effort, not the subject of the card. */}
+      {elevationPath && (() => {
+        const { pts, lo, hi } = elevationPath;
+        const x0 = chartGeom.plotX0;
+        const x1 = chartGeom.plotX1;
+        const span = x1 - x0;
+        // Occupies the lower half of the plot so it never fights the bars.
+        const top = chartGeom.baseline - CHART_H * 0.5;
+        const h = chartGeom.baseline - top;
+        const d = pts.map((a, i) => {
+          const x = x0 + (i / (pts.length - 1)) * span;
+          const y = chartGeom.baseline - ((a - lo) / (hi - lo)) * h;
+          return `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`;
+        }).join(' ');
+        return (
+          <g>
+            <path
+              d={`${d} L${x1.toFixed(1)},${chartGeom.baseline} L${x0.toFixed(1)},${chartGeom.baseline} Z`}
+              fill={isLight ? 'rgba(52,168,122,0.16)' : 'rgba(80,220,170,0.16)'}
+            />
+            <path
+              d={d}
+              fill="none"
+              stroke={isLight ? 'rgba(52,168,122,0.45)' : 'rgba(80,220,170,0.40)'}
+              strokeWidth="2.5"
+              strokeLinejoin="round"
+            />
+          </g>
+        );
+      })()}
 
       {/* Lap bars — colours + proportions match LapsBarChart */}
       {chartGeom.bars.map((b) => (

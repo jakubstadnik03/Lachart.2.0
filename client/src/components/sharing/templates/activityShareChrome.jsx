@@ -49,7 +49,33 @@ export function ActivityShareHeader({ accent, title, theme = 'dark' }) {
 
   return (
     <g>
-      <ShareBrandLogo x={ACT_W / 2 - logoW / 2} y={118} height={logoH} />
+      {/* Logo plus the wordmark. The mark alone is not yet recognisable enough
+          to carry the brand on a card that lands in somebody else's feed. */}
+      {(() => {
+        const wordSize = Math.round(logoH * 0.62);
+        const wordW = wordSize * 3.6;          // "LaChart" at this weight
+        const gap = 16;
+        const totalW = logoW + gap + wordW;
+        const startX = ACT_W / 2 - totalW / 2;
+        return (
+          <>
+            <ShareBrandLogo x={startX} y={118} height={logoH} />
+            <text
+              x={startX + logoW + gap}
+              y={118 + logoH * 0.78}
+              style={{
+                fontFamily: ACT_FONT,
+                fontSize: wordSize,
+                fontWeight: 800,
+                letterSpacing: '-0.02em',
+                fill: isLight ? '#5E6590' : '#fff',
+              }}
+            >
+              LaChart
+            </text>
+          </>
+        );
+      })()}
       <rect x={ACT_W / 2 - 60} y={accentY} width="120" height="6" rx="3" fill={accent} />
       {title && (
         <text
