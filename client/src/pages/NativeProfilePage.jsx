@@ -5,7 +5,7 @@ import {
   SportTile, LacValueChip, ThresholdChip, KpiTile, GlassCard, SectionTitle,
   normSport, SPORT_TINT, NativeSkeletonRows,
 } from '../components/native/shared/Tiles';
-import api, { getTestingsByAthleteId, updateUserProfile, updateAthleteProfile } from '../services/api';
+import api, { getTestingsByAthleteId, updateUserProfile, updateAthleteProfile, fetchStravaStatus, fetchGarminStatus } from '../services/api';
 import { useAthleteSelection } from '../context/AthleteSelectionContext';
 import {
   NATIVE_DASHBOARD_KEYFRAMES, cardEntry,
@@ -18,7 +18,7 @@ import {
   formatThresholdIntensity,
   isPaceLactateSport,
 } from '../utils/extractLactateThresholds';
-import { formatActivityDistance, formatZonesPaceForUser } from '../utils/unitsConverter';
+import { formatZonesPaceForUser } from '../utils/unitsConverter';
 import { formatProfileFullName } from '../utils/profileName';
 import { ltZoneBounds, zonesFromBounds } from '../utils/trainingZoneBounds';
 import { paceToViewer, viewerPaceSuffix } from '../utils/viewerUnits';
@@ -31,16 +31,112 @@ function isPaceSport(s) { return isPaceLactateSport(s); }
 
 const extractThresholds = extractLactateThresholds;
 
-function fmtDuration(secs) {
-  if (!secs) return '0m';
-  const h = Math.floor(secs / 3600);
-  const m = Math.floor((secs % 3600) / 60);
-  if (h === 0) return `${m}m`;
-  if (m === 0) return `${h}h`;
-  return `${h}h ${m}m`;
-}
 
 // ─── component ────────────────────────────────────────────────────────────────
+
+/**
+ * Where the numbers on this page come from.
+ *
+ * The profile shows thresholds, zones and tests; every one of them is built
+ * from sessions that arrive through Garmin or Strava. When that link breaks the
+ * page keeps showing the same numbers, quietly going stale, and the only place
+ * that said so was Settings → Integrations, which nobody opens unless they
+ * already suspect something. The reconnect state the server now records is
+ * therefore surfaced here, next to the numbers it affects.
+ */
+function ConnectedAccountsCard({ hidden = false }) {
+  const navigate = useNavigate();
+  const [state, setState] = useState({ loading: true, strava: null, garmin: null });
+
+  useEffect(() => {
+    if (hidden) return undefined;
+    let cancelled = false;
+    Promise.all([
+      fetchStravaStatus().catch(() => null),
+      fetchGarminStatus().catch(() => null),
+    ]).then(([strava, garmin]) => {
+      if (!cancelled) setState({ loading: false, strava, garmin });
+    });
+    return () => { cancelled = true; };
+  }, [hidden]);
+
+  if (hidden) return null;
+
+  const rows = [
+    { key: 'garmin', label: 'Garmin', status: state.garmin },
+    { key: 'strava', label: 'Strava', status: state.strava },
+  ];
+  // Nothing connected and nothing broken: the card would be four words of
+  // "Not connected", which is noise on a page about training numbers.
+  const anything = rows.some((r) => r.status?.connected || r.status?.needsReconnect);
+  if (!state.loading && !anything) return null;
+
+  const fmtWhen = (iso) => {
+    if (!iso) return null;
+    const days = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
+    if (!Number.isFinite(days)) return null;
+    if (days <= 0) return 'today';
+    if (days === 1) return 'yesterday';
+    if (days < 30) return `${days} days ago`;
+    return new Date(iso).toLocaleDateString();
+  };
+
+  return (
+    <GlassCard>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 9 }}>
+        <SectionTitle>Connected accounts</SectionTitle>
+        <button onClick={() => navigate('/settings?tab=integrations')} style={styles.linkBtn}>
+          Manage →
+        </button>
+      </div>
+
+      {state.loading ? (
+        <NativeSkeletonRows rows={2} />
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {rows.map(({ key, label, status }) => {
+            if (!status?.connected && !status?.needsReconnect) return null;
+            const broken = !!status?.needsReconnect;
+            const last = fmtWhen(status?.lastSyncDate);
+            return (
+              <div key={key} style={{
+                display: 'flex', alignItems: 'center', gap: 9,
+                padding: '8px 10px', borderRadius: 11,
+                background: broken ? 'rgba(224,83,71,.07)' : 'rgba(255,255,255,.45)',
+                border: `1px solid ${broken ? 'rgba(224,83,71,.28)' : 'rgba(118,126,181,.14)'}`,
+              }}>
+                <span style={{
+                  width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
+                  background: broken ? '#E05347' : '#4BA87D',
+                }} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 12.5, fontWeight: 700, color: '#0A0E1A' }}>{label}</div>
+                  <div style={{ fontSize: 10.5, color: broken ? '#B4322A' : '#6B7280', marginTop: 1 }}>
+                    {broken
+                      ? 'Not syncing — reconnect to resume'
+                      : last ? `Last sync ${last}` : 'Connected'}
+                  </div>
+                </div>
+                {broken && (
+                  <button
+                    onClick={() => navigate('/settings?tab=integrations')}
+                    style={{
+                      padding: '4px 10px', borderRadius: 9999, border: 'none',
+                      background: '#E05347', color: '#fff',
+                      fontSize: 10.5, fontWeight: 800, flexShrink: 0,
+                    }}
+                  >
+                    Fix
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </GlassCard>
+  );
+}
 
 export default function NativeProfilePage({ user, userInfo, calendarData = [], onProfileUpdated }) {
   const navigate = useNavigate();
@@ -524,73 +620,54 @@ export default function NativeProfilePage({ user, userInfo, calendarData = [], o
               <div style={{ marginBottom: 9 }}>
                 <SectionTitle>Athlete profile</SectionTitle>
               </div>
+              {/* An unset metric is a prompt, not a dash. Three of these four are
+                  usually empty on a new account, and a row of "—" says only that
+                  something is missing, not that the reader is the one who can
+                  fill it in. Tapping an empty tile opens the same editor the
+                  header's Edit button does; a filled one is just a number. */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 7 }}>
                 {[
-                  { label: 'FTP',     value: ftp ? `${Math.round(ftp)} W` : '—' },
-                  { label: 'Max HR',  value: maxHR ? `${maxHR} bpm` : '—' },
-                  { label: 'Rest HR', value: restingHR ? `${restingHR} bpm` : '—' },
-                  { label: 'Weight',  value: weight ? `${weight} kg` : '—' },
-                ].map(({ label, value }, idx) => (
-                  <div key={label} style={{ animation: `ndPopIn .45s ${idx * 60}ms cubic-bezier(.22,1.4,.36,1) both` }}>
-                    <KpiTile label={label} value={value} />
-                  </div>
-                ))}
+                  { label: 'FTP',     value: ftp ? `${Math.round(ftp)} W` : null },
+                  { label: 'Max HR',  value: maxHR ? `${maxHR} bpm` : null },
+                  { label: 'Rest HR', value: restingHR ? `${restingHR} bpm` : null },
+                  { label: 'Weight',  value: weight ? `${weight} kg` : null },
+                ].map(({ label, value }, idx) => {
+                  const canEdit = !isViewingOtherAthlete || (isCoachLike && athleteProfile);
+                  const tile = <KpiTile label={label} value={value ?? (canEdit ? 'Set' : '—')} />;
+                  return (
+                    <div key={label} style={{ animation: `ndPopIn .45s ${idx * 60}ms cubic-bezier(.22,1.4,.36,1) both` }}>
+                      {value == null && canEdit ? (
+                        <button
+                          type="button"
+                          onClick={() => setIsEditOpen(true)}
+                          aria-label={`Set ${label}`}
+                          style={{
+                            display: 'block', width: '100%', padding: 0,
+                            background: 'none', border: 'none', textAlign: 'inherit',
+                            opacity: 0.72,
+                          }}
+                        >
+                          {tile}
+                        </button>
+                      ) : tile}
+                    </div>
+                  );
+                })}
               </div>
             </GlassCard>
           </div>
 
-          {/* ─── Activity summary ─── */}
-          {/* Activity stats only when viewing OWN profile —
-              calendarData prop is always the logged-in user's data */}
-          {!isViewingOtherAthlete && calendarData.length > 0 && (
-            <div style={{ ...cardEntry(2), ...snap }}>
-              <GlassCard>
-                <div style={{ marginBottom: 9 }}>
-                  <SectionTitle>All activity</SectionTitle>
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 7, marginBottom: 11 }}>
-                  <KpiTile label="Sessions" value={stats.sessions} />
-                  <KpiTile label="Time"     value={fmtDuration(stats.totalSecs)} />
-                  <KpiTile label="Distance" value={formatActivityDistance(stats.totalDist, user) || '0'} />
-                </div>
-
-                {/* Per-sport breakdown */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  {sportsActive.map((s, idx) => {
-                    const v = stats.bySport[s];
-                    const tint = SPORT_TINT[s];
-                    return (
-                      <div
-                        key={s}
-                        style={{
-                          display: 'flex', alignItems: 'center', gap: 9,
-                          padding: '7px 9px', borderRadius: 11,
-                          background: 'rgba(255,255,255,.45)',
-                          border: '1px solid rgba(118,126,181,.14)',
-                          animation: `ndFadeIn .4s ${idx * 60}ms cubic-bezier(.22,1,.36,1) both`,
-                        }}
-                      >
-                        <SportTile sport={s} size={28} />
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontSize: 12, fontWeight: 700, color: '#0A0E1A', textTransform: 'capitalize' }}>{s}</div>
-                          <div style={{ fontSize: 10.5, color: '#6B7280', marginTop: 1, fontVariantNumeric: 'tabular-nums' }}>
-                            {v.count} session{v.count !== 1 ? 's' : ''} · {fmtDuration(v.secs)} · {formatActivityDistance(v.dist, user) || '0'}
-                          </div>
-                        </div>
-                        <span style={{
-                          fontSize: 10.5, fontWeight: 700,
-                          padding: '3px 8px', borderRadius: 9999,
-                          background: tint + '18', color: tint,
-                        }}>
-                          {Math.round((v.secs / (stats.totalSecs || 1)) * 100)}%
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </GlassCard>
-            </div>
-          )}
+          {/* ─── Training zones per sport (editable) ───
+              Now visible to coaches viewing their athletes too — save flow
+              routes through PUT /user/coach/edit-athlete/:id when an athleteId
+              is supplied, so changes persist on the right user document. */}
+          <div style={{ ...cardEntry(2), ...snap }}>
+            <TrainingZonesSection
+              user={u}
+              tests={tests}
+              athleteId={isViewingOtherAthlete ? effectiveAthleteId : null}
+            />
+          </div>
 
           {/* ─── Lab tests by sport ─── */}
           <div style={{ ...cardEntry(3), ...snap }}>
@@ -711,16 +788,9 @@ export default function NativeProfilePage({ user, userInfo, calendarData = [], o
             </GlassCard>
           </div>
 
-          {/* ─── Training zones per sport (editable) ───
-              Now visible to coaches viewing their athletes too — save flow
-              routes through PUT /user/coach/edit-athlete/:id when an athleteId
-              is supplied, so changes persist on the right user document. */}
+          {/* ─── Connected accounts ─── */}
           <div style={{ ...cardEntry(4), ...snap }}>
-            <TrainingZonesSection
-              user={u}
-              tests={tests}
-              athleteId={isViewingOtherAthlete ? effectiveAthleteId : null}
-            />
+            <ConnectedAccountsCard hidden={isViewingOtherAthlete} />
           </div>
 
           <div style={{ height: 32 }} />
