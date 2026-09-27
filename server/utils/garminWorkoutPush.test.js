@@ -45,7 +45,14 @@ test('flat steps map to WorkoutStep with power ranges in watts', () => {
   assert.strictEqual(steps[2].targetType, 'OPEN');
 });
 
-test('grouped repeats become a native WorkoutRepeatStep (header included)', () => {
+/**
+ * The regression these tests exist for, measured against a real push on
+ * 2026-09-27: a 3:10:00 ride whose main set was 2×(20 min work + 10 min
+ * recovery) arrived on the watch as 2:10:04 — exactly the workout with the
+ * whole group removed. Garmin discards `WorkoutRepeatStep.steps`, so a nested
+ * repeat contributes nothing at all, and the athlete rides out with no main set.
+ */
+test('a repeat is expanded, so every iteration actually reaches the watch', () => {
   const steps = buildGarminSteps([
     { stepType: 'warmup', durationSeconds: 600 },
     { groupId: 'G', isGroupHeader: true, groupRepeat: 5, stepType: 'work', durationSeconds: 480,
@@ -53,15 +60,45 @@ test('grouped repeats become a native WorkoutRepeatStep (header included)', () =
     { groupId: 'G', stepType: 'recovery', durationSeconds: 120 },
     { stepType: 'cooldown', durationSeconds: 300 },
   ], ctx);
-  assert.strictEqual(steps.length, 3);
-  const rep = steps[1];
-  assert.strictEqual(rep.type, 'WorkoutRepeatStep');
-  assert.strictEqual(rep.repeatValue, 5);
-  assert.strictEqual(rep.steps.length, 2);
+
+  // warmup + 5×(work + recovery) + cooldown
+  assert.strictEqual(steps.length, 12);
+  assert.ok(!steps.some(s => s.type === 'WorkoutRepeatStep'), 'no nested repeat survives');
+  assert.ok(!steps.some(s => Array.isArray(s.steps)), 'and no step carries a steps array');
+
   // The header IS the work interval — it must not be dropped.
-  assert.strictEqual(rep.steps[0].intensity, 'INTERVAL');
-  assert.strictEqual(rep.steps[0].durationValue, 480);
-  assert.strictEqual(rep.steps[1].intensity, 'RECOVERY');
+  assert.strictEqual(steps.filter(s => s.intensity === 'INTERVAL').length, 5);
+  assert.strictEqual(steps.filter(s => s.intensity === 'RECOVERY').length, 5);
+
+  // The total is what the athlete was shown in the builder.
+  const total = steps.reduce((a, s) => a + (s.durationType === 'TIME' ? s.durationValue : 0), 0);
+  assert.strictEqual(total, 600 + 5 * (480 + 120) + 300);
+
+  // stepOrder is a dense 1..n over the expanded list — Garmin reads the order,
+  // not the array position, so gaps left by a removed group would reorder the
+  // session on the watch.
+  assert.deepStrictEqual(steps.map(s => s.stepOrder), [1,2,3,4,5,6,7,8,9,10,11,12]);
+});
+
+test('a repeat of one is just its steps', () => {
+  const steps = buildGarminSteps([
+    { groupId: 'G', isGroupHeader: true, groupRepeat: 1, stepType: 'work', durationSeconds: 300 },
+    { groupId: 'G', stepType: 'recovery', durationSeconds: 60 },
+  ], ctx);
+  assert.strictEqual(steps.length, 2);
+  assert.deepStrictEqual(steps.map(s => s.stepOrder), [1, 2]);
+});
+
+test('two separate groups keep their own repeat counts', () => {
+  const steps = buildGarminSteps([
+    { groupId: 'A', isGroupHeader: true, groupRepeat: 3, stepType: 'work', durationSeconds: 60 },
+    { groupId: 'A', stepType: 'recovery', durationSeconds: 30 },
+    { groupId: 'B', isGroupHeader: true, groupRepeat: 2, stepType: 'work', durationSeconds: 120 },
+    { groupId: 'B', stepType: 'recovery', durationSeconds: 40 },
+  ], ctx);
+  assert.strictEqual(steps.length, 3 * 2 + 2 * 2);
+  const total = steps.reduce((a, s) => a + s.durationValue, 0);
+  assert.strictEqual(total, 3 * (60 + 30) + 2 * (120 + 40));
 });
 
 test('pinned override wins over the calculated zone', () => {
@@ -94,8 +131,9 @@ test('workout payload wraps steps in a single segment (Training API v2 shape)', 
   assert.strictEqual(w.segments.length, 1);
   assert.strictEqual(w.segments[0].segmentOrder, 1);
   assert.strictEqual(w.segments[0].sport, 'CYCLING');
-  assert.strictEqual(w.segments[0].steps.length, 3);
-  assert.strictEqual(w.segments[0].steps[1].type, 'WorkoutRepeatStep');
+  // warmup + 5×(work + recovery) + cooldown, flat.
+  assert.strictEqual(w.segments[0].steps.length, 12);
+  assert.ok(!w.segments[0].steps.some(s => s.type === 'WorkoutRepeatStep'));
 });
 
 test('eligibility: OAuth + steps + planned status required; permissions gate honoured', () => {
@@ -150,10 +188,9 @@ test('run 10×1 km → DISTANCE laps in metres with PACE target in m/s', () => {
     { groupId: 'R', stepType: 'recovery', durationSeconds: 90 },
     { stepType: 'cooldown', durationSeconds: 600 },
   ], runCtx);
-  const rep = steps[1];
-  assert.strictEqual(rep.type, 'WorkoutRepeatStep');
-  assert.strictEqual(rep.repeatValue, 10);
-  const km = rep.steps[0];
+  // 1 warm-up + 10×(1 km + recovery) + 1 cool-down.
+  assert.strictEqual(steps.length, 22);
+  const km = steps[1];
   assert.strictEqual(km.durationType, 'DISTANCE');
   assert.strictEqual(km.durationValue, 1000);
   assert.strictEqual(km.durationValueType, 'METER');
@@ -163,8 +200,10 @@ test('run 10×1 km → DISTANCE laps in metres with PACE target in m/s', () => {
   assert.ok(Math.abs(km.targetValueHigh - 4.2) < 0.01, `high=${km.targetValueHigh}`);
   assert.ok(km.targetValueLow < km.targetValueHigh);
   // Recovery jog has no target → OPEN, stays TIME
-  assert.strictEqual(rep.steps[1].targetType, 'OPEN');
-  assert.strictEqual(rep.steps[1].durationType, 'TIME');
+  assert.strictEqual(steps[2].targetType, 'OPEN');
+  assert.strictEqual(steps[2].durationType, 'TIME');
+  // Every one of the ten reps carries the pace target, not just the first.
+  assert.strictEqual(steps.filter(x => x.targetType === 'PACE').length, 10);
 });
 
 test('run without pace zones falls back to OPEN, never emits bike watts', () => {

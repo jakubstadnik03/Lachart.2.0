@@ -26,10 +26,10 @@
  * recorded on the PlannedWorkout (garminSyncError) instead of failing the
  * user's save.
  *
- * Grouped repeat blocks are pushed as native WorkoutRepeatStep so the watch
- * shows "5×" instead of a flattened list; power targets resolve through the
- * same helpers the TCX/ZWO exports use, so the watch gets the same watts the
- * athlete sees in the builder.
+ * Grouped repeat blocks are expanded into flat steps — see buildGarminSteps for
+ * why the native WorkoutRepeatStep cannot carry them. Power targets resolve
+ * through the same helpers the TCX/ZWO exports use, so the watch gets the same
+ * watts the athlete sees in the builder.
  */
 
 const {
@@ -165,30 +165,44 @@ function toGarminStep(step, ctx, order) {
 }
 
 /**
- * Build the Garmin steps array, keeping grouped repeats as WorkoutRepeatStep.
- * Mirrors expandSteps() in workoutExporters: the group HEADER is a real step
- * (the work interval) and carries the repeat count for the whole block.
+ * Build the Garmin steps array, expanding grouped repeats into flat steps.
+ *
+ * We used to send a native `WorkoutRepeatStep` carrying its members in a nested
+ * `steps` array. Garmin discards that array — and the repeat then contributes
+ * NOTHING, rather than repeating once. Measured against a real push on
+ * 2026-09-27: a 3:10:00 ride containing 2×(20 min work + 10 min recovery)
+ * arrived on the watch as 2:10:04. The stored steps sum to 2:10:00 with the
+ * group removed entirely, so both members and all their repeats were dropped,
+ * and the athlete's watch was missing the entire main set of the session.
+ *
+ * The partner Swagger explains why: `WorkoutRepeatStep` declares
+ * { stepOrder, type, repeatType, repeatValue, skipLastRestStep } and NO nested
+ * steps, while `Workout` and `Segment` both declare one. The repeat is a
+ * positional marker in the flat list — FIT-style loop-back — not a container.
+ *
+ * Writing that marker correctly means knowing which field carries the index to
+ * loop back to, and the Swagger collapses the enum values that would say. That
+ * guess is what produced this bug, so it is not repeated here: the members are
+ * emitted once per iteration instead. The workout on the watch is then exactly
+ * the session the athlete planned. What is lost is the "2 of 2" counter on the
+ * repeat screen — presentation, where the alternative was a missing main set.
+ *
+ * `GET /api/integrations/garmin/workout-inspect?workoutId=<id>` exists to settle
+ * the native encoding against a repeating workout built by hand in Garmin
+ * Connect. Until something has actually been read back from Garmin, flat wins.
  */
 function buildGarminSteps(steps = [], ctx = {}) {
   const out = [];
-  let order = 1;
   let group = null;
 
   const flushGroup = () => {
     if (!group || !group.members.length) { group = null; return; }
     const repeat = Math.max(1, Number(group.repeat) || 1);
-    if (repeat === 1) {
-      for (const m of group.members) out.push(toGarminStep(m, ctx, order++));
-    } else {
-      const repeatStep = {
-        type: 'WorkoutRepeatStep',
-        stepOrder: order++,
-        repeatType: 'REPEAT_UNTIL_STEPS_CMPLT',
-        repeatValue: repeat,
-        steps: [],
-      };
-      for (const m of group.members) repeatStep.steps.push(toGarminStep(m, ctx, order++));
-      out.push(repeatStep);
+    // One pass per iteration, including the trailing recovery of the last one:
+    // plannedDuration counts it, and the watch has to agree with the plan the
+    // athlete is looking at.
+    for (let i = 0; i < repeat; i += 1) {
+      for (const m of group.members) out.push(m);
     }
     group = null;
   };
@@ -203,11 +217,15 @@ function buildGarminSteps(steps = [], ctx = {}) {
       group.members.push({ ...s });
     } else {
       flushGroup();
-      out.push(toGarminStep(s, ctx, order++));
+      out.push(s);
     }
   }
   flushGroup();
-  return out;
+
+  // stepOrder is assigned last, over the expanded list: numbering during
+  // expansion would leave gaps where a group used to be, and Garmin reads the
+  // order, not the array position.
+  return out.map((m, i) => toGarminStep(m, ctx, i + 1));
 }
 
 function buildGarminWorkout(pw, ctx = {}) {
