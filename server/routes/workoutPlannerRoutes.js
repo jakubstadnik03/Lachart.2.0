@@ -835,10 +835,14 @@ router.delete('/day-plans/:date', verifyToken, requirePlanWorkouts, async (req, 
 });
 
 // ─── Calendar periods ──────────────────────────────────────────────────────
-// Multi-day spans (Vacation, Training camp, Work trip, Illness, Race week)
+// Multi-day spans (Vacation, Training camp, Work trip, Illness, Race week, Taper, Off season)
 // rendered as colored bands across the calendar.
 
-const PERIOD_TYPES = ['Vacation', 'Training camp', 'Work trip', 'Illness', 'Race week', 'Taper'];
+// Keep in step with the model enum in CalendarPeriod.js AND with PERIOD_TYPES
+// in client/src/utils/calendarThemes.js. Three lists, and a type missing from
+// any one of them fails differently: absent here or in the model, the save is
+// rejected; absent on the client, the button simply never appears.
+const PERIOD_TYPES = ['Vacation', 'Training camp', 'Work trip', 'Illness', 'Race week', 'Taper', 'Off season'];
 
 /** GET /api/workout-planner/periods?from=YYYY-MM-DD&to=YYYY-MM-DD&athleteId=
  *  Returns any period that OVERLAPS the [from,to] window. */

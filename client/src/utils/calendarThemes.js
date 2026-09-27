@@ -34,6 +34,10 @@ export const PERIOD_TYPES = [
   { type: 'Illness',       color: '#dc2626', label: 'Illness' },       // red
   { type: 'Race week',     color: '#d97706', label: 'Race week' },     // gold
   { type: 'Taper',         color: '#eab308', label: 'Taper' },         // yellow
+  // Slate on purpose: every other band marks something happening, and the
+  // off-season is the one that marks the opposite. A sixth bright colour would
+  // have competed with the race and camp blocks for attention it does not want.
+  { type: 'Off season',    color: '#64748b', label: 'Off season' },    // slate
 ];
 
 const PERIOD_COLOR_BY_TYPE = PERIOD_TYPES.reduce((acc, p) => { acc[p.type] = p.color; return acc; }, {});
