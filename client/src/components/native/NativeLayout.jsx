@@ -725,17 +725,27 @@ function NativeProfileSheet({ open, onClose, user, logout, navigate }) {
               <div className="w-10 h-1 rounded-full bg-gray-200" />
             </div>
 
-            {/* User info */}
-            <div className="flex items-center gap-3 px-5 py-4 border-b border-gray-100">
+            {/* User info — a button, not a caption. Your own photo and name at
+                the top of your own menu is the most profile-looking thing on
+                the screen, so tapping it going nowhere reads as the sheet being
+                broken rather than as the row below being the real target. */}
+            <button
+              type="button"
+              onClick={() => go('/profile')}
+              style={{ touchAction: 'manipulation' }}
+              aria-label="Open your profile"
+              className="w-full flex items-center gap-3 px-5 py-4 border-b border-gray-100 text-left active:bg-gray-50"
+            >
               <div className="w-12 h-12 rounded-full overflow-hidden border-2 border-primary/20 flex-shrink-0">
                 {user && <img src={getAvatarBySportAndGender(user)} onError={onAvatarError(user)} alt="" className="w-full h-full object-cover" />}
               </div>
-              <div className="min-w-0">
+              <div className="min-w-0 flex-1">
                 <p className="font-semibold text-gray-900 truncate">{user?.name} {user?.surname}</p>
                 <p className="text-sm text-gray-500 truncate">{user?.email}</p>
                 <p className="text-xs text-primary capitalize mt-0.5">{user?.role}{isAdmin ? ' · Admin' : ''}</p>
               </div>
-            </div>
+              <span className="text-gray-300 flex-shrink-0"><Icon d={ICONS.chevronRight} size={18} /></span>
+            </button>
 
             {/* Nav items */}
             <div className="py-2">
