@@ -62,6 +62,7 @@ import { buildStructureTitle } from '../../utils/workoutStructureTitle';
 import { plannedWorkoutDurationSecs } from '../../utils/planCompliance';
 import { activityCompletedStats, fmtPlanDuration, userUnitSystem } from '../../utils/activityStatsLine';
 import WeekSummaryCell, { SPORT_COLORS_CELL } from '../training/WeekSummaryCell';
+import { paceAxisBounds, powerAxisBounds } from '../../utils/lapChartScale';
 import { PlanMiniChart, activityProfileBars, activityLactateMarks, ActivityMiniChart, CardProfileBand, LACTATE_INK, MAX_LACTATE_BADGES } from '../training/WorkoutProfile';
 import { classifyLaps } from '../../utils/lapClassify';
 import {
@@ -1358,35 +1359,14 @@ function LapChart({ laps, color, isBike, isRun, isSwim, unitSystem = 'metric', s
     chartMax = scaleOverride.max;
   } else {
     // Size the Y-axis from work laps (scaleValues), not every raw segment.
-    // Outlier / pause laps still render — getBarH clamps them to the edge.
-    // Work laps → top edge; all plausible laps (incl. rest) → bottom edge.
-    const maxSlowCap = isSwim ? 600 : 720;
-
-    if (isInverted) {
-      const globalFast = Math.min(...scaleValues);
-      const workSlow   = Math.max(...scaleValues);
-      const fastPad = isSwim ? 3 : 8;
-      const slowPad = isSwim ? 5 : 15;
-
-      // Top edge: just a few seconds faster than the quickest work lap.
-      chartMin = Math.max(isSwim ? 25 : 60, globalFast - fastPad);
-      chartMin = Math.floor(chartMin / 5) * 5;
-
-      // Bottom edge: sized from WORK laps only, positioned so the session
-      // average sits near the middle of the chart. Standing/recovery laps
-      // (12–15 min/km) used to drag this edge down and squash every work bar
-      // into the top quarter — they no longer define the scale; getBarH clamps
-      // them to a stub at the bottom edge instead.
-      chartMax = Math.max(workSlow + slowPad, 2 * avgForScale - chartMin);
-      chartMax = Math.min(maxSlowCap, chartMax);
-      chartMax = Math.ceil(chartMax / 5) * 5;
-      chartMax = Math.max(chartMax, chartMin + 30);
-    } else {
-      const maxDev = Math.max(...scaleValues.map(v => Math.abs(v - avgForScale)), avgForScale * 0.03);
-      const spread = maxDev * 1.1;
-      chartMin = Math.max(0, avgForScale - spread);
-      chartMax = avgForScale + spread;
-    }
+    // Outlier / pause laps still render — getBarH clamps them to the edge, and
+    // the bounds helper makes sure nothing plausible gets clamped at the FAST
+    // edge, where a clipped bar silently misreports the best lap of the session.
+    const bounds = isInverted
+      ? paceAxisBounds({ work: scaleValues, plausible: slowScaleEntries, isSwim, avgForScale })
+      : powerAxisBounds({ work: scaleValues, plausible: slowScaleEntries, avgForScale });
+    chartMin = bounds.min;
+    chartMax = bounds.max;
   }
   const range    = chartMax - chartMin || 1;
 

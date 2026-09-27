@@ -12,6 +12,7 @@ import {
 import { getTestingsByAthleteId } from '../services/api';
 import { formatStoredPaceSeconds, formatZonesPaceForUser } from '../utils/unitsConverter';
 import { calculateZonesFromTest } from '../components/Testing-page/zoneCalculator';
+import { requestTrainingZonesModal } from '../utils/trainingZonesSetup';
 // Reuse the same threshold algorithm DataTable / LactateCurveCalculator use on
 // desktop so LT1/LT2 shown on mobile cards stay in sync with the values on
 // the actual test page.
@@ -173,6 +174,22 @@ function extractThresholds(test) {
   };
 }
 
+/** Profile zone keys, which do not match the sport names the tests use. */
+const ZONE_SPORT_KEY = { bike: 'cycling', run: 'running', swim: 'swimming' };
+
+/**
+ * A test's threshold in the units the profile stores.
+ *
+ * They already agree: a bike test's x-axis is watts and a run or swim test's is
+ * pace seconds, which is exactly what powerZones holds for each sport. This
+ * exists to say so in one place, and to round — a 287.4 W threshold should not
+ * arrive in the editor as a decimal.
+ */
+function thresholdToProfile(th, key) {
+  const v = Number(th?.[key]);
+  return Number.isFinite(v) && v > 0 ? Math.round(v) : null;
+}
+
 // ─── lactate curve (smooth Bezier) ────────────────────────────────────────────
 
 function LactateCurve({ thresholds }) {
@@ -269,6 +286,13 @@ export default function NativeTestingPage({ user, athleteId: externalAthleteId }
   useNativeTabScrollToTop('testing');
   const [searchParams, setSearchParams] = useSearchParams();
   const testIdFromUrl = searchParams.get('testId');
+  // The "your LT2 has moved" notification deep-links here with the sport it is
+  // about. Without reading it the page opened on its default tab — bike — so a
+  // notification about a running threshold landed on a bike test, or on nothing
+  // at all, and the tap looked broken.
+  const sportFromUrl = ['bike', 'run', 'swim'].includes(String(searchParams.get('sport') || '').toLowerCase())
+    ? String(searchParams.get('sport')).toLowerCase()
+    : null;
 
   const athleteId = externalAthleteId || user?._id || user?.id;
 
@@ -289,7 +313,7 @@ export default function NativeTestingPage({ user, athleteId: externalAthleteId }
   // the upgrade prompt the web has always shown.
   const { isPremium, gate, UpgradeModalProps } = usePremium();
   const [loading, setLoading] = useState(true);
-  const [selectedSport, setSelectedSport] = useState('bike');
+  const [selectedSport, setSelectedSport] = useState(sportFromUrl || 'bike');
   const [selectedTestId, setSelectedTestId] = useState(testIdFromUrl || null);
   // Compare mode: tap to multi-select up to 2 tests, page shows side-by-side comparison
   const [compareMode, setCompareMode] = useState(false);
@@ -333,11 +357,40 @@ export default function NativeTestingPage({ user, athleteId: externalAthleteId }
     if (testIdFromUrl) setSelectedTestId(testIdFromUrl);
   }, [testIdFromUrl]);
 
+  /**
+   * `?curve=1` — scroll the curve into view, then drop the parameter.
+   *
+   * Polls because the tests are still being fetched when this first runs, so
+   * the anchor does not exist yet. Gives up after about eight seconds rather
+   * than scrolling somewhere arbitrary, and clears the parameter either way so
+   * a later back-navigation does not re-trigger it.
+   */
+  useEffect(() => {
+    if (searchParams.get('curve') !== '1') return undefined;
+    let tries = 0;
+    const timer = setInterval(() => {
+      tries += 1;
+      const el = document.querySelector('[data-curve-anchor]');
+      if (el || tries > 40) {
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        clearInterval(timer);
+        const next = new URLSearchParams(searchParams);
+        next.delete('curve');
+        setSearchParams(next, { replace: true });
+      }
+    }, 200);
+    return () => clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Default sport toggle to whichever type actually has tests — run-only athletes
   // land on Run, bike-only on Bike. When both exist, keep the current choice unless
   // it has no tests (then pick the sport with the newest test).
   useEffect(() => {
     if (!tests.length) return;
+    // A deep link said which sport this visit is about; nothing inferred from
+    // the test list gets to overrule it.
+    if (sportFromUrl) return;
     const available = ['bike', 'run'].filter(sp =>
       tests.some(t => normSport(t.sport) === sp)
     );
@@ -355,7 +408,7 @@ export default function NativeTestingPage({ user, athleteId: externalAthleteId }
         .sort((a, b) => new Date(b.date || b.testDate || 0) - new Date(a.date || a.testDate || 0))[0];
       return newest ? normSport(newest.sport) : available[0];
     });
-  }, [tests]);
+  }, [tests, sportFromUrl]);
 
   // Auto-select the latest test for the active sport when no URL-driven
   // selection exists. Runs when tests load or when the user flips the sport
@@ -593,8 +646,13 @@ export default function NativeTestingPage({ user, athleteId: externalAthleteId }
                     )}
                   </div>
 
-                  {/* Curve */}
-                  <LactateCurve thresholds={selectedTh} />
+                  {/* Curve. The anchor is what the "your LT2 has moved"
+                      notification scrolls to — the web page has carried one for
+                      this purpose all along, and this page, which is what the
+                      app actually renders, never did. */}
+                  <div data-curve-anchor>
+                    <LactateCurve thresholds={selectedTh} />
+                  </div>
 
                   {/* LT1 / LT2 — rich tiles with lactate + HR sub-info */}
                   <div style={{
@@ -711,6 +769,42 @@ export default function NativeTestingPage({ user, athleteId: externalAthleteId }
                           marginBottom: 6,
                         }}>
                           <SectionTitle>Training zones</SectionTitle>
+                          {/* Until now this table was the end of the road: it
+                              showed the zones this test implies and gave no way
+                              to put them into the profile, which is what every
+                              session is actually prescribed against. The "your
+                              LT2 has moved" notification lands here, so the
+                              thing it asks the athlete to reconsider has to be
+                              editable from the same screen. Nothing is written
+                              until they press Save in the editor. */}
+                          <button
+                            type="button"
+                            onClick={() => requestTrainingZonesModal({
+                              source: 'test',
+                              force: true,
+                              sport: ZONE_SPORT_KEY[normSport(selected.sport)] || 'cycling',
+                              prefill: {
+                                lt1: thresholdToProfile(selectedTh, 'lt1'),
+                                lt2: thresholdToProfile(selectedTh, 'lt2'),
+                                note: 'From your test on '
+                                  + new Date(selected.date || selected.testDate || Date.now()).toLocaleDateString()
+                                  + ' — review, then save.',
+                              },
+                              ...(externalAthleteId ? { athleteId: String(externalAthleteId) } : {}),
+                            })}
+                            style={{
+                              marginLeft: 'auto',
+                              padding: '3px 9px',
+                              borderRadius: 999,
+                              border: '1px solid rgba(118,126,181,.28)',
+                              background: 'rgba(118,126,181,.08)',
+                              color: '#5E6590',
+                              fontSize: 9.5, fontWeight: 800,
+                              letterSpacing: '0.02em',
+                            }}
+                          >
+                            Adjust zones
+                          </button>
                         </div>
                         {/* Header */}
                         <div style={{
