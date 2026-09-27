@@ -32,6 +32,33 @@ const CoachOutreachLead = require('../models/CoachOutreachLead');
 const { createCampaignTransporter, campaignSender } = require('../utils/createEmailTransporter');
 
 const SITE = 'https://lachart.net';
+const APP_STORE = 'https://apps.apple.com/cz/app/lachart/id6764768876';
+
+/**
+ * Two screenshots, both hosted on lachart.net, both JPEG.
+ *
+ * JPEG rather than the site's own WebP because Outlook on Windows renders no
+ * WebP at all, and a broken image in a first cold message is worse than no
+ * image. They are referenced by URL, not attached, so their weight costs
+ * loading time and nothing else — Gmail's 102 KB clipping limit counts the
+ * HTML only.
+ *
+ * Every one carries alt text that says what it shows, because most clients
+ * block remote images until the reader trusts the sender — and a first cold
+ * message is exactly when they do not. The letter has to survive with all
+ * three of these missing, so they illustrate the sentences rather than
+ * carrying them.
+ */
+const SHOTS = {
+  curve: {
+    url: `${SITE}/screenshots/email/threshold-curve.jpg`,
+    alt: 'A lactate step test plotted as a curve, with LT1 and LT2 marked on it',
+  },
+  builder: {
+    url: `${SITE}/screenshots/email/workout-builder.jpg`,
+    alt: 'The session builder, with intervals set against the zones from that test',
+  },
+};
 
 /**
  * Shared inboxes. Mail to these reaches a volunteer who forwards nothing, and
@@ -136,7 +163,8 @@ function bodyLines(lead) {
     '',
     "If you do that, I'll put your account on the Coach plan free for a year.",
     '',
-    SITE,
+    `Web: ${SITE}`,
+    `iPhone app: ${APP_STORE}`,
     '',
     'Jakub Stadnik',
     'LaChart',
@@ -157,25 +185,45 @@ function escapeHtml(s) {
  * The HTML part is the plain text in a system font, nothing more. It exists so
  * clients that refuse text/plain still render something sane — not to decorate.
  */
+/** One screenshot, linked to the site, sized to the column and safe on mobile. */
+function shot(s) {
+  return `<a href="${SITE}" style="text-decoration:none">
+  <img src="${s.url}" alt="${escapeHtml(s.alt)}" width="524"
+       style="display:block;width:100%;max-width:524px;height:auto;border:1px solid #E6E8F0;border-radius:6px;margin:4px 0 18px" />
+</a>`;
+}
+
+function p(text) {
+  const safe = escapeHtml(text).replace(/\n/g, '<br/>');
+  return `<p style="margin:0 0 14px">${safe}</p>`;
+}
+
 function renderHtml(lead) {
   const unsub = unsubscribeUrlFor(lead._id);
-  const paras = bodyLines(lead).join('\n')
-    .split(/\n{2,}/)
-    .map((block) => {
-      const safe = escapeHtml(block).replace(/\n/g, '<br/>');
-      const linked = safe.replace(
-        escapeHtml(SITE),
-        `<a href="${SITE}" style="color:#4A5578">${SITE}</a>`,
-      );
-      return `<p style="margin:0 0 14px">${linked}</p>`;
-    })
-    .join('\n');
+  const greet = firstNameFromEmail(lead.email);
 
   return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>${escapeHtml(subjectFor(lead))}</title></head>
 <body style="margin:0;padding:0;background:#ffffff">
 <div style="max-width:560px;margin:0;padding:18px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:15px;line-height:1.55;color:#1D2C4C">
-${paras}
+${p(greet ? `Hi ${greet},` : 'Hi,')}
+${p(`I'm Jakub. I build LaChart on my own, and I'm writing because ${contextClause(lead)}.`)}
+${p('It is for coaches who use lactate testing. You enter a step test and it works out '
+  + 'LT1 and LT2 and builds the training zones from them:')}
+${shot(SHOTS.curve)}
+${p("Then the sessions you plan against those zones go out to the athlete's Garmin:")}
+${shot(SHOTS.builder)}
+${p("I'm not selling you anything today. What I need is one coach who actually tests to "
+  + 'open it and tell me where it falls down — the thing that would stop you using it for '
+  + 'real. Ten minutes is plenty, and a one-line answer is fine.')}
+${p("If you do that, I'll put your account on the Coach plan free for a year.")}
+<p style="margin:0 0 14px">
+  <a href="${SITE}" style="color:#4A5578">${SITE}</a>
+  &nbsp;·&nbsp;
+  <a href="${APP_STORE}" style="color:#4A5578">iPhone app</a>
+</p>
+${p('Jakub Stadnik\nLaChart')}
 <p style="margin:22px 0 0;font-size:12px;color:#8A93AD">
 Not interested? <a href="${unsub}" style="color:#8A93AD">Unsubscribe</a> and I won't write again.
 </p>

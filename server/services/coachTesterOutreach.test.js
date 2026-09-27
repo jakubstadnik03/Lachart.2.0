@@ -68,4 +68,31 @@ const subj = subjectFor(lead);
 assert.ok(!/free/i.test(subj), 'no "free" in a cold subject line');
 assert.ok(subj.length < 78, 'subject survives a phone screen');
 
+// --- the HTML part --------------------------------------------------------
+const { renderHtml } = require('./coachTesterOutreachService');
+const html = renderHtml(lead);
+
+// Remote images are blocked by default in most clients on a first message from
+// a stranger, so every one has to say what it shows, and the letter has to read
+// correctly with all of them missing.
+const imgs = html.match(/<img[^>]*>/g) || [];
+assert.ok(imgs.length >= 2, 'the screenshots are in');
+imgs.forEach((tag) => {
+  assert.ok(/alt="[^"]{20,}"/.test(tag), `image needs real alt text: ${tag.slice(0, 60)}`);
+  assert.ok(/max-width:524px/.test(tag) && /width:100%/.test(tag), 'image must not overflow a phone');
+});
+
+// JPEG, not the site's WebP: Outlook on Windows renders no WebP, and a broken
+// image in a first cold message is worse than no image at all.
+assert.ok(!/\.webp/i.test(html), 'no WebP in email');
+assert.ok(/screenshots\/email\/[a-z-]+\.jpg/.test(html), 'images come from the email-safe folder');
+
+assert.ok(html.includes('https://lachart.net'), 'the site link is there');
+assert.ok(html.includes('apps.apple.com'), 'so is the app');
+assert.ok(/Unsubscribe/.test(html), 'and the way out');
+
+// Gmail clips an email over ~102 KB of HTML and hides the unsubscribe line
+// under a "View entire message" link. Images are URLs, so they cost nothing here.
+assert.ok(Buffer.byteLength(html, 'utf8') < 102 * 1024, 'HTML stays under the Gmail clip');
+
 console.log('coachTesterOutreach: all assertions passed');
