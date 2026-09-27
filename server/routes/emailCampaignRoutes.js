@@ -810,6 +810,73 @@ router.post('/product-update/:issueId/reset', verifyToken, async (req, res) => {
   }
 });
 
+// ─── Outreach tracking beacons ──────────────────────────────────────────────
+// No auth: these are fetched by the recipient's mail client, not by us. Both
+// are signed, and a bad signature is answered exactly like a good one — a
+// tracking endpoint that reports back what it thinks of your parameters is a
+// tool for guessing them.
+
+const tracking = require('../utils/outreachTracking');
+
+// GET /api/email/t/o.gif — open beacon.
+router.get('/t/o.gif', async (req, res) => {
+  const send = () => {
+    res.set({
+      'Content-Type': 'image/gif',
+      'Content-Length': String(tracking.PIXEL.length),
+      'Cache-Control': 'no-store, no-cache, must-revalidate, private',
+      Pragma: 'no-cache',
+    });
+    res.end(tracking.PIXEL);
+  };
+  try {
+    const { l: leadId, s: sig } = req.query || {};
+    if (leadId && tracking.verifyOpen(leadId, sig)) {
+      const CoachOutreachLead = require('../models/CoachOutreachLead');
+      const now = new Date();
+      await CoachOutreachLead.updateOne(
+        { _id: leadId },
+        { $inc: { opens: 1 }, $set: { lastOpenAt: now }, $setOnInsert: {} },
+      );
+      await CoachOutreachLead.updateOne(
+        { _id: leadId, firstOpenAt: null },
+        { $set: { firstOpenAt: now } },
+      );
+    }
+  } catch (e) {
+    console.warn('[outreach open]', e.message);
+  }
+  send();
+});
+
+// GET /api/email/t/c — click redirect.
+router.get('/t/c', async (req, res) => {
+  const { l: leadId, u, s: sig } = req.query || {};
+  const target = tracking.decodeTarget(u);
+
+  // An unverified or non-allowlisted destination is never followed: this
+  // endpoint must not be usable as an open redirect from our own domain.
+  if (!target || !tracking.isAllowedTarget(target) || !tracking.verifyClick(leadId, target, sig)) {
+    return res.redirect(302, 'https://lachart.net');
+  }
+
+  try {
+    const CoachOutreachLead = require('../models/CoachOutreachLead');
+    const now = new Date();
+    await CoachOutreachLead.updateOne(
+      { _id: leadId },
+      { $inc: { clicks: 1 }, $set: { lastClickAt: now }, $addToSet: { clickedUrls: target } },
+    );
+    await CoachOutreachLead.updateOne(
+      { _id: leadId, firstClickAt: null },
+      { $set: { firstClickAt: now } },
+    );
+  } catch (e) {
+    console.warn('[outreach click]', e.message);
+  }
+  return res.redirect(302, target);
+});
+
 // ─── Cold tester outreach — admin endpoints ─────────────────────────────────
 // Nothing here runs on a schedule. Cold mail to strangers goes out only when a
 // person asks for it, in small paced batches.
@@ -863,6 +930,45 @@ router.post('/tester-outreach/test/:leadId', verifyToken, async (req, res) => {
     const to = (req.body?.email || me?.email || '').trim();
     if (!to) return res.status(400).json({ error: 'No address to send the test to' });
     res.json(await testerOutreach.sendToLead(lead, { overrideEmail: to }));
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /api/email/tester-outreach/stats — how the campaign is actually doing.
+router.get('/tester-outreach/stats', verifyToken, async (req, res) => {
+  try {
+    if (!(await requireAdmin(req, res))) return;
+    const CoachOutreachLead = require('../models/CoachOutreachLead');
+    const campaignId = req.query.campaignId || 'tester-outreach-2026-09';
+    const q = { bulkCampaignId: campaignId };
+    const [sent, opened, clicked, replied, registered, unsubscribed] = await Promise.all([
+      CoachOutreachLead.countDocuments({ ...q, sentCount: { $gt: 0 } }),
+      CoachOutreachLead.countDocuments({ ...q, opens: { $gt: 0 } }),
+      CoachOutreachLead.countDocuments({ ...q, clicks: { $gt: 0 } }),
+      CoachOutreachLead.countDocuments({ ...q, responded: true }),
+      CoachOutreachLead.countDocuments({ ...q, registered: true }),
+      CoachOutreachLead.countDocuments({ ...q, unsubscribed: true }),
+    ]);
+    const clickers = await CoachOutreachLead.find({ ...q, clicks: { $gt: 0 } })
+      .select('name email city country type clicks firstClickAt clickedUrls responded')
+      .sort({ firstClickAt: -1 })
+      .limit(100)
+      .lean();
+    res.json({
+      campaignId,
+      sent,
+      opened,
+      clicked,
+      replied,
+      registered,
+      unsubscribed,
+      // Opens are the soft number — Apple Mail Privacy Protection loads the
+      // beacon for people who never looked, and Outlook blocks it for people
+      // who did. Clicks are the ones worth acting on.
+      note: 'opens are unreliable in both directions; judge this on clicks and replies',
+      clickers,
+    });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

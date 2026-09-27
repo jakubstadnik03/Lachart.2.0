@@ -30,6 +30,7 @@
 const crypto = require('crypto');
 const CoachOutreachLead = require('../models/CoachOutreachLead');
 const { createCampaignTransporter, campaignSender } = require('../utils/createEmailTransporter');
+const { trackedUrl, trackingPixelUrl } = require('../utils/outreachTracking');
 
 const SITE = 'https://lachart.net';
 const APP_STORE = 'https://apps.apple.com/cz/app/lachart/id6764768876';
@@ -53,10 +54,6 @@ const SHOTS = {
   curve: {
     url: `${SITE}/screenshots/email/threshold-curve.jpg`,
     alt: 'A lactate step test plotted as a curve, with LT1 and LT2 marked on it',
-  },
-  builder: {
-    url: `${SITE}/screenshots/email/workout-builder.jpg`,
-    alt: 'The session builder, with intervals set against the zones from that test',
   },
 };
 
@@ -111,19 +108,30 @@ function firstNameFromEmail(email) {
   return lower.charAt(0).toUpperCase() + lower.slice(1);
 }
 
-/** "coach endurance athletes in Birmingham" — one honest clause, no filler. */
-function contextClause(lead) {
+/**
+ * "endurance coaches in Birmingham" — the group being written to, not a claim
+ * about this person.
+ *
+ * The earlier draft opened "I'm writing because you coach endurance athletes in
+ * Birmingham", which asserts something the list cannot actually support: these
+ * rows were scraped by category from websites, and nothing in them says this
+ * reader runs lactate tests, or still coaches at all. Telling a stranger what
+ * they do, wrongly, in the first sentence, ends the email there. Describing the
+ * list is true whoever opens it, and it makes the question that follows the
+ * natural next line.
+ */
+function listClause(lead) {
   const city = (lead.city || '').trim();
-  const type = (lead.type || '').trim();
   const where = city ? ` in ${city}` : '';
-  if (type === 'endurance coach') return `you coach endurance athletes${where}`;
-  if (type === 'sports performance center') return `you run a performance centre${where}`;
-  if (type === 'sports clinic') return `you run a sports clinic${where}`;
-  if (type === 'triathlon club') return `you coach triathletes${where}`;
-  if (type === 'cycling club') return `you coach cyclists${where}`;
-  if (type === 'running club') return `you coach runners${where}`;
-  if (type === 'swimming club') return `you coach swimmers${where}`;
-  return `you coach endurance athletes${where}`;
+  const type = (lead.type || '').trim();
+  const group = type === 'sports performance center' ? 'performance centres'
+    : type === 'sports clinic' ? 'sports clinics'
+    : type === 'triathlon club' ? 'triathlon coaches'
+    : type === 'cycling club' ? 'cycling coaches'
+    : type === 'running club' ? 'running coaches'
+    : type === 'swimming club' ? 'swimming coaches'
+    : 'endurance coaches';
+  return `${group}${where}`;
 }
 
 function unsubscribeTokenFor(id) {
@@ -136,11 +144,19 @@ function unsubscribeUrlFor(leadId) {
   return `${base}/api/email/unsubscribe?u=${encodeURIComponent(String(leadId))}&t=${unsubscribeTokenFor(leadId)}&k=lead`;
 }
 
-function subjectFor(lead) {
-  const city = (lead.city || '').trim();
-  if (city) return `Lactate testing software — 10 minutes of a ${city} coach's time?`;
-  return `Lactate testing software — would you tell me what's wrong with it?`;
+/**
+ * A real question, not a pitch.
+ *
+ * The subject that earned 0 replies from 202 sends was "Free tool for lactate
+ * testing coaches - LaChart": a spam-filter word, a product category and a
+ * brand name, none of which is about the reader. This one is short, it is
+ * genuinely a question, it names no product, and it self-selects — a coach who
+ * does not test will ignore it, which is the correct outcome.
+ */
+function subjectFor() {
+  return 'How do you store your lactate test results?';
 }
+
 
 /**
  * The letter. Deliberately short and deliberately ugly: no image, no button, no
@@ -151,25 +167,27 @@ function bodyLines(lead) {
   return [
     greet ? `Hi ${greet},` : 'Hi,',
     '',
-    `I'm Jakub. I build LaChart on my own, and I'm writing because ${contextClause(lead)}.`,
+    `I'm Jakub. I build LaChart on my own, and I'm working through a list of `
+      + `${listClause(lead)}, trying to find the ones who actually use lactate testing.`,
     '',
-    'It is for coaches who use lactate testing: you enter a step test, it works out '
-      + 'LT1 and LT2, builds the training zones from them, and pushes the sessions to '
-      + "the athlete's Garmin.",
+    "If that's you — one question, and a one-line answer is plenty: after you run a "
+      + 'step test, where do the numbers end up? A spreadsheet, the analyser\'s own '
+      + 'software, on paper?',
     '',
-    "I'm not selling you anything today. What I need is one coach who actually tests "
-      + 'to open it and tell me where it falls down — the thing that would stop you '
-      + 'using it for real. Ten minutes is plenty, and a one-line answer is fine.',
+    "I ask because I built the thing below, and I would rather find out it solves a "
+      + 'problem you actually have than assume it does. It takes a step test, works out '
+      + 'LT1 and LT2, builds the zones from them, and sends the sessions to the '
+      + "athlete's Garmin.",
     '',
-    "If you do that, I'll put your account on the Coach plan free for a year.",
+    `${SITE}`,
     '',
-    `Web: ${SITE}`,
-    `iPhone app: ${APP_STORE}`,
+    'Reply and I will set you up with a year of the coach plan — though honestly, '
+      + 'the answer is the part I am after.',
     '',
     'Jakub Stadnik',
-    'LaChart',
   ];
 }
+
 
 function renderText(lead) {
   return [...bodyLines(lead), '', '—', `Not interested? Unsubscribe: ${unsubscribeUrlFor(lead._id)}`].join('\n');
@@ -182,14 +200,14 @@ function escapeHtml(s) {
 }
 
 /**
- * The HTML part is the plain text in a system font, nothing more. It exists so
- * clients that refuse text/plain still render something sane — not to decorate.
+ * The HTML part is the plain text in a system font plus one screenshot. It is
+ * not a template: no header, no footer, no button, no brand furniture. A first
+ * message from a stranger that looks like a newsletter is filed as one.
  */
-/** One screenshot, linked to the site, sized to the column and safe on mobile. */
-function shot(s) {
-  return `<a href="${SITE}" style="text-decoration:none">
+function shot(leadId, s) {
+  return `<a href="${trackedUrl(leadId, SITE)}" style="text-decoration:none">
   <img src="${s.url}" alt="${escapeHtml(s.alt)}" width="524"
-       style="display:block;width:100%;max-width:524px;height:auto;border:1px solid #E6E8F0;border-radius:6px;margin:4px 0 18px" />
+       style="display:block;width:100%;max-width:524px;height:auto;border:1px solid #E6E8F0;border-radius:6px;margin:6px 0 18px" />
 </a>`;
 }
 
@@ -201,32 +219,34 @@ function p(text) {
 function renderHtml(lead) {
   const unsub = unsubscribeUrlFor(lead._id);
   const greet = firstNameFromEmail(lead.email);
+  const site = trackedUrl(lead._id, SITE);
 
   return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>${escapeHtml(subjectFor(lead))}</title></head>
+<title>${escapeHtml(subjectFor())}</title></head>
 <body style="margin:0;padding:0;background:#ffffff">
 <div style="max-width:560px;margin:0;padding:18px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:15px;line-height:1.55;color:#1D2C4C">
 ${p(greet ? `Hi ${greet},` : 'Hi,')}
-${p(`I'm Jakub. I build LaChart on my own, and I'm writing because ${contextClause(lead)}.`)}
-${p('It is for coaches who use lactate testing. You enter a step test and it works out '
-  + 'LT1 and LT2 and builds the training zones from them:')}
-${shot(SHOTS.curve)}
-${p("Then the sessions you plan against those zones go out to the athlete's Garmin:")}
-${shot(SHOTS.builder)}
-${p("I'm not selling you anything today. What I need is one coach who actually tests to "
-  + 'open it and tell me where it falls down — the thing that would stop you using it for '
-  + 'real. Ten minutes is plenty, and a one-line answer is fine.')}
-${p("If you do that, I'll put your account on the Coach plan free for a year.")}
+${p(`I'm Jakub. I build LaChart on my own, and I'm working through a list of `
+  + `${listClause(lead)}, trying to find the ones who actually use lactate testing.`)}
+${p("If that's you — one question, and a one-line answer is plenty: after you run a step "
+  + "test, where do the numbers end up? A spreadsheet, the analyser's own software, on paper?")}
+${p('I ask because I built the thing below, and I would rather find out it solves a problem '
+  + 'you actually have than assume it does. It takes a step test, works out LT1 and LT2, '
+  + "builds the zones from them, and sends the sessions to the athlete's Garmin.")}
+${shot(lead._id, SHOTS.curve)}
 <p style="margin:0 0 14px">
-  <a href="${SITE}" style="color:#4A5578">${SITE}</a>
+  <a href="${site}" style="color:#4A5578">lachart.net</a>
   &nbsp;·&nbsp;
-  <a href="${APP_STORE}" style="color:#4A5578">iPhone app</a>
+  <a href="${trackedUrl(lead._id, APP_STORE)}" style="color:#4A5578">iPhone app</a>
 </p>
-${p('Jakub Stadnik\nLaChart')}
+${p('Reply and I will set you up with a year of the coach plan — though honestly, the '
+  + 'answer is the part I am after.')}
+${p('Jakub Stadnik')}
 <p style="margin:22px 0 0;font-size:12px;color:#8A93AD">
 Not interested? <a href="${unsub}" style="color:#8A93AD">Unsubscribe</a> and I won't write again.
 </p>
+<img src="${trackingPixelUrl(lead._id)}" alt="" width="1" height="1" style="display:block;width:1px;height:1px;border:0" />
 </div></body></html>`;
 }
 
@@ -326,7 +346,7 @@ module.exports = {
   renderHtml,
   firstNameFromEmail,
   isGenericAddress,
-  contextClause,
+  listClause,
   unsubscribeUrlFor,
   TESTER_TYPES,
 };

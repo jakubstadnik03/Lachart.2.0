@@ -19,6 +19,17 @@ const coachOutreachLeadSchema = new mongoose.Schema(
     source: { type: String, default: "manual" }, // 'manual' | 'csv'
     bulkCampaignId: { type: String, default: null },
     unsubscribed: { type: Boolean, default: false },
+    // Engagement. Clicks are the honest number here: opens depend on the client
+    // loading a remote image, which Apple Mail Privacy Protection fakes for
+    // everyone and Outlook blocks by default, so `opens` runs both high and
+    // low at once and cannot be read as "people who saw it".
+    opens: { type: Number, default: 0 },
+    firstOpenAt: { type: Date, default: null },
+    lastOpenAt: { type: Date, default: null },
+    clicks: { type: Number, default: 0 },
+    firstClickAt: { type: Date, default: null },
+    lastClickAt: { type: Date, default: null },
+    clickedUrls: { type: [String], default: [] },
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
     lastUpdatedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
   },
