@@ -172,7 +172,16 @@ const TestingPage = () => {
     const sport = String(searchParams.get('sport') || '').toLowerCase();
     if (['bike', 'run', 'swim'].includes(sport)) {
       setSelectedSport(sport);
-      setActiveTab('tests');
+      // setMobileTab only. `setActiveTab` is `const setActiveTab = setMobileTab`
+      // declared near the bottom of this component — AFTER the early return that
+      // hands native builds to NativeTestingPage. On native the function exits
+      // before that line ever runs, so the binding stays in its temporal dead
+      // zone, and this effect then threw "Cannot access 'Oe' before
+      // initialization" into the error boundary.
+      //
+      // It only fired on a URL carrying ?sport=, which nothing produces except
+      // the "your LT2 has moved" notification — so the one screen that link
+      // exists to open was the one screen it could not reach.
       setMobileTab('tests');
     }
     if (searchParams.get('curve') !== '1') return undefined;
