@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import useElementWidth from '../../hooks/useElementWidth';
 import { calculateZonesFromTest } from '../Testing-page/zoneCalculator';
@@ -11,6 +11,9 @@ import {
 // on desktop so the LT1/LT2 stat above matches the zone table below it (the
 // zone table already routes through resolveLtAnchorsFromTest → calculateThresholds).
 import { calculateThresholds as desktopCalculateThresholds } from '../Testing-page/DataTable';
+import { extractLactateThresholds } from '../../utils/extractLactateThresholds';
+import { predictedFromProjection } from '../../utils/predictedLactateCurve';
+import { getThresholdDrift } from '../../services/api';
 
 // ─── zone metadata (shared with NativeTestingPage) ────────────────────────────
 const ZONE_DEFS = [
@@ -375,6 +378,54 @@ export default function LastTestCard({ tests = [] }) {
   const last = parsed[0] || null;
   const prev = parsed[1] || null;
 
+  // ── The estimate, and which of the two the card is showing ────────────────
+  // Fetched per sport, anchored on the thresholds this card drew the test with
+  // — the client and server threshold pipelines disagree on real tests, and a
+  // card quoting a number its own chart does not show is worse than no card.
+  const anchorPayload = useMemo(() => {
+    const a = last ? extractLactateThresholds(last.raw) : null;
+    if (!(a?.lt2 > 0) || !(a?.lt2Hr > 0)) return null;
+    return {
+      // `sport` is for this side only — the server derives the kind from the
+      // request — but shiftedLactateCurve needs it to know whether the x-axis
+      // is watts or pace, and without it the whole estimate silently yields
+      // nothing and the card just keeps showing the old test.
+      sport: normSport(last.sport),
+      lt1: a.lt1, lt2: a.lt2, lt1Hr: a.lt1Hr, lt2Hr: a.lt2Hr,
+      storageMode: a.storageMode,
+      points: (a.points || []).map((p) => ({ x: p.x, y: p.y, hr: p.hr })),
+    };
+  }, [last]);
+
+  const [projection, setProjection] = useState(null);
+  const driftSport = normSport(activeSport);
+  useEffect(() => {
+    // Only bike and run have a drift walk behind them.
+    if (!anchorPayload || (driftSport !== 'bike' && driftSport !== 'run')) {
+      setProjection(null);
+      return undefined;
+    }
+    let cancelled = false;
+    getThresholdDrift(driftSport, null, anchorPayload)
+      .then((res) => {
+        if (cancelled) return;
+        const d = res?.data ?? res;
+        setProjection(d?.projection || null);
+      })
+      .catch(() => { if (!cancelled) setProjection(null); });
+    return () => { cancelled = true; };
+  }, [driftSport, anchorPayload]);
+
+  const predicted = useMemo(
+    () => predictedFromProjection(last, projection, anchorPayload),
+    [last, projection, anchorPayload],
+  );
+
+  // null = follow the default, which is the estimate whenever there is one.
+  const [viewPref, setViewPref] = useState(null);
+  const view = viewPref || (predicted ? 'predicted' : 'measured');
+  const shown = view === 'predicted' && predicted ? predicted : last;
+
   // Empty state
   if (!last) {
     return (
@@ -531,15 +582,40 @@ export default function LastTestCard({ tests = [] }) {
       <div style={styles.card}>
         {/* Header: title + Reviewed badge */}
         <div style={styles.headerRow}>
-          <div>
-            <div style={styles.sectionTitle}>Last lactate test</div>
+          <div style={{ minWidth: 0 }}>
+            <div style={styles.sectionTitle}>
+              {view === 'predicted' ? 'Where you are now' : 'Last lactate test'}
+            </div>
             <div style={styles.subtitle}>
-              {dateStr}
-              {stagesCount ? ` · ${stagesCount} stages` : ''}
-              {rangeStr ? ` · ${rangeStr}` : ''}
+              {view === 'predicted'
+                ? `Estimated from ${predicted.projection.sessions} sessions since ${dateStr}`
+                : `${dateStr}${stagesCount ? ` · ${stagesCount} stages` : ''}${rangeStr ? ` · ${rangeStr}` : ''}`}
             </div>
           </div>
-          {isReviewed && (
+          {/* The toggle only appears when there is actually something to
+              toggle to. Offering "Predicted" with nothing behind it would be
+              worse than the stale number it replaces. */}
+          {predicted && (
+            <div style={styles.seg}>
+              {[
+                { key: 'predicted', label: 'Now' },
+                { key: 'measured', label: 'Tested' },
+              ].map(({ key, label }) => (
+                <button
+                  key={key}
+                  onClick={() => setViewPref(key)}
+                  style={{
+                    ...styles.segBtn,
+                    ...(view === key ? styles.segBtnOn : {}),
+                    transition: 'background .25s ease, color .25s ease, box-shadow .25s ease',
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
+          {!predicted && isReviewed && (
             <span style={{
               fontSize: 10.5, fontWeight: 700,
               padding: '4px 10px', borderRadius: 9999,
@@ -557,7 +633,7 @@ export default function LastTestCard({ tests = [] }) {
 
         {/* Lactate curve chart */}
         <div style={{ marginTop: 10, marginBottom: 10 }}>
-          <LactateCurve thresholds={last} />
+          <LactateCurve thresholds={shown} />
         </div>
 
         {/* LT1 / LT2 — rich tiles with lactate (mmol) + HR (bpm) sub-info */}
@@ -568,17 +644,17 @@ export default function LastTestCard({ tests = [] }) {
           {[
             {
               lbl: 'LT1',
-              val: fmtVal(last.ltp1.power, last.sport, user, last.raw),
+              val: fmtVal(shown.ltp1.power, shown.sport, user, shown.raw),
               col: '#4BA87D',
-              lac: last.ltp1.lactate,
-              hr:  last.ltp1.hr,
+              lac: shown.ltp1.lactate,
+              hr:  shown.ltp1.hr,
             },
             {
               lbl: 'LT2',
-              val: fmtVal(last.ltp2.power, last.sport, user, last.raw),
+              val: fmtVal(shown.ltp2.power, shown.sport, user, shown.raw),
               col: '#E05347',
-              lac: last.ltp2.lactate,
-              hr:  last.ltp2.hr,
+              lac: shown.ltp2.lactate,
+              hr:  shown.ltp2.hr,
             },
           ].map(({ lbl, val, col, lac, hr }, idx) => (
             <div key={lbl} style={{
@@ -655,16 +731,16 @@ export default function LastTestCard({ tests = [] }) {
         {/* Training zones — derived from this test's thresholds */}
         {(() => {
           const zones = formatZonesPaceForUser(
-            calculateZonesFromTest(last.raw),
-            last.raw,
+            calculateZonesFromTest(shown.raw),
+            shown.raw,
             user,
-            last.sport,
+            shown.sport,
           );
           if (!zones) return null;
-          const root = last.isPace ? zones.pace : zones.power;
+          const root = shown.isPace ? zones.pace : zones.power;
           const hr = zones.heartRate;
           if (!root && !hr) return null;
-          const primaryHeader = last.isPace ? 'Pace' : 'Power';
+          const primaryHeader = shown.isPace ? 'Pace' : 'Power';
           // Compact 5-row zones strip — sized to fit on screen alongside the
           // curve + LT tiles + Open button (no inner scroll needed).
           return (
