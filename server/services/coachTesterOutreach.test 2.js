@@ -16,8 +16,6 @@ const assert = require('assert');
 const {
   firstNameFromEmail,
   isGenericAddress,
-  isDeliverableShape,
-  domainAcceptsMail,
   listClause,
   subjectFor,
   renderText,
@@ -128,31 +126,4 @@ assert.strictEqual(
 // under a "View entire message" link. Images are URLs, so they cost nothing here.
 assert.ok(Buffer.byteLength(html, 'utf8') < 102 * 1024, 'HTML stays under the Gmail clip');
 
-// --- address shape ----------------------------------------------------------
-// Hard bounces wreck a young sending domain faster than anything else, and this
-// list is scraped. Both of these were really in the first 180 candidates.
-assert.strictEqual(isDeliverableShape('gerard@theaptivmovement'), false, 'no TLD is not an address');
-// The reversed address is well-FORMED — ".strops" is a fine six-letter TLD as
-// far as a regex is concerned — so shape passes it on purpose. Only DNS can
-// tell that no such domain takes mail, which is what the MX check below is for.
-assert.strictEqual(isDeliverableShape('ku.ca.streh@noitpecer.strops'), true, 'shape alone cannot catch it');
-assert.strictEqual(isDeliverableShape(''), false);
-assert.strictEqual(isDeliverableShape(null), false);
-assert.strictEqual(isDeliverableShape('two@@at.com'), false);
-assert.strictEqual(isDeliverableShape('spaces in@name.com'), false);
-
-assert.strictEqual(isDeliverableShape('adrian@my-coach.co'), true);
-assert.strictEqual(isDeliverableShape('sports.reception@herts.ac.uk'), true, 'multi-label domains are fine');
-assert.strictEqual(isDeliverableShape('a.b+tag@sub.example.museum'), true);
-
-// --- MX, the check that actually stops the reversed one --------------------
-(async () => {
-  assert.strictEqual(
-    await domainAcceptsMail('ku.ca.streh@noitpecer.strops'),
-    false,
-    'no such domain — this is the one that would have hard-bounced',
-  );
-  assert.strictEqual(await domainAcceptsMail('someone@gmail.com'), true);
-  assert.strictEqual(await domainAcceptsMail('nobody'), false, 'no domain at all');
-  console.log('coachTesterOutreach: all assertions passed');
-})().catch((e) => { console.error(e); process.exit(1); });
+console.log('coachTesterOutreach: all assertions passed');

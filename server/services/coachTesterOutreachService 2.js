@@ -28,7 +28,6 @@
  */
 
 const crypto = require('crypto');
-const dns = require('dns').promises;
 const CoachOutreachLead = require('../models/CoachOutreachLead');
 const { createCampaignTransporter, campaignSender } = require('../utils/createEmailTransporter');
 const { trackedUrl, trackingPixelUrl } = require('../utils/outreachTracking');
@@ -255,62 +254,6 @@ Not interested? <a href="${unsub}" style="color:#8A93AD">Unsubscribe</a> and I w
  * Candidates, best first. Anything already written to stays out: a second cold
  * email to someone who ignored the first is how a domain earns a reputation.
  */
-/**
- * Is this even an address, before we spend a send on it?
- *
- * Hard bounces are the fastest way to wreck a young sending domain's
- * reputation, and this list is scraped, so it contains things that are not
- * addresses at all. Two were found in the first 180 candidates, and they need
- * different checks:
- *
- *   gerard@theaptivmovement       — no TLD. Caught here, by shape.
- *   ku.ca.streh@noitpecer.strops  — reversed; read backwards it is
- *                                   sports.reception@herts.ac.uk. Some sites
- *                                   render addresses right-to-left in CSS to
- *                                   defeat scrapers and ours took the bait.
- *                                   Shape does NOT catch it — ".strops" is a
- *                                   perfectly well-formed six-letter TLD as far
- *                                   as a regex is concerned. Only the MX lookup
- *                                   below does.
- *
- * Neither is repaired automatically. The reversed one is recoverable by eye,
- * but guessing a real organisation's address from a mangled string and then
- * mailing it cold is not a guess worth making — it stays out of the send and
- * can be corrected by hand.
- */
-function isDeliverableShape(email) {
-  const e = String(email || '').trim();
-  if (e.length < 6 || e.length > 254) return false;
-  // One @, a label-dotted domain, and a TLD of at least two letters.
-  return /^[^\s@]+@[^\s@.]+(\.[^\s@.]+)*\.[A-Za-z]{2,}$/.test(e);
-}
-
-/**
- * Does this domain accept mail at all?
- *
- * One lookup per domain, cached for the life of the process: a scheduler tick
- * sends fifteen, and the same handful of domains recur across a list scraped
- * from clubs and clinics. A lookup that fails for a reason other than "no such
- * domain" resolves to TRUE — a DNS blip must not permanently drop a real lead
- * from the campaign, and a bounce is recoverable where a silently skipped
- * candidate is not.
- */
-const mxCache = new Map();
-async function domainAcceptsMail(email) {
-  const domain = String(email || '').split('@')[1]?.toLowerCase();
-  if (!domain) return false;
-  if (mxCache.has(domain)) return mxCache.get(domain);
-  let ok = true;
-  try {
-    const mx = await dns.resolveMx(domain);
-    ok = Array.isArray(mx) && mx.length > 0;
-  } catch (e) {
-    ok = !(e && (e.code === 'ENOTFOUND' || e.code === 'NXDOMAIN'));
-  }
-  mxCache.set(domain, ok);
-  return ok;
-}
-
 async function findLeads({ limit = 50, types = TESTER_TYPES, countries = null } = {}) {
   const q = {
     sentCount: 0,
@@ -321,23 +264,13 @@ async function findLeads({ limit = 50, types = TESTER_TYPES, countries = null } 
   if (countries?.length) q.country = { $in: countries };
 
   const rows = await CoachOutreachLead.find(q).lean();
-  const wellFormed = rows.filter((l) => !isGenericAddress(l.email) && isDeliverableShape(l.email));
+  const reachable = rows.filter((l) => !isGenericAddress(l.email));
   const rank = (l) => {
     const typeScore = Math.max(0, TESTER_TYPES.length - TESTER_TYPES.indexOf(l.type));
     const named = firstNameFromEmail(l.email) ? 3 : 0;
     return typeScore * 10 + named + (Number(l.priority) || 0) / 100;
   };
-  // DNS last, and only on the ones we would actually send to: ranking first
-  // means the lookups are spent on the head of the list, not all 180.
-  const ranked = wellFormed.sort((a, b) => rank(b) - rank(a));
-  const out = [];
-  for (const lead of ranked) {
-    if (out.length >= limit) break;
-    // eslint-disable-next-line no-await-in-loop
-    if (await domainAcceptsMail(lead.email)) out.push(lead);
-    else console.warn('[testerOutreach] skipping, domain has no MX:', lead.email);
-  }
-  return out;
+  return reachable.sort((a, b) => rank(b) - rank(a)).slice(0, limit);
 }
 
 function preview(lead) {
@@ -413,8 +346,6 @@ module.exports = {
   renderHtml,
   firstNameFromEmail,
   isGenericAddress,
-  isDeliverableShape,
-  domainAcceptsMail,
   listClause,
   unsubscribeUrlFor,
   TESTER_TYPES,

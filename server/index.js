@@ -300,6 +300,7 @@ const { startStravaAutoSyncScheduler } = require('./services/stravaAutoSyncSched
 const { startLactateTestFollowUpScheduler } = require('./services/lactateTestFollowUpScheduler');
 const { startRetentionScheduler } = require('./services/retentionScheduler');
 const { startAppReengagementScheduler } = require('./services/appReengagementScheduler');
+const { startTesterOutreachScheduler } = require('./services/coachTesterOutreachScheduler');
 const { startProductUpdateScheduler } = require('./services/productUpdateScheduler');
 const { startGarminTokenRefreshScheduler } = require('./services/garminTokenRefreshScheduler');
 const { startStreamBackfillScheduler } = require('./services/streamBackfillScheduler');
@@ -389,6 +390,10 @@ startRetentionScheduler();
 
 // Web-only 3-step drip: app download → Strava → workout planning (Zoho-safe auto pacing)
 startAppReengagementScheduler();
+// Cold outreach to strangers: off unless ENABLE_TESTER_OUTREACH_SCHEDULER=true,
+// in production too. A deploy is not consent to start mailing people who never
+// asked for an account.
+startTesterOutreachScheduler();
 startProductUpdateScheduler();
 
 // Garmin OAuth2 tokens expire silently for webhook-only users — refresh ahead of time.
