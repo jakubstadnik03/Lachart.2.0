@@ -1,0 +1,284 @@
+/**
+ * Cold outreach to coaches, asking them to test the app — not to buy it.
+ *
+ * The previous attempt is the reason this file is not just "send the old email
+ * again". 202 leads were written to between March and June 2026: 0 replies,
+ * 1 registration. Four things were wrong with it, and all four are fixable:
+ *
+ *   1. It went out through createEmailTransporter() — the TRANSACTIONAL Zoho
+ *      account. At that point lachart.net had no DKIM record published at all
+ *      (Zoho's dashboard said "Verified" from before DNS moved to Vercel), so
+ *      every one of those 202 was unsigned bulk mail from a transactional
+ *      sender. A cold unsigned blast is a spam-folder delivery in all but name.
+ *      Bulk now goes through the Brevo relay, on its own authenticated
+ *      subdomain, separately from password resets.
+ *   2. No List-Unsubscribe. On cold mail that is both a spam signal and, in the
+ *      EU where most of these leads are, a legal problem.
+ *   3. It was a branded HTML template with a hero image and an "Open LaChart"
+ *      button. That is a newsletter. A first message from a stranger that looks
+ *      like a newsletter gets filed as one.
+ *   4. It went to clubs' shared inboxes — info@, hello@, the club secretary's
+ *      gmail. 106 individual endurance coaches sat in the same table and were
+ *      sent nothing. A club inbox has no one in it who decides anything.
+ *
+ * So: plain text, one ask, a real name on the other end, an unsubscribe header,
+ * and only addresses that plausibly reach a person. The ask is feedback rather
+ * than a sale, because "tell me what's wrong with this" is a question a busy
+ * coach can answer in one line, and "buy my software" is not.
+ */
+
+const crypto = require('crypto');
+const CoachOutreachLead = require('../models/CoachOutreachLead');
+const { createCampaignTransporter, campaignSender } = require('../utils/createEmailTransporter');
+
+const SITE = 'https://lachart.net';
+
+/**
+ * Shared inboxes. Mail to these reaches a volunteer who forwards nothing, and
+ * it is the single biggest difference between the old list and this one.
+ */
+const GENERIC_LOCALPART = /^(info|hello|contact|admin|office|mail|enquiries|enquiry|team|support|secretary|membership|chair|post|kontakt|bestuur|vorstand|asiakaspalvelu|reception|general|club|welcome|hi|ask|sales|marketing|press|webmaster|noreply|no-reply)$/i;
+
+/** Types where someone actually runs lactate tests, best first. */
+const TESTER_TYPES = [
+  'endurance coach',
+  'sports performance center',
+  'sports clinic',
+  'triathlon club',
+  'cycling club',
+];
+
+function localPartOf(email) {
+  return String(email || '').split('@')[0] || '';
+}
+
+function isGenericAddress(email) {
+  const lp = localPartOf(email).toLowerCase();
+  if (GENERIC_LOCALPART.test(lp)) return true;
+  // coaching@, coach@, training@ — a role, not a person.
+  if (/^(coach|coaching|training|trainer|tri|run|swim|bike)$/i.test(lp)) return true;
+  return false;
+}
+
+/**
+ * A first name to greet, or null.
+ *
+ * `lead.name` is the business ("Run Unbound", "The Strength Coach Ltd"), never
+ * a person — greeting someone as "Hi The Strength Coach Ltd," announces a mail
+ * merge in the first three words. The email's local part is the only place a
+ * real first name shows up (matt@, andy@, kam@), and only when it looks like
+ * one: no digits, no dots, no initials, not a role word.
+ */
+function firstNameFromEmail(email) {
+  const lp = localPartOf(email);
+  if (!lp || isGenericAddress(email)) return null;
+
+  // `steve.durham@` and `steve-durham@` are a person as plainly as `steve@` is;
+  // take the leading word. A single initial in front (`s.durham@`) is not a
+  // name, and the length floor below rejects it.
+  const head = lp.split(/[._-]/)[0];
+  if (!/^[a-zA-Z]{3,12}$/.test(head)) return null;
+
+  const lower = head.toLowerCase();
+  if (TESTER_TYPES.some(t => t.split(' ').includes(lower))) return null;
+  return lower.charAt(0).toUpperCase() + lower.slice(1);
+}
+
+/** "coach endurance athletes in Birmingham" — one honest clause, no filler. */
+function contextClause(lead) {
+  const city = (lead.city || '').trim();
+  const type = (lead.type || '').trim();
+  const where = city ? ` in ${city}` : '';
+  if (type === 'endurance coach') return `you coach endurance athletes${where}`;
+  if (type === 'sports performance center') return `you run a performance centre${where}`;
+  if (type === 'sports clinic') return `you run a sports clinic${where}`;
+  if (type === 'triathlon club') return `you coach triathletes${where}`;
+  if (type === 'cycling club') return `you coach cyclists${where}`;
+  if (type === 'running club') return `you coach runners${where}`;
+  if (type === 'swimming club') return `you coach swimmers${where}`;
+  return `you coach endurance athletes${where}`;
+}
+
+function unsubscribeTokenFor(id) {
+  const secret = process.env.JWT_SECRET || process.env.UNSUBSCRIBE_SECRET || 'lachart-unsub';
+  return crypto.createHmac('sha256', secret).update(String(id)).digest('hex').slice(0, 24);
+}
+
+function unsubscribeUrlFor(leadId) {
+  const base = (process.env.SERVER_PUBLIC_URL || 'https://lachart.onrender.com').replace(/\/+$/, '');
+  return `${base}/api/email/unsubscribe?u=${encodeURIComponent(String(leadId))}&t=${unsubscribeTokenFor(leadId)}&k=lead`;
+}
+
+function subjectFor(lead) {
+  const city = (lead.city || '').trim();
+  if (city) return `Lactate testing software — 10 minutes of a ${city} coach's time?`;
+  return `Lactate testing software — would you tell me what's wrong with it?`;
+}
+
+/**
+ * The letter. Deliberately short and deliberately ugly: no image, no button, no
+ * brand furniture. It has to look like a person typed it, because one did.
+ */
+function bodyLines(lead) {
+  const greet = firstNameFromEmail(lead.email);
+  return [
+    greet ? `Hi ${greet},` : 'Hi,',
+    '',
+    `I'm Jakub. I build LaChart on my own, and I'm writing because ${contextClause(lead)}.`,
+    '',
+    'It is for coaches who use lactate testing: you enter a step test, it works out '
+      + 'LT1 and LT2, builds the training zones from them, and pushes the sessions to '
+      + "the athlete's Garmin.",
+    '',
+    "I'm not selling you anything today. What I need is one coach who actually tests "
+      + 'to open it and tell me where it falls down — the thing that would stop you '
+      + 'using it for real. Ten minutes is plenty, and a one-line answer is fine.',
+    '',
+    "If you do that, I'll put your account on the Coach plan free for a year.",
+    '',
+    SITE,
+    '',
+    'Jakub Stadnik',
+    'LaChart',
+  ];
+}
+
+function renderText(lead) {
+  return [...bodyLines(lead), '', '—', `Not interested? Unsubscribe: ${unsubscribeUrlFor(lead._id)}`].join('\n');
+}
+
+function escapeHtml(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+/**
+ * The HTML part is the plain text in a system font, nothing more. It exists so
+ * clients that refuse text/plain still render something sane — not to decorate.
+ */
+function renderHtml(lead) {
+  const unsub = unsubscribeUrlFor(lead._id);
+  const paras = bodyLines(lead).join('\n')
+    .split(/\n{2,}/)
+    .map((block) => {
+      const safe = escapeHtml(block).replace(/\n/g, '<br/>');
+      const linked = safe.replace(
+        escapeHtml(SITE),
+        `<a href="${SITE}" style="color:#4A5578">${SITE}</a>`,
+      );
+      return `<p style="margin:0 0 14px">${linked}</p>`;
+    })
+    .join('\n');
+
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"/>
+<title>${escapeHtml(subjectFor(lead))}</title></head>
+<body style="margin:0;padding:0;background:#ffffff">
+<div style="max-width:560px;margin:0;padding:18px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:15px;line-height:1.55;color:#1D2C4C">
+${paras}
+<p style="margin:22px 0 0;font-size:12px;color:#8A93AD">
+Not interested? <a href="${unsub}" style="color:#8A93AD">Unsubscribe</a> and I won't write again.
+</p>
+</div></body></html>`;
+}
+
+/**
+ * Candidates, best first. Anything already written to stays out: a second cold
+ * email to someone who ignored the first is how a domain earns a reputation.
+ */
+async function findLeads({ limit = 50, types = TESTER_TYPES, countries = null } = {}) {
+  const q = {
+    sentCount: 0,
+    unsubscribed: { $ne: true },
+    email: { $exists: true, $ne: '' },
+  };
+  if (types?.length) q.type = { $in: types };
+  if (countries?.length) q.country = { $in: countries };
+
+  const rows = await CoachOutreachLead.find(q).lean();
+  const reachable = rows.filter((l) => !isGenericAddress(l.email));
+  const rank = (l) => {
+    const typeScore = Math.max(0, TESTER_TYPES.length - TESTER_TYPES.indexOf(l.type));
+    const named = firstNameFromEmail(l.email) ? 3 : 0;
+    return typeScore * 10 + named + (Number(l.priority) || 0) / 100;
+  };
+  return reachable.sort((a, b) => rank(b) - rank(a)).slice(0, limit);
+}
+
+function preview(lead) {
+  return {
+    to: lead.email,
+    subject: subjectFor(lead),
+    greetsBy: firstNameFromEmail(lead.email),
+    text: renderText(lead),
+    html: renderHtml(lead),
+  };
+}
+
+async function sendToLead(lead, { overrideEmail = null, dryRun = false } = {}) {
+  const p = preview(lead);
+  if (dryRun) return { sent: false, dryRun: true, to: overrideEmail || lead.email, subject: p.subject };
+
+  const transporter = createCampaignTransporter();
+  if (!transporter) return { sent: false, error: 'campaign transporter not configured' };
+
+  await transporter.sendMail({
+    from: { ...campaignSender(), name: 'Jakub Stadnik' },
+    to: overrideEmail || lead.email,
+    subject: p.subject,
+    text: p.text,
+    html: p.html,
+    headers: {
+      'List-Unsubscribe': `<${unsubscribeUrlFor(lead._id)}>`,
+      'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+    },
+  });
+
+  // Only the real send is recorded — a test to myself must not burn the lead.
+  if (!overrideEmail) {
+    await CoachOutreachLead.updateOne(
+      { _id: lead._id },
+      { $set: { lastSentAt: new Date(), bulkCampaignId: 'tester-outreach-2026-09' }, $inc: { sentCount: 1 } },
+    );
+  }
+  return { sent: true, to: overrideEmail || lead.email, subject: p.subject };
+}
+
+/**
+ * Paced send. The domain is three weeks old as a bulk sender, so this goes out
+ * in a trickle: a burst of cold mail from a fresh subdomain is the fastest way
+ * to undo the deliverability work it depends on.
+ */
+async function sendToMany({ limit = 15, pauseMs = 20000, dryRun = false, types, countries } = {}) {
+  const leads = await findLeads({ limit, types, countries });
+  const results = [];
+  for (const lead of leads) {
+    try {
+      results.push({ email: lead.email, ...(await sendToLead(lead, { dryRun })) });
+    } catch (e) {
+      results.push({ email: lead.email, sent: false, error: e.message });
+    }
+    if (!dryRun) await new Promise((r) => setTimeout(r, pauseMs));
+  }
+  return {
+    attempted: results.length,
+    sent: results.filter((r) => r.sent).length,
+    failed: results.filter((r) => !r.sent && !r.dryRun).length,
+    results,
+  };
+}
+
+module.exports = {
+  findLeads,
+  preview,
+  sendToLead,
+  sendToMany,
+  subjectFor,
+  renderText,
+  renderHtml,
+  firstNameFromEmail,
+  isGenericAddress,
+  contextClause,
+  unsubscribeUrlFor,
+  TESTER_TYPES,
+};

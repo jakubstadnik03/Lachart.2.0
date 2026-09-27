@@ -645,6 +645,18 @@ async function handleUnsubscribe(req, res) {
     </body></html>`);
   }
   try {
+    // Cold outreach recipients are leads, not users — there is no account to
+    // flip a notification flag on. Without this branch their unsubscribe link
+    // silently did nothing, which on cold mail in the EU is not a cosmetic bug.
+    if ((req.query?.k || req.body?.k) === 'lead') {
+      const CoachOutreachLead = require('../models/CoachOutreachLead');
+      await CoachOutreachLead.updateOne({ _id: userId }, { $set: { unsubscribed: true } });
+      return res.status(200).send(`<html><body style="font-family:system-ui,sans-serif;padding:24px;color:#1D2C4C;max-width:560px;margin:0 auto">
+        <h2 style="margin-top:0">Done — I won't write again</h2>
+        <p>You've been removed from the list. Sorry for the interruption.</p>
+        <p>— Jakub, LaChart</p>
+      </body></html>`);
+    }
     await User.updateOne(
       { _id: userId },
       { $set: { 'notifications.emailNotifications': false } }
@@ -794,6 +806,84 @@ router.post('/product-update/:issueId/reset', verifyToken, async (req, res) => {
     const email = (req.body?.email || '').toLowerCase().trim() || null;
     res.json(await productUpdate.resetIssue(req.params.issueId, { email }));
   } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ─── Cold tester outreach — admin endpoints ─────────────────────────────────
+// Nothing here runs on a schedule. Cold mail to strangers goes out only when a
+// person asks for it, in small paced batches.
+
+const testerOutreach = require('../services/coachTesterOutreachService');
+
+// GET /api/email/tester-outreach/candidates?limit=50
+router.get('/tester-outreach/candidates', verifyToken, async (req, res) => {
+  try {
+    if (!(await requireAdmin(req, res))) return;
+    const limit = Math.max(1, Math.min(500, Number(req.query.limit) || 50));
+    const leads = await testerOutreach.findLeads({ limit });
+    res.json({
+      count: leads.length,
+      leads: leads.map((l) => ({
+        _id: l._id,
+        name: l.name,
+        email: l.email,
+        city: l.city,
+        country: l.country,
+        type: l.type,
+        greetsBy: testerOutreach.firstNameFromEmail(l.email),
+      })),
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /api/email/tester-outreach/preview/:leadId — exactly what would be sent.
+router.get('/tester-outreach/preview/:leadId', verifyToken, async (req, res) => {
+  try {
+    if (!(await requireAdmin(req, res))) return;
+    const CoachOutreachLead = require('../models/CoachOutreachLead');
+    const lead = await CoachOutreachLead.findById(req.params.leadId).lean();
+    if (!lead) return res.status(404).json({ error: 'Lead not found' });
+    res.json(testerOutreach.preview(lead));
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /api/email/tester-outreach/test/:leadId — send that letter to myself.
+router.post('/tester-outreach/test/:leadId', verifyToken, async (req, res) => {
+  try {
+    if (!(await requireAdmin(req, res))) return;
+    const CoachOutreachLead = require('../models/CoachOutreachLead');
+    const lead = await CoachOutreachLead.findById(req.params.leadId).lean();
+    if (!lead) return res.status(404).json({ error: 'Lead not found' });
+    const me = await User.findById(req.user.userId).select('email').lean();
+    const to = (req.body?.email || me?.email || '').trim();
+    if (!to) return res.status(400).json({ error: 'No address to send the test to' });
+    res.json(await testerOutreach.sendToLead(lead, { overrideEmail: to }));
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /api/email/tester-outreach/run — the real paced send.
+router.post('/tester-outreach/run', verifyToken, async (req, res) => {
+  try {
+    if (!(await requireAdmin(req, res))) return;
+    const limit = Math.max(1, Math.min(50, Number(req.body?.limit) || 10));
+    const pauseMs = Math.max(5000, Number(req.body?.pauseMs) || 20000);
+    const stats = await testerOutreach.sendToMany({
+      limit,
+      pauseMs,
+      dryRun: req.body?.dryRun === true,
+      types: Array.isArray(req.body?.types) ? req.body.types : undefined,
+      countries: Array.isArray(req.body?.countries) ? req.body.countries : undefined,
+    });
+    res.json({ ok: true, ...stats });
+  } catch (e) {
+    console.error('[tester-outreach run] error:', e);
     res.status(500).json({ error: e.message });
   }
 });
