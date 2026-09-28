@@ -406,7 +406,13 @@ export default function LastTestCard({ tests = [] }) {
       return undefined;
     }
     let cancelled = false;
-    getThresholdDrift(driftSport, null, anchorPayload)
+    // A limit, because this card made the drift walk a per-dashboard-load cost
+    // where it used to be on-demand. The walk reads one stream document per
+    // uncached session — 83 KB on average, expanded into a per-second array —
+    // and the route's default is 250 of them. The estimate this card draws is a
+    // trend over recent training; sixty sessions is more than enough to place
+    // it, and the deeper history stays available to the panels that ask for it.
+    getThresholdDrift(driftSport, null, anchorPayload, 60)
       .then((res) => {
         if (cancelled) return;
         const d = res?.data ?? res;

@@ -3641,6 +3641,7 @@ router.get("/admin/health", verifyToken, async (req, res) => {
         ]);
 
         res.status(200).json({
+            memory,
             ok: true,
             generatedAt: new Date().toISOString(),
             app: {

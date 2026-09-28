@@ -2462,11 +2462,18 @@ export const getRouteHistory = async (athleteId, limit = 150) => {
  *   with. Sent rather than recomputed, because the two threshold pipelines
  *   disagree on real tests and the number the athlete can see has to win.
  */
-export const getThresholdDrift = (sport = 'bike', athleteId = null, anchor = null) =>
+/**
+ * @param {number|null} limit  how many sessions back to walk. The route reads
+ *   this at the TOP level of the body, not inside `anchor` — a limit tucked
+ *   into the anchor object is silently ignored and the default 250 is used,
+ *   which is the difference between reading sixty stream documents and 250.
+ */
+export const getThresholdDrift = (sport = 'bike', athleteId = null, anchor = null, limit = null) =>
   api.post('/api/threshold-drift', {
     sport,
     ...(athleteId ? { athleteId } : {}),
     ...(anchor ? { anchor } : {}),
+    ...(limit ? { limit } : {}),
   });
 
 export const getActivityWeather = async (activityKey) => {
