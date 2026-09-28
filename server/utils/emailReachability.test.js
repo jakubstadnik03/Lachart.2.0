@@ -41,3 +41,35 @@ assert.strictEqual(emailReachability(null).reason, 'no-address');
 assert.strictEqual(isAppleRelay('me@notprivaterelay.appleid.com.example'), false);
 
 console.log('emailReachability: Apple relay detected, placeholders separated');
+
+// --- the transporter gate --------------------------------------------------
+// Wrapping sendMail rather than each campaign is the point: a dozen senders
+// exist here and a guard any one of them can forget is a guard that gets
+// forgotten.
+const { guardUnreachable } = require('./createEmailTransporter');
+
+(async () => {
+  const sent = [];
+  const fake = { sendMail: async (m) => { sent.push(m.to); return { ok: true }; } };
+  const t = guardUnreachable(fake);
+
+  const blocked = await t.sendMail({ to: 'ndgtvp82dk@privaterelay.appleid.com', subject: 'x' });
+  assert.strictEqual(blocked.skipped, true, 'a relay address is not sent to');
+  assert.strictEqual(blocked.reason, 'apple-relay-unregistered');
+  assert.strictEqual(sent.length, 0, 'and never reaches the transport');
+
+  const ok = await t.sendMail({ to: 'jakub.stadnik@seznam.cz', subject: 'x' });
+  assert.strictEqual(ok.ok, true, 'a real address still goes');
+  assert.strictEqual(sent.length, 1);
+
+  // A mixed recipient list still goes: dropping the whole message because one
+  // address of five is a relay would lose four deliverable ones.
+  await t.sendMail({ to: ['a@b.co', 'x@privaterelay.appleid.com'], subject: 'x' });
+  assert.strictEqual(sent.length, 2, 'mixed lists are not dropped');
+
+  // Wrapping twice must not double-wrap and skip twice.
+  const again = guardUnreachable(t);
+  assert.strictEqual(again, t);
+
+  console.log('emailReachability: transporter gate blocks relay addresses only');
+})().catch((e) => { console.error(e); process.exit(1); });

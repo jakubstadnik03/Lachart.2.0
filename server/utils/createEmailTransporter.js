@@ -8,6 +8,50 @@ function sanitizeEnvValue(value) {
   return trimmed.replace(/^['"](.+)['"]$/, '$1');
 }
 
+
+/**
+ * One gate every outbound message passes, whoever sends it.
+ *
+ * 30 accounts sign in with Apple behind Hide My Email, and Apple's relay
+ * refuses us — "550 5.1.1 <lachart@lachart.net>: unauthorized sender" — because
+ * the sending domain is not registered against the app's Sign in with Apple
+ * configuration. Every message to one of them produced a bounce, and the
+ * bounces were filling the inbox.
+ *
+ * Wrapping sendMail rather than fixing each campaign is deliberate: there are
+ * a dozen senders here — schedulers, campaigns, password resets, coach
+ * invitations — and a guard any one of them can forget to call is a guard that
+ * will be forgotten. This one cannot be bypassed by a new send path.
+ *
+ * It refuses quietly and reports it. A caller that treats the refusal as a
+ * failure would retry forever; a caller that ignores the answer is no worse off
+ * than before, because the message was never going to arrive.
+ */
+function guardUnreachable(transport) {
+  if (!transport || typeof transport.sendMail !== 'function' || transport.__reachabilityGuarded) {
+    return transport;
+  }
+  const { emailReachability } = require('./emailReachability');
+  const original = transport.sendMail.bind(transport);
+
+  transport.sendMail = async (message = {}, ...rest) => {
+    const to = Array.isArray(message.to) ? message.to : [message.to];
+    const addresses = to
+      .map((t) => (typeof t === 'string' ? t : t?.address))
+      .filter(Boolean);
+
+    const blocked = addresses.filter((a) => !emailReachability(a).reachable);
+    if (blocked.length && blocked.length === addresses.length) {
+      const reason = emailReachability(blocked[0]).reason;
+      console.warn(`[email] not sent — ${reason}: ${blocked.join(', ')}`);
+      return { skipped: true, reason, to: blocked };
+    }
+    return original(message, ...rest);
+  };
+  transport.__reachabilityGuarded = true;
+  return transport;
+}
+
 function createEmailTransporter() {
   const user = sanitizeEnvValue(process.env.EMAIL_USER);
   const pass = sanitizeEnvValue(process.env.EMAIL_APP_PASSWORD);
@@ -214,6 +258,14 @@ function campaignSender() {
   return { name, address };
 }
 
-module.exports = { createEmailTransporter, createCampaignTransporter, campaignSender };
+const _createEmailTransporter = createEmailTransporter;
+const _createCampaignTransporter = createCampaignTransporter;
+
+module.exports = {
+  createEmailTransporter: (...a) => guardUnreachable(_createEmailTransporter(...a)),
+  createCampaignTransporter: (...a) => guardUnreachable(_createCampaignTransporter(...a)),
+  campaignSender,
+  guardUnreachable,
+};
 
 
