@@ -2415,6 +2415,49 @@ const AdminDashboard = () => {
                         <div><span className="text-gray-500">DB:</span> <span className="font-mono">{adminHealth?.database?.name || 'unknown'} ({adminHealth?.database?.stateLabel || 'unknown'})</span></div>
                         <div><span className="text-gray-500">Generated:</span> {adminHealth?.generatedAt ? new Date(adminHealth.generatedAt).toLocaleString() : 'unknown'}</div>
                       </div>
+
+                      {/* Memory. The peak is the number that matters: an
+                          instantaneous reading taken after a restart describes
+                          the process that lived, not the one that died. A short
+                          uptime beside a high peak is an out-of-memory kill. */}
+                      {adminHealth?.memory && (() => {
+                        const m = adminHealth.memory;
+                        const pct = m.heapLimitMB ? Math.round((m.peakRssMB / m.heapLimitMB) * 100) : null;
+                        const hot = pct != null && pct >= 80;
+                        const young = (m.uptimeMinutes ?? 999) < 30;
+                        return (
+                          <div className="mt-4 pt-3 border-t border-gray-100">
+                            <div className="flex items-center justify-between mb-2">
+                              <h5 className="font-semibold text-gray-900 text-sm">Memory</h5>
+                              {pct != null && (
+                                <span className={`text-xs font-semibold rounded-full px-2 py-0.5 ${
+                                  hot ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'
+                                }`}>
+                                  peak {pct}% of limit
+                                </span>
+                              )}
+                            </div>
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
+                              <div><span className="text-gray-500">RSS now:</span> <span className="font-mono">{m.rssMB} MB</span></div>
+                              <div><span className="text-gray-500">Heap now:</span> <span className="font-mono">{m.heapUsedMB} MB</span></div>
+                              <div><span className="text-gray-500">Peak RSS:</span> <span className={`font-mono ${hot ? 'text-red-600 font-semibold' : ''}`}>{m.peakRssMB} MB</span></div>
+                              <div><span className="text-gray-500">Limit:</span> <span className="font-mono">{m.heapLimitMB} MB</span></div>
+                              <div className="col-span-2 sm:col-span-4">
+                                <span className="text-gray-500">Uptime:</span>{' '}
+                                <span className={`font-mono ${young ? 'text-amber-600 font-semibold' : ''}`}>{m.uptimeMinutes} min</span>
+                                {young && <span className="text-amber-600 text-xs ml-2">— restarted recently</span>}
+                              </div>
+                            </div>
+                            <p className="text-xs text-gray-500 mt-2">
+                              {hot
+                                ? 'Peak is close to the ceiling — this looks like memory.'
+                                : young
+                                  ? 'Peak is low but the process is young: whatever ended the last one, it was probably not the heap.'
+                                  : 'Peak is well under the ceiling.'}
+                            </p>
+                          </div>
+                        );
+                      })()}
                     </div>
                   </div>
 
