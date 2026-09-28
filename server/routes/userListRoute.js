@@ -5517,16 +5517,17 @@ router.delete("/admin/athlete/:athleteId/delete-with-tests", verifyToken, async 
             return res.status(400).json({ error: "You cannot delete your own account using this endpoint." });
         }
 
-        const athleteIdString = athleteId.toString();
-        const Training = require("../models/training");
-
-        // Delete all associated data
-        const fitTrainingsDeleted = await FitTraining.deleteMany({ athleteId: athleteIdString });
-        const trainingsDeleted = await Training.deleteMany({ athleteId: athleteIdString });
-        const testsDeleted = await Test.deleteMany({ athleteId: athleteIdString });
-        const lactateSessionsDeleted = await LactateSession.deleteMany({ athleteId: athleteIdString });
-        const stravaActivitiesDeleted = await StravaActivity.deleteMany({ userId: athleteId });
-        const eventsDeleted = await Event.deleteMany({ userId: athleteId });
+        // Third copy of this delete, now the same purge as the other two. A
+        // coach can reach this one, so it is the likeliest route by which a
+        // paying athlete's account disappears while Stripe keeps charging them.
+        const { purgeUserData } = require("../utils/purgeUserData");
+        const purge = await purgeUserData(athleteId);
+        if (purge.billing.error) {
+            console.error(`[delete-with-tests] BILLING NOT CONFIRMED CANCELLED for ${athleteId}: ${purge.billing.error}`);
+        }
+        if (purge.errors.length) {
+            console.error(`[delete-with-tests] partial purge for ${athleteId}:`, purge.errors);
+        }
 
         // Remove from all linked coaches' athlete lists
         for (const cid of athleteCoachIdSet(athlete)) {
@@ -5538,14 +5539,8 @@ router.delete("/admin/athlete/:athleteId/delete-with-tests", verifyToken, async 
 
         res.status(200).json({
             message: "Athlete and all associated data deleted successfully",
-            deletedData: {
-                fitTrainings: fitTrainingsDeleted.deletedCount,
-                trainings: trainingsDeleted.deletedCount,
-                tests: testsDeleted.deletedCount,
-                lactateSessions: lactateSessionsDeleted.deletedCount,
-                stravaActivities: stravaActivitiesDeleted.deletedCount,
-                events: eventsDeleted.deletedCount
-            },
+            billingCancelled: purge.billing.cancelled || !purge.billing.attempted,
+            deletedData: purge.deleted,
             athleteId: athleteId,
             clearLocalStorage: true
         });
@@ -5573,16 +5568,20 @@ router.delete("/admin/users/:userId", verifyToken, async (req, res) => {
             return res.status(404).json({ error: "User not found" });
         }
 
-        const userIdString = targetUserId.toString();
         const userId = targetUserId;
-        const Training = require("../models/training");
 
-        const fitTrainingsDeleted = await FitTraining.deleteMany({ athleteId: userIdString });
-        const trainingsDeleted = await Training.deleteMany({ athleteId: userIdString });
-        const testsDeleted = await Test.deleteMany({ athleteId: userIdString });
-        const lactateSessionsDeleted = await LactateSession.deleteMany({ athleteId: userIdString });
-        const stravaActivitiesDeleted = await StravaActivity.deleteMany({ userId: userId });
-        const eventsDeleted = await Event.deleteMany({ userId: userId });
+        // Same purge as the self-service delete, for the same reasons: the two
+        // paths drifted apart and this one had the identical gap — six
+        // collections cleared, eight left, and a live Stripe subscription that
+        // went on charging someone whose account an admin had just removed.
+        const { purgeUserData } = require("../utils/purgeUserData");
+        const purge = await purgeUserData(targetUserId);
+        if (purge.billing.error) {
+            console.error(`[admin delete] BILLING NOT CONFIRMED CANCELLED for ${targetUserId}: ${purge.billing.error}`);
+        }
+        if (purge.errors.length) {
+            console.error(`[admin delete] partial purge for ${targetUserId}:`, purge.errors);
+        }
 
         if (user.coachId) {
             await userDao.removeAthleteFromCoach(user.coachId, userId);
@@ -5597,14 +5596,8 @@ router.delete("/admin/users/:userId", verifyToken, async (req, res) => {
 
         res.status(200).json({
             message: "User and all associated data deleted successfully",
-            deletedData: {
-                fitTrainings: fitTrainingsDeleted.deletedCount,
-                trainings: trainingsDeleted.deletedCount,
-                tests: testsDeleted.deletedCount,
-                lactateSessions: lactateSessionsDeleted.deletedCount,
-                stravaActivities: stravaActivitiesDeleted.deletedCount,
-                events: eventsDeleted.deletedCount
-            }
+            billingCancelled: purge.billing.cancelled || !purge.billing.attempted,
+            deletedData: purge.deleted,
         });
     } catch (error) {
         console.error("Error deleting user (admin):", error);
@@ -5735,67 +5728,44 @@ router.get("/export-all-data", verifyToken, async (req, res) => {
 router.delete("/delete-account", verifyToken, async (req, res) => {
     try {
         const userId = req.user.userId;
-        const userIdString = userId.toString();
 
-        // Find user to get coachId before deletion
         const user = await userDao.findById(userId);
         if (!user) {
             return res.status(404).json({ error: "User not found" });
         }
 
-        // Delete all FIT trainings
-        const fitTrainingsDeleted = await FitTraining.deleteMany({ athleteId: userIdString });
-        console.log(`Deleted ${fitTrainingsDeleted.deletedCount} FIT trainings`);
+        // Billing stops and every owned collection goes, in one place shared
+        // with the admin delete. This used to clear six collections and leave
+        // eight — including the Stripe subscription, which went on charging a
+        // person with no account left to cancel from.
+        const { purgeUserData } = require("../utils/purgeUserData");
+        const purge = await purgeUserData(userId);
+        if (purge.billing.error) {
+            console.error(`[delete-account] BILLING NOT CONFIRMED CANCELLED for ${userId}: ${purge.billing.error}`);
+        }
+        if (purge.errors.length) {
+            console.error(`[delete-account] partial purge for ${userId}:`, purge.errors);
+        }
+        console.log(`[delete-account] ${userId} purged:`, JSON.stringify(purge.deleted));
 
-        // Delete all trainings
-        const Training = require("../models/training");
-        const trainingsDeleted = await Training.deleteMany({ athleteId: userIdString });
-        console.log(`Deleted ${trainingsDeleted.deletedCount} trainings`);
-
-        // Delete all tests
-        const testsDeleted = await Test.deleteMany({ athleteId: userIdString });
-        console.log(`Deleted ${testsDeleted.deletedCount} tests`);
-
-        // Delete all lactate sessions
-        const lactateSessionsDeleted = await LactateSession.deleteMany({ athleteId: userIdString });
-        console.log(`Deleted ${lactateSessionsDeleted.deletedCount} lactate sessions`);
-
-        // Delete all Strava activities
-        const stravaActivitiesDeleted = await StravaActivity.deleteMany({ userId: userId });
-        console.log(`Deleted ${stravaActivitiesDeleted.deletedCount} Strava activities`);
-
-        // Delete all events
-        const eventsDeleted = await Event.deleteMany({ userId: userId });
-        console.log(`Deleted ${eventsDeleted.deletedCount} events`);
-
-        // Remove user from coach's athletes list if user has a coach
+        // Detach from the people on the other side of a coaching link. Their
+        // own data is untouched — only the pointer to a user about to vanish.
         if (user.coachId) {
             await userDao.removeAthleteFromCoach(user.coachId, userId);
-            console.log(`Removed user from coach's athletes list`);
         }
-
-        // Remove all athletes from user if user is a coach
         if (user.athletes && user.athletes.length > 0) {
             for (const athleteId of user.athletes) {
                 await userDao.updateUser(athleteId, { coachId: null });
             }
-            console.log(`Removed coach from ${user.athletes.length} athletes`);
         }
 
-        // Finally, delete the user account
         await userDao.deleteById(userId);
         console.log(`Deleted user account ${userId}`);
 
-        res.status(200).json({ 
+        res.status(200).json({
             message: "Account and all associated data deleted successfully",
-            deletedData: {
-                fitTrainings: fitTrainingsDeleted.deletedCount,
-                trainings: trainingsDeleted.deletedCount,
-                tests: testsDeleted.deletedCount,
-                lactateSessions: lactateSessionsDeleted.deletedCount,
-                stravaActivities: stravaActivitiesDeleted.deletedCount,
-                events: eventsDeleted.deletedCount
-            }
+            billingCancelled: purge.billing.cancelled || !purge.billing.attempted,
+            deletedData: purge.deleted,
         });
     } catch (error) {
         console.error("Error deleting account:", error);
