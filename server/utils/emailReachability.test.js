@@ -34,6 +34,17 @@ for (const e of ['jakub.stadnik@seznam.cz', 'a@b.co', 'someone@icloud.com', 'x@a
   assert.strictEqual(emailReachability(e).reachable, true, e);
 }
 
+// Once the portal says Verified, the flag reopens the relay — and the
+// placeholder addresses stay blocked, because those were never real.
+process.env.APPLE_RELAY_SENDER_REGISTERED = 'true';
+assert.strictEqual(emailReachability('2sbd4cv96w@privaterelay.appleid.com').reachable, true,
+  'a registered sender may use the relay');
+assert.strictEqual(emailReachability('apple_1@privaterelay.appleid.com').reachable, false,
+  'the invented placeholder is still undeliverable');
+delete process.env.APPLE_RELAY_SENDER_REGISTERED;
+assert.strictEqual(emailReachability('2sbd4cv96w@privaterelay.appleid.com').reachable, false,
+  'and blocking is the default');
+
 assert.strictEqual(emailReachability('').reachable, false);
 assert.strictEqual(emailReachability(null).reason, 'no-address');
 

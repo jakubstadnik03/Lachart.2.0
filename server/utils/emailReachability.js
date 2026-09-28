@@ -41,10 +41,19 @@ function emailReachability(email) {
   if (!e) return { reachable: false, reason: 'no-address' };
   if (isSyntheticAppleAddress(e)) return { reachable: false, reason: 'apple-relay-placeholder' };
   if (isAppleRelay(e)) {
-    return {
-      reachable: false,
-      reason: 'apple-relay-unregistered',
-    };
+    // Once lachart.net is registered AND shows Verified under Sign in with
+    // Apple for Email Communication, the relay forwards and these addresses
+    // work untouched. The flag exists so this gate does not quietly keep 30
+    // people unreachable after the portal work is done — which would be the
+    // same silent failure it was built to end, only self-inflicted.
+    //
+    // Default is to block: registration is not verification, and Apple checks
+    // SPF before flipping a domain live. Bouncing meanwhile is the worse of
+    // the two failures.
+    if (String(process.env.APPLE_RELAY_SENDER_REGISTERED).toLowerCase() === 'true') {
+      return { reachable: true, reason: null };
+    }
+    return { reachable: false, reason: 'apple-relay-unregistered' };
   }
   return { reachable: true, reason: null };
 }
