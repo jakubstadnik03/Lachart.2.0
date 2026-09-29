@@ -137,7 +137,6 @@ async function purgeUserData(userId) {
 
   for (const [modelPath, field] of OWNED) {
     try {
-      // eslint-disable-next-line global-require, import/no-dynamic-require
       const Model = require(modelPath);
       // eslint-disable-next-line no-await-in-loop
       const res = await Model.deleteMany({ [field]: match });

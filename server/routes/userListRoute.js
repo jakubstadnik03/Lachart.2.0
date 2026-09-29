@@ -3574,12 +3574,46 @@ router.get("/admin/billing", verifyToken, async (req, res) => {
 });
 
 // Admin health dashboard — system + Strava sync observability.
+/**
+ * Peak heap since boot, not just the heap right now.
+ *
+ * An instantaneous reading taken after a restart says nothing — the process
+ * that died is gone and the one answering is a minute old. What identifies an
+ * out-of-memory kill is how close the peak got to the ceiling, so the high
+ * water mark is sampled on a timer and reported beside the current figure.
+ */
+const memoryPeak = { rss: 0, heapUsed: 0, at: null, since: new Date() };
+const memoryPeakTimer = setInterval(() => {
+    const m = process.memoryUsage();
+    if (m.rss > memoryPeak.rss) {
+        memoryPeak.rss = m.rss;
+        memoryPeak.heapUsed = m.heapUsed;
+        memoryPeak.at = new Date();
+    }
+}, 30 * 1000);
+if (typeof memoryPeakTimer.unref === 'function') memoryPeakTimer.unref();
+
 router.get("/admin/health", verifyToken, async (req, res) => {
     try {
         const currentUser = await userDao.findById(req.user.userId);
         if (!currentUser || !currentUser.admin) {
             return res.status(403).json({ error: "Access denied. Admin privileges required." });
         }
+
+        const mem = process.memoryUsage();
+        const MB = (b) => Math.round(b / 1048576);
+        const memory = {
+            rssMB: MB(mem.rss),
+            heapUsedMB: MB(mem.heapUsed),
+            heapTotalMB: MB(mem.heapTotal),
+            externalMB: MB(mem.external),
+            heapLimitMB: MB(require('v8').getHeapStatistics().heap_size_limit),
+            peakRssMB: MB(memoryPeak.rss),
+            peakHeapUsedMB: MB(memoryPeak.heapUsed),
+            peakAt: memoryPeak.at,
+            uptimeMinutes: Math.round(process.uptime() / 60),
+            sampledSince: memoryPeak.since,
+        };
 
         const [
             totalUsers,

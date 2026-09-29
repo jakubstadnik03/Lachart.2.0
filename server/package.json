@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node --max-old-space-size=1536 index.js",
     "start:dev": "NODE_OPTIONS='--max-old-space-size=2048' nodemon index.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "lint": "../client/node_modules/.bin/eslint --no-eslintrc --env node,es2022 --parser-options=ecmaVersion:2022,sourceType:script --rule '{\"no-undef\":\"error\"}' routes utils services models controllers index.js",
+    "test": "for f in $(git ls-files '*.test.js'); do echo \"\u2014 $f\"; node \"$f\" || exit 1; done; echo 'all server tests passed'"
   },
   "keywords": [],
   "author": "",
