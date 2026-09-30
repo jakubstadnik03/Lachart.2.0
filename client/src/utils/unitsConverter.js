@@ -460,6 +460,24 @@ export const paceSecondsToDisplaySeconds = (
   return s;
 };
 
+/** The inverse: what the user typed in their own units → stored pace seconds. */
+export const paceSecondsFromDisplaySeconds = (
+  displaySeconds,
+  { sport = 'run', unitSystem = 'metric', testRunPerMileStorage = false } = {},
+) => {
+  if (displaySeconds == null || !Number.isFinite(Number(displaySeconds))) return displaySeconds;
+  const s = Number(displaySeconds);
+  const displayImperial = unitSystem === 'imperial';
+  const sp = String(sport || '').toLowerCase();
+  if (sp.includes('swim')) {
+    if (!displayImperial) return s;
+    return s / M_PER_YARD;
+  }
+  if (displayImperial && !testRunPerMileStorage) return s / KM_PER_MILE;
+  if (!displayImperial && testRunPerMileStorage) return s * KM_PER_MILE;
+  return s;
+};
+
 /** Format stored test/interval pace (sec/km or sec/mile) for the user's units. */
 export const formatStoredPaceSeconds = (seconds, user, sport = 'run', testData = null) => {
   const unitSystem = resolveDistanceUnitSystem(user);

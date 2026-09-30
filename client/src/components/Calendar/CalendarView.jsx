@@ -9,7 +9,7 @@ import SessionProgressChart from '../training/SessionProgressChart';
 import CompareSessionsMenu from '../training/CompareSessionsMenu';
 import { comparedSessionStub } from '../../utils/comparedSessionStub';
 import TimeInZonesBar from '../training/TimeInZonesBar';
-import PeakValuesChart, { readPower, readHeartRate } from '../training/PeakValuesChart';
+import PeakValuesChart, { readPower, readHeartRate, readSpeed } from '../training/PeakValuesChart';
 import WorkoutStepsCompliance from '../training/WorkoutStepsCompliance';
 import ActivityPeaksTab from '../training/ActivityPeaksTab';
 import SessionVsTestPanel from '../training/SessionVsTestPanel';
@@ -54,6 +54,7 @@ import {
   formatSpeed,
   parseDistanceInputToMetres,
   paceSecondsFromDistanceAndDuration,
+  paceSecondsFromSpeedMps,
   paceSecondsToDisplaySeconds,
   paceUnitShort,
 } from '../../utils/unitsConverter';
@@ -6351,13 +6352,35 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                   and neither was reachable from the session itself. */}
               {chartTraining?.records?.length > 30 && (
                 <div className="px-5 py-4 border-b border-gray-50 grid gap-5 md:grid-cols-2 2xl:grid-cols-3">
-                  <PeakValuesChart
-                    records={chartTraining.records}
-                    read={readPower}
-                    color="#767EB5"
-                    unit="W"
-                    title="Peak values (power)"
-                  />
+                  {/* Watts are the bike's channel. A run has them only as an
+                      estimate — and a runner reads the same effort as pace,
+                      so the curve is drawn from speed and labelled in pace.
+                      Speed is what gets averaged: pace counts backwards and
+                      would turn the mean-maximal curve upside down. */}
+                  {isBike ? (
+                    <PeakValuesChart
+                      records={chartTraining.records}
+                      read={readPower}
+                      color="#767EB5"
+                      unit="W"
+                      title="Peak values (power)"
+                    />
+                  ) : (
+                    <PeakValuesChart
+                      records={chartTraining.records}
+                      read={readSpeed}
+                      color="#767EB5"
+                      unit={paceUnitShort(unitSystem, isSwim ? 'swim' : 'run')}
+                      title="Peak values (pace)"
+                      bestLabel="best"
+                      minDuration={5}
+                      format={(mps) => {
+                        const p = formatPaceFromSpeedMps(mps, unitSystem, isSwim ? 'swim' : 'run');
+                        return p || '—';
+                      }}
+                      formatTick={(mps) => formatPaceMMSS(paceSecondsFromSpeedMps(mps, unitSystem, isSwim ? 'swim' : 'run')) || ''}
+                    />
+                  )}
                   <PeakValuesChart
                     records={chartTraining.records}
                     read={readHeartRate}

@@ -1,6 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import Modal from '../Modal';
-import { heightLabel, weightLabel, resolveDistanceUnitSystem } from '../../utils/unitsConverter';
+import {
+  heightLabel,
+  weightLabel,
+  resolveDistanceUnitSystem,
+  paceSecondsToDisplaySeconds,
+  paceSecondsFromDisplaySeconds,
+} from '../../utils/unitsConverter';
+import { parsePaceSeconds, formatPaceClock } from '../../utils/paceText';
 import { getEditProfileZonesPrefs, setEditProfileZonesPrefs } from '../../utils/uiPrefs';
 import { ltZones } from '../../utils/trainingZoneBounds';
 
@@ -17,10 +24,91 @@ const ZONE_DESCRIPTIONS = {
   zone5: '104-120% LT2 (sprint/VO2max+ reference)',
 };
 
+/**
+ * Watts and beats are whole numbers to everyone who reads them.
+ *
+ * A threshold that came from a lactate test arrives as 460.63364406900365 and
+ * the form printed every digit of it. Pace is not rounded here, though it is
+ * the worst offender: it is shown as m:ss, which rounds it for the eye, and
+ * rounding the stored second as well would move a mile pace by one second
+ * against every other screen — which is the mismatch this is fixing. A pace
+ * the athlete edits is stored whole; one they leave alone keeps its precision.
+ * Lactate is left alone too: it is genuinely fractional.
+ */
+function roundWholeUnits(form) {
+  const round = (v) => (v !== '' && v !== null && v !== undefined && Number.isFinite(Number(v))
+    ? String(Math.round(Number(v)))
+    : v);
+  const roundZones = (sport) => {
+    if (!sport) return;
+    for (const field of ['lt1', 'lt2', 'maxHeartRate']) {
+      if (sport[field] !== undefined) sport[field] = round(sport[field]);
+    }
+    for (let i = 1; i <= 5; i += 1) {
+      const zone = sport[`zone${i}`];
+      if (!zone) continue;
+      zone.min = round(zone.min);
+      zone.max = round(zone.max);
+    }
+  };
+  roundZones(form.powerZones?.cycling);
+  for (const sport of Object.values(form.heartRateZones || {})) roundZones(sport);
+  return form;
+}
+
 const withZoneDescriptions = (zones) =>
   zones && Object.fromEntries(
     Object.entries(zones).map(([key, z]) => [key, { ...z, description: ZONE_DESCRIPTIONS[key] }])
   );
+
+/**
+ * A pace field that talks in the profile's own units.
+ *
+ * Pace is stored one way — seconds per kilometre, seconds per 100 m — and this
+ * form used to put that stored number straight into the box and label it
+ * "/mile": an athlete on miles read 460 seconds as "7:41 /mile" while every
+ * other screen in the app said 12:21/mi for the same threshold. Neither the
+ * number nor the unit was what it claimed to be.
+ *
+ * So the box shows m:ss in the unit the profile is set to, and hands back
+ * whole stored seconds. While the athlete is still typing the text is theirs;
+ * it is translated once they leave the field, because "12:2" is not a pace and
+ * must not be read as one.
+ */
+function PaceField({ value, onChange, paceSport, unitSystem, className, placeholder, ariaLabel }) {
+  const [draft, setDraft] = useState(null);
+  const toDisplay = (v) => paceSecondsToDisplaySeconds(v, { sport: paceSport, unitSystem });
+  const fromDisplay = (v) => paceSecondsFromDisplaySeconds(v, { sport: paceSport, unitSystem });
+  // Round the seconds BEFORE splitting them into m:ss — 719.99 seconds is
+  // twelve minutes, not "11:60".
+  const shown = draft != null ? draft : formatPaceClock(Math.round(toDisplay(Number(value))));
+
+  const commit = () => {
+    if (draft == null) return;
+    const typed = parsePaceSeconds(draft);
+    // A whole second per mile is not a whole second per kilometre — 12:00/mi
+    // is 447.4, and rounding that to 447 would read back as 11:59. One decimal
+    // is enough to hold what was typed and still keep a metric profile's
+    // seconds whole.
+    const stored = typed != null ? Math.round(fromDisplay(typed) * 10) / 10 : null;
+    onChange(stored != null ? String(stored) : '');
+    setDraft(null);
+  };
+
+  return (
+    <input
+      type="text"
+      inputMode="numeric"
+      value={shown}
+      aria-label={ariaLabel}
+      placeholder={placeholder}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); commit(); } }}
+      className={className}
+    />
+  );
+}
 
 const EditProfileModal = ({ isOpen, onClose, onSubmit, userData, zonesOnly = false }) => {
   const [formData, setFormData] = useState({});
@@ -249,6 +337,7 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData, zonesOnly = fal
             initialFormData.powerZones[sport][key].lactate = normalizeLactateForForm(sourceZone);
           }
         });
+        roundWholeUnits(initialFormData);
         console.log('Initial formData:', initialFormData);
         setFormData(initialFormData);
       } catch (error) {
@@ -493,8 +582,12 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData, zonesOnly = fal
       }
 
       // Pace seconds run backwards — the helper divides instead of multiplying.
+      // They are left unrounded, as the server leaves its own: a whole second
+      // per kilometre is not a whole second per mile, so rounding here would
+      // hand a mile athlete a zone edge one second off the threshold they just
+      // typed.
       const zones = withZoneDescriptions(ltZones({
-        lt1, lt2, ascending: false, floorFactor: 0.70, topFactor: 1.20,
+        lt1, lt2, ascending: false, floorFactor: 0.70, topFactor: 1.20, round: false,
       }));
 
       setFormData(prev => ({
@@ -584,20 +677,24 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData, zonesOnly = fal
 
   // unitSystem is derived at the top of the component (line 10) from formData.units
   
-  // Format pace for display (seconds to mm:ss)
-  const formatPace = (seconds) => {
-    if (!seconds || seconds === 0 || isNaN(seconds)) return '';
-    const minutes = Math.floor(seconds / 60);
-    const secs = Math.round(seconds % 60);
-    return `${minutes}:${secs.toString().padStart(2, '0')}`;
-  };
-  
+  // Stored per km / per 100 m, typed and shown in the profile's own unit — the
+  // two are not the same number, and this form used to print the stored one
+  // under a "/mile".
+  const paceSportOf = (sport) => (sport === 'swimming' ? 'swim' : 'run');
   const getPaceUnit = (sport) => {
     if (sport === 'swimming') {
       return unitSystem === 'imperial' ? '/100yd' : '/100m';
     }
     return unitSystem === 'imperial' ? '/mile' : '/km';
   };
+
+  const isPaceSport = selectedSport !== 'cycling';
+  const paceSport = paceSportOf(selectedSport);
+  const paceUnit = getPaceUnit(selectedSport);
+  // A placeholder in the profile's unit: 4:00/km, or whatever that is per mile.
+  const pacePlaceholder = (metricSeconds) => formatPaceClock(
+    paceSecondsToDisplaySeconds(metricSeconds, { sport: paceSport, unitSystem }),
+  );
 
   const zoneBadgeClass = (zoneNum) => (
     zoneNum === 1 ? 'bg-blue-100 text-blue-700' :
@@ -607,22 +704,30 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData, zonesOnly = fal
     'bg-red-100 text-red-700'
   );
 
-  const powerMetricLabel = selectedSport === 'cycling' ? 'Power (W)' : selectedSport === 'running' ? 'Pace' : 'Pace/100m';
+  const powerMetricLabel = selectedSport === 'cycling' ? 'Power (W)' : `Pace ${paceUnit}`;
   const zoneInputClass = 'w-full min-w-0 rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-sm tabular-nums focus:border-transparent focus:outline-none focus:ring-2 focus:ring-primary';
+  const ltInputClass = 'min-w-0 w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm tabular-nums transition-all focus:border-transparent focus:outline-none focus:ring-2 focus:ring-primary sm:px-4 sm:py-3';
 
-  const renderZonePaceHint = (zoneNum, field) => {
-    if (selectedSport === 'running') {
-      const v = formData.powerZones?.running?.[`zone${zoneNum}`]?.[field];
-      if (!v) return null;
-      return <span className="mt-0.5 block text-[10px] leading-tight text-gray-400">{formatPace(Number(v))}</span>;
-    }
-    if (selectedSport === 'swimming') {
-      const v = formData.powerZones?.swimming?.[`zone${zoneNum}`]?.[field];
-      if (!v) return null;
-      return <span className="mt-0.5 block text-[10px] leading-tight text-gray-400">{formatPace(Number(v))} {getPaceUnit('swimming')}</span>;
-    }
-    return null;
-  };
+  const setLtValue = (which, value) => setFormData((prev) => ({
+    ...prev,
+    powerZones: {
+      ...prev.powerZones,
+      [selectedSport]: { ...prev.powerZones?.[selectedSport], [which]: value },
+    },
+  }));
+
+  const setZoneBound = (zoneNum, field, value) => setFormData((prev) => ({
+    ...prev,
+    powerZones: {
+      ...prev.powerZones,
+      [selectedSport]: {
+        ...prev.powerZones?.[selectedSport],
+        [`zone${zoneNum}`]: { ...prev.powerZones?.[selectedSport]?.[`zone${zoneNum}`], [field]: value },
+      },
+    },
+  }));
+
+
 
 
   return (
@@ -916,9 +1021,7 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData, zonesOnly = fal
           <p className="mb-3 rounded-xl border border-blue-100 bg-blue-50 p-2.5 text-xs leading-relaxed text-gray-600 sm:mb-6 sm:p-4 sm:text-sm">
             {selectedSport === 'cycling'
               ? 'Set LTP1/LTP2 (watts) and tap Generate, or edit zones below.'
-              : selectedSport === 'running'
-              ? 'LTP pace in seconds (240 = 4:00/km). Generate zones or edit manually.'
-              : 'LTP pace in sec/100m (90 = 1:30). Generate zones or edit manually.'}
+              : `Set LTP1/LTP2 as a pace, m:ss${paceUnit} (e.g. ${pacePlaceholder(selectedSport === 'running' ? 240 : 90)}). Generate zones or edit manually.`}
           </p>
           
           <div className="space-y-3 sm:space-y-6">
@@ -926,64 +1029,50 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData, zonesOnly = fal
             <div className="grid grid-cols-3 gap-2 min-w-0 sm:gap-4">
               <div className="min-w-0 space-y-1">
                 <label className="block text-[11px] font-semibold leading-tight text-gray-700 sm:text-sm">
-                  LTP1 {selectedSport === 'cycling' ? '(W)' : '(s)'}
+                  LTP1 {selectedSport === 'cycling' ? '(W)' : `(min${paceUnit})`}
                 </label>
-                <input
-                  type="number"
-                  value={formData.powerZones?.[selectedSport]?.lt1 || ''}
-                  onChange={(e) => setFormData(prev => ({
-                    ...prev,
-                    powerZones: {
-                      ...prev.powerZones,
-                      [selectedSport]: {
-                        ...prev.powerZones?.[selectedSport],
-                        lt1: e.target.value
-                      }
-                    }
-                  }))}
-                  className="min-w-0 w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm transition-all focus:border-transparent focus:outline-none focus:ring-2 focus:ring-primary sm:px-4 sm:py-3"
-                  placeholder={selectedSport === 'cycling' ? 'e.g. 200' : selectedSport === 'running' ? 'e.g. 240' : 'e.g. 90'}
-                />
-                {selectedSport === 'running' && formData.powerZones?.running?.lt1 && (
-                  <p className="text-xs text-gray-500 mt-1 font-medium">
-                    {formatPace(Number(formData.powerZones.running.lt1))} {getPaceUnit('running')}
-                  </p>
-                )}
-                {selectedSport === 'swimming' && formData.powerZones?.swimming?.lt1 && (
-                  <p className="text-xs text-gray-500 mt-1 font-medium">
-                    {formatPace(Number(formData.powerZones.swimming.lt1))} {getPaceUnit('swimming')}
-                  </p>
+                {isPaceSport ? (
+                  <PaceField
+                    value={formData.powerZones?.[selectedSport]?.lt1 || ''}
+                    onChange={(v) => setLtValue('lt1', v)}
+                    paceSport={paceSport}
+                    unitSystem={unitSystem}
+                    ariaLabel="LTP1 pace"
+                    placeholder={pacePlaceholder(selectedSport === 'running' ? 240 : 90)}
+                    className={ltInputClass}
+                  />
+                ) : (
+                  <input
+                    type="number"
+                    value={formData.powerZones?.cycling?.lt1 || ''}
+                    onChange={(e) => setLtValue('lt1', e.target.value)}
+                    className={ltInputClass}
+                    placeholder="e.g. 200"
+                  />
                 )}
               </div>
               <div className="min-w-0 space-y-1">
                 <label className="block text-[11px] font-semibold leading-tight text-gray-700 sm:text-sm">
-                  LTP2 {selectedSport === 'cycling' ? '(W)' : '(s)'}
+                  LTP2 {selectedSport === 'cycling' ? '(W)' : `(min${paceUnit})`}
                 </label>
-                <input
-                  type="number"
-                  value={formData.powerZones?.[selectedSport]?.lt2 || ''}
-                  onChange={(e) => setFormData(prev => ({
-                    ...prev,
-                    powerZones: {
-                      ...prev.powerZones,
-                      [selectedSport]: {
-                        ...prev.powerZones?.[selectedSport],
-                        lt2: e.target.value
-                      }
-                    }
-                  }))}
-                  className="min-w-0 w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm transition-all focus:border-transparent focus:outline-none focus:ring-2 focus:ring-primary sm:px-4 sm:py-3"
-                  placeholder={selectedSport === 'cycling' ? 'e.g. 280' : selectedSport === 'running' ? 'e.g. 200' : 'e.g. 75'}
-                />
-                {selectedSport === 'running' && formData.powerZones?.running?.lt2 && (
-                  <p className="text-xs text-gray-500 mt-1 font-medium">
-                    {formatPace(Number(formData.powerZones.running.lt2))} {getPaceUnit('running')}
-                  </p>
-                )}
-                {selectedSport === 'swimming' && formData.powerZones?.swimming?.lt2 && (
-                  <p className="text-xs text-gray-500 mt-1 font-medium">
-                    {formatPace(Number(formData.powerZones.swimming.lt2))} {getPaceUnit('swimming')}
-                  </p>
+                {isPaceSport ? (
+                  <PaceField
+                    value={formData.powerZones?.[selectedSport]?.lt2 || ''}
+                    onChange={(v) => setLtValue('lt2', v)}
+                    paceSport={paceSport}
+                    unitSystem={unitSystem}
+                    ariaLabel="LTP2 pace"
+                    placeholder={pacePlaceholder(selectedSport === 'running' ? 200 : 75)}
+                    className={ltInputClass}
+                  />
+                ) : (
+                  <input
+                    type="number"
+                    value={formData.powerZones?.cycling?.lt2 || ''}
+                    onChange={(e) => setLtValue('lt2', e.target.value)}
+                    className={ltInputClass}
+                    placeholder="e.g. 280"
+                  />
                 )}
               </div>
               <div className="min-w-0 space-y-1">
@@ -1066,54 +1155,29 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData, zonesOnly = fal
                       {zoneNum}
                     </span>
 
-                    {zoneMetricTab === 'power' && (
-                      <>
-                        <div className="min-w-0">
+                    {zoneMetricTab === 'power' && (['min', 'max'].map((field) => (
+                      <div className="min-w-0" key={field}>
+                        {isPaceSport ? (
+                          <PaceField
+                            value={formData.powerZones?.[selectedSport]?.[`zone${zoneNum}`]?.[field] || ''}
+                            onChange={(v) => setZoneBound(zoneNum, field, v)}
+                            paceSport={paceSport}
+                            unitSystem={unitSystem}
+                            ariaLabel={`Zone ${zoneNum} ${field} pace`}
+                            placeholder={field === 'max' && zoneNum === 5 ? '∞' : field === 'min' ? 'Min' : 'Max'}
+                            className={zoneInputClass}
+                          />
+                        ) : (
                           <input
                             type="number"
-                            value={formData.powerZones?.[selectedSport]?.[`zone${zoneNum}`]?.min || ''}
-                            onChange={(e) => setFormData((prev) => ({
-                              ...prev,
-                              powerZones: {
-                                ...prev.powerZones,
-                                [selectedSport]: {
-                                  ...prev.powerZones?.[selectedSport],
-                                  [`zone${zoneNum}`]: {
-                                    ...prev.powerZones?.[selectedSport]?.[`zone${zoneNum}`],
-                                    min: e.target.value,
-                                  },
-                                },
-                              },
-                            }))}
+                            value={formData.powerZones?.cycling?.[`zone${zoneNum}`]?.[field] || ''}
+                            onChange={(e) => setZoneBound(zoneNum, field, e.target.value)}
                             className={zoneInputClass}
-                            placeholder="Min"
+                            placeholder={field === 'max' && zoneNum === 5 ? '∞' : field === 'min' ? 'Min' : 'Max'}
                           />
-                          {renderZonePaceHint(zoneNum, 'min')}
-                        </div>
-                        <div className="min-w-0">
-                          <input
-                            type="number"
-                            value={formData.powerZones?.[selectedSport]?.[`zone${zoneNum}`]?.max || ''}
-                            onChange={(e) => setFormData((prev) => ({
-                              ...prev,
-                              powerZones: {
-                                ...prev.powerZones,
-                                [selectedSport]: {
-                                  ...prev.powerZones?.[selectedSport],
-                                  [`zone${zoneNum}`]: {
-                                    ...prev.powerZones?.[selectedSport]?.[`zone${zoneNum}`],
-                                    max: e.target.value,
-                                  },
-                                },
-                              },
-                            }))}
-                            className={zoneInputClass}
-                            placeholder={zoneNum === 5 ? '∞' : 'Max'}
-                          />
-                          {renderZonePaceHint(zoneNum, 'max')}
-                        </div>
-                      </>
-                    )}
+                        )}
+                      </div>
+                    )))}
 
                     {zoneMetricTab === 'hr' && (
                       <>
@@ -1221,7 +1285,9 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData, zonesOnly = fal
               </div>
 
               <p className="text-[11px] leading-relaxed text-gray-500">
-                {zoneMetricTab === 'power' && (selectedSport === 'cycling' ? 'Power in watts for each zone.' : 'Pace in seconds — lower is faster.')}
+                {zoneMetricTab === 'power' && (selectedSport === 'cycling'
+                  ? 'Power in watts for each zone.'
+                  : `Pace as m:ss${paceUnit} — lower is faster.`)}
                 {zoneMetricTab === 'hr' && 'Heart rate in BPM for each zone.'}
                 {zoneMetricTab === 'lactate' && 'Blood lactate range in mmol/L (optional).'}
               </p>

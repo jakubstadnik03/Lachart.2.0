@@ -34,6 +34,12 @@ function enforceOrder(bounds, ascending) {
  * @param {number} [o.topFactor]    top of Z5 as a fraction of LT2
  * @param {number} [o.top]          explicit ceiling (e.g. a measured max HR).
  *                                  Only ever RAISES the top of Z5.
+ * @param {boolean}[o.round]        round the boundaries to whole units. Off
+ *                                  for pace, where a whole second per km is
+ *                                  not a whole second per mile: an edge typed
+ *                                  as 12:00/mi came back rounded as 11:59.
+ *                                  The server twin already defaults its pace
+ *                                  zones this way.
  * @returns {number[]|null} six boundaries b0..b5, or null if the thresholds
  *                          are missing or the wrong way round
  */
@@ -57,7 +63,7 @@ export const TOP_FACTOR = {
   heartRate: 1.12,
 };
 
-export function ltZoneBounds({ lt1, lt2, ascending, floorFactor = 0.5, topFactor = 1.1, top = null }) {
+export function ltZoneBounds({ lt1, lt2, ascending, floorFactor = 0.5, topFactor = 1.1, top = null, round = true }) {
   const a = Number(lt1);
   const b = Number(lt2);
   if (!Number.isFinite(a) || !Number.isFinite(b) || a <= 0 || b <= 0) return null;
@@ -80,17 +86,15 @@ export function ltZoneBounds({ lt1, lt2, ascending, floorFactor = 0.5, topFactor
     ? (ascending ? Math.max(explicitTop, byFactor) : Math.min(explicitTop, byFactor))
     : byFactor;
 
-  return enforceOrder(
-    [
-      scale(a, floorFactor), // bottom of Z1
-      scale(a, 0.9), //         Z1 / Z2
-      a, //                     Z2 / Z3 — aerobic threshold
-      b, //                     Z3 / Z4 — anaerobic threshold
-      scale(b, 1.04), //        Z4 / Z5
-      ceiling, //               top of Z5
-    ].map(Math.round),
-    ascending
-  );
+  const raw = [
+    scale(a, floorFactor), // bottom of Z1
+    scale(a, 0.9), //         Z1 / Z2
+    a, //                     Z2 / Z3 — aerobic threshold
+    b, //                     Z3 / Z4 — anaerobic threshold
+    scale(b, 1.04), //        Z4 / Z5
+    ceiling, //               top of Z5
+  ];
+  return enforceOrder(round ? raw.map(Math.round) : raw, ascending);
 }
 
 /** Boundary list -> { zone1..zone5 } with shared min/max edges. */

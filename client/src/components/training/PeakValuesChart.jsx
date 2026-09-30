@@ -86,12 +86,29 @@ function meanMax(series, durations) {
   return out;
 }
 
+/**
+ * @param {object}   p
+ * @param {function} p.read       record → the number being averaged. For pace
+ *                                this is SPEED in m/s, not seconds per km:
+ *                                the curve has to fall away to the right, and
+ *                                pace counts the wrong way for that.
+ * @param {function} [p.format]   value → the string in the header. Defaults to
+ *                                the rounded number and `unit`.
+ * @param {function} [p.formatTick] value → an axis label, kept short.
+ * @param {string}   [p.bestLabel] the word before the session's best figure.
+ * @param {number}   [p.minDuration] shortest window worth plotting. A second
+ *                                of GPS speed is a spike, not a peak.
+ */
 export default function PeakValuesChart({
   records,
   read,
   color,
   unit,
   title,
+  format,
+  formatTick,
+  bestLabel = 'max',
+  minDuration = 1,
   height = 150,
 }) {
   const [hover, setHover] = useState(null);
@@ -100,8 +117,8 @@ export default function PeakValuesChart({
   const points = useMemo(() => {
     if (!Array.isArray(records) || records.length < 30) return [];
     const series = perSecondSeries(records, read);
-    return meanMax(series, DURATIONS);
-  }, [records, read]);
+    return meanMax(series, DURATIONS.filter(d => d >= minDuration));
+  }, [records, read, minDuration]);
 
   if (points.length < 3) return null;
 
@@ -128,8 +145,11 @@ export default function PeakValuesChart({
   const line = points.map((p, i) => `${i ? 'L' : 'M'}${x(p.d).toFixed(1)},${y(p.v).toFixed(1)}`).join(' ');
   const area = `${line} L${x(maxD).toFixed(1)},${padT + plotH} L${x(minD).toFixed(1)},${padT + plotH} Z`;
 
+  const fmtValue = format || ((v) => `${Math.round(v)} ${unit}`);
+  const fmtTick = formatTick || ((v) => String(Math.round(v)));
+
   const ticks = TICKS.filter(t => t.s >= minD && t.s <= maxD);
-  const yTicks = [bottom, (bottom + top) / 2, top].map(v => Math.round(v));
+  const yTicks = [bottom, (bottom + top) / 2, top];
 
   const onMove = (e) => {
     const rect = svgRef.current?.getBoundingClientRect();
@@ -149,8 +169,8 @@ export default function PeakValuesChart({
         <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wide">{title}</span>
         <span className="text-[11px] font-bold tabular-nums" style={{ color }}>
           {hover
-            ? `${fmtDuration(hover.d)} · ${Math.round(hover.v)} ${unit}`
-            : `max ${Math.round(vMax)} ${unit}`}
+            ? `${fmtDuration(hover.d)} · ${fmtValue(hover.v)}`
+            : `${bestLabel} ${fmtValue(vMax)}`}
         </span>
       </div>
       <svg
@@ -166,7 +186,7 @@ export default function PeakValuesChart({
         {yTicks.map((v, i) => (
           <g key={i}>
             <line x1={padL} x2={W - padR} y1={y(v)} y2={y(v)} stroke="#f1f5f9" strokeWidth={1} />
-            <text x={padL - 5} y={y(v) + 3} textAnchor="end" fontSize={8} fill="#94a3b8">{v}</text>
+            <text x={padL - 5} y={y(v) + 3} textAnchor="end" fontSize={8} fill="#94a3b8">{fmtTick(v)}</text>
           </g>
         ))}
         <path d={area} fill={color} opacity={0.14} />
@@ -193,4 +213,9 @@ export const readPower = (r) => {
 export const readHeartRate = (r) => {
   const v = Number(r?.heartRate ?? r?.heart_rate ?? r?.hr);
   return Number.isFinite(v) ? v : 0;
+};
+/** Metres per second — the runner's and swimmer's stand-in for watts. */
+export const readSpeed = (r) => {
+  const v = Number(r?.speed ?? r?.enhanced_speed ?? r?.enhancedSpeed ?? r?.velocity_smooth ?? r?.velocity);
+  return Number.isFinite(v) && v > 0 ? v : 0;
 };
