@@ -63,7 +63,51 @@ const SHOTS = {
  * Shared inboxes. Mail to these reaches a volunteer who forwards nothing, and
  * it is the single biggest difference between the old list and this one.
  */
-const GENERIC_LOCALPART = /^(info|hello|contact|admin|office|mail|enquiries|enquiry|team|support|secretary|membership|chair|post|kontakt|bestuur|vorstand|asiakaspalvelu|reception|general|club|welcome|hi|ask|sales|marketing|press|webmaster|noreply|no-reply)$/i;
+/**
+ * Words that are never a person, matched as a token ANYWHERE in the local part.
+ *
+ * The old list was exact-match and English-only, so the campaign worked its way
+ * down to it-support@tum.de, shop-muenchen@globetrotter.de, anmeldung@zfos.de
+ * and digitale-barrierefreiheit@ba-sz.berlin.de — a letter opening "I'm working
+ * through a list of endurance coaches in Munich" landing on a university help
+ * desk. Two separate gaps: the non-English role words, and compounds like
+ * "info-muc" that ^info$ cannot see.
+ *
+ * Bounces are the reason this matters beyond embarrassment. Brevo reported
+ * 1.82% hard bounces over seven days, against a domain weeks old as a bulk
+ * sender; role mailboxes at institutions are both likelier to be dead and
+ * likelier to mark mail as spam.
+ */
+const NEVER_A_PERSON = [
+  // English
+  'info', 'contact', 'admin', 'office', 'support', 'helpdesk', 'help', 'service',
+  'reception', 'frontdesk', 'desk', 'booking', 'bookings', 'enquiries', 'enquiry',
+  'sales', 'marketing', 'press', 'media', 'webmaster', 'noreply', 'no-reply',
+  'shop', 'store', 'billing', 'invoice', 'accounts', 'accounting', 'finance',
+  'jobs', 'careers', 'career', 'recruitment', 'hr', 'privacy', 'legal', 'it',
+  'newsletter', 'subscribe', 'general', 'mail', 'post', 'hello', 'welcome',
+  // German
+  'kontakt', 'anmeldung', 'buero', 'sekretariat', 'vorstand', 'impressum',
+  'datenschutz', 'barrierefreiheit', 'eventkalender', 'clubbetreuung',
+  'rezeption', 'bestellung', 'verwaltung',
+  // Dutch
+  'bestuur', 'secretaris', 'secretariaat', 'balie', 'receptie', 'inschrijving',
+  // Nordic
+  'kundservice', 'kundtjanst', 'resepsjon', 'bestilling', 'bokning', 'booking',
+  'kontor', 'medlem', 'medlemskap',
+  // Finnish
+  'asiakaspalvelu', 'ajanvaraus', 'tilavaraukset', 'toimisto', 'jasenyys',
+];
+const NEVER_A_PERSON_RE = new RegExp(`(^|[._-])(${NEVER_A_PERSON.join('|')})([._-]|$)`, 'i');
+
+/**
+ * Roles blocked only as the WHOLE local part.
+ *
+ * coaching@ is a department mailbox; coaching.dlc@ is that club's coaching
+ * department, which is exactly who this campaign wants. Blocking the compound
+ * would throw away the best addresses on the list along with the worst.
+ */
+const ROLE_EXACT = /^(coach|coaching|training|trainer|tri|run|swim|bike|club|team|chair|membership|secretary|ask|hi)$/i;
 
 /** Types where someone actually runs lactate tests, best first. */
 const TESTER_TYPES = [
@@ -80,9 +124,8 @@ function localPartOf(email) {
 
 function isGenericAddress(email) {
   const lp = localPartOf(email).toLowerCase();
-  if (GENERIC_LOCALPART.test(lp)) return true;
-  // coaching@, coach@, training@ — a role, not a person.
-  if (/^(coach|coaching|training|trainer|tri|run|swim|bike)$/i.test(lp)) return true;
+  if (NEVER_A_PERSON_RE.test(lp)) return true;
+  if (ROLE_EXACT.test(lp)) return true;
   return false;
 }
 

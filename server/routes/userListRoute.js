@@ -3573,6 +3573,48 @@ router.get("/admin/billing", verifyToken, async (req, res) => {
     }
 });
 
+/**
+ * GET  /api/user/admin/subscriptions/reconcile        — report only
+ * POST /api/user/admin/subscriptions/reconcile        — write Stripe's answer back
+ *
+ * Lives here rather than in a script because the live Stripe key only exists on
+ * the server: the local .env holds sk_test, against which every live
+ * subscription id returns resource_missing — including ones that are certainly
+ * paying. A reconciliation run from a laptop would conclude that every
+ * subscriber had disappeared.
+ */
+router.get("/admin/subscriptions/reconcile", verifyToken, async (req, res) => {
+    try {
+        const currentUser = await userDao.findById(req.user.userId);
+        if (!currentUser || !currentUser.admin) {
+            return res.status(403).json({ error: "Access denied. Admin privileges required." });
+        }
+        const { reconcileSubscriptions } = require("../utils/reconcileSubscriptions");
+        res.json(await reconcileSubscriptions({
+            apply: false,
+            onlyMissingPeriodEnd: req.query.all !== 'true',
+        }));
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+router.post("/admin/subscriptions/reconcile", verifyToken, async (req, res) => {
+    try {
+        const currentUser = await userDao.findById(req.user.userId);
+        if (!currentUser || !currentUser.admin) {
+            return res.status(403).json({ error: "Access denied. Admin privileges required." });
+        }
+        const { reconcileSubscriptions } = require("../utils/reconcileSubscriptions");
+        res.json(await reconcileSubscriptions({
+            apply: true,
+            onlyMissingPeriodEnd: req.body?.all !== true,
+        }));
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 // Admin health dashboard — system + Strava sync observability.
 /**
  * Peak heap since boot, not just the heap right now.

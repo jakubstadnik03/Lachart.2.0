@@ -128,6 +128,46 @@ assert.strictEqual(
 // under a "View entire message" link. Images are URLs, so they cost nothing here.
 assert.ok(Buffer.byteLength(html, 'utf8') < 102 * 1024, 'HTML stays under the Gmail clip');
 
+// --- role addresses, in every language the list actually contains -----------
+// All of these were really sent to before the filter was widened. The campaign
+// letter opens "I'm working through a list of endurance coaches in <city>",
+// which on a university help desk is both wasted and faintly embarrassing —
+// and role mailboxes bounce and complain more than people do, which is what
+// pushed Brevo's hard-bounce rate to 1.82% on a domain weeks old.
+[
+  'it-support@tum.de',
+  'shop-muenchen@globetrotter.de',
+  'digitale-barrierefreiheit@ba-sz.berlin.de',
+  'anmeldung@zfos.de',
+  'kundservice@healthclinic.se',
+  'balie@smcamsterdam.nl',
+  'ajanvaraus@hula.fi',
+  'frontdesk@artofphysio.nl',
+  'tilavaraukset@example.fi',
+  'secretaris@example.nl',
+  'info-muc@atos.de',
+  'info-kfh@atos.de',
+  'helpdesk@barliner-workout.de',
+  'service@hsfa-hamburg.de',
+].forEach((e) => assert.strictEqual(isGenericAddress(e), true, `should be filtered: ${e}`));
+
+// A compound with a role word must not swallow a real name that merely
+// contains one. "training" as a token is a role; "trainingpeaks" is not.
+[
+  'matt@strengthcoach.uk',
+  'andy@atpperformance.uk',
+  'gaz@per4manceonline.com',
+  'marcus@mypersonaltraining.berlin',
+  's.rosenkranz@bewegungsschmiede.de',
+  'kristianultra@gmail.com',
+].forEach((e) => assert.strictEqual(isGenericAddress(e), false, `should be kept: ${e}`));
+
+// coaching@ is a department mailbox; coaching.dlc@ is that club's coaching
+// department, which is exactly who this campaign is looking for. Blocking the
+// compound would throw away the best addresses along with the worst.
+assert.strictEqual(isGenericAddress('coaching@club.uk'), true);
+assert.strictEqual(isGenericAddress('coaching.dlc@club.uk'), false, 'a club coaching department is a target, not noise');
+
 // --- address shape ----------------------------------------------------------
 // Hard bounces wreck a young sending domain faster than anything else, and this
 // list is scraped. Both of these were really in the first 180 candidates.
