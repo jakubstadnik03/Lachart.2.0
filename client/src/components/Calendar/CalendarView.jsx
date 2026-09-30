@@ -1882,12 +1882,23 @@ function CategoryPicker({ value, onChange }) {
       {open && panelPos && ReactDOM.createPortal(
         <>
           {/* A tap anywhere else closes it. On a phone the list floats over
-              the page, so there is no edge of a card to tap past. */}
-          <div className="fixed inset-0 z-[9998]" style={{ background: 'rgba(15,23,42,.18)' }}
+              the page, so there is no edge of a card to tap past.
+
+              Above the activity modal, not merely above the page: the picker
+              only ever opens from inside that modal, and the modal and this
+              share a portal root. At a lower layer the list rendered behind
+              it — invisible, and with the modal swallowing every tap meant
+              for it, indistinguishable from a picker that had stopped
+              opening at all. */}
+          {/* pointerEvents: the portal root is `pointer-events: none` so the
+              rest of the app stays clickable through it, and that inherits.
+              Every child of it has to hand its own taps back. */}
+          <div className="fixed inset-0 z-[10050]"
+               style={{ background: 'rgba(15,23,42,.18)', pointerEvents: 'auto' }}
                onClick={(e) => { e.stopPropagation(); setOpen(false); }} />
           <div
-            className="fixed z-[9999] bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-y-auto overscroll-contain"
-            style={{ ...panelPos, WebkitOverflowScrolling: 'touch' }}
+            className="fixed z-[10051] bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-y-auto overscroll-contain"
+            style={{ ...panelPos, pointerEvents: 'auto', WebkitOverflowScrolling: 'touch' }}
             onClick={(e) => e.stopPropagation()}
           >
             <button
