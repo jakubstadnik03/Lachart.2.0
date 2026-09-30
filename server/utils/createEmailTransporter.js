@@ -44,7 +44,24 @@ function guardUnreachable(transport) {
     if (blocked.length && blocked.length === addresses.length) {
       const reason = emailReachability(blocked[0]).reason;
       console.warn(`[email] not sent — ${reason}: ${blocked.join(', ')}`);
-      return { skipped: true, reason, to: blocked };
+      // THROW, do not resolve.
+      //
+      // The first version resolved with {skipped:true}, which reads as success
+      // to anyone who does not inspect the result — and twenty-one senders call
+      // sendMail, most of them recording "sent" on the next line. It had already
+      // happened: six Apple relay accounts were stamped with a send date for
+      // letters that never left.
+      //
+      // Every one of those call sites already has a try/catch that records a
+      // failure and moves on, so failing closed makes all of them correct at
+      // once. The flags let the few that care tell this apart from an SMTP
+      // hiccup — permanent means retrying will never help.
+      const err = new Error(`Email not sent — ${reason}: ${blocked.join(', ')}`);
+      err.skipped = true;
+      err.permanent = true;
+      err.reason = reason;
+      err.to = blocked;
+      throw err;
     }
     return original(message, ...rest);
   };

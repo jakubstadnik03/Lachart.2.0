@@ -54,51 +54,42 @@ assert.strictEqual(isAppleRelay('me@notprivaterelay.appleid.com.example'), false
 console.log('emailReachability: Apple relay detected, placeholders separated');
 
 // --- the transporter gate --------------------------------------------------
-// Wrapping sendMail rather than each campaign is the point: a dozen senders
+// Wrapping sendMail rather than each campaign is the point: twenty-one senders
 // exist here and a guard any one of them can forget is a guard that gets
 // forgotten.
+//
+// It THROWS rather than resolving. The first version resolved with
+// {skipped:true}, which reads as success to anyone who does not inspect the
+// result — and most of those senders record "sent" on the very next line. Six
+// Apple relay accounts were stamped with a send date for letters that never
+// left before this was caught.
 const { guardUnreachable } = require('./createEmailTransporter');
 
 (async () => {
   const sent = [];
-  const fake = { sendMail: async (m) => { sent.push(m.to); return { ok: true }; } };
-  const t = guardUnreachable(fake);
+  const t = guardUnreachable({ sendMail: async (m) => { sent.push(m.to); return { accepted: [m.to] }; } });
 
-  const blocked = await t.sendMail({ to: 'ndgtvp82dk@privaterelay.appleid.com', subject: 'x' });
-  assert.strictEqual(blocked.skipped, true, 'a relay address is not sent to');
-  assert.strictEqual(blocked.reason, 'apple-relay-unregistered');
+  let threw = null;
+  try {
+    await t.sendMail({ to: 'ndgtvp82dk@privaterelay.appleid.com', subject: 'x' });
+  } catch (e) { threw = e; }
+  assert.ok(threw, 'an unreachable address must not resolve');
+  assert.strictEqual(threw.skipped, true, 'and is marked as a skip, not an SMTP fault');
+  assert.strictEqual(threw.permanent, true, 'retrying will never help');
+  assert.strictEqual(threw.reason, 'apple-relay-unregistered');
   assert.strictEqual(sent.length, 0, 'and never reaches the transport');
 
   const ok = await t.sendMail({ to: 'jakub.stadnik@seznam.cz', subject: 'x' });
-  assert.strictEqual(ok.ok, true, 'a real address still goes');
+  assert.ok(ok.accepted, 'a real send still goes and carries its result through');
   assert.strictEqual(sent.length, 1);
 
-  // A mixed recipient list still goes: dropping the whole message because one
-  // address of five is a relay would lose four deliverable ones.
+  // A mixed list still goes: dropping five recipients because one is a relay
+  // would lose four deliverable ones.
   await t.sendMail({ to: ['a@b.co', 'x@privaterelay.appleid.com'], subject: 'x' });
   assert.strictEqual(sent.length, 2, 'mixed lists are not dropped');
 
-  // Wrapping twice must not double-wrap and skip twice.
-  const again = guardUnreachable(t);
-  assert.strictEqual(again, t);
+  // Wrapping twice must not double-wrap.
+  assert.strictEqual(guardUnreachable(t), t);
 
-  console.log('emailReachability: transporter gate blocks relay addresses only');
-})().catch((e) => { console.error(e); process.exit(1); });
-
-// --- the skip must not be mistaken for a send -----------------------------
-// The admin table's "✓ Sent (7x)" column is written after sendMail resolves.
-// The guard resolves with {skipped:true} rather than throwing, so a caller that
-// does not look would record a send that never happened — the exact false
-// reporting the column exists to prevent.
-(async () => {
-  const t = guardUnreachable({ sendMail: async () => ({ accepted: ['ok'] }) });
-  const skipped = await t.sendMail({ to: 'x@privaterelay.appleid.com' });
-  assert.strictEqual(skipped.skipped, true);
-  assert.ok(!skipped.accepted, 'a skip carries no delivery evidence to mistake for one');
-
-  const real = await t.sendMail({ to: 'a@b.co' });
-  assert.ok(!real.skipped, 'a real send is not flagged as skipped');
-  assert.ok(real.accepted, 'and carries the transport result through');
-
-  console.log('emailReachability: a skip is distinguishable from a send');
+  console.log('emailReachability: the gate throws, so a skip cannot pass for a send');
 })().catch((e) => { console.error(e); process.exit(1); });

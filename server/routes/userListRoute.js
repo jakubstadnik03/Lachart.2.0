@@ -3935,7 +3935,8 @@ router.post("/admin/send-thank-you-email/:userId", verifyToken, async (req, res)
             });
         }
 
-        const sendResult = await transporter.sendMail({
+        try {
+            await transporter.sendMail({
             from: {
                 name: 'Jakub - LaChart',
                 address: process.env.EMAIL_USER
@@ -3951,18 +3952,21 @@ router.post("/admin/send-thank-you-email/:userId", verifyToken, async (req, res)
             })
         });
 
-        // The transporter refuses an address it knows cannot receive — an Apple
-        // private relay we are not a registered sender for — and reports it
-        // rather than throwing. Recording that as sent would put "✓ Sent" in the
-        // admin table against a message that never left, which is the exact
-        // false reporting this column exists to avoid.
-        if (sendResult?.skipped) {
-            return res.status(200).json({
-                success: false,
-                sent: false,
-                reason: sendResult.reason,
-                message: `Not sent — ${sendResult.reason}. This address cannot receive mail from us.`,
-            });
+        } catch (sendErr) {
+            // The transporter refuses an address it knows cannot receive — an
+            // Apple private relay we are not a registered sender for. Answer
+            // plainly instead of a 500, and write no tracking: "✓ Sent" against
+            // a message that never left is the failure this column exists to
+            // prevent.
+            if (sendErr?.skipped) {
+                return res.status(200).json({
+                    success: false,
+                    sent: false,
+                    reason: sendErr.reason,
+                    message: `Not sent — ${sendErr.reason}. This address cannot receive mail from us.`,
+                });
+            }
+            throw sendErr;
         }
 
         // Update tracking only (atomic $set). Avoid userDao.updateUser + full document save — legacy
@@ -4144,7 +4148,7 @@ router.post("/admin/send-thank-you-email/all", verifyToken, async (req, res) => 
                     throw new Error('generateEmailTemplate did not return valid HTML');
                 }
 
-                const bulkResult = await transporter.sendMail({
+                await transporter.sendMail({
                     from: {
                         name: 'Jakub - LaChart',
                         address: process.env.EMAIL_USER
@@ -4153,14 +4157,6 @@ router.post("/admin/send-thank-you-email/all", verifyToken, async (req, res) => 
                     subject: 'Thank you for using LaChart 🙏',
                     html: emailHtml
                 });
-
-                // Skipped is neither a success nor a failure: nothing was sent,
-                // and nothing went wrong. Counting it either way would misreport
-                // the run, so it is counted as itself.
-                if (bulkResult?.skipped) {
-                    skippedCount++;
-                    continue;
-                }
 
                 const nextCount = (user.thankYouEmail?.sentCount || 0) + 1;
                 await User.updateOne(
@@ -4181,6 +4177,12 @@ router.post("/admin/send-thank-you-email/all", verifyToken, async (req, res) => 
                     await new Promise(resolve => setTimeout(resolve, 500));
                 }
             } catch (error) {
+                // An address that cannot receive is neither sent nor failed:
+                // nothing left, and nothing went wrong.
+                if (error?.skipped) {
+                    skippedCount++;
+                    continue;
+                }
                 failCount++;
                 const errorMessage = error?.message || String(error) || 'Unknown error';
                 errors.push({ email: user?.email || 'unknown', error: errorMessage });
