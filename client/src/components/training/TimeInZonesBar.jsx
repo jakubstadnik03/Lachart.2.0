@@ -149,7 +149,7 @@ export function zoneIndex(value, bands, invert) {
 
 // ── Component ──────────────────────────────────────────────────────────────
 
-export default function TimeInZonesBar({ records, sport, authUser }) {
+export default function TimeInZonesBar({ records, sport, authUser, className = '' }) {
   // Detect which metrics are usable in this activity
   const available = useMemo(() => {
     if (!Array.isArray(records) || records.length < 10) return [];
@@ -265,7 +265,7 @@ export default function TimeInZonesBar({ records, sport, authUser }) {
   const METRIC_LABELS = { power: 'Power', hr: 'HR', pace: 'Pace' };
 
   return (
-    <div className="px-4 py-3 border-b border-gray-50">
+    <div className={className || 'px-4 py-3 border-b border-gray-50'}>
       <div className="flex items-center justify-between mb-2 gap-2">
         <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Time in Zones</div>
         <div className="flex items-center gap-2">
