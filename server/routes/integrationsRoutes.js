@@ -9,6 +9,7 @@ const AppleHealthActivity = require('../models/AppleHealthActivity');
 const AppleHealthWellness = require('../models/AppleHealthWellness');
 const StravaStream = require('../models/StravaStream');
 const GarminActivity = require('../models/GarminActivity');
+const WatchActivity = require('../models/WatchActivity');
 const { stravaAvatarUrlFrom } = require('../utils/stravaAvatar');
 const {
   SIMILAR_SELECT,
@@ -752,12 +753,6 @@ function garminBackfillEarliestStartSec() {
 
 function triggerGarminBackfillQueued(user, startSec, endSec) {
   const key = String(user._id);
-  const existing = garminBackfillJobs.get(key);
-  if (existing?.running) {
-    console.log(`[Garmin backfill] job already running for user ${key} (${existing.requested}/${existing.total}) — not starting a duplicate`);
-    return existing;
-  }
-
   // Clamp to what the key allows. Callers still ask for 2 years (correct intent
   // once we're on a production key); this keeps the wire request legal today.
   const earliest = garminBackfillEarliestStartSec();
@@ -777,9 +772,32 @@ function triggerGarminBackfillQueued(user, startSec, endSec) {
       running: false, total: 0, requested: 0, failed: 0, lastError: null,
       startedAt: new Date(), finishedAt: new Date(),
       clampedByKeyLimit, maxHistoryDays: GARMIN_BACKFILL_MAX_DAYS,
+      historyFrom: new Date(startSec * 1000),
     };
     garminBackfillJobs.set(key, noop);
     return noop;
+  }
+
+  const existing = garminBackfillJobs.get(key);
+  if (existing?.running) {
+    const existingStart = existing.historyFrom
+      ? Math.floor(new Date(existing.historyFrom).getTime() / 1000)
+      : null;
+    // Already covering this window (or older) — keep the in-flight job.
+    if (existingStart != null && existingStart <= startSec + 60) {
+      console.log(`[Garmin backfill] job already running for user ${key} (${existing.requested}/${existing.total}) — not starting a duplicate`);
+      return existing;
+    }
+    // Typical race: connect queues a 30-day "immediate" backfill, then the
+    // full history import asks for 2 years and used to be refused because the
+    // short job still held the slot. Release the slot so the wider window runs.
+    console.log(
+      `[Garmin backfill] superseding shorter job for user ${key} ` +
+      `(from ${existing.historyFrom ? new Date(existing.historyFrom).toISOString().slice(0, 10) : '?'}` +
+      ` → ${new Date(startSec * 1000).toISOString().slice(0, 10)})`,
+    );
+    existing.superseded = true;
+    existing.running = false;
   }
 
   const MAX_CHUNK = 90 * 24 * 3600;
@@ -821,7 +839,7 @@ function triggerGarminBackfillQueued(user, startSec, endSec) {
        * other LaChart user, to be told the same thing thirty-six times.
        */
       let jobDenied = null;
-      while (cursor < endSec && !jobDenied) {
+      while (cursor < endSec && !jobDenied && !job.superseded) {
         const chunkEnd = Math.min(cursor + MAX_CHUNK, endSec);
         const rangeLabel = `${new Date(cursor * 1000).toISOString().slice(0, 10)} → ${new Date(chunkEnd * 1000).toISOString().slice(0, 10)}`;
         let nextCursor = chunkEnd;
@@ -3479,25 +3497,36 @@ router.get('/garmin/callback', async (req, res) => {
       .catch((e) => console.warn('[Garmin callback] workout mirror failed:', e?.message));
 
     // Pull recent activities immediately so the calendar has data while history import runs.
+    // Important: do NOT call fetchGarminActivitiesForSync here — on OAuth that falls
+    // through to a short backfill and used to occupy the per-user job slot, so the
+    // full 2-year import below was refused as a "duplicate" (athletes saw history
+    // from ~30 days only). Direct pull if the key allows it; otherwise wait for backfill.
     setTimeout(() => {
       User.findById(user._id)
         .then(async (freshUser) => {
           if (!freshUser?.garmin?.accessToken) return null;
           const thirtyDaysAgo = new Date();
           thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-          const { activities, backfillPending, backfillChunks } = await fetchGarminActivitiesForSync(freshUser, thirtyDaysAgo);
+          let activities = [];
+          try {
+            activities = await getGarminActivities(freshUser, thirtyDaysAgo);
+          } catch (pullErr) {
+            console.log(`[Garmin callback] immediate pull skipped (${pullErr?.message || pullErr}) — full history backfill will cover it`);
+            return null;
+          }
           const { imported, updated } = await upsertGarminActivities(freshUser, activities);
           if (imported > 0 || updated > 0) {
             await User.findByIdAndUpdate(freshUser._id, { 'garmin.lastSyncDate': new Date() });
           }
-          console.log(`[Garmin callback] immediate sync: ${imported} imported, ${updated} updated` +
-            (backfillPending ? ` (backfill pending, ${backfillChunks} chunks)` : ''));
-          return { imported, updated, backfillPending };
+          console.log(`[Garmin callback] immediate sync: ${imported} imported, ${updated} updated`);
+          return { imported, updated };
         })
         .catch((e) => console.warn('[Garmin callback] immediate sync failed:', e?.message || e));
     }, 800);
 
     // Full history import in background via Garmin backfill API (async delivery).
+    // Queued soon after connect so a later "Import history" click does not race
+    // a shorter job into the slot.
     setTimeout(() => {
       User.findById(user._id)
         .then(async (freshUser) => {
@@ -3505,11 +3534,11 @@ router.get('/garmin/callback', async (req, res) => {
           const nowSec = Math.floor(Date.now() / 1000);
           const twoYearsAgo = nowSec - 2 * 365 * 24 * 3600;
           const job = triggerGarminBackfillQueued(freshUser, twoYearsAgo, nowSec);
-          console.log(`[Garmin callback] backfill queued: ${job.total} chunk(s)`);
+          console.log(`[Garmin callback] backfill queued: ${job.total} chunk(s) from ${job.historyFrom ? new Date(job.historyFrom).toISOString().slice(0, 10) : '?'}`);
           return { chunks: job.total };
         })
         .catch((e) => console.warn('[Garmin callback] backfill failed:', e?.message || e));
-    }, 5000);
+    }, 1500);
 
     const params = new URLSearchParams({ garmin: 'connected' });
     return res.redirect(`${frontend}/settings?tab=integrations&${params.toString()}`);
@@ -3660,7 +3689,8 @@ router.post('/garmin/disconnect', verifyToken, async (req, res) => {
 });
 
 // Helper function to get Garmin activities using garmin-connect library
-async function getGarminActivities(user, since = null) {
+async function getGarminActivities(user, since = null, opts = {}) {
+  const allowBackfill = opts.allowBackfill !== false;
   // ── OAuth path ────────────────────────────────────────────────────────────
   if (user?.garmin?.refreshToken) {
     const nowSec = Math.floor(Date.now() / 1000);
@@ -3721,6 +3751,18 @@ async function getGarminActivities(user, since = null) {
     } catch (detailsErr) {
       if (!isGarminPullTokenError(detailsErr.message)) throw detailsErr;
       console.warn('Garmin /activityDetails pull failed, requesting backfill:', detailsErr.message);
+    }
+
+    // Settings → activity-status must never queue a backfill: every page open
+    // would start a short job and starve Import History. Sync endpoints leave
+    // allowBackfill at its default (true).
+    if (!allowBackfill) {
+      const err = new Error(
+        'Garmin does not allow apps to list activities on demand. '
+        + 'New sessions arrive via push within a few minutes; use Import History for older ones.'
+      );
+      err.pullUnsupported = true;
+      throw err;
     }
 
     const job = triggerGarminBackfillQueued(user, startSec, nowSec);
@@ -4323,27 +4365,91 @@ router.get('/garmin/activity-status', verifyToken, activityStatusCacheMiddleware
     const days = Math.min(Math.max(Number(req.query.days) || 90, 1), 180);
     const since = new Date(Date.now() - days * 24 * 3600 * 1000);
 
+    // OAuth without a pull token cannot list Garmin's side of the ledger.
+    // Never call getGarminActivities with allowBackfill here — that used to
+    // queue a short backfill on every Settings open and then 500 because the
+    // thrown "sending your activities" error was not treated as pull-unsupported.
+    const respondFromLocal = async (message) => {
+      const local = await GarminActivity.find({
+        userId: userIdMatch(user._id),
+        startDate: { $gte: since },
+      })
+        .select('garminId name sport startDate distance movingTime elapsedTime')
+        .sort({ startDate: -1 })
+        .limit(200)
+        .lean();
+      const activities = local.map((d) => ({
+        id: String(d.garminId),
+        name: d.name,
+        sport: d.sport,
+        startDate: d.startDate,
+        distanceMeters: Number(d.distance) || 0,
+        durationSeconds: Number(d.movingTime || d.elapsedTime) || 0,
+        state: 'imported',
+      }));
+      return res.json({
+        connected: true,
+        pullSupported: false,
+        days,
+        activities,
+        counts: { imported: activities.length, importable: 0, total: activities.length },
+        message: message
+          || 'Garmin pushes activities to LaChart automatically instead of letting apps list them. '
+            + 'New activities appear within minutes; use Import History to recover older ones.',
+      });
+    };
+
+    if (user.garmin?.refreshToken) {
+      try {
+        const remote = await getGarminActivities(user, since, { allowBackfill: false });
+        const docs = (remote || []).map((a) => mapGarminActivityToDoc(user, a));
+        const local = await GarminActivity.find({
+          userId: userIdMatch(user._id),
+          garminId: { $in: docs.map((d) => d.garminId) },
+        }).select('garminId').lean();
+        const importedIds = new Set(local.map((d) => String(d.garminId)));
+
+        const counts = { imported: 0, importable: 0, total: docs.length };
+        const activities = docs.map((d) => {
+          const imported = importedIds.has(String(d.garminId));
+          if (imported) counts.imported += 1; else counts.importable += 1;
+          return {
+            id: String(d.garminId),
+            name: d.name,
+            sport: d.sport,
+            startDate: d.startDate,
+            distanceMeters: Number(d.distance) || 0,
+            durationSeconds: Number(d.movingTime || d.elapsedTime) || 0,
+            state: imported ? 'imported' : 'importable',
+          };
+        }).sort((a, b) => new Date(b.startDate) - new Date(a.startDate));
+
+        return res.json({ connected: true, pullSupported: true, days, activities, counts });
+      } catch (err) {
+        if (err?.pullUnsupported || err?.backfillPending || isGarminPullTokenError(err.message)) {
+          return respondFromLocal(err.pullUnsupported ? err.message : undefined);
+        }
+        // Token/API glitch — still show what we already imported rather than a red 500.
+        console.warn('[garmin] activity-status pull failed, falling back to local:', err.message);
+        return respondFromLocal(
+          'Could not refresh the list from Garmin right now. Showing activities already in LaChart.'
+        );
+      }
+    }
+
     let remote = [];
     try {
-      remote = await getGarminActivities(user, since);
+      remote = await getGarminActivities(user, since, { allowBackfill: false });
     } catch (err) {
-      if (isGarminPullTokenError(err.message)) {
-        return res.json({
-          connected: true,
-          pullSupported: false,
-          days,
-          activities: [],
-          counts: { imported: 0, importable: 0, total: 0 },
-          message: 'Garmin pushes activities to LaChart automatically instead of letting apps list them. '
-            + 'New activities appear within minutes; use Import History to recover older ones.',
-        });
+      if (isGarminPullTokenError(err.message) || err?.pullUnsupported) {
+        return respondFromLocal();
       }
       throw err;
     }
 
     const docs = (remote || []).map((a) => mapGarminActivityToDoc(user, a));
     const local = await GarminActivity.find({
-      userId: user._id,
+      userId: userIdMatch(user._id),
       garminId: { $in: docs.map((d) => d.garminId) },
     }).select('garminId').lean();
     const importedIds = new Set(local.map((d) => String(d.garminId)));
@@ -5197,8 +5303,9 @@ router.get('/activities', verifyToken, activitiesCacheMiddleware, async (req, re
     const appleSelect = summaryOnly
       ? 'healthKitId title name category sport startDate durationSeconds distanceMeters avgHeartRate lactate'
       : null;
-    
-    const [stravaActs, garminActs, appleHealthActs] = await Promise.all([
+    const watchSelect = 'watchId source name titleManual category sport startDate elapsedTime movingTime distance averageSpeed averageHeartRate averagePower lactate manualTss tssDisplayMode metricsManualized';
+
+    const [stravaActs, garminActs, appleHealthActs, watchActs] = await Promise.all([
       StravaActivity.find({
         userId: userIdMatch(targetUserId),
         startDate: dateFilter
@@ -5229,6 +5336,14 @@ router.get('/activities', verifyToken, activitiesCacheMiddleware, async (req, re
           .sort({ startDate: -1 })
           .limit(activityLimit)
           .lean()),
+      WatchActivity.find({
+        userId: userIdMatch(targetUserId),
+        startDate: dateFilter,
+      })
+        .sort({ startDate: -1 })
+        .limit(activityLimit)
+        .select(watchSelect)
+        .lean(),
     ]);
 
     // Opt-in: only the callers that score sessions for structure pay for this
@@ -5387,6 +5502,11 @@ router.get('/activities', verifyToken, activitiesCacheMiddleware, async (req, re
         averageHeartRate: a.avgHeartRate ?? null,
         source: 'apple_health',
         sourceId: a.healthKitId,
+      })),
+      ...watchActs.map((a) => ({
+        ...a,
+        source: a.source,
+        sourceId: a.watchId,
       })),
     ].sort((a, b) => new Date(b.startDate) - new Date(a.startDate));
     
@@ -5570,7 +5690,7 @@ router.get('/status', verifyToken, async (req, res) => {
       const requesterRole = String(requester?.role || '').toLowerCase();
       const isCoachLike = ['coach', 'tester', 'testing', 'admin'].includes(requesterRole) || requester?.admin === true;
       if (isCoachLike) {
-        const athlete = await User.findById(req.query.athleteId).select('strava garmin appleHealth');
+        const athlete = await User.findById(req.query.athleteId).select('strava garmin appleHealth polar coros');
         if (athlete) targetUser = athlete;
       }
     }
@@ -5585,6 +5705,12 @@ router.get('/status', verifyToken, async (req, res) => {
       garminLastSync: targetUser?.garmin?.lastSyncDate || null,
       appleHealthConnected,
       appleHealthLastWellnessSync: targetUser?.appleHealth?.lastWellnessSyncAt || null,
+      polarConnected: Boolean(targetUser?.polar?.accessToken),
+      polarAutoSync: Boolean(targetUser?.polar?.autoSync),
+      polarLastSync: targetUser?.polar?.lastSyncDate || null,
+      corosConnected: Boolean(targetUser?.coros?.accessToken),
+      corosAutoSync: Boolean(targetUser?.coros?.autoSync),
+      corosLastSync: targetUser?.coros?.lastSyncDate || null,
     });
   } catch (e) {
     res.status(500).json({ error: 'status_failed' });
@@ -8647,6 +8773,7 @@ router.delete('/apple-health', verifyToken, async (req, res) => {
 });
 
 module.exports = router;
+module.exports.invalidateActivitiesCacheForUser = invalidateActivitiesCacheForUser;
 module.exports.getValidStravaToken = getValidStravaToken;
 module.exports.getValidGarminToken = getValidGarminToken;
 module.exports.fetchGarminUserPermissions = fetchGarminUserPermissions;

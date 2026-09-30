@@ -1040,22 +1040,39 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
     setIsSaving(true);
     try {
       await onSave(updatedTest);
-      addNotification('Test data saved successfully', 'success');
-      trackEvent('test_saved', {
-        sport: formData.sport,
-        intervals: rows.length,
-        isNewTest: isNewTest
-      });
-      setIsEditMode(false);
-      setOriginalTestData(null); // Clear original data after successful save
-      void maybeHistoryUpsell();
+      // Demo calculator: parent opens signup and saves after account creation.
+      // Don't claim "saved" here — nothing hit the API yet.
+      if (!demoMode) {
+        addNotification('Test data saved successfully', 'success');
+        trackEvent('test_saved', {
+          sport: formData.sport,
+          intervals: rows.length,
+          isNewTest: isNewTest
+        });
+        setIsEditMode(false);
+        setOriginalTestData(null); // Clear original data after successful save
+        void maybeHistoryUpsell();
+      } else {
+        trackEvent('calc_save_click', {
+          sport: formData.sport,
+          intervals: updatedTest.results.length,
+          source: 'save_button',
+        });
+      }
     } catch (error) {
       console.error('Error saving test data:', error);
-      const apiMsg = error?.response?.data?.error || error?.response?.data?.message;
-      addNotification(
-        apiMsg || error?.message || 'Failed to save test data',
-        'error'
-      );
+      // Demo save only opens signup — any throw is unexpected.
+      // Logged-in save: parent may already show upgrade UI for quota.
+      if (!demoMode) {
+        const d = error?.response?.data;
+        if (!(error?.response?.status === 403 && (d?.code === 'QUOTA_EXCEEDED' || d?.error === 'FREE_PLAN_LIMIT'))) {
+          const apiMsg = d?.error || d?.message;
+          addNotification(
+            apiMsg || error?.message || 'Failed to save test data',
+            'error'
+          );
+        }
+      }
     } finally {
       setIsSaving(false);
     }
@@ -2552,21 +2569,21 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
               </button>
             )}
 
-            {!demoMode && (
-              <button
-                type="button"
-                data-tour="tour-save-test"
-                disabled={isSaving}
-                onClick={() => {
-                  logClick('Save Button', { isNewTest });
-                  void handleSaveChanges();
-                }}
-                className="flex items-center justify-center gap-1.5 px-2.5 py-1.5 text-xs sm:text-sm text-white bg-primary rounded-lg hover:bg-primary-dark transition-colors disabled:opacity-60 disabled:pointer-events-none whitespace-nowrap"
-              >
-                <Save size={14} />{' '}
-                {isSaving ? 'Saving…' : isNewTest ? 'Save Test' : 'Save Changes'}
-              </button>
-            )}
+            {/* Demo calculator: Save opens the same free-account gate as
+                "Unlock zones" — the parent persists the test after signup. */}
+            <button
+              type="button"
+              data-tour="tour-save-test"
+              disabled={isSaving}
+              onClick={() => {
+                logClick('Save Button', { isNewTest, demoMode });
+                void handleSaveChanges();
+              }}
+              className="flex items-center justify-center gap-1.5 px-2.5 py-1.5 text-xs sm:text-sm text-white bg-primary rounded-lg hover:bg-primary-dark transition-colors disabled:opacity-60 disabled:pointer-events-none whitespace-nowrap"
+            >
+              <Save size={14} />{' '}
+              {isSaving ? 'Saving…' : demoMode ? 'Save Test' : (isNewTest ? 'Save Test' : 'Save Changes')}
+            </button>
           </div>
         )}
 

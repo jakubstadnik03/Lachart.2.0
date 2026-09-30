@@ -1088,6 +1088,18 @@ router.put("/edit-profile", verifyToken, async (req, res) => {
                 lastSyncDate: updatedUser.garmin.lastSyncDate || null,
                 connected: true,
             } : null,
+            polar: updatedUser.polar?.accessToken ? {
+                athleteId: updatedUser.polar.athleteId || null,
+                autoSync: updatedUser.polar.autoSync !== undefined ? updatedUser.polar.autoSync : false,
+                lastSyncDate: updatedUser.polar.lastSyncDate || null,
+                connected: true,
+            } : null,
+            coros: updatedUser.coros?.accessToken ? {
+                athleteId: updatedUser.coros.athleteId || null,
+                autoSync: updatedUser.coros.autoSync !== undefined ? updatedUser.coros.autoSync : false,
+                lastSyncDate: updatedUser.coros.lastSyncDate || null,
+                connected: true,
+            } : null,
             coachBranding: updatedUser.coachBranding
                 ? {
                     logoUrl:      updatedUser.coachBranding.logoUrl      ?? null,
@@ -1449,6 +1461,18 @@ router.get("/athlete/:athleteId/profile", verifyToken, async (req, res) => {
               lastSyncDate: athlete.garmin.lastSyncDate || null,
               connected: true,
             } : null,
+            polar: athlete.polar?.accessToken ? {
+              athleteId: athlete.polar.athleteId || null,
+              autoSync: athlete.polar.autoSync !== undefined ? athlete.polar.autoSync : false,
+              lastSyncDate: athlete.polar.lastSyncDate || null,
+              connected: true,
+            } : null,
+            coros: athlete.coros?.accessToken ? {
+              athleteId: athlete.coros.athleteId || null,
+              autoSync: athlete.coros.autoSync !== undefined ? athlete.coros.autoSync : false,
+              lastSyncDate: athlete.coros.lastSyncDate || null,
+              connected: true,
+            } : null,
         };
 
         res.status(200).json(athleteResponse);
@@ -1534,6 +1558,18 @@ router.get("/profile", verifyToken, async (req, res) => {
               athleteId: user.garmin.athleteId || null,
               autoSync: user.garmin.autoSync !== undefined ? user.garmin.autoSync : false,
               lastSyncDate: user.garmin.lastSyncDate || null,
+              connected: true,
+            } : null,
+            polar: user.polar?.accessToken ? {
+              athleteId: user.polar.athleteId || null,
+              autoSync: user.polar.autoSync !== undefined ? user.polar.autoSync : false,
+              lastSyncDate: user.polar.lastSyncDate || null,
+              connected: true,
+            } : null,
+            coros: user.coros?.accessToken ? {
+              athleteId: user.coros.athleteId || null,
+              autoSync: user.coros.autoSync !== undefined ? user.coros.autoSync : false,
+              lastSyncDate: user.coros.lastSyncDate || null,
               connected: true,
             } : null,
             coachBranding: user.coachBranding
@@ -4581,7 +4617,9 @@ router.post("/admin/send-feature-announcement-email/:userId", verifyToken, async
     }
 });
 
-// Send Strava connection reminder email to a specific user (admin only)
+// Send tracker connection reminder (Strava / Garmin / Apple Health) — admin only.
+// Route + stravaReminderEmail tracking keep their old names so existing admin
+// UI and counts keep working; the body now covers every integration.
 router.post("/admin/send-strava-reminder-email/:userId", verifyToken, async (req, res) => {
     try {
         const currentUser = await userDao.findById(req.user.userId);
@@ -4606,9 +4644,13 @@ router.post("/admin/send-strava-reminder-email/:userId", verifyToken, async (req
             return res.status(400).json({ error: "User has no email address configured" });
         }
 
-        // Check if already connected
-        if (targetUser.strava?.athleteId) {
-            return res.status(400).json({ error: "User already has Strava connected" });
+        const hasTracker = !!(
+            targetUser.strava?.athleteId
+            || targetUser.garmin?.accessToken
+            || targetUser.appleHealth?.connectedAt
+        );
+        if (hasTracker) {
+            return res.status(400).json({ error: "User already has a tracker connected (Strava, Garmin or Apple Health)" });
         }
 
         // Respect global emailNotifications preference
@@ -4619,13 +4661,11 @@ router.post("/admin/send-strava-reminder-email/:userId", verifyToken, async (req
         const { generateEmailTemplate, getClientUrl } = require('../utils/emailTemplate');
         const clientUrl = getClientUrl();
         const imageUrl = `${clientUrl}/images/lactate_testing.png`;
-        const stravaAuthUrl = `${clientUrl}/api/integrations/strava/auth-url`;
 
         const userName = targetUser.name || 'there';
 
-        // Refreshed copy (2026-05) — same goal (push Strava connect) but reframed
-        // around what you GET, not what you're "missing". Feature cards mirror
-        // the rest of the branded transactional emails so the look is consistent.
+        // Reframed (2026-09): same admin "Send reminder" action, but the pitch
+        // is any tracker — Strava, Garmin or Apple Health — not Strava alone.
         const cardStyle = 'background-color: #E9ECF6; border-radius: 10px; padding: 14px 16px;';
         const accentCardStyle = 'background-color: #FFE6DF; border-radius: 10px; padding: 14px 16px;';
         const cardTitleStyle = 'font-weight: 700; color: #0A0E1A; font-size: 15px;';
@@ -4633,7 +4673,7 @@ router.post("/admin/send-strava-reminder-email/:userId", verifyToken, async (req
 
         const emailContent = `
             <p>Hi <strong>${userName}</strong>,</p>
-            <p>You're using LaChart — but you haven't connected Strava yet. That's the one setup step that turns LaChart from "manual logger" into "automatic training brain". Takes 30 seconds.</p>
+            <p>You're using LaChart — but you haven't connected a tracker yet. One setup step turns LaChart from "manual logger" into an automatic training brain. Pick <strong>Strava</strong>, <strong>Garmin</strong> or <strong>Apple Health</strong> — takes about 30 seconds.</p>
 
             <div style="margin: 22px 0; text-align: center;">
               <img src="${imageUrl}" alt="" style="max-width: 100%; height: auto; border-radius: 12px; box-shadow: 0 4px 14px rgba(15, 23, 42, 0.08);" />
@@ -4643,24 +4683,24 @@ router.post("/admin/send-strava-reminder-email/:userId", verifyToken, async (req
 
             <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="width: 100%; margin: 12px 0 18px; border-collapse: separate; border-spacing: 0 8px;">
               <tr><td style="${cardStyle}">
-                <div style="${cardTitleStyle}">⚡ Auto-import every workout</div>
-                <div style="${cardBodyStyle}">Every ride, run and swim flows in with power, HR, pace and laps — never type a workout in again.</div>
+                <div style="${cardTitleStyle}">🔗 Strava or Garmin — auto-import</div>
+                <div style="${cardBodyStyle}">Every ride, run and swim flows in with power, HR, pace and laps. Garmin also sends planned workouts back to your watch.</div>
               </td></tr>
               <tr><td style="${cardStyle}">
-                <div style="${cardTitleStyle}">🏷️ Auto-categorize by zone &amp; structure</div>
-                <div style="${cardBodyStyle}">Endurance · threshold · VO2max · recovery — sorted from intervals, zones and titles. No manual tagging.</div>
+                <div style="${cardTitleStyle}">❤️ Apple Health (iPhone)</div>
+                <div style="${cardBodyStyle}">Sleep, resting HR and HRV for recovery — next to the workouts from Strava or Garmin.</div>
               </td></tr>
               <tr><td style="${cardStyle}">
-                <div style="${cardTitleStyle}">❤️ Form, fitness &amp; fatigue charted</div>
-                <div style="${cardBodyStyle}">CTL · ATL · TSB built automatically from every workout. See when you peak and when to back off.</div>
+                <div style="${cardTitleStyle}">🏷️ Zones &amp; structure</div>
+                <div style="${cardBodyStyle}">Endurance · threshold · VO2max · recovery — sorted from intervals and your LT1/LT2 zones. No manual tagging.</div>
               </td></tr>
               <tr><td style="${cardStyle}">
-                <div style="${cardTitleStyle}">💧 Add lactate to any imported interval</div>
-                <div style="${cardBodyStyle}">Tag any interval of a synced workout with a blood-lactate sample — feeds straight into your curve.</div>
+                <div style="${cardTitleStyle}">📈 Form, fitness &amp; fatigue</div>
+                <div style="${cardBodyStyle}">CTL · ATL · TSB built automatically from every session. See when you peak and when to back off.</div>
               </td></tr>
               <tr><td style="${accentCardStyle}">
                 <div style="${cardTitleStyle}">🧠 Smarter test protocols</div>
-                <div style="${cardBodyStyle}">LaChart suggests step-test power ranges based on your Strava power history — no more guessing.</div>
+                <div style="${cardBodyStyle}">LaChart suggests step-test ranges from your real training history — no more guessing.</div>
               </td></tr>
             </table>
 
@@ -4682,11 +4722,11 @@ router.post("/admin/send-strava-reminder-email/:userId", verifyToken, async (req
                 address: process.env.EMAIL_USER
             },
             to: targetUser.email,
-            subject: 'One setup step you missed — connect Strava',
+            subject: 'One setup step you missed — connect Strava, Garmin or Apple Health',
             html: generateEmailTemplate({
-                title: 'Connect Strava and let LaChart do the work',
+                title: 'Connect a tracker and let LaChart do the work',
                 content: emailContent,
-                buttonText: 'Connect Strava (30 seconds)',
+                buttonText: 'Connect Strava, Garmin or Apple Health',
                 buttonUrl: `${clientUrl}/settings?tab=integrations`,
                 loginButtonText: 'Open my dashboard',
                 loginButtonUrl: `${clientUrl}/dashboard`,
@@ -4704,16 +4744,16 @@ router.post("/admin/send-strava-reminder-email/:userId", verifyToken, async (req
         };
         await userDao.updateUser(userId, updateData);
 
-        res.status(200).json({ ok: true, message: "Strava reminder email sent" });
+        res.status(200).json({ ok: true, message: "Tracker reminder email sent" });
     } catch (error) {
-        console.error("Error sending Strava reminder email:", error);
+        console.error("Error sending tracker reminder email:", error);
         const rawMessage = (error && (error.message || error.reason || String(error))) || "Send failed.";
         const isAuthError = /invalid login|EAUTH|username and password|authentication failed/i.test(rawMessage) || (error.code && String(error.code).toUpperCase().includes('EAUTH'));
         const isDbValidation = error && error.name === 'ValidationError';
         const isNetwork =
             /ETIMEDOUT|ECONNRESET|ECONNREFUSED|ESOCKET|socket|timeout/i.test(rawMessage) ||
             (error.code && /^(ETIMEDOUT|ECONNRESET|ECONNREFUSED|ESOCKET)$/i.test(String(error.code)));
-        const errorTitle = isAuthError ? "Email credentials invalid. Check EMAIL_APP_PASSWORD (Zoho app password)." : "Failed to send Strava reminder email";
+        const errorTitle = isAuthError ? "Email credentials invalid. Check EMAIL_APP_PASSWORD (Zoho app password)." : "Failed to send tracker reminder email";
         const reason = isAuthError
             ? rawMessage
             : isDbValidation

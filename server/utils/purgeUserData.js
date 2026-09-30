@@ -72,6 +72,7 @@ const OWNED = [
   ['../models/GarminStream', 'userId'],
   ['../models/GarminWellness', 'userId'],
   ['../models/AppleHealthActivity', 'userId'],
+  ['../models/WatchActivity', 'userId'],
   ['../models/AppleHealthWellness', 'userId'],
   ['../models/ActivityWeather', 'userId'],
   ['../models/ThresholdDriftRead', 'userId'],

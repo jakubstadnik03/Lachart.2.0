@@ -34,6 +34,13 @@ export function resolveActivitySource(t) {
   // modal asked the Training collection for it: a 404, then a Summary with
   // no Laps tab and no chart under it, while the same ride opened from the
   // calendar had both.
+  const idRaw = String(t.id || '');
+  if (t.source === 'polar' || t.source === 'coros' || idRaw.startsWith('polar-') || idRaw.startsWith('coros-')) {
+    const kind = t.source === 'coros' || idRaw.startsWith('coros-') ? 'coros' : 'polar';
+    const watch = clean(t.watchId || t.sourceId || idRaw, kind);
+    if (watch) return { kind, id: watch, linked: false };
+  }
+
   const ownGarmin = clean(t.garminId || (t.source === 'garmin' ? t.sourceId : ''), 'garmin');
   const linkedGarmin = clean(t.sourceGarminActivityId, 'garmin');
   const garmin = ownGarmin || linkedGarmin;
