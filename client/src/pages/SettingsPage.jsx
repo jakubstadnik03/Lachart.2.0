@@ -21,7 +21,7 @@ import CalendarFeedCard from '../components/Settings/CalendarFeedCard';
 import CategoryManager from '../components/Settings/CategoryManager';
 import ExternalActivityList from '../components/Settings/ExternalActivityList';
 import { RowButton, SettingsRow, SettingsSection, ToggleRow } from '../components/Settings/HealthSettingsRows';
-import { getIntegrationStatus, invalidateCache, listExternalActivities, uploadFitFile, getStravaAuthUrl, startGarminAuth, syncStravaActivities, backfillStravaHistory, autoSyncStravaActivities, updateAvatarFromStrava, syncGarminActivities, syncGarminHistory, autoSyncGarminActivities, fetchGdprExportJson, getCurrentSubscription, createCheckoutSession, getSubscriptionPortalUrl, cancelSubscription, reactivateSubscription, resetStravaBudget, updateUserProfile, syncSubscriptionFromStripe, fetchUserProfile, fetchStravaStatus, fetchGarminStatus } from '../services/api';
+import { getIntegrationStatus, invalidateCache, listExternalActivities, uploadFitFile, getStravaAuthUrl, startGarminAuth, syncStravaActivities, backfillStravaHistory, autoSyncStravaActivities, updateAvatarFromStrava, syncGarminActivities, syncGarminHistory, autoSyncGarminActivities, fetchGdprExportJson, getCurrentSubscription, createCheckoutSession, getSubscriptionPortalUrl, cancelSubscription, reactivateSubscription, resetStravaBudget, updateUserProfile, syncSubscriptionFromStripe, fetchUserProfile, fetchStravaStatus, fetchGarminStatus, startWatchAuth, syncWatchActivities, setWatchAutoSync, disconnectWatch, fetchWatchStatus } from '../services/api';
 import { saveUserToStorage } from '../utils/userStorage';
 import { isCapacitorNative } from '../utils/isNativeApp';
 import {
@@ -155,7 +155,7 @@ function getStravaSyncHealth(status) {
  */
 function IntegrationReconnectBanner({ alert, provider, isMobile, onReconnect }) {
   if (!alert?.needsReconnect) return null;
-  const label = provider === 'garmin' ? 'Garmin' : 'Strava';
+  const label = { garmin: 'Garmin', polar: 'Polar', coros: 'COROS' }[provider] || 'Strava';
   const cause = alert.reason === 'revoked'
     ? `${label} access was revoked`
     : alert.reason === 'unauthorized'
@@ -216,7 +216,7 @@ const SettingsPage = () => {
   // revoked Strava connection is wiped server-side, so it reads as "never
   // connected" and the athlete has no way to tell the two apart.
   // { strava: {needsReconnect, reconnectReason, needsReconnectSince}, garmin: {…} }
-  const [integrationAlerts, setIntegrationAlerts] = useState({ strava: null, garmin: null });
+  const [integrationAlerts, setIntegrationAlerts] = useState({ strava: null, garmin: null, polar: null, coros: null });
   const [garminAutoSync, setGarminAutoSync] = useState(false);
   const [isSyncingStrava, setIsSyncingStrava] = useState(false);
   const [isTogglingStravaAutoSync, setIsTogglingStravaAutoSync] = useState(false);
@@ -258,8 +258,14 @@ const SettingsPage = () => {
   const [stravaBackfill, setStravaBackfill] = useState(null); // { state, startedAt, cursorDate, lastError }
   const [isStartingBackfill, setIsStartingBackfill] = useState(false);
   const [backfillPollNonce, setBackfillPollNonce] = useState(0);
-  const [polarConnected] = useState(false);
-  const [corosConnected] = useState(false);
+  const [polarConnected, setPolarConnected] = useState(false);
+  const [corosConnected, setCorosConnected] = useState(false);
+  const [polarAutoSync, setPolarAutoSync] = useState(false);
+  const [corosAutoSync, setCorosAutoSync] = useState(false);
+  const [polarLastSync, setPolarLastSync] = useState(null);
+  const [corosLastSync, setCorosLastSync] = useState(null);
+  const [polarSyncing, setPolarSyncing] = useState(false);
+  const [corosSyncing, setCorosSyncing] = useState(false);
   const [files, setFiles] = useState([]);
   const [uploading, setUploading] = useState(false);
 
@@ -431,9 +437,11 @@ const SettingsPage = () => {
     if (activeTab !== 'integrations') return;
     let cancelled = false;
     (async () => {
-      const [s, g] = await Promise.all([
+      const [s, g, p, c] = await Promise.all([
         fetchStravaStatus().catch(() => null),
         fetchGarminStatus().catch(() => null),
+        fetchWatchStatus('polar').catch(() => null),
+        fetchWatchStatus('coros').catch(() => null),
       ]);
       if (cancelled) return;
       const pick = (r) => (r?.needsReconnect
@@ -443,7 +451,17 @@ const SettingsPage = () => {
           since: r.needsReconnectSince || null,
         }
         : null);
-      setIntegrationAlerts({ strava: pick(s), garmin: pick(g) });
+      setIntegrationAlerts({ strava: pick(s), garmin: pick(g), polar: pick(p), coros: pick(c) });
+      if (p) {
+        setPolarConnected(Boolean(p.connected));
+        setPolarAutoSync(Boolean(p.autoSync));
+        if (p.lastSyncDate) setPolarLastSync(p.lastSyncDate);
+      }
+      if (c) {
+        setCorosConnected(Boolean(c.connected));
+        setCorosAutoSync(Boolean(c.autoSync));
+        if (c.lastSyncDate) setCorosLastSync(c.lastSyncDate);
+      }
     })();
     return () => { cancelled = true; };
   }, [activeTab]);
@@ -552,6 +570,12 @@ const SettingsPage = () => {
           setGarminConnected(Boolean(status.garminConnected));
           if (status.garminLastSync) setGarminLastSync(status.garminLastSync);
           if (status.garminAutoSync !== undefined) setGarminAutoSync(Boolean(status.garminAutoSync));
+          setPolarConnected(Boolean(status.polarConnected));
+          setCorosConnected(Boolean(status.corosConnected));
+          if (status.polarAutoSync !== undefined) setPolarAutoSync(Boolean(status.polarAutoSync));
+          if (status.corosAutoSync !== undefined) setCorosAutoSync(Boolean(status.corosAutoSync));
+          if (status.polarLastSync) setPolarLastSync(status.polarLastSync);
+          if (status.corosLastSync) setCorosLastSync(status.corosLastSync);
 
           // Pull real-time webhook health so we can tell the user whether
           // their uploads should appear instantly (webhook) or with up to a
@@ -618,6 +642,31 @@ const SettingsPage = () => {
     };
     window.addEventListener('garmin:integration-refreshed', refresh);
     return () => window.removeEventListener('garmin:integration-refreshed', refresh);
+  }, []);
+
+  useEffect(() => {
+    const refresh = async (event) => {
+      const provider = event?.type?.startsWith('coros') ? 'coros' : 'polar';
+      try {
+        const status = await fetchWatchStatus(provider);
+        if (!status) return;
+        if (provider === 'coros') {
+          setCorosConnected(Boolean(status.connected));
+          setCorosAutoSync(Boolean(status.autoSync));
+          if (status.lastSyncDate) setCorosLastSync(status.lastSyncDate);
+        } else {
+          setPolarConnected(Boolean(status.connected));
+          setPolarAutoSync(Boolean(status.autoSync));
+          if (status.lastSyncDate) setPolarLastSync(status.lastSyncDate);
+        }
+      } catch { /* ignore */ }
+    };
+    window.addEventListener('polar:integration-refreshed', refresh);
+    window.addEventListener('coros:integration-refreshed', refresh);
+    return () => {
+      window.removeEventListener('polar:integration-refreshed', refresh);
+      window.removeEventListener('coros:integration-refreshed', refresh);
+    };
   }, []);
 
   useEffect(() => {
@@ -1230,6 +1279,69 @@ const SettingsPage = () => {
       }
     } finally {
       setIsSyncingStrava(false);
+    }
+  };
+
+  const handleConnectWatch = async (provider) => {
+    try {
+      const url = await startWatchAuth(provider);
+      if (!url) throw new Error('No connect URL returned');
+      window.location.href = url;
+    } catch (e) {
+      const label = provider === 'coros' ? 'COROS' : 'Polar';
+      addNotification(e.response?.data?.error || e.message || `Failed to start ${label} connection`, 'error');
+    }
+  };
+
+  const handleSyncWatch = async (provider) => {
+    const setSyncing = provider === 'coros' ? setCorosSyncing : setPolarSyncing;
+    const label = provider === 'coros' ? 'COROS' : 'Polar';
+    setSyncing(true);
+    try {
+      const days = provider === 'coros' ? 90 : 30;
+      const res = await syncWatchActivities(provider, days);
+      if (provider === 'coros') setCorosLastSync(new Date().toISOString());
+      else setPolarLastSync(new Date().toISOString());
+      addNotification(`${label}: ${res.imported || 0} imported, ${res.updated || 0} updated`, 'success');
+      window.dispatchEvent(new CustomEvent('watchSyncComplete', { detail: { provider, ...res } }));
+    } catch (e) {
+      addNotification(e.response?.data?.error || e.message || `${label} sync failed`, 'error');
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const handleWatchAutoSync = async (provider, enabled) => {
+    if (provider === 'coros') setCorosAutoSync(enabled);
+    else setPolarAutoSync(enabled);
+    try {
+      await setWatchAutoSync(provider, enabled);
+    } catch (e) {
+      if (provider === 'coros') setCorosAutoSync(!enabled);
+      else setPolarAutoSync(!enabled);
+      addNotification(e.response?.data?.error || e.message || 'Could not update auto-sync', 'error');
+    }
+  };
+
+  const handleDisconnectWatch = async (provider) => {
+    const label = provider === 'coros' ? 'COROS' : 'Polar';
+    try {
+      await disconnectWatch(provider);
+      if (provider === 'coros') {
+        setCorosConnected(false);
+        setCorosAutoSync(false);
+      } else {
+        setPolarConnected(false);
+        setPolarAutoSync(false);
+      }
+      addNotification(`${label} disconnected`, 'success');
+      const updatedUser = await fetchUserProfile();
+      if (updatedUser?._id) {
+        saveUserToStorage(updatedUser);
+        window.dispatchEvent(new CustomEvent('userUpdated', { detail: updatedUser }));
+      }
+    } catch (e) {
+      addNotification(e.response?.data?.error || e.message || `Failed to disconnect ${label}`, 'error');
     }
   };
 
@@ -3937,53 +4049,96 @@ const SettingsPage = () => {
 
                 <CalendarFeedCard isMobile={isMobile} />
 
-                <div className={`bg-white ${isMobile ? 'rounded-md' : 'rounded-lg'} border border-gray-200 ${isMobile ? 'p-2.5' : 'p-6'}`}>
-                  <div className={`flex items-center justify-between ${isMobile ? 'mb-2' : 'mb-4'}`}>
-                    <div className="flex items-center gap-2">
-                      <div className={`flex items-center justify-center ${isMobile ? 'w-6 h-6' : 'w-8 h-8'} bg-red-50 rounded-lg`}>
-                        <span className="text-red-600 font-bold text-sm">P</span>
+                {[
+                  {
+                    key: 'polar',
+                    label: 'Polar',
+                    mark: 'P',
+                    tint: 'bg-red-50 text-red-600',
+                    connected: polarConnected,
+                    autoSync: polarAutoSync,
+                    lastSync: polarLastSync,
+                    syncing: polarSyncing,
+                    blurb: 'Import workouts from Polar Flow. Polar shares sessions uploaded in the last 30 days. The same workout from Strava or Garmin is merged, not listed twice.',
+                  },
+                  {
+                    key: 'coros',
+                    label: 'COROS',
+                    mark: 'C',
+                    tint: 'bg-orange-50 text-orange-600',
+                    connected: corosConnected,
+                    autoSync: corosAutoSync,
+                    lastSync: corosLastSync,
+                    syncing: corosSyncing,
+                    blurb: 'Import workouts from COROS. New sessions sync when you open the app. Overlaps with Strava or Garmin are merged automatically.',
+                  },
+                ].map((card) => (
+                  <div key={card.key} className={`bg-white ${isMobile ? 'rounded-md' : 'rounded-lg'} border border-gray-200 ${isMobile ? 'p-2.5' : 'p-6'}`}>
+                    <div className={`flex items-center justify-between ${isMobile ? 'mb-2' : 'mb-4'}`}>
+                      <div className="flex items-center gap-2">
+                        <div className={`flex items-center justify-center ${isMobile ? 'w-6 h-6' : 'w-8 h-8'} ${card.tint.split(' ')[0]} rounded-lg`}>
+                          <span className={`${card.tint.split(' ')[1]} font-bold text-sm`}>{card.mark}</span>
+                        </div>
+                        <h4 className={`${isMobile ? 'text-xs' : 'text-lg'} font-semibold`}>{card.label}</h4>
                       </div>
-                      <h4 className={`${isMobile ? 'text-xs' : 'text-lg'} font-semibold`}>Polar</h4>
+                      <span className={`${isMobile ? 'text-[10px]' : 'text-sm'} font-medium ${card.connected ? 'text-green-600' : 'text-gray-500'}`}>
+                        {card.connected ? 'Connected' : 'Not connected'}
+                      </span>
                     </div>
-                    <span className={`${isMobile ? 'text-[10px]' : 'text-sm'} font-medium ${polarConnected ? 'text-green-600' : 'text-amber-600'}`}>
-                      {polarConnected ? 'Connected' : 'Coming soon'}
-                    </span>
-                  </div>
-                  <p className={`${isMobile ? 'text-[9px]' : 'text-sm'} text-gray-600 ${isMobile ? 'mb-2' : 'mb-4'}`}>
-                    Planned integration for Polar Flow workout sync and activity import.
-                  </p>
-                  <button
-                    type="button"
-                    disabled
-                    className={`${isMobile ? 'px-2.5 py-1.5 text-[10px] w-full' : 'px-3 py-2'} bg-gray-100 text-gray-400 ${isMobile ? 'rounded-md' : 'rounded'} cursor-not-allowed`}
-                  >
-                    Coming soon
-                  </button>
-                </div>
-
-                <div className={`bg-white ${isMobile ? 'rounded-md' : 'rounded-lg'} border border-gray-200 ${isMobile ? 'p-2.5' : 'p-6'}`}>
-                  <div className={`flex items-center justify-between ${isMobile ? 'mb-2' : 'mb-4'}`}>
-                    <div className="flex items-center gap-2">
-                      <div className={`flex items-center justify-center ${isMobile ? 'w-6 h-6' : 'w-8 h-8'} bg-orange-50 rounded-lg`}>
-                        <span className="text-orange-600 font-bold text-sm">C</span>
-                      </div>
-                      <h4 className={`${isMobile ? 'text-xs' : 'text-lg'} font-semibold`}>COROS</h4>
+                    <IntegrationReconnectBanner
+                      alert={integrationAlerts[card.key]}
+                      provider={card.key}
+                      isMobile={isMobile}
+                      onReconnect={() => handleConnectWatch(card.key)}
+                    />
+                    <p className={`${isMobile ? 'text-[9px]' : 'text-sm'} text-gray-600 ${isMobile ? 'mb-2' : 'mb-4'}`}>
+                      {card.blurb}
+                    </p>
+                    {card.connected && (
+                      <label className={`flex items-center gap-2 ${isMobile ? 'mb-2 text-[10px]' : 'mb-3 text-sm'} text-gray-700`}>
+                        <input
+                          type="checkbox"
+                          checked={card.autoSync}
+                          onChange={(e) => handleWatchAutoSync(card.key, e.target.checked)}
+                        />
+                        Sync new workouts automatically
+                      </label>
+                    )}
+                    {card.connected && card.lastSync && (
+                      <p className={`${isMobile ? 'text-[9px]' : 'text-xs'} text-gray-500 mb-2`}>
+                        Last sync: {new Date(card.lastSync).toLocaleString()}
+                      </p>
+                    )}
+                    <div className={`flex ${isMobile ? 'flex-col gap-1.5' : 'gap-2'}`}>
+                      <button
+                        type="button"
+                        onClick={() => handleConnectWatch(card.key)}
+                        className={`${isMobile ? 'px-2.5 py-1.5 text-[10px] w-full' : 'px-3 py-2 text-sm'} rounded font-semibold ${card.connected ? 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-50' : 'bg-primary text-white hover:bg-primary-dark'}`}
+                      >
+                        {card.connected ? 'Reconnect' : 'Connect'}
+                      </button>
+                      {card.connected && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => handleSyncWatch(card.key)}
+                            disabled={card.syncing}
+                            className={`${isMobile ? 'px-2.5 py-1.5 text-[10px] w-full' : 'px-3 py-2 text-sm'} bg-white border border-gray-200 rounded hover:bg-gray-50 disabled:opacity-60`}
+                          >
+                            {card.syncing ? 'Syncing…' : 'Sync now'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDisconnectWatch(card.key)}
+                            className={`${isMobile ? 'px-2.5 py-1.5 text-[10px] w-full' : 'px-3 py-2 text-sm'} bg-red-600 text-white rounded hover:bg-red-700`}
+                          >
+                            Disconnect
+                          </button>
+                        </>
+                      )}
                     </div>
-                    <span className={`${isMobile ? 'text-[10px]' : 'text-sm'} font-medium ${corosConnected ? 'text-green-600' : 'text-amber-600'}`}>
-                      {corosConnected ? 'Connected' : 'Coming soon'}
-                    </span>
                   </div>
-                  <p className={`${isMobile ? 'text-[9px]' : 'text-sm'} text-gray-600 ${isMobile ? 'mb-2' : 'mb-4'}`}>
-                    Planned integration for COROS training history, routes and structured endurance sessions.
-                  </p>
-                  <button
-                    type="button"
-                    disabled
-                    className={`${isMobile ? 'px-2.5 py-1.5 text-[10px] w-full' : 'px-3 py-2'} bg-gray-100 text-gray-400 ${isMobile ? 'rounded-md' : 'rounded'} cursor-not-allowed`}
-                  >
-                    Coming soon
-                  </button>
-                </div>
+                ))}
            
                   <FitUploadSection
                     files={files}

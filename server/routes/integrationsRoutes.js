@@ -9,6 +9,7 @@ const AppleHealthActivity = require('../models/AppleHealthActivity');
 const AppleHealthWellness = require('../models/AppleHealthWellness');
 const StravaStream = require('../models/StravaStream');
 const GarminActivity = require('../models/GarminActivity');
+const WatchActivity = require('../models/WatchActivity');
 const { stravaAvatarUrlFrom } = require('../utils/stravaAvatar');
 const {
   SIMILAR_SELECT,
@@ -5197,8 +5198,9 @@ router.get('/activities', verifyToken, activitiesCacheMiddleware, async (req, re
     const appleSelect = summaryOnly
       ? 'healthKitId title name category sport startDate durationSeconds distanceMeters avgHeartRate lactate'
       : null;
-    
-    const [stravaActs, garminActs, appleHealthActs] = await Promise.all([
+    const watchSelect = 'watchId source name titleManual category sport startDate elapsedTime movingTime distance averageSpeed averageHeartRate averagePower lactate manualTss tssDisplayMode metricsManualized';
+
+    const [stravaActs, garminActs, appleHealthActs, watchActs] = await Promise.all([
       StravaActivity.find({
         userId: userIdMatch(targetUserId),
         startDate: dateFilter
@@ -5229,6 +5231,14 @@ router.get('/activities', verifyToken, activitiesCacheMiddleware, async (req, re
           .sort({ startDate: -1 })
           .limit(activityLimit)
           .lean()),
+      WatchActivity.find({
+        userId: userIdMatch(targetUserId),
+        startDate: dateFilter,
+      })
+        .sort({ startDate: -1 })
+        .limit(activityLimit)
+        .select(watchSelect)
+        .lean(),
     ]);
 
     // Opt-in: only the callers that score sessions for structure pay for this
@@ -5387,6 +5397,11 @@ router.get('/activities', verifyToken, activitiesCacheMiddleware, async (req, re
         averageHeartRate: a.avgHeartRate ?? null,
         source: 'apple_health',
         sourceId: a.healthKitId,
+      })),
+      ...watchActs.map((a) => ({
+        ...a,
+        source: a.source,
+        sourceId: a.watchId,
       })),
     ].sort((a, b) => new Date(b.startDate) - new Date(a.startDate));
     
@@ -5570,7 +5585,7 @@ router.get('/status', verifyToken, async (req, res) => {
       const requesterRole = String(requester?.role || '').toLowerCase();
       const isCoachLike = ['coach', 'tester', 'testing', 'admin'].includes(requesterRole) || requester?.admin === true;
       if (isCoachLike) {
-        const athlete = await User.findById(req.query.athleteId).select('strava garmin appleHealth');
+        const athlete = await User.findById(req.query.athleteId).select('strava garmin appleHealth polar coros');
         if (athlete) targetUser = athlete;
       }
     }
@@ -5585,6 +5600,12 @@ router.get('/status', verifyToken, async (req, res) => {
       garminLastSync: targetUser?.garmin?.lastSyncDate || null,
       appleHealthConnected,
       appleHealthLastWellnessSync: targetUser?.appleHealth?.lastWellnessSyncAt || null,
+      polarConnected: Boolean(targetUser?.polar?.accessToken),
+      polarAutoSync: Boolean(targetUser?.polar?.autoSync),
+      polarLastSync: targetUser?.polar?.lastSyncDate || null,
+      corosConnected: Boolean(targetUser?.coros?.accessToken),
+      corosAutoSync: Boolean(targetUser?.coros?.autoSync),
+      corosLastSync: targetUser?.coros?.lastSyncDate || null,
     });
   } catch (e) {
     res.status(500).json({ error: 'status_failed' });
@@ -8647,6 +8668,7 @@ router.delete('/apple-health', verifyToken, async (req, res) => {
 });
 
 module.exports = router;
+module.exports.invalidateActivitiesCacheForUser = invalidateActivitiesCacheForUser;
 module.exports.getValidStravaToken = getValidStravaToken;
 module.exports.getValidGarminToken = getValidGarminToken;
 module.exports.fetchGarminUserPermissions = fetchGarminUserPermissions;

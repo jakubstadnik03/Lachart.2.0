@@ -215,7 +215,7 @@ function dupSource(a) {
  * files carry device local time the same way. When one record of a pair comes
  * from each kind, this is what says whose timestamp to believe.
  */
-const TRUE_UTC_SOURCES = new Set(['garmin', 'apple_health']);
+const TRUE_UTC_SOURCES = new Set(['garmin', 'apple_health', 'polar', 'coros']);
 
 function dupMetres(a) {
   return Number(a?.distance || a?.totalDistance || a?.total_distance || 0) || 0;

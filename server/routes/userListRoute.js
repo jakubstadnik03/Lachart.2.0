@@ -1088,6 +1088,18 @@ router.put("/edit-profile", verifyToken, async (req, res) => {
                 lastSyncDate: updatedUser.garmin.lastSyncDate || null,
                 connected: true,
             } : null,
+            polar: updatedUser.polar?.accessToken ? {
+                athleteId: updatedUser.polar.athleteId || null,
+                autoSync: updatedUser.polar.autoSync !== undefined ? updatedUser.polar.autoSync : false,
+                lastSyncDate: updatedUser.polar.lastSyncDate || null,
+                connected: true,
+            } : null,
+            coros: updatedUser.coros?.accessToken ? {
+                athleteId: updatedUser.coros.athleteId || null,
+                autoSync: updatedUser.coros.autoSync !== undefined ? updatedUser.coros.autoSync : false,
+                lastSyncDate: updatedUser.coros.lastSyncDate || null,
+                connected: true,
+            } : null,
             coachBranding: updatedUser.coachBranding
                 ? {
                     logoUrl:      updatedUser.coachBranding.logoUrl      ?? null,
@@ -1449,6 +1461,18 @@ router.get("/athlete/:athleteId/profile", verifyToken, async (req, res) => {
               lastSyncDate: athlete.garmin.lastSyncDate || null,
               connected: true,
             } : null,
+            polar: athlete.polar?.accessToken ? {
+              athleteId: athlete.polar.athleteId || null,
+              autoSync: athlete.polar.autoSync !== undefined ? athlete.polar.autoSync : false,
+              lastSyncDate: athlete.polar.lastSyncDate || null,
+              connected: true,
+            } : null,
+            coros: athlete.coros?.accessToken ? {
+              athleteId: athlete.coros.athleteId || null,
+              autoSync: athlete.coros.autoSync !== undefined ? athlete.coros.autoSync : false,
+              lastSyncDate: athlete.coros.lastSyncDate || null,
+              connected: true,
+            } : null,
         };
 
         res.status(200).json(athleteResponse);
@@ -1534,6 +1558,18 @@ router.get("/profile", verifyToken, async (req, res) => {
               athleteId: user.garmin.athleteId || null,
               autoSync: user.garmin.autoSync !== undefined ? user.garmin.autoSync : false,
               lastSyncDate: user.garmin.lastSyncDate || null,
+              connected: true,
+            } : null,
+            polar: user.polar?.accessToken ? {
+              athleteId: user.polar.athleteId || null,
+              autoSync: user.polar.autoSync !== undefined ? user.polar.autoSync : false,
+              lastSyncDate: user.polar.lastSyncDate || null,
+              connected: true,
+            } : null,
+            coros: user.coros?.accessToken ? {
+              athleteId: user.coros.athleteId || null,
+              autoSync: user.coros.autoSync !== undefined ? user.coros.autoSync : false,
+              lastSyncDate: user.coros.lastSyncDate || null,
               connected: true,
             } : null,
             coachBranding: user.coachBranding
