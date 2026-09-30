@@ -39,17 +39,18 @@ export function mapExternalActivityToCalendar(a, trainingByStravaId = new Map())
   const garminId = a.garminId ?? null;
   const linkedTraining = stravaId ? trainingByStravaId.get(String(stravaId)) : null;
 
+  const watchId = a.watchId ?? null;
   const extId = source === 'garmin'
     ? `garmin-${garminId || a.sourceId}`
     : source === 'apple_health'
       ? `apple-${a.healthKitId || a.sourceId}`
-      : `strava-${stravaId || a.id}`;
+      : source === 'polar' || source === 'coros'
+        ? `${source}-${watchId || a.sourceId}`
+        : `strava-${stravaId || a.id}`;
 
-  const calendarType = source === 'garmin'
-    ? 'garmin'
-    : source === 'apple_health'
-      ? 'apple_health'
-      : 'strava';
+  const calendarType = source === 'garmin' || source === 'apple_health' || source === 'polar' || source === 'coros'
+    ? source
+    : 'strava';
 
   return {
     ...a,
@@ -62,7 +63,7 @@ export function mapExternalActivityToCalendar(a, trainingByStravaId = new Map())
     date: a.startDate || a.date,
     title: linkedTraining?.title || a.titleManual || a.name || a.title || 'Untitled Activity',
     linkedTrainingTitle: linkedTraining?.title || null,
-    sport: source === 'garmin'
+    sport: source === 'garmin' || source === 'polar' || source === 'coros'
       ? normalizeGarminSport(a.sport || a.sport_type || a.sportType)
       : (a.sport || a.sport_type || a.sportType || null),
     category: a.category || linkedTraining?.category || null,

@@ -896,8 +896,10 @@ export default function DashboardPage() {
         );
         const idStr = String(t.id || '');
         const isExternal = src === 'strava' || src === 'fit' || src === 'garmin' || src === 'apple_health'
+          || src === 'polar' || src === 'coros'
           || idStr.startsWith('strava-') || idStr.startsWith('fit-')
-          || idStr.startsWith('garmin-') || idStr.startsWith('apple-');
+          || idStr.startsWith('garmin-') || idStr.startsWith('apple-')
+          || idStr.startsWith('polar-') || idStr.startsWith('coros-');
         if (isExternal) {
           // Blanket exclusion used to be the rule here, because a synced ride
           // arrives with no laps and lands in the picker as a chart with
@@ -909,7 +911,7 @@ export default function DashboardPage() {
           //
           // Apple Health can never qualify — those workouts store a summary and
           // no laps — so it falls out here on lapCount rather than by name.
-          return (src === 'strava' || src === 'garmin') && looksLikeIntervalSession(t);
+          return (src === 'strava' || src === 'garmin' || src === 'polar' || src === 'coros') && looksLikeIntervalSession(t);
         }
         return !!t._id || !t.source;
       })

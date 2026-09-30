@@ -5,7 +5,7 @@ import {
   SportTile, LacValueChip, ThresholdChip, KpiTile, GlassCard, SectionTitle,
   normSport, SPORT_TINT, NativeSkeletonRows,
 } from '../components/native/shared/Tiles';
-import api, { getTestingsByAthleteId, updateUserProfile, updateAthleteProfile, fetchStravaStatus, fetchGarminStatus } from '../services/api';
+import api, { getTestingsByAthleteId, updateUserProfile, updateAthleteProfile, fetchStravaStatus, fetchGarminStatus, fetchWatchStatus } from '../services/api';
 import { useAthleteSelection } from '../context/AthleteSelectionContext';
 import {
   NATIVE_DASHBOARD_KEYFRAMES, cardEntry,
@@ -46,7 +46,7 @@ const extractThresholds = extractLactateThresholds;
  */
 function ConnectedAccountsCard({ hidden = false }) {
   const navigate = useNavigate();
-  const [state, setState] = useState({ loading: true, strava: null, garmin: null });
+  const [state, setState] = useState({ loading: true, strava: null, garmin: null, polar: null, coros: null });
 
   useEffect(() => {
     if (hidden) return undefined;
@@ -54,8 +54,10 @@ function ConnectedAccountsCard({ hidden = false }) {
     Promise.all([
       fetchStravaStatus().catch(() => null),
       fetchGarminStatus().catch(() => null),
-    ]).then(([strava, garmin]) => {
-      if (!cancelled) setState({ loading: false, strava, garmin });
+      fetchWatchStatus('polar').catch(() => null),
+      fetchWatchStatus('coros').catch(() => null),
+    ]).then(([strava, garmin, polar, coros]) => {
+      if (!cancelled) setState({ loading: false, strava, garmin, polar, coros });
     });
     return () => { cancelled = true; };
   }, [hidden]);
@@ -65,6 +67,8 @@ function ConnectedAccountsCard({ hidden = false }) {
   const rows = [
     { key: 'garmin', label: 'Garmin', status: state.garmin },
     { key: 'strava', label: 'Strava', status: state.strava },
+    { key: 'polar', label: 'Polar', status: state.polar },
+    { key: 'coros', label: 'COROS', status: state.coros },
   ];
   // Nothing connected and nothing broken: the card would be four words of
   // "Not connected", which is noise on a page about training numbers.

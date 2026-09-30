@@ -2920,6 +2920,8 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
     const raw = String(a?.id || a?._id || '');
     if (raw.startsWith('strava-')) return { type: 'strava', id: raw.replace('strava-', '') };
     if (raw.startsWith('garmin-')) return { type: 'garmin', id: raw.replace('garmin-', '') };
+    if (raw.startsWith('polar-')) return { type: 'polar', id: raw.replace('polar-', '') };
+    if (raw.startsWith('coros-')) return { type: 'coros', id: raw.replace('coros-', '') };
     return null;
   })();
   const stravaIdForDelete = deletableActivity ? deletableActivity.id : null;
@@ -2935,6 +2937,9 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
       if (deletableActivity.type === 'garmin') {
         const { deleteGarminActivity } = await import('../../services/api.js');
         await deleteGarminActivity(deletableActivity.id, athleteId);
+      } else if (deletableActivity.type === 'polar' || deletableActivity.type === 'coros') {
+        const { deleteWatchActivity } = await import('../../services/api.js');
+        await deleteWatchActivity(deletableActivity.type, deletableActivity.id, athleteId);
       } else {
         const { deleteStravaActivity } = await import('../../services/api.js');
         await deleteStravaActivity(deletableActivity.id, athleteId);
@@ -3056,6 +3061,24 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
               .catch(e => console.warn('auto-fetch streams failed:', e))
               .finally(() => { if (!cancelled) setStreamsRefreshing(false); });
           }
+        } else if (id.startsWith('polar-') || id.startsWith('coros-')) {
+          const { getWatchActivityDetail } = await import('../../services/api.js');
+          const source = id.startsWith('coros-') ? 'coros' : 'polar';
+          const raw = await getWatchActivityDetail(source, id.replace(/^(polar|coros)-/, ''), athleteId || null);
+          data = {
+            ...raw.detail,
+            laps: raw.laps || [],
+            description: raw.description,
+            titleManual: raw.titleManual,
+            category: raw.category,
+            movingTime: raw.movingTime ?? raw.detail?.moving_time ?? raw.detail?.movingTime,
+            moving_time: raw.movingTime ?? raw.detail?.moving_time ?? raw.detail?.movingTime,
+            distance: raw.distance ?? raw.detail?.distance,
+            manualTss: raw.manualTss ?? raw.detail?.manualTss,
+            tssDisplayMode: raw.tssDisplayMode ?? raw.detail?.tssDisplayMode,
+            tss: raw.manualTss ?? raw.tss ?? raw.detail?.manualTss,
+            lactate: raw.lactate ?? null,
+          };
         } else if (id.startsWith('garmin-')) {
           const { getGarminActivityDetail } = await import('../../services/api.js');
           const raw = await getGarminActivityDetail(id.replace('garmin-', ''), athleteId || null);
@@ -3462,7 +3485,9 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
     const isStrava = id.startsWith('strava-') || merged?.source === 'strava' || merged?.type === 'strava' || !!merged?.stravaId;
     const isFit = id.startsWith('fit-') || merged?.source === 'fit' || merged?.type === 'fit';
     const isGarmin = id.startsWith('garmin-') || merged?.source === 'garmin' || merged?.type === 'garmin';
+    const isWatch = id.startsWith('polar-') || id.startsWith('coros-') || merged?.source === 'polar' || merged?.source === 'coros';
     if (isGarmin) throw new Error('Saving laps is not supported for Garmin activities yet.');
+    if (isWatch) throw new Error('Saving laps is not supported for this activity yet.');
     setSavingLapsSet(true);
     try {
       if (isStrava) {
@@ -3860,6 +3885,9 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
     } else if (kind === 'garmin') {
       const { updateGarminActivity } = await import('../../services/api.js');
       await updateGarminActivity(externalId, payload, athleteId);
+    } else if (kind === 'polar' || kind === 'coros') {
+      const { updateWatchActivity } = await import('../../services/api.js');
+      await updateWatchActivity(kind, externalId, payload, athleteId);
     } else if (kind === 'fit') {
       const { updateFitTraining } = await import('../../services/api.js');
       await updateFitTraining(externalId, payload, athleteId || null);
@@ -4205,6 +4233,9 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
       } else if (kind === 'garmin') {
         const { updateGarminActivity } = await import('../../services/api.js');
         await updateGarminActivity(externalId, { category: value }, athleteId);
+      } else if (kind === 'polar' || kind === 'coros') {
+        const { updateWatchActivity } = await import('../../services/api.js');
+        await updateWatchActivity(kind, externalId, { category: value }, athleteId);
       } else if (kind === 'fit') {
         const { updateFitTraining } = await import('../../services/api.js');
         await updateFitTraining(externalId, { category: value }, athleteId || null);
@@ -4402,6 +4433,9 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
       } else if (kind === 'garmin') {
         const { updateGarminActivity } = await import('../../services/api.js');
         savedResponse = await updateGarminActivity(externalId, { ...basePayload, ...extraFields }, athleteId);
+      } else if (kind === 'polar' || kind === 'coros') {
+        const { updateWatchActivity } = await import('../../services/api.js');
+        savedResponse = await updateWatchActivity(kind, externalId, { ...basePayload, ...extraFields }, athleteId);
       } else if (kind === 'fit') {
         const { updateFitTraining } = await import('../../services/api.js');
         savedResponse = await updateFitTraining(externalId, { ...basePayload, ...extraFields }, athleteId || null);
@@ -9096,6 +9130,15 @@ export default function CalendarView({
               // activity up under the requester, so a coach propagating a
               // category onto an athlete's ride got "not found" for every one.
               await updateStravaActivity(rawId, payload, athleteId || null);
+            } else if (act.type === 'polar' || act.type === 'coros' || act.source === 'polar' || act.source === 'coros'
+                || /^(polar|coros)-/.test(String(act.id || ''))) {
+              const { updateWatchActivity } = await import('../../services/api.js');
+              const source = act.source === 'coros' || act.type === 'coros' || String(act.id || '').startsWith('coros-') ? 'coros' : 'polar';
+              const rawId = String(act.watchId || act.sourceId || act.id || '').replace(/^(polar|coros)-/, '');
+              const payload = {};
+              if (newTitle != null) payload.title = newTitle;
+              if (newCategory != null) payload.category = newCategory;
+              await updateWatchActivity(source, rawId, payload, athleteId || null);
             } else if (act.type === 'garmin' || act.source === 'garmin' || act.garminId
                 || String(act.id || '').startsWith('garmin-')) {
               const { updateGarminActivity } = await import('../../services/api.js');

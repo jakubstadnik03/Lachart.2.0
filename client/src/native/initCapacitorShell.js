@@ -97,7 +97,13 @@ export async function initCapacitorShell() {
       try {
         if (!url) return;
         // Accept any scheme like com.lachart.app://strava-connected[?ok=1]
-        if (/strava-connected/i.test(url)) {
+        if (/polar-connected/i.test(url) || /coros-connected/i.test(url)) {
+          const provider = /coros-connected/i.test(url) ? 'coros' : 'polar';
+          window.dispatchEvent(new CustomEvent(`${provider}:connected`, { detail: { url } }));
+          if (!window.location.hash.includes('/settings') && !/settings/.test(window.location.pathname)) {
+            window.location.replace(`${window.location.origin}/settings?tab=integrations`);
+          }
+        } else if (/strava-connected/i.test(url)) {
           window.dispatchEvent(new CustomEvent('strava:connected', { detail: { url } }));
           // Bring the user to the Settings page if they're not already there
           // so they see the now-Connected card immediately.

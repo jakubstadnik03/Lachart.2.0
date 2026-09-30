@@ -14,6 +14,14 @@ export function garminLinked(user) {
   return !!(user?.garmin?.athleteId || user?.garmin?.accessToken || user?.garmin?.connected);
 }
 
+export function polarLinked(user) {
+  return !!(user?.polar?.athleteId || user?.polar?.accessToken || user?.polar?.connected);
+}
+
+export function corosLinked(user) {
+  return !!(user?.coros?.athleteId || user?.coros?.accessToken || user?.coros?.connected);
+}
+
 export function hasSyncSource(user) {
-  return stravaLinked(user) || garminLinked(user);
+  return stravaLinked(user) || garminLinked(user) || polarLinked(user) || corosLinked(user);
 }
