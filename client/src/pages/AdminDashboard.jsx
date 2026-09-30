@@ -838,11 +838,11 @@ const AdminDashboard = () => {
         )
       );
       const sentAtText = new Date(nowIso).toLocaleString();
-      addNotification(`Strava reminder email sent to ${targetUser.email} at ${sentAtText}`, 'success');
+      addNotification(`Tracker reminder email sent to ${targetUser.email} at ${sentAtText}`, 'success');
     } catch (err) {
-      const message = err?.response?.data?.error || 'Failed to send Strava reminder email';
+      const message = err?.response?.data?.error || 'Failed to send tracker reminder email';
       addNotification(message, 'error');
-      console.error('Strava reminder email error:', err);
+      console.error('Tracker reminder email error:', err);
     } finally {
       setStravaReminderEmailLoadingUserId(null);
     }
@@ -2625,12 +2625,14 @@ const AdminDashboard = () => {
                     {(stravaFilter === 'notConnected' || stravaFilter === 'none') && (
                       <button
                         onClick={async () => {
-                          const notConnectedUsers = filteredUsers.filter(u => !u.stravaConnected && u.email);
+                          const notConnectedUsers = filteredUsers.filter(u =>
+                            !u.stravaConnected && !u.garminConnected && !u.appleHealthConnected && u.email
+                          );
                           if (notConnectedUsers.length === 0) {
-                            addNotification('No users without Strava connection found', 'warning');
+                            addNotification('No users without a tracker connection found', 'warning');
                             return;
                           }
-                          if (!window.confirm(`Send Strava reminder emails to ${notConnectedUsers.length} users?`)) {
+                          if (!window.confirm(`Send tracker reminder emails to ${notConnectedUsers.length} users?`)) {
                             return;
                           }
                           setBulkSending(true);
@@ -2646,7 +2648,7 @@ const AdminDashboard = () => {
                             }
                           }
                           setBulkSending(false);
-                          addNotification(`Strava reminder emails sent: ${successCount} successful, ${failCount} failed`, successCount > 0 ? 'success' : 'error');
+                          addNotification(`Tracker reminder emails sent: ${successCount} successful, ${failCount} failed`, successCount > 0 ? 'success' : 'error');
                         }}
                         disabled={bulkSending}
                         className={`px-3 py-1.5 text-xs sm:text-sm font-medium rounded-md transition-colors ${
@@ -2655,7 +2657,7 @@ const AdminDashboard = () => {
                             : 'bg-orange-600 text-white hover:bg-orange-700'
                         }`}
                       >
-                        {bulkSending ? 'Sending...' : `Send Reminders to All (${filteredUsers.filter(u => !u.stravaConnected && u.email).length})`}
+                        {bulkSending ? 'Sending...' : `Send Reminders to All (${filteredUsers.filter(u => !u.stravaConnected && !u.garminConnected && !u.appleHealthConnected && u.email).length})`}
                       </button>
                     )}
                     <div className="text-xs text-gray-500">
@@ -2992,7 +2994,7 @@ const AdminDashboard = () => {
                         </>
                       )}
                       <div className="mt-2 flex flex-col gap-2">
-                        {!user.stravaConnected && (
+                        {!user.stravaConnected && !user.garminConnected && !user.appleHealthConnected && (
                           <button
                             type="button"
                             disabled={stravaReminderEmailLoadingUserId === user._id || user.notifications?.emailNotifications === false}
@@ -3004,7 +3006,7 @@ const AdminDashboard = () => {
                             } ${stravaReminderEmailLoadingUserId === user._id ? 'opacity-60 cursor-wait' : ''}`}
                           >
                             <span>🔗</span>
-                            {stravaReminderEmailLoadingUserId === user._id ? 'Sending…' : `Send Strava reminder${user.stravaReminderEmail?.sent ? ` (${user.stravaReminderEmail.sentCount || 1}x)` : ''}`}
+                            {stravaReminderEmailLoadingUserId === user._id ? 'Sending…' : `Send tracker reminder${user.stravaReminderEmail?.sent ? ` (${user.stravaReminderEmail.sentCount || 1}x)` : ''}`}
                           </button>
                         )}
                         <button
@@ -3316,7 +3318,7 @@ const AdminDashboard = () => {
                                   )).toLocaleDateString()}
                                 </div>
                               )}
-                              {!user.stravaConnected && (
+                              {!user.stravaConnected && !user.garminConnected && !user.appleHealthConnected && (
                                 <>
                                   {user.stravaReminderEmail?.sent && user.stravaReminderEmail.lastSent && (
                                     <div className="text-[11px] text-gray-400">
@@ -3337,7 +3339,7 @@ const AdminDashboard = () => {
                                           ? 'text-gray-400 cursor-wait'
                                           : 'text-orange-600 hover:text-orange-700 hover:bg-orange-50'
                                       } transition-colors`}
-                                      title="Send Strava connection reminder email"
+                                      title="Send tracker connection reminder (Strava, Garmin or Apple Health)"
                                     >
                                       {stravaReminderEmailLoadingUserId === user._id ? 'Sending...' : 'Send reminder'}
                                     </button>
