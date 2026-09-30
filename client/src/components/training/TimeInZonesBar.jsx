@@ -14,6 +14,7 @@
 
 import React, { useMemo, useState, useEffect } from 'react';
 import { paceToViewer, viewerPaceSuffix } from '../../utils/viewerUnits';
+import { parseZoneNumber } from '../../utils/lapZoneSpans';
 import { requestTrainingZonesModal } from '../../utils/trainingZonesSetup';
 
 const ZONE_DEFS = [
@@ -60,10 +61,29 @@ function sportKey(sport) {
   return 'running'; // includes run, walk, hike, trail
 }
 
-// Read configured zones for a given sport + metric. Returns an array of
-// numbers — the 4 upper bounds dividing 5 zones — or null when zones aren't
-// configured for that combo.
-function readUserZones(authUser, sport, metric) {
+// A zone as a pair of edges, smaller first. Which edge is the *harder* one
+// depends on the metric — pace runs backwards, fewer seconds is faster — and
+// a hand-typed table may list the two either way round, so the pair is read
+// unordered and the direction decided once, below.
+function zoneEdges(zone) {
+  const vals = [parseZoneNumber(zone?.min), parseZoneNumber(zone?.max)]
+    .filter((v) => Number.isFinite(v));
+  if (!vals.length) return null;
+  return { lo: Math.min(...vals), hi: Math.max(...vals) };
+}
+
+// Read configured zones for a given sport + metric. Returns the 4 boundaries
+// dividing the 5 zones, ordered from the easiest zone up — or null when zones
+// aren't configured for that combo.
+//
+// Taking `zone{i}.max` as the boundary worked for watts and beats and was
+// wrong for pace twice over: the generated pace table stores `max` as the
+// FASTER edge (it is written from thresholds that descend), and a table typed
+// by hand may store it as the slower one. Where two zones meet, both tables
+// agree on the boundary, so it is read from the meeting point instead — the
+// midpoint, which also closes the one-second gaps a table like 4:29 / 4:30
+// leaves behind.
+export function readUserZones(authUser, sport, metric) {
   if (!authUser) return null;
   const key = sportKey(sport);
   const root = metric === 'power' ? authUser.powerZones
@@ -71,15 +91,19 @@ function readUserZones(authUser, sport, metric) {
              :                      (authUser.paceZones || authUser.powerZones); // pace stored on powerZones for run/swim
   const z = root?.[key];
   if (!z) return null;
+  const edges = [];
+  for (let i = 1; i <= 5; i++) {
+    const e = zoneEdges(z[`zone${i}`]);
+    if (!e) return null;
+    edges.push(e);
+  }
+  const invert = metric === 'pace';
   const bands = [];
-  for (let i = 1; i <= 4; i++) {
-    const zone = z[`zone${i}`];
-    if (!zone) return null;
-    // For pace zones the user typically stores `max` as the upper bound
-    // (slower threshold). For power/HR `max` is the upper-watts bound.
-    const max = Number(zone.max);
-    if (!Number.isFinite(max)) return null;
-    bands.push(max);
+  for (let i = 0; i < 4; i++) {
+    const ends = invert ? edges[i].lo : edges[i].hi;       // top of this zone
+    const starts = invert ? edges[i + 1].hi : edges[i + 1].lo; // bottom of the next
+    if (!Number.isFinite(ends) || !Number.isFinite(starts)) return null;
+    bands.push((ends + starts) / 2);
   }
   return bands;
 }
@@ -113,18 +137,12 @@ function estimateMaxHr(records) {
   return vals[Math.floor(vals.length * 0.98)];
 }
 
-// 0-based zone index, where bands has 4 thresholds → 5 zones. For pace mode
-// the comparison is inverted (lower seconds = harder = higher zone).
-function zoneIndex(value, bands, invert) {
-  if (invert) {
-    // Faster (lower seconds) wins higher zone
-    for (let i = bands.length - 1; i >= 0; i--) {
-      if (value <= bands[i]) return i + 1 > 4 ? 4 : (4 - i);
-    }
-    return 0;
-  }
+// 0-based zone index, where bands has 4 thresholds → 5 zones. The bands run
+// from the easiest zone up; for pace the numbers themselves run down (fewer
+// seconds is harder), so only the comparison flips.
+export function zoneIndex(value, bands, invert) {
   for (let i = 0; i < bands.length; i++) {
-    if (value < bands[i]) return i;
+    if (invert ? value > bands[i] : value < bands[i]) return i;
   }
   return bands.length;
 }
