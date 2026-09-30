@@ -1766,7 +1766,53 @@ function LapChart({ laps, color, isBike, isRun, isSwim, unitSystem = 'metric', s
 function CategoryPicker({ value, onChange }) {
   const { categories, getCategoryStyle } = useCategories();
   const [open, setOpen] = useState(false);
+  const [panelPos, setPanelPos] = useState(null);
   const wrapRef = useRef(null);
+  const btnRef = useRef(null);
+
+  /**
+   * Where the list goes, measured from the button.
+   *
+   * It used to be an absolutely positioned box inside the card, which on a
+   * phone meant it was clipped by whatever scrolled around it: the picker sits
+   * near the bottom of the activity sheet, so the list opened off the end of
+   * the page with half the categories unreachable and no way to scroll them.
+   *
+   * Now it floats above everything and takes the side with more room, opening
+   * upward when it is near the bottom. Whatever height is left over after a
+   * margin becomes its own scroll area, so a long list of categories always
+   * ends somewhere the thumb can reach.
+   */
+  const placePanel = useCallback(() => {
+    const r = btnRef.current?.getBoundingClientRect();
+    if (!r) return;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const GAP = 6;
+    const MARGIN = 12;
+    const width = Math.min(240, vw - MARGIN * 2);
+    const below = vh - r.bottom - GAP - MARGIN;
+    const above = r.top - GAP - MARGIN;
+    const openUp = below < 200 && above > below;
+    // Right-aligned to the button, then pulled back inside the viewport.
+    const left = Math.max(MARGIN, Math.min(r.right - width, vw - width - MARGIN));
+    setPanelPos(openUp
+      ? { left, bottom: vh - r.top + GAP, width, maxHeight: Math.max(160, above) }
+      : { left, top: r.bottom + GAP, width, maxHeight: Math.max(160, below) });
+  }, []);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    placePanel();
+    // The sheet under it scrolls; the panel is fixed, so it has to follow.
+    const onMove = () => placePanel();
+    window.addEventListener('resize', onMove);
+    window.addEventListener('scroll', onMove, true);
+    return () => {
+      window.removeEventListener('resize', onMove);
+      window.removeEventListener('scroll', onMove, true);
+    };
+  }, [open, placePanel]);
   // `click` (not mousedown) so we run AFTER the option button's onClick has
   // already fired — otherwise on iOS the synthesised mousedown was closing
   // the panel before the tap registered on a child button, and the picked
@@ -1793,6 +1839,7 @@ function CategoryPicker({ value, onChange }) {
   return (
     <div ref={wrapRef} className="relative">
       <button
+        ref={btnRef}
         type="button"
         onClick={(e) => { e.stopPropagation(); setOpen(o => !o); }}
         className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-semibold transition-colors hover:bg-gray-50"
@@ -1811,34 +1858,44 @@ function CategoryPicker({ value, onChange }) {
         )}
         <svg className="w-3 h-3 opacity-60" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><path d="M19 9l-7 7-7-7" strokeLinecap="round" strokeLinejoin="round" /></svg>
       </button>
-      {open && (
-        <div className="absolute z-50 mt-1 right-0 w-44 bg-white rounded-xl shadow-lg border border-gray-100 overflow-hidden"
-             onClick={(e) => e.stopPropagation()}>
-          <button
-            type="button"
-            onClick={(e) => pick(e, null)}
-            onTouchEnd={(e) => pick(e, null)}
-            className="w-full px-3 py-2 text-left text-xs text-gray-500 hover:bg-gray-50 flex items-center gap-2 touch-manipulation"
-            style={{ WebkitTapHighlightColor: 'transparent' }}
+      {open && panelPos && ReactDOM.createPortal(
+        <>
+          {/* A tap anywhere else closes it. On a phone the list floats over
+              the page, so there is no edge of a card to tap past. */}
+          <div className="fixed inset-0 z-[9998]" style={{ background: 'rgba(15,23,42,.18)' }}
+               onClick={(e) => { e.stopPropagation(); setOpen(false); }} />
+          <div
+            className="fixed z-[9999] bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-y-auto overscroll-contain"
+            style={{ ...panelPos, WebkitOverflowScrolling: 'touch' }}
+            onClick={(e) => e.stopPropagation()}
           >
-            <span className="w-2 h-2 rounded-full border border-gray-300" />
-            <span>No category</span>
-          </button>
-          <div className="border-t border-gray-100" />
-          {categories.map(c => (
             <button
-              key={c.id}
               type="button"
-              onClick={(e) => pick(e, c.id)}
-              onTouchEnd={(e) => pick(e, c.id)}
-              className={`w-full px-3 py-2 text-left text-xs flex items-center gap-2 hover:bg-gray-50 touch-manipulation ${value === c.id ? 'bg-gray-50 font-bold' : 'text-gray-700'}`}
+              onClick={(e) => pick(e, null)}
+              onTouchEnd={(e) => pick(e, null)}
+              className="w-full px-3.5 py-2.5 text-left text-[13px] text-gray-500 hover:bg-gray-50 flex items-center gap-2.5 touch-manipulation"
               style={{ WebkitTapHighlightColor: 'transparent' }}
             >
-              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: c.color }} />
-              <span>{c.label}</span>
+              <span className="w-2.5 h-2.5 rounded-full border border-gray-300" />
+              <span>No category</span>
             </button>
-          ))}
-        </div>
+            <div className="border-t border-gray-100" />
+            {categories.map(c => (
+              <button
+                key={c.id}
+                type="button"
+                onClick={(e) => pick(e, c.id)}
+                onTouchEnd={(e) => pick(e, c.id)}
+                className={`w-full px-3.5 py-2.5 text-left text-[13px] flex items-center gap-2.5 hover:bg-gray-50 touch-manipulation ${value === c.id ? 'bg-gray-50 font-bold' : 'text-gray-700'}`}
+                style={{ WebkitTapHighlightColor: 'transparent' }}
+              >
+                <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: c.color }} />
+                <span>{c.label}</span>
+              </button>
+            ))}
+          </div>
+        </>,
+        document.getElementById('app-modal-root') || document.body,
       )}
     </div>
   );

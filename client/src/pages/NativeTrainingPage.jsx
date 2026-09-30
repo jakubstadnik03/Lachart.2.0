@@ -238,6 +238,20 @@ function buildCategoryCounts(trainings) {
   return counts;
 }
 
+/**
+ * Compare titles the way someone typing on a phone expects.
+ *
+ * An athlete searching for "beh" should find "Běh", and nobody reaches for the
+ * shift key mid-search. Accents are stripped and case folded on both sides.
+ */
+function foldForSearch(text) {
+  return String(text || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+}
+
 function CategoryFilterChips({ categories, categoryCounts, categoryId, onChange, style }) {
   const chips = [
     { id: INTERVAL_CAT_ALL, label: 'All', color: '#6b7280', count: categoryCounts[INTERVAL_CAT_ALL] },
@@ -1739,6 +1753,7 @@ export default function NativeTrainingPage({
   const [dateFrom, setDateFrom] = useState('');            // 'YYYY-MM-DD' (empty = no min)
   const [dateTo, setDateTo]     = useState('');            // 'YYYY-MM-DD' (empty = no max)
   const [showFilters, setShowFilters] = useState(false);   // toggles the filter row
+  const [titleQuery, setTitleQuery] = useState('');        // free-text title search
   // Pagination for the session list under the chart
   const SESSION_PAGE_SIZE = 2;
   const [sessionPage, setSessionPage] = useState(0);
@@ -1775,8 +1790,10 @@ export default function NativeTrainingPage({
       const to = new Date(dateTo + 'T23:59:59').getTime();
       if (Number.isFinite(to)) list = list.filter(t => getDate(t).getTime() <= to);
     }
+    const q = foldForSearch(titleQuery);
+    if (q) list = list.filter(t => foldForSearch(t.title || t.name).includes(q));
     return list;
-  }, [trainings, selectedSport, dateFrom, dateTo]);
+  }, [trainings, selectedSport, dateFrom, dateTo, titleQuery]);
 
   // ── Pagination state (declared early — used by the slicing logic below) ───
   const PAGE_SIZE = 4;
@@ -1787,7 +1804,7 @@ export default function NativeTrainingPage({
   useEffect(() => {
     setAnnotateLimit(PAGE_SIZE);
     setIntervalPage(0);
-  }, [selectedSport, categoryFilterId]);
+  }, [selectedSport, categoryFilterId, titleQuery]);
 
   // ── Lactate annotation queue (full list — pagination happens at render) ──
   //
@@ -2601,6 +2618,63 @@ export default function NativeTrainingPage({
                     );
                   })}
                 </div>
+
+                {/* Search by title.
+                    The workout picker further down can be typed into, but it
+                    is below the fold and behind a category row, so an athlete
+                    looking for one session walked the prev/next arrows through
+                    a hundred and eighty titles instead. This filters the page
+                    itself — history, comparison and the lactate queue all read
+                    the same list. */}
+                <div style={{ position: 'relative', marginTop: 8 }}>
+                  <svg
+                    width="13" height="13" viewBox="0 0 24 24" fill="none"
+                    stroke="#9CA3AF" strokeWidth="2.4" strokeLinecap="round"
+                    style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}
+                  >
+                    <circle cx="11" cy="11" r="7" />
+                    <path d="M20 20l-3.5-3.5" />
+                  </svg>
+                  <input
+                    type="search"
+                    value={titleQuery}
+                    onChange={(e) => { setTitleQuery(e.target.value); setSelectedTitle(null); }}
+                    placeholder="Search by title…"
+                    aria-label="Search trainings by title"
+                    style={{
+                      width: '100%', boxSizing: 'border-box',
+                      padding: titleQuery ? '7px 30px 7px 29px' : '7px 12px 7px 29px',
+                      borderRadius: 9999,
+                      border: '1px solid rgba(118,126,181,.18)',
+                      background: 'rgba(255,255,255,.55)',
+                      fontFamily: 'inherit', fontSize: 12, color: '#374151',
+                      outline: 'none', WebkitAppearance: 'none',
+                    }}
+                  />
+                  {titleQuery && (
+                    <button
+                      type="button"
+                      onClick={() => { setTitleQuery(''); setSelectedTitle(null); }}
+                      aria-label="Clear search"
+                      style={{
+                        position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)',
+                        width: 20, height: 20, borderRadius: 9999, border: 'none',
+                        background: 'rgba(118,126,181,.14)', color: '#6B7280',
+                        fontSize: 12, lineHeight: 1, cursor: 'pointer', padding: 0,
+                        WebkitTapHighlightColor: 'transparent', touchAction: 'manipulation',
+                      }}
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
+                {titleQuery && (
+                  <div style={{ marginTop: 6, fontSize: 10, fontWeight: 700, color: '#9CA3AF' }}>
+                    {filtered.length === 0
+                      ? `Nothing titled “${titleQuery}”`
+                      : `${filtered.length} session${filtered.length === 1 ? '' : 's'} matching “${titleQuery}”`}
+                  </div>
+                )}
               </GlassCard>
             </div>
           )}
