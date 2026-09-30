@@ -1,31 +1,71 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import Modal from '../Modal';
-import { getStravaAuthUrl } from '../../services/api';
+import { getStravaAuthUrl, startGarminAuth } from '../../services/api';
 import { useNotification } from '../../context/NotificationContext';
+import { isAppleHealthSupported } from '../../services/appleHealthCapacitor';
+import { isCapacitorNative } from '../../utils/isNativeApp';
 
 /**
- * Strava / tracker prompt on the Testing page.
+ * Tracker connect prompt on the Testing page.
  *
  * variants:
- *   page-load  — soft nudge for protocols / recommendations (existing copy)
- *   after-test — high-intent moment right after a successful save: zones are
- *                ready, connect a tracker so real workouts use them
+ *   page-load  — soft nudge for Strava-based test protocols (existing copy)
+ *   after-test — high-intent moment after save: connect Strava, Garmin, or
+ *                Apple Health so zones meet real workouts
  */
 const StravaIntegrationModal = ({ isOpen, onClose, variant = 'page-load' }) => {
-  const [isConnecting, setIsConnecting] = useState(false);
+  const [busy, setBusy] = useState(null); // 'strava' | 'garmin' | 'apple' | null
+  const [ahMsg, setAhMsg] = useState(null);
   const { addNotification } = useNotification();
   const afterTest = variant === 'after-test';
+  const appleHealthOk = afterTest && isCapacitorNative() && isAppleHealthSupported();
+  const anyBusy = Boolean(busy);
 
-  const handleConnect = async () => {
+  const handleConnectStrava = async () => {
     try {
-      setIsConnecting(true);
+      setBusy('strava');
       const url = await getStravaAuthUrl();
       window.location.href = url;
     } catch (error) {
       console.error('Strava connect error:', error);
       addNotification('Failed to start Strava connection', 'error');
-      setIsConnecting(false);
+      setBusy(null);
+    }
+  };
+
+  const handleConnectGarmin = async () => {
+    try {
+      setBusy('garmin');
+      const url = await startGarminAuth();
+      window.location.href = url;
+    } catch (error) {
+      console.error('Garmin connect error:', error);
+      addNotification('Failed to start Garmin connection', 'error');
+      setBusy(null);
+    }
+  };
+
+  const handleConnectAppleHealth = async () => {
+    setBusy('apple');
+    setAhMsg(null);
+    try {
+      const { requestAppleHealthAccess, collectAppleHealthWellness } = await import('../../services/appleHealthCapacitor');
+      const { syncAppleHealthWellness } = await import('../../services/api');
+      await requestAppleHealthAccess();
+      const wellness = await collectAppleHealthWellness(30);
+      await syncAppleHealthWellness({ wellness, markConnected: true });
+      try {
+        window.dispatchEvent(new CustomEvent('appleHealth:synced', {
+          detail: { wellnessDays: wellness.length },
+        }));
+      } catch { /* ignore */ }
+      addNotification('Apple Health connected', 'success');
+      onClose?.();
+    } catch (e) {
+      console.error('Apple Health connect error:', e);
+      setAhMsg('Could not read Apple Health. In Health → Profile → Apps → LaChart, enable Sleep, Resting HR and HRV, then try again.');
+      setBusy(null);
     }
   };
 
@@ -38,14 +78,9 @@ const StravaIntegrationModal = ({ isOpen, onClose, variant = 'page-load' }) => {
       <div className="space-y-6">
         {afterTest ? (
           <>
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 bg-orange-100 rounded-full flex items-center justify-center shrink-0">
-                <img src="/icon/strava.png" alt="Strava" className="w-7 h-7 object-contain" />
-              </div>
-              <p className="text-sm text-gray-600">
-                Connect Strava or Garmin and every run or ride is measured against the LT1/LT2 zones from this test.
-              </p>
-            </div>
+            <p className="text-sm text-gray-600 text-center leading-relaxed">
+              Connect Strava, Garmin or Apple Health and every session is measured against the LT1/LT2 zones from this test.
+            </p>
 
             <div className="bg-gradient-to-r from-orange-50 to-amber-50 border border-orange-200 rounded-xl p-5">
               <h4 className="text-base font-semibold text-gray-900 mb-3">What unlocks next</h4>
@@ -63,6 +98,75 @@ const StravaIntegrationModal = ({ isOpen, onClose, variant = 'page-load' }) => {
                   <span><strong>Form / Fitness:</strong> TSS from your thresholds, not generic estimates</span>
                 </li>
               </ul>
+            </div>
+
+            <div className="flex flex-col gap-2.5 pt-1">
+              <button
+                type="button"
+                onClick={handleConnectStrava}
+                disabled={anyBusy}
+                className="w-full px-6 py-3 text-sm font-semibold text-white rounded-xl shadow-md hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                style={{ background: '#FC5200' }}
+              >
+                {busy === 'strava' ? 'Opening Strava…' : (
+                  <>
+                    <img src="/icon/strava.png" alt="" className="w-4 h-4 object-contain" />
+                    Connect Strava
+                  </>
+                )}
+              </button>
+
+              <button
+                type="button"
+                onClick={handleConnectGarmin}
+                disabled={anyBusy}
+                className="w-full px-6 py-3 text-sm font-semibold text-white rounded-xl shadow-md hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                style={{ background: '#007CC3' }}
+              >
+                {busy === 'garmin' ? 'Opening Garmin…' : (
+                  <>
+                    <img src="/icon/garmin.svg" alt="" className="w-4 h-4 object-contain" />
+                    Connect Garmin
+                  </>
+                )}
+              </button>
+
+              {appleHealthOk && (
+                <button
+                  type="button"
+                  onClick={handleConnectAppleHealth}
+                  disabled={anyBusy}
+                  className="w-full px-6 py-3 text-sm font-semibold text-white rounded-xl shadow-md hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  style={{ background: '#111827' }}
+                >
+                  {busy === 'apple' ? 'Reading Apple Health…' : 'Connect Apple Health'}
+                </button>
+              )}
+
+              {ahMsg && (
+                <p className="text-center text-xs text-rose-600 leading-snug">{ahMsg}</p>
+              )}
+
+              <button
+                type="button"
+                onClick={onClose}
+                className="w-full px-6 py-3 text-sm font-semibold text-gray-700 bg-white border-2 border-gray-300 rounded-xl hover:bg-gray-50 transition-all"
+              >
+                Not now
+              </button>
+
+              {!appleHealthOk && (
+                <p className="text-center text-sm text-gray-500">
+                  Prefer another source?{' '}
+                  <Link
+                    to="/settings?tab=integrations"
+                    onClick={onClose}
+                    className="font-semibold text-[#5E6590] hover:underline"
+                  >
+                    Open Integrations
+                  </Link>
+                </p>
+              )}
             </div>
           </>
         ) : (
@@ -110,51 +214,38 @@ const StravaIntegrationModal = ({ isOpen, onClose, variant = 'page-load' }) => {
                 <li>Use the suggested protocol when doing your lactate test</li>
               </ol>
             </div>
+
+            <div className="flex flex-col sm:flex-row gap-3 pt-2">
+              <button
+                type="button"
+                onClick={onClose}
+                className="flex-1 px-6 py-3 text-sm font-semibold text-gray-700 bg-white border-2 border-gray-300 rounded-xl hover:bg-gray-50 transition-all"
+              >
+                Maybe Later
+              </button>
+              <button
+                type="button"
+                onClick={handleConnectStrava}
+                disabled={anyBusy}
+                className="flex-1 px-6 py-3 text-sm font-semibold text-white bg-orange-600 rounded-xl hover:bg-orange-700 shadow-md hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                {busy === 'strava' ? (
+                  <>
+                    <svg className="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Connecting...
+                  </>
+                ) : (
+                  <>
+                    <img src="/icon/strava.png" alt="Strava" className="w-4 h-4 object-contain" />
+                    Connect Strava
+                  </>
+                )}
+              </button>
+            </div>
           </>
-        )}
-
-        <div className="flex flex-col sm:flex-row gap-3 pt-2">
-          <button
-            type="button"
-            onClick={onClose}
-            className="flex-1 px-6 py-3 text-sm font-semibold text-gray-700 bg-white border-2 border-gray-300 rounded-xl hover:bg-gray-50 transition-all"
-          >
-            {afterTest ? 'Not now' : 'Maybe Later'}
-          </button>
-          <button
-            type="button"
-            onClick={handleConnect}
-            disabled={isConnecting}
-            className="flex-1 px-6 py-3 text-sm font-semibold text-white bg-orange-600 rounded-xl hover:bg-orange-700 shadow-md hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-          >
-            {isConnecting ? (
-              <>
-                <svg className="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-                Connecting...
-              </>
-            ) : (
-              <>
-                <img src="/icon/strava.png" alt="Strava" className="w-4 h-4 object-contain" />
-                Connect Strava
-              </>
-            )}
-          </button>
-        </div>
-
-        {afterTest && (
-          <p className="text-center text-sm text-gray-500">
-            Prefer Garmin?{' '}
-            <Link
-              to="/settings?tab=integrations"
-              onClick={onClose}
-              className="font-semibold text-[#5E6590] hover:underline"
-            >
-              Open Integrations
-            </Link>
-          </p>
         )}
       </div>
     </Modal>

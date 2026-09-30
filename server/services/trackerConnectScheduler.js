@@ -1,8 +1,8 @@
 /**
  * trackerConnectScheduler.js
  *
- * Drains the "zones ready — connect Strava/Garmin" campaign (one email per
- * eligible user, ever) with Zoho-safe pacing.
+ * Drains the "zones ready — connect Strava/Garmin/Apple Health" campaign
+ * (one email per eligible user, ever) with Zoho-safe pacing.
  *
  * SAFETY: NOT auto-on. Set ENABLE_TRACKER_CONNECT_SCHEDULER=true after
  * previewing via the admin route.

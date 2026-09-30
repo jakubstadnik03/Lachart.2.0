@@ -36,20 +36,25 @@ const BRAND = {
 };
 
 const COPY = {
-  subject: 'Your zones are ready — connect Strava or Garmin',
+  subject: 'Your zones are ready — connect Strava, Garmin or Apple Health',
   pill: 'Next step',
   heroTitle: 'Your lactate zones are ready',
   heroBody:
-    'You already ran a test. Without Strava or Garmin, those zones never meet a real run or ride — so Form, TSS and zone time stay empty.',
-  cta: 'Connect Strava or Garmin',
+    'You already ran a test. Without a tracker, those zones never meet a real run or ride — so Form, TSS and zone time stay empty. Connect Strava, Garmin or Apple Health.',
+  cta: 'Connect a tracker',
   ctaPath: '/settings?tab=integrations',
   secondaryCta: 'Open your latest test',
   secondaryPath: '/testing',
   features: [
     {
       icon: '🔗',
-      title: 'Import every session',
-      body: 'Link once — rides, runs and swims land in your calendar with no uploads.',
+      title: 'Strava or Garmin',
+      body: 'Link once — rides, runs and swims land in your calendar with no uploads. Garmin also sends planned workouts to your watch.',
+    },
+    {
+      icon: '❤️',
+      title: 'Apple Health (iPhone)',
+      body: 'Sleep, resting HR and HRV for recovery — next to the workouts from Strava or Garmin.',
     },
     {
       icon: '🎯',
@@ -60,11 +65,6 @@ const COPY = {
       icon: '📈',
       title: 'Form / Fitness starts counting',
       body: 'TSS from your zones fills Form / Fitness / Fatigue from day one.',
-    },
-    {
-      icon: '📱',
-      title: 'Same account on web & iPhone',
-      body: 'Connect on the web; the app picks up the sync automatically.',
     },
   ],
   footerNote: 'Optional. Disconnect anytime in Settings → Integrations.',

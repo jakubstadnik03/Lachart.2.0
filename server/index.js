@@ -414,8 +414,8 @@ startWinBackScheduler();
 // after previewing the email (ENABLE_PREDICTED_CURVE_SCHEDULER=true).
 startPredictedCurveScheduler();
 
-// "Zones ready — connect Strava/Garmin" for athletes with a test and no tracker.
-// Off by default (ENABLE_TRACKER_CONNECT_SCHEDULER=true after preview).
+// "Zones ready — connect Strava/Garmin/Apple Health" for athletes with a test
+// and no tracker. Off by default (ENABLE_TRACKER_CONNECT_SCHEDULER=true after preview).
 startTrackerConnectScheduler();
 
 // "Your threshold has moved" — a push to an athlete about their own curve,
