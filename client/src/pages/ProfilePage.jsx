@@ -980,7 +980,10 @@ const [selectedTitle, setSelectedTitle] = useState(null);
                           <th className="px-1 sm:px-3 md:px-6 py-2 sm:py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-white/20">Zone</th>
                           <th className="px-1 sm:px-3 md:px-6 py-2 sm:py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-white/20 hidden sm:table-cell">Description</th>
                           <th className="px-1 sm:px-3 md:px-6 py-2 sm:py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-white/20">
-                            {sport === 'cycling' ? 'Power (W)' : sport === 'swimming' ? 'Pace /100m' : 'Pace /km'}
+                            {/* The cells print the viewer's unit, so the header
+                                has to follow them — it said "/km" over a column
+                                of "/mi" figures. */}
+                            {sport === 'cycling' ? 'Power (W)' : `Pace ${getPaceUnit(sport)}`}
                           </th>
                           <th className="px-1 sm:px-3 md:px-6 py-2 sm:py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-white/20">HR</th>
                           <th className="px-1 sm:px-3 md:px-6 py-2 sm:py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Lactate</th>
