@@ -7,6 +7,7 @@ import TrainingZonesGenerator from "./TrainingZonesGenerator";
 import TestComparison from "./TestComparison";
 import TestSelector from "./TestSelector";
 import TrainingSinceTestPanel from "./TrainingSinceTestPanel";
+import TrainFromTestCard from "./TrainFromTestCard";
 import { resolveLtAnchorsFromTest } from "./resolveLtAnchorsFromTest";
 import { sportKind } from "../../utils/hrPowerProfile";
 import { updateTest, deleteTest } from '../../services/api';
@@ -555,6 +556,26 @@ const PreviousTestingComponent = ({
             transition={{ duration: 0.3 }}
           >
         <LactateCurveCalculator mockData={currentTest} athleteId={athleteId} isPremium={isPremium} />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* The curve says where the thresholds are. This says what to train
+          from them, and — on a paid plan — puts that week on the calendar. */}
+      <AnimatePresence>
+      {currentTest && currentTest.results && Array.isArray(currentTest.results) && currentTest.results.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            transition={{ duration: 0.3 }}
+          >
+        <TrainFromTestCard
+          test={currentTest}
+          isPremium={isPremium}
+          athleteId={athleteId}
+          onUpgrade={() => gate('Train from your test', 'pro')}
+        />
           </motion.div>
         )}
       </AnimatePresence>
