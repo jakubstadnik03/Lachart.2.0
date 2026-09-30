@@ -9,11 +9,12 @@ import SessionProgressChart from '../training/SessionProgressChart';
 import CompareSessionsMenu from '../training/CompareSessionsMenu';
 import { comparedSessionStub } from '../../utils/comparedSessionStub';
 import TimeInZonesBar from '../training/TimeInZonesBar';
-import PeakValuesChart, { readPower, readHeartRate, readSpeed } from '../training/PeakValuesChart';
+import { PeakValuesPanel } from '../training/PeakValuesChart';
 import WorkoutStepsCompliance from '../training/WorkoutStepsCompliance';
 import ActivityPeaksTab from '../training/ActivityPeaksTab';
 import SessionVsTestPanel from '../training/SessionVsTestPanel';
 import RunSplitsTable from '../training/RunSplitsTable';
+import { buildRunSplits } from '../../utils/runKmSplits';
 import ActivityShareSheet from '../sharing/ActivityShareSheet';
 import {
   ChevronLeftIcon,
@@ -4065,6 +4066,13 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
   // Laps
   const laps = Array.isArray(merged.laps) ? merged.laps : [];
   const fmtLapDur = (s) => fmtLapClock(s);
+  const hasRunSplits = useMemo(() => {
+    if (!isRun) return false;
+    return buildRunSplits(laps, chartTraining?.records || [], {
+      lapTimeSource: isStravaActivity ? 'strava' : 'fit',
+      unitSystem,
+    }).length >= 1;
+  }, [isRun, laps, chartTraining?.records, isStravaActivity, unitSystem]);
 
   // ── Auto-title from detected interval structure ──
   // When an activity still has a generic/auto-generated name ("Morning Ride",
@@ -5591,13 +5599,28 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
               <div className="px-4 py-10 text-center text-sm text-gray-400">No graph data available</div>
             )}
 
-            {isRun && (
+            {hasRunSplits && (
               <RunSplitsTable
                 laps={laps}
                 records={chartTraining?.records || []}
                 lapTimeSource={isStravaActivity ? 'strava' : 'fit'}
                 unitSystem={unitSystem}
               />
+            )}
+
+            {chartTraining?.records?.length > 30 && (
+              <div className="px-4 py-3 border-b border-gray-50">
+                <PeakValuesPanel
+                  records={chartTraining.records}
+                  isBike={isBike}
+                  isSwim={isSwim}
+                  unitSystem={unitSystem}
+                  formatPaceFromSpeedMps={formatPaceFromSpeedMps}
+                  formatPaceMMSS={formatPaceMMSS}
+                  paceSecondsFromSpeedMps={paceSecondsFromSpeedMps}
+                  paceUnitShort={paceUnitShort}
+                />
+              </div>
             )}
 
             {/* Time in zones */}
@@ -6453,67 +6476,69 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                 </div>
               ) : null}
 
-              {/* ── What the session was worth, three ways ──
-                  The trace above says what happened minute by minute; these
-                  say what it amounts to. Peak values are the only reading
-                  here that can be held against another day without lining
-                  two rides up in time, and time in zones is the one a coach
-                  checks before deciding whether the week was ridden as
-                  written. Both were already computed elsewhere in the app
-                  and neither was reachable from the session itself. */}
-              {chartTraining?.records?.length > 30 && (
-                <div className="px-5 py-4 border-b border-gray-50 grid gap-5 md:grid-cols-2 2xl:grid-cols-3">
-                  {/* Watts are the bike's channel. A run has them only as an
-                      estimate — and a runner reads the same effort as pace,
-                      so the curve is drawn from speed and labelled in pace.
-                      Speed is what gets averaged: pace counts backwards and
-                      would turn the mean-maximal curve upside down. */}
-                  {isBike ? (
-                    <PeakValuesChart
-                      records={chartTraining.records}
-                      read={readPower}
-                      color="#767EB5"
-                      unit="W"
-                      title="Peak values (power)"
-                    />
-                  ) : (
-                    <PeakValuesChart
-                      records={chartTraining.records}
-                      read={readSpeed}
-                      color="#767EB5"
-                      unit={paceUnitShort(unitSystem, isSwim ? 'swim' : 'run')}
-                      title="Peak values (pace)"
-                      bestLabel="best"
-                      minDuration={5}
-                      format={(mps) => {
-                        const p = formatPaceFromSpeedMps(mps, unitSystem, isSwim ? 'swim' : 'run');
-                        return p || '—';
-                      }}
-                      formatTick={(mps) => formatPaceMMSS(paceSecondsFromSpeedMps(mps, unitSystem, isSwim ? 'swim' : 'run')) || ''}
-                    />
-                  )}
-                  <PeakValuesChart
-                    records={chartTraining.records}
-                    read={readHeartRate}
-                    color="#ef4444"
-                    unit="bpm"
-                    title="Peak values (heart rate)"
-                  />
-                  <div className="md:col-span-2 2xl:col-span-1">
-                    <TimeInZonesBar records={chartTraining.records} sport={merged?.sport} authUser={authUser} />
+              {/* Splits + a compact peaks/zones column — both sized to content,
+                  not stretched across the whole modal. Without splits, peaks
+                  and zones sit side by side at the same compact width. */}
+              {(hasRunSplits || chartTraining?.records?.length > 30) && (() => {
+                const showPeaks = chartTraining?.records?.length > 30;
+                return (
+                  <div className="px-5 py-4 border-b border-gray-50 flex flex-col md:flex-row flex-wrap gap-5 items-start">
+                    {hasRunSplits && (
+                      <RunSplitsTable
+                        laps={laps}
+                        records={chartTraining?.records || []}
+                        lapTimeSource={isStravaActivity ? 'strava' : 'fit'}
+                        unitSystem={unitSystem}
+                        className="w-full md:w-[17.5rem] shrink-0"
+                      />
+                    )}
+                    {showPeaks && hasRunSplits && (
+                      <div className="flex flex-col gap-3 w-full md:w-[20rem] shrink-0">
+                        <PeakValuesPanel
+                          records={chartTraining.records}
+                          isBike={isBike}
+                          isSwim={isSwim}
+                          unitSystem={unitSystem}
+                          formatPaceFromSpeedMps={formatPaceFromSpeedMps}
+                          formatPaceMMSS={formatPaceMMSS}
+                          paceSecondsFromSpeedMps={paceSecondsFromSpeedMps}
+                          paceUnitShort={paceUnitShort}
+                        />
+                        <TimeInZonesBar
+                          records={chartTraining.records}
+                          sport={merged?.sport}
+                          authUser={authUser}
+                          className="pt-1"
+                        />
+                      </div>
+                    )}
+                    {showPeaks && !hasRunSplits && (
+                      <>
+                        <div className="w-full md:w-[20rem] shrink-0">
+                          <PeakValuesPanel
+                            records={chartTraining.records}
+                            isBike={isBike}
+                            isSwim={isSwim}
+                            unitSystem={unitSystem}
+                            formatPaceFromSpeedMps={formatPaceFromSpeedMps}
+                            formatPaceMMSS={formatPaceMMSS}
+                            paceSecondsFromSpeedMps={paceSecondsFromSpeedMps}
+                            paceUnitShort={paceUnitShort}
+                          />
+                        </div>
+                        <div className="w-full md:w-[20rem] shrink-0">
+                          <TimeInZonesBar
+                            records={chartTraining.records}
+                            sport={merged?.sport}
+                            authUser={authUser}
+                            className="min-w-0"
+                          />
+                        </div>
+                      </>
+                    )}
                   </div>
-                </div>
-              )}
-
-              {isRun && (
-                <RunSplitsTable
-                  laps={laps}
-                  records={chartTraining?.records || []}
-                  lapTimeSource={isStravaActivity ? 'strava' : 'fit'}
-                  unitSystem={unitSystem}
-                  className="px-5"
-                />
-              )}
+                );
+              })()}
 
               {/* ── Lap chart — sticky on desktop so the bars stay visible
                   while the user scrolls through the laps table below. Mobile

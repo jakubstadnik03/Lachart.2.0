@@ -126,6 +126,23 @@ export default function WorkoutPlannerPage() {
   const [activityModal, setActivityModal] = useState(null); // { activity, plannedWorkout } — completed detail
   const [context, setContext] = useState({ ftp: 250, lt1Power: null, lt2Power: null });
 
+  // Arriving from a lactate test: the library is where the new templates
+  // live, and the week they were written onto is the one to land on.
+  const didFocusWeek = useRef(false);
+  useEffect(() => {
+    if (!location.state?.fromTest) return;
+    setPanels((prev) => (prev.library ? prev : { ...prev, library: true }));
+  }, [location.state?.fromTest]);
+  useEffect(() => {
+    const focus = location.state?.focusDate;
+    if (!focus || didFocusWeek.current) return;
+    const weekKey = toLocalDateStr(startOfWeek(new Date(`${focus}T12:00:00`)));
+    const el = document.getElementById(`planner-week-${weekKey}`);
+    if (!el) return;
+    didFocusWeek.current = true;
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, [location.state?.focusDate, planned]);
+
   // Open the edit modal when navigated here with { editWorkout } state
   // (e.g. from PlannedWorkoutEditor's "Edit in Planner" button)
   useEffect(() => {
@@ -730,8 +747,8 @@ export default function WorkoutPlannerPage() {
 
       {/* Stacked weeks — each row: 7-day grid + right summary column */}
       {weekStarts.map((ws) => (
+        <div id={`planner-week-${toLocalDateStr(ws)}`} key={ws.toISOString()}>
         <PlannerWeekRow
-          key={ws.toISOString()}
           weekStart={ws}
           planned={planned}
           trainings={trainings}
@@ -751,6 +768,7 @@ export default function WorkoutPlannerPage() {
           onAddDay={(day) => setModal({ date: day, workout: null })}
           onDropTemplate={saveTemplateOnDay}
         />
+        </div>
       ))}
 
       {isMobile && (

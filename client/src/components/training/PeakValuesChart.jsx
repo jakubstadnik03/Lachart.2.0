@@ -12,7 +12,7 @@
  * and on a linear axis the first would be invisible.
  */
 
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 /** Durations the curve is sampled at, in seconds. */
 const DURATIONS = [
@@ -109,7 +109,8 @@ export default function PeakValuesChart({
   formatTick,
   bestLabel = 'max',
   minDuration = 1,
-  height = 150,
+  height = 120,
+  actions = null,
 }) {
   const [hover, setHover] = useState(null);
   const svgRef = useRef(null);
@@ -165,23 +166,25 @@ export default function PeakValuesChart({
 
   return (
     <div className="flex flex-col">
-      <div className="flex items-baseline justify-between mb-1">
+      <div className="flex items-center justify-between mb-1 gap-2">
         <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wide">{title}</span>
-        <span className="text-[11px] font-bold tabular-nums" style={{ color }}>
-          {hover
-            ? `${fmtDuration(hover.d)} · ${fmtValue(hover.v)}`
-            : `${bestLabel} ${fmtValue(vMax)}`}
-        </span>
+        <div className="flex items-center gap-2 min-w-0">
+          {actions}
+          <span className="text-[11px] font-bold tabular-nums" style={{ color }}>
+            {hover
+              ? `${fmtDuration(hover.d)} · ${fmtValue(hover.v)}`
+              : `${bestLabel} ${fmtValue(vMax)}`}
+          </span>
+        </div>
       </div>
       <svg
         ref={svgRef}
         viewBox={`0 0 ${W} ${H}`}
         width="100%"
-        height={H}
-        preserveAspectRatio="none"
+        preserveAspectRatio="xMidYMid meet"
         onMouseMove={onMove}
         onMouseLeave={() => setHover(null)}
-        style={{ display: 'block', touchAction: 'pan-y' }}
+        style={{ display: 'block', aspectRatio: `${W} / ${H}`, height: 'auto', touchAction: 'pan-y' }}
       >
         {yTicks.map((v, i) => (
           <g key={i}>
@@ -219,3 +222,106 @@ export const readSpeed = (r) => {
   const v = Number(r?.speed ?? r?.enhanced_speed ?? r?.enhancedSpeed ?? r?.velocity_smooth ?? r?.velocity);
   return Number.isFinite(v) && v > 0 ? v : 0;
 };
+
+/**
+ * One peak-values chart with a Pace/HR (run) or Power/HR (bike) toggle —
+ * same control language as Time in Zones, so the session modal does not
+ * show two separate peak curves side by side.
+ */
+export function PeakValuesPanel({
+  records,
+  isBike = false,
+  isSwim = false,
+  unitSystem = 'metric',
+  formatPaceFromSpeedMps,
+  formatPaceMMSS,
+  paceSecondsFromSpeedMps,
+  paceUnitShort,
+}) {
+  const paceSport = isSwim ? 'swim' : 'run';
+  const hasPower = useMemo(
+    () => (records || []).some((r) => readPower(r) > 0),
+    [records],
+  );
+  const hasPace = useMemo(
+    () => (records || []).some((r) => readSpeed(r) > 0),
+    [records],
+  );
+  const hasHr = useMemo(
+    () => (records || []).some((r) => readHeartRate(r) > 0),
+    [records],
+  );
+
+  const options = useMemo(() => {
+    const out = [];
+    if (isBike && hasPower) out.push({ id: 'power', label: 'Power' });
+    if (!isBike && hasPace) out.push({ id: 'pace', label: 'Pace' });
+    if (hasHr) out.push({ id: 'hr', label: 'HR' });
+    return out;
+  }, [isBike, hasPower, hasPace, hasHr]);
+
+  const defaultMetric = isBike ? (hasPower ? 'power' : 'hr') : (hasPace ? 'pace' : 'hr');
+  const [metric, setMetric] = useState(defaultMetric);
+
+  useEffect(() => {
+    if (!options.some((o) => o.id === metric)) {
+      setMetric(options[0]?.id || defaultMetric);
+    }
+  }, [options, metric, defaultMetric]);
+
+  if (!options.length) return null;
+
+  const active = options.some((o) => o.id === metric) ? metric : options[0].id;
+
+  let chartProps = null;
+  if (active === 'power') {
+    chartProps = {
+      read: readPower,
+      color: '#767EB5',
+      unit: 'W',
+    };
+  } else if (active === 'pace') {
+    chartProps = {
+      read: readSpeed,
+      color: '#767EB5',
+      unit: paceUnitShort(unitSystem, paceSport),
+      bestLabel: 'best',
+      minDuration: 5,
+      format: (mps) => formatPaceFromSpeedMps(mps, unitSystem, paceSport) || '—',
+      formatTick: (mps) => formatPaceMMSS(paceSecondsFromSpeedMps(mps, unitSystem, paceSport)) || '',
+    };
+  } else {
+    chartProps = {
+      read: readHeartRate,
+      color: '#ef4444',
+      unit: 'bpm',
+    };
+  }
+
+  const toggle = options.length > 1 ? (
+    <div className="inline-flex p-0.5 rounded-md bg-gray-100">
+      {options.map((o) => (
+        <button
+          key={o.id}
+          type="button"
+          onClick={() => setMetric(o.id)}
+          className={`text-[9.5px] font-bold px-1.5 py-0.5 rounded transition-colors ${
+            active === o.id ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'
+          }`}
+          style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  ) : null;
+
+  return (
+    <PeakValuesChart
+      records={records}
+      title="Peak values"
+      actions={toggle}
+      {...chartProps}
+    />
+  );
+}

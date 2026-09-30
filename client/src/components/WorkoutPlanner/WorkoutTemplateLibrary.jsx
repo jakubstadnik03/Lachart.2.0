@@ -122,7 +122,9 @@ export default function WorkoutTemplateLibrary({ templates = [], onOpenTemplate 
   })), []);
   const mine = useMemo(() => (templates || []).filter((t) => t && !t.isDefault).map((t) => ({
     id: t._id, name: t.name, sport: t.sport, sportKey: plannerSportKey(t.sport),
-    category: (Array.isArray(t.tags) && t.tags[0]) || null, desc: t.description || '', comment: t.comment || '', steps: t.steps || [], builtIn: false,
+    category: (Array.isArray(t.tags) && t.tags[0]) || null,
+    fromTest: Array.isArray(t.tags) && t.tags.includes('from-test'),
+    desc: t.description || '', comment: t.comment || '', steps: t.steps || [], builtIn: false,
   })), [templates]);
 
   const sports = useMemo(() => {
@@ -146,6 +148,8 @@ export default function WorkoutTemplateLibrary({ templates = [], onOpenTemplate 
     && (effectiveCat === 'all' || t.category === effectiveCat)
     && (!needle || `${t.name} ${t.desc || ''} ${t.category ? categoryLabel(t.category) : ''}`.toLowerCase().includes(needle));
   const mineShown = mine.filter(matches);
+  const fromTestShown = mineShown.filter((t) => t.fromTest);
+  const savedShown = mineShown.filter((t) => !t.fromTest);
   const builtInShown = savedOnly ? [] : builtIn.filter(matches);
 
   return (
@@ -206,7 +210,7 @@ export default function WorkoutTemplateLibrary({ templates = [], onOpenTemplate 
       </div>
 
       <div className="flex-1 overflow-y-auto p-2 space-y-3">
-        {mineShown.length === 0 && builtInShown.length === 0 ? (
+        {fromTestShown.length === 0 && savedShown.length === 0 && builtInShown.length === 0 ? (
           <div className="text-[12px] text-slate-400 px-2 py-4 text-center">
             {savedOnly
               ? 'No saved workouts yet — build one and hit “Save template”, or untick to see the built-ins.'
@@ -214,11 +218,19 @@ export default function WorkoutTemplateLibrary({ templates = [], onOpenTemplate 
           </div>
         ) : (
           <>
-            {mineShown.length > 0 && (
+            {fromTestShown.length > 0 && (
+              <section>
+                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 px-1 mb-1.5">From your test</p>
+                <div className="space-y-1.5">
+                  {fromTestShown.map((t) => <TemplateRow key={t.id} item={t} onOpen={openInPlanner} onDelete={onDeleteTemplate} categoryLabel={categoryLabel} />)}
+                </div>
+              </section>
+            )}
+            {savedShown.length > 0 && (
               <section>
                 <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 px-1 mb-1.5">My templates</p>
                 <div className="space-y-1.5">
-                  {mineShown.map((t) => <TemplateRow key={t.id} item={t} onOpen={openInPlanner} onDelete={onDeleteTemplate} categoryLabel={categoryLabel} />)}
+                  {savedShown.map((t) => <TemplateRow key={t.id} item={t} onOpen={openInPlanner} onDelete={onDeleteTemplate} categoryLabel={categoryLabel} />)}
                 </div>
               </section>
             )}

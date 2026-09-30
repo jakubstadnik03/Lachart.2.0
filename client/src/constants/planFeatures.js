@@ -67,6 +67,7 @@ export const PLAN_FEATURES = {
         items: [
           'Push structured workouts to your Garmin',
           'Plan your week in the calendar',
+          'Sessions prescribed from your lactate test',
           'Start trainings from the app & smart trainer',
           'Load, form and fitness over the full history',
           'Priority support',
