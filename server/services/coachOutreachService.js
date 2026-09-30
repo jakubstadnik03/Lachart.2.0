@@ -23,6 +23,7 @@
 'use strict';
 
 const crypto = require('crypto');
+const { emailLinkBase } = require('../utils/emailLinkBase');
 const User = require('../models/UserModel');
 const Test = require('../models/test');
 const { createCampaignTransporter, campaignSender } = require('../utils/createEmailTransporter');
@@ -89,7 +90,7 @@ function unsubscribeTokenFor(userId) {
 }
 
 function unsubscribeUrlFor(userId) {
-  const base = (process.env.SERVER_PUBLIC_URL || 'https://lachart.onrender.com').replace(/\/+$/, '');
+  const base = emailLinkBase();
   return `${base}/api/email/unsubscribe?u=${encodeURIComponent(String(userId))}&t=${unsubscribeTokenFor(userId)}`;
 }
 

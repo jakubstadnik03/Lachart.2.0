@@ -24,6 +24,7 @@
 'use strict';
 
 const express = require('express');
+const { emailLinkBase } = require('../utils/emailLinkBase');
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const router = express.Router();
@@ -46,7 +47,7 @@ function signature(userId, exp) {
 
 /** Build the URL to put behind an email CTA. */
 function buildEmailLoginUrl(userId, next = '/settings?tab=subscription', ttlSec = DEFAULT_TTL_SEC) {
-  const base = (process.env.SERVER_PUBLIC_URL || 'https://lachart.onrender.com').replace(/\/+$/, '');
+  const base = emailLinkBase();
   const exp = Math.floor(Date.now() / 1000) + ttlSec;
   const qs = new URLSearchParams({
     u: String(userId),

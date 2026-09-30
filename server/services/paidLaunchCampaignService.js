@@ -7,6 +7,7 @@
  */
 
 const crypto = require('crypto');
+const { emailLinkBase } = require('../utils/emailLinkBase');
 const { createCampaignTransporter, campaignSender } = require('../utils/createEmailTransporter');
 const User = require('../models/UserModel');
 
@@ -272,7 +273,7 @@ function unsubscribeTokenFor(userId) {
   return crypto.createHmac('sha256', secret).update(String(userId)).digest('hex').slice(0, 24);
 }
 function unsubscribeUrlFor(userId) {
-  const base = (process.env.SERVER_PUBLIC_URL || 'https://lachart.onrender.com').replace(/\/+$/, '');
+  const base = emailLinkBase();
   return `${base}/api/email/unsubscribe?u=${encodeURIComponent(String(userId))}&t=${unsubscribeTokenFor(userId)}`;
 }
 

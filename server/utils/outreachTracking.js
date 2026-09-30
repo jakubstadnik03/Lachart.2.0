@@ -10,6 +10,7 @@
  */
 
 const crypto = require('crypto');
+const { emailLinkBase } = require('./emailLinkBase');
 
 /** Hosts a tracked link may point at. Anything else is refused outright. */
 const ALLOWED_HOSTS = new Set([
@@ -27,7 +28,7 @@ function sign(...parts) {
 }
 
 function serverBase() {
-  return (process.env.SERVER_PUBLIC_URL || 'https://lachart.onrender.com').replace(/\/+$/, '');
+  return emailLinkBase();
 }
 
 function isAllowedTarget(url) {

@@ -28,6 +28,7 @@
  */
 
 const crypto = require('crypto');
+const { emailLinkBase } = require('../utils/emailLinkBase');
 const dns = require('dns').promises;
 const CoachOutreachLead = require('../models/CoachOutreachLead');
 const { createCampaignTransporter, campaignSender } = require('../utils/createEmailTransporter');
@@ -141,7 +142,7 @@ function unsubscribeTokenFor(id) {
 }
 
 function unsubscribeUrlFor(leadId) {
-  const base = (process.env.SERVER_PUBLIC_URL || 'https://lachart.onrender.com').replace(/\/+$/, '');
+  const base = emailLinkBase();
   return `${base}/api/email/unsubscribe?u=${encodeURIComponent(String(leadId))}&t=${unsubscribeTokenFor(leadId)}&k=lead`;
 }
 
