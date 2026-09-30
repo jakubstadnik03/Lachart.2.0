@@ -325,6 +325,7 @@ app.use("/api/race-events", raceEventRoutes);
 app.use("/api/fit", fitUploadRoute);
 app.use("/api/lactate-session", lactateSessionRoutes);
 app.use("/api/integrations", integrationsRoutes);
+app.use("/api/integrations", require("./routes/watchIntegrationRoutes"));
 app.use("/api/workout-clustering", workoutClusteringRoutes);
 app.use("/api/subscription", subscriptionRoutes);
 app.use('/api/comments', commentRoutes);

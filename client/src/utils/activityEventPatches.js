@@ -40,9 +40,12 @@ export function requestOpenActivity(activityId) {
 export function getActivityAppId(activity) {
   if (!activity) return '';
   const rawId = String(activity.id || '');
-  if (/^(strava|fit|regular|garmin|apple)-/i.test(rawId)) return rawId;
+  if (/^(strava|fit|regular|garmin|apple|polar|coros)-/i.test(rawId)) return rawId;
   if (activity.stravaId != null) return `strava-${activity.stravaId}`;
   if (activity.garminId != null) return `garmin-${activity.garminId}`;
+  if ((activity.source === 'polar' || activity.source === 'coros') && (activity.watchId || activity.sourceId)) {
+    return `${activity.source}-${activity.watchId || activity.sourceId}`;
+  }
   if (activity.healthKitId != null) return `apple-${activity.healthKitId}`;
   if (activity.type === 'fit' && activity._id) return `fit-${activity._id}`;
   if (activity.type === 'regular' && activity._id) return `regular-${activity._id}`;
@@ -110,6 +113,13 @@ export function resolveActivitySaveKind(activity) {
     return {
       kind: 'garmin',
       externalId: String(activity.garminId ?? appId.replace(/^garmin-/i, '')),
+    };
+  }
+  if (activity?.source === 'polar' || activity?.source === 'coros' || /^(polar|coros)-/i.test(appId)) {
+    const kind = activity?.source === 'coros' || appId.startsWith('coros-') ? 'coros' : 'polar';
+    return {
+      kind,
+      externalId: String(activity.watchId || activity.sourceId || appId.replace(/^(polar|coros)-/i, '')),
     };
   }
   if (
