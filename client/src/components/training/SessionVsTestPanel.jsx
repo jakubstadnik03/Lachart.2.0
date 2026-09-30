@@ -34,7 +34,7 @@ import {
 } from '../../utils/hrPowerProfile';
 import { extractLactateThresholds } from '../../utils/extractLactateThresholds';
 import { ltZoneBounds, measuredMaxHr } from '../../utils/trainingZoneBounds';
-import { axisTick, fmtDemand, fmtDemandDelta } from '../../utils/thresholdFormat';
+import { axisTick, fmtDemand, fmtDemandDelta, fmtDemandRange, fmtDemandOver, fmtDemandUnder } from '../../utils/thresholdFormat';
 import { requestTrainingZonesModal } from '../../utils/trainingZonesSetup';
 
 /**
@@ -436,13 +436,37 @@ function TimeAtThresholds({ result, anchor, kind, storageMode, title, plannedTar
 
   if (!split) return null;
 
+  const e = split.edges;
+  const fd = (d) => fmtDemand(d, kind, storageMode);
+  // What each bucket meant in the athlete's own units — the band it covers,
+  // not just its name. A row that says "above LT2" is a label; one that says
+  // "faster than 10:31/mi" is a number they can check against their watch.
+  const ranges = {
+    aboveLt2: fmtDemandOver(e.lt2Hi, kind, storageMode),
+    atLt2: fmtDemandRange(e.lt2Lo, e.lt2Hi, kind, storageMode),
+    between: e.lt1Hi ? fmtDemandRange(e.lt1Hi, e.lt2Lo, kind, storageMode) : fmtDemandUnder(e.lt2Lo, kind, storageMode),
+    atLt1: e.lt1Lo ? fmtDemandRange(e.lt1Lo, e.lt1Hi, kind, storageMode) : null,
+    belowLt1: e.lt1Lo ? fmtDemandUnder(e.lt1Lo, kind, storageMode) : null,
+  };
+
   const rows = [
     { key: 'aboveLt2', label: 'Above LT2', color: '#ef4444', sec: split.aboveLt2 },
     { key: 'atLt2', label: 'At LT2', color: '#f97316', sec: split.atLt2 },
     { key: 'between', label: 'Between LT1 and LT2', color: '#fbbf24', sec: split.between },
     { key: 'atLt1', label: 'At LT1', color: '#34d399', sec: split.atLt1 },
     { key: 'belowLt1', label: 'Below LT1', color: '#60a5fa', sec: split.belowLt1 },
-  ].filter((r) => r.sec > 0);
+  ].filter((r) => r.sec > 0).map((r) => {
+    const held = split.bands?.[r.key] || {};
+    return {
+      ...r,
+      // Held first: it is the reading, and the band is the context for it.
+      detail: [
+        held.demand > 0 ? `${fd(held.demand)} avg` : null,
+        held.hr > 0 ? `${Math.round(held.hr)} bpm` : null,
+        ranges[r.key],
+      ].filter(Boolean).join(' · '),
+    };
+  });
 
   const pct = (sec) => Math.round((sec / split.totalSec) * 100);
   /** Colour the row against what the session was for — never against nothing. */
@@ -455,7 +479,13 @@ function TimeAtThresholds({ result, anchor, kind, storageMode, title, plannedTar
   const short = rows.filter((r) => verdict[r.key] === 'short').reduce((a, r) => a + r.sec, 0);
 
   return (
-    <Section title="Time at your thresholds">
+    <Section
+      title="Time at your thresholds"
+      aside={[
+        e.lt2Demand > 0 ? `LT2 ${fd(e.lt2Demand)}` : null,
+        e.lt1Demand > 0 ? `LT1 ${fd(e.lt1Demand)}` : null,
+      ].filter(Boolean).join(' · ')}
+    >
       <div className="flex h-2.5 overflow-hidden rounded-full">
         {[...rows].reverse().map((r) => (
           <div key={r.key} title={`${r.label} — ${fmtBlock(r.sec)}`}
@@ -466,11 +496,18 @@ function TimeAtThresholds({ result, anchor, kind, storageMode, title, plannedTar
       <div className="mt-2.5">
         {rows.map((r) => (
           <div key={r.key}
-            className="flex items-center gap-2.5 border-t py-2 first:border-t-0 first:pt-0"
+            className="flex items-start gap-2.5 border-t py-2 first:border-t-0 first:pt-0"
             style={{ borderColor: IOS.separator }}
           >
-            <span className="inline-block h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: r.color }} />
-            <span className="min-w-0 flex-1 truncate text-[15px]" style={{ color: IOS.label }}>{r.label}</span>
+            <span className="mt-[7px] inline-block h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: r.color }} />
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-[15px]" style={{ color: IOS.label }}>{r.label}</div>
+              {r.detail && (
+                <div className="text-[12px] leading-[1.4] tabular-nums" style={{ color: IOS.secondary }}>
+                  {r.detail}
+                </div>
+              )}
+            </div>
             <span className="shrink-0 text-[15px] font-semibold tabular-nums" style={{ color: toneOf(r.key) }}>
               {fmtBlock(r.sec)}
             </span>
@@ -494,9 +531,17 @@ function TimeAtThresholds({ result, anchor, kind, storageMode, title, plannedTar
 
       <Note label="What “at” means">
         <p>
-          Within 3% of the threshold your test measured
-          {anchor?.lt2 ? ` — LT2 is ${fmtDemand(thresholdToDemand(anchor.lt2, { kind, storageMode }), kind, storageMode)}` : ''}
-          {anchor?.lt1 ? `, LT1 ${fmtDemand(thresholdToDemand(anchor.lt1, { kind, storageMode }), kind, storageMode)}` : ''}.
+          Within {Math.round((e.band ?? 0.03) * 100)}% of the threshold your test measured, which is the
+          band {ranges.atLt2} around LT2{e.lt1Demand > 0 ? ` and ${ranges.atLt1} around LT1` : ''}. Wide
+          enough that holding an effort steady lands in one band rather than flickering across a boundary.
+        </p>
+        <p>
+          Under each row is what was actually held there — the average of the session's own time in that
+          band, and the heart rate that went with it. An average sits inside the band for the two "at"
+          rows and can sit well past it for the open-ended ones, which is the point of printing it: thirty
+          minutes a second past LT2 and thirty minutes a minute past it are not the same session.
+        </p>
+        <p>
           These are measured intensities, not zones derived from them: five-zone time-in-zone answers a
           question the zone model invented, LT1 and LT2 are the two intensities this athlete had measured.
         </p>

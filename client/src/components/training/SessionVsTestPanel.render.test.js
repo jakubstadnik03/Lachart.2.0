@@ -85,6 +85,17 @@ describe('SessionVsTestPanel', () => {
     expect(html).toContain('Time at your thresholds');
   });
 
+  it('says what each threshold band was and what was held in it', () => {
+    const html = render({ laps: LAPS });
+    // The thresholds themselves, without having to open the explainer.
+    expect(html).toMatch(/LT2 \d+ W/);
+    // The band each row covers, and the watts and beats actually held there.
+    expect(html).toMatch(/\d+–\d+ W/);
+    expect(html).toMatch(/above \d+ W/);
+    expect(html).toMatch(/\d+ W avg/);
+    expect(html).toMatch(/\d+ bpm/);
+  });
+
   it('places the blood samples against the curve', () => {
     const html = render({ laps: LAPS });
     expect(html).toContain('Measured lactate');
