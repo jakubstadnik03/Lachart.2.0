@@ -84,3 +84,21 @@ const { guardUnreachable } = require('./createEmailTransporter');
 
   console.log('emailReachability: transporter gate blocks relay addresses only');
 })().catch((e) => { console.error(e); process.exit(1); });
+
+// --- the skip must not be mistaken for a send -----------------------------
+// The admin table's "✓ Sent (7x)" column is written after sendMail resolves.
+// The guard resolves with {skipped:true} rather than throwing, so a caller that
+// does not look would record a send that never happened — the exact false
+// reporting the column exists to prevent.
+(async () => {
+  const t = guardUnreachable({ sendMail: async () => ({ accepted: ['ok'] }) });
+  const skipped = await t.sendMail({ to: 'x@privaterelay.appleid.com' });
+  assert.strictEqual(skipped.skipped, true);
+  assert.ok(!skipped.accepted, 'a skip carries no delivery evidence to mistake for one');
+
+  const real = await t.sendMail({ to: 'a@b.co' });
+  assert.ok(!real.skipped, 'a real send is not flagged as skipped');
+  assert.ok(real.accepted, 'and carries the transport result through');
+
+  console.log('emailReachability: a skip is distinguishable from a send');
+})().catch((e) => { console.error(e); process.exit(1); });

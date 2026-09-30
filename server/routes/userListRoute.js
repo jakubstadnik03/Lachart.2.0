@@ -3935,7 +3935,7 @@ router.post("/admin/send-thank-you-email/:userId", verifyToken, async (req, res)
             });
         }
 
-        await transporter.sendMail({
+        const sendResult = await transporter.sendMail({
             from: {
                 name: 'Jakub - LaChart',
                 address: process.env.EMAIL_USER
@@ -3950,6 +3950,20 @@ router.post("/admin/send-thank-you-email/:userId", verifyToken, async (req, res)
                 footerText: 'From the creator Jakub Stádník. I am trying to create a useful tool for coaches and athletes. Please let me know if you are using the app as a coach or as an athlete and if you understand the tools or need some more explanation.'
             })
         });
+
+        // The transporter refuses an address it knows cannot receive — an Apple
+        // private relay we are not a registered sender for — and reports it
+        // rather than throwing. Recording that as sent would put "✓ Sent" in the
+        // admin table against a message that never left, which is the exact
+        // false reporting this column exists to avoid.
+        if (sendResult?.skipped) {
+            return res.status(200).json({
+                success: false,
+                sent: false,
+                reason: sendResult.reason,
+                message: `Not sent — ${sendResult.reason}. This address cannot receive mail from us.`,
+            });
+        }
 
         // Update tracking only (atomic $set). Avoid userDao.updateUser + full document save — legacy
         // user docs can fail Mongoose validation on unrelated fields and surface as 500 after a successful send.
@@ -4057,6 +4071,9 @@ router.post("/admin/send-thank-you-email/all", verifyToken, async (req, res) => 
 
         let successCount = 0;
         let failCount = 0;
+        // Addresses the transporter refused as undeliverable — neither sent nor
+        // failed, and reported as itself so the run's numbers add up.
+        let skippedCount = 0;
         const errors = [];
 
         // Send emails in batches to avoid rate limiting
@@ -4127,7 +4144,7 @@ router.post("/admin/send-thank-you-email/all", verifyToken, async (req, res) => 
                     throw new Error('generateEmailTemplate did not return valid HTML');
                 }
 
-                await transporter.sendMail({
+                const bulkResult = await transporter.sendMail({
                     from: {
                         name: 'Jakub - LaChart',
                         address: process.env.EMAIL_USER
@@ -4136,6 +4153,14 @@ router.post("/admin/send-thank-you-email/all", verifyToken, async (req, res) => 
                     subject: 'Thank you for using LaChart 🙏',
                     html: emailHtml
                 });
+
+                // Skipped is neither a success nor a failure: nothing was sent,
+                // and nothing went wrong. Counting it either way would misreport
+                // the run, so it is counted as itself.
+                if (bulkResult?.skipped) {
+                    skippedCount++;
+                    continue;
+                }
 
                 const nextCount = (user.thankYouEmail?.sentCount || 0) + 1;
                 await User.updateOne(
@@ -4165,9 +4190,11 @@ router.post("/admin/send-thank-you-email/all", verifyToken, async (req, res) => 
 
         res.status(200).json({ 
             ok: true, 
-            message: `Thank you emails sent: ${successCount} successful, ${failCount} failed`,
+            message: `Thank you emails: ${successCount} sent, ${failCount} failed`
+                + (skippedCount ? `, ${skippedCount} skipped (address cannot receive mail from us)` : ''),
             successCount,
             failCount,
+            skippedCount,
             total: eligibleUsers.length,
             errors: errors.length > 0 ? errors : undefined
         });
