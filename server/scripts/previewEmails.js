@@ -104,47 +104,47 @@ const samples = [
   },
   {
     name: 'strava-reminder',
-    label: 'Strava connect reminder (admin send)',
+    label: 'Tracker connect reminder (admin send)',
     args: (() => {
       const cardStyle = 'background-color: #E9ECF6; border-radius: 10px; padding: 14px 16px;';
       const accentCardStyle = 'background-color: #FFE6DF; border-radius: 10px; padding: 14px 16px;';
       const cardTitleStyle = 'font-weight: 700; color: #0A0E1A; font-size: 15px;';
       const cardBodyStyle = 'color: #4A5E82; font-size: 14px; line-height: 1.5; margin-top: 2px;';
       return {
-        title: 'Connect Strava and let LaChart do the work',
+        title: 'Connect a tracker and let LaChart do the work',
         content: `
           <p>Hi <strong>Jakub</strong>,</p>
-          <p>You're using LaChart — but you haven't connected Strava yet. That's the one setup step that turns LaChart from "manual logger" into "automatic training brain". Takes 30 seconds.</p>
+          <p>You're using LaChart — but you haven't connected a tracker yet. One setup step turns LaChart from "manual logger" into an automatic training brain. Pick <strong>Strava</strong>, <strong>Garmin</strong> or <strong>Apple Health</strong> — takes about 30 seconds.</p>
           <div style="margin: 22px 0; text-align: center;">
             <img src="${CLIENT_URL}/images/lactate_testing.png" alt="" style="max-width: 100%; height: auto; border-radius: 12px; box-shadow: 0 4px 14px rgba(15, 23, 42, 0.08);" />
           </div>
           <p style="margin-top: 22px; font-size: 15.5px;"><strong>What you unlock by connecting:</strong></p>
           <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="width: 100%; margin: 12px 0 18px; border-collapse: separate; border-spacing: 0 8px;">
             <tr><td style="${cardStyle}">
-              <div style="${cardTitleStyle}">⚡ Auto-import every workout</div>
-              <div style="${cardBodyStyle}">Every ride, run and swim flows in with power, HR, pace and laps — never type a workout in again.</div>
+              <div style="${cardTitleStyle}">🔗 Strava or Garmin — auto-import</div>
+              <div style="${cardBodyStyle}">Every ride, run and swim flows in with power, HR, pace and laps. Garmin also sends planned workouts back to your watch.</div>
             </td></tr>
             <tr><td style="${cardStyle}">
-              <div style="${cardTitleStyle}">🏷️ Auto-categorize by zone &amp; structure</div>
-              <div style="${cardBodyStyle}">Endurance · threshold · VO2max · recovery — sorted from intervals, zones and titles.</div>
+              <div style="${cardTitleStyle}">❤️ Apple Health (iPhone)</div>
+              <div style="${cardBodyStyle}">Sleep, resting HR and HRV for recovery — next to the workouts from Strava or Garmin.</div>
             </td></tr>
             <tr><td style="${cardStyle}">
-              <div style="${cardTitleStyle}">❤️ Form, fitness &amp; fatigue charted</div>
-              <div style="${cardBodyStyle}">CTL · ATL · TSB built automatically from every workout.</div>
+              <div style="${cardTitleStyle}">🏷️ Zones &amp; structure</div>
+              <div style="${cardBodyStyle}">Endurance · threshold · VO2max · recovery — sorted from intervals and your LT1/LT2 zones.</div>
             </td></tr>
             <tr><td style="${cardStyle}">
-              <div style="${cardTitleStyle}">💧 Add lactate to any imported interval</div>
-              <div style="${cardBodyStyle}">Tag any interval of a synced workout with a blood-lactate sample.</div>
+              <div style="${cardTitleStyle}">📈 Form, fitness &amp; fatigue</div>
+              <div style="${cardBodyStyle}">CTL · ATL · TSB built automatically from every session.</div>
             </td></tr>
             <tr><td style="${accentCardStyle}">
               <div style="${cardTitleStyle}">🧠 Smarter test protocols</div>
-              <div style="${cardBodyStyle}">LaChart suggests step-test power ranges based on your Strava power history.</div>
+              <div style="${cardBodyStyle}">LaChart suggests step-test ranges from your real training history.</div>
             </td></tr>
           </table>
           <p style="margin-top: 20px;">Stuck on the connect step? Reply to this email — it lands in my inbox.</p>
           <p style="margin-top: 6px;">— Jakub<br/><span style="color: #6B7280; font-size: 14px;">Creator of LaChart</span></p>
         `,
-        buttonText: 'Connect Strava (30 seconds)',
+        buttonText: 'Connect Strava, Garmin or Apple Health',
         buttonUrl: `${CLIENT_URL}/settings?tab=integrations`,
         loginButtonText: 'Open my dashboard',
         loginButtonUrl: `${CLIENT_URL}/dashboard`,

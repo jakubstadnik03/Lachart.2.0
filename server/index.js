@@ -306,6 +306,7 @@ const { startGarminTokenRefreshScheduler } = require('./services/garminTokenRefr
 const { startStreamBackfillScheduler } = require('./services/streamBackfillScheduler');
 const { startWinBackScheduler } = require('./services/winBackScheduler');
 const { startPredictedCurveScheduler } = require('./services/predictedCurveScheduler');
+const { startTrackerConnectScheduler } = require('./services/trackerConnectScheduler');
 const { startThresholdShiftScheduler } = require('./services/thresholdShiftScheduler');
 const { startRaceReminderScheduler } = require('./services/raceReminderScheduler');
 const { startTrainingAlertScheduler } = require('./services/trainingAlertScheduler');
@@ -413,6 +414,10 @@ startWinBackScheduler();
 // Off by default: it writes to most of the base, so it is switched on by hand
 // after previewing the email (ENABLE_PREDICTED_CURVE_SCHEDULER=true).
 startPredictedCurveScheduler();
+
+// "Zones ready — connect Strava/Garmin/Apple Health" for athletes with a test
+// and no tracker. Off by default (ENABLE_TRACKER_CONNECT_SCHEDULER=true after preview).
+startTrackerConnectScheduler();
 
 // "Your threshold has moved" — a push to an athlete about their own curve,
 // so on in production like the other notification schedulers. The service is

@@ -511,6 +511,9 @@ const userSchema = new mongoose.Schema({
      *  dormant accounts). Sent once ever; segment recorded for analytics. */
     winBackSent:              { type: Date, default: null },
     winBackSegment:           { type: String, default: null },
+    /** One-time "zones ready — connect Strava/Garmin/Apple Health" email for
+     *  athletes who have ≥1 test but no tracker. Sent once ever. */
+    trackerConnectSent:       { type: Date, default: null },
     /** One-time "here is the curve your training implies" email, for athletes
      *  who have never tested. Sent once ever; the sport it spoke about is
      *  recorded so a later run cannot repeat itself for the other one. */
