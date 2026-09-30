@@ -55,6 +55,58 @@ describe('paceAxisBounds', () => {
   });
 });
 
+describe('paceAxisBounds — laps that matter keep a readable bar', () => {
+  // The reported swim: three kilometre blocks at 1:24–1:29/100m, then fifties
+  // at about 1:06. The blocks are half an hour of swimming and drew as stubs.
+  const BLOCKS = [89, 84, 88];
+  const FIFTIES = [66, 67, 65, 68, 66, 63];
+  const share = (b, v) => (b.max - v) / (b.max - b.min);
+
+  it('gives the long blocks a third of the height instead of a stub', () => {
+    // The old rule put the bottom edge five seconds under the slowest work lap
+    // — 1:29 on an axis ending at 1:34, three percent of the frame.
+    const b = paceAxisBounds({
+      work: [...BLOCKS, ...FIFTIES], plausible: [...BLOCKS, ...FIFTIES], isSwim: true,
+    });
+    expect(share(b, 89)).toBeGreaterThan(0.25);
+    expect(b.max).toBeGreaterThan(89 + 5);
+  });
+
+  it('lifts a block the interval classifier did not call work', () => {
+    // Smart detect reads a steady kilometre as recovery often enough that the
+    // axis cannot be left to the work set alone.
+    const withBlocks = paceAxisBounds({
+      work: FIFTIES, plausible: [...BLOCKS, ...FIFTIES], significant: BLOCKS, isSwim: true,
+    });
+    const without = paceAxisBounds({
+      work: FIFTIES, plausible: [...BLOCKS, ...FIFTIES], isSwim: true,
+    });
+    expect(withBlocks.max).toBeGreaterThan(without.max);
+    expect(share(withBlocks, 89)).toBeGreaterThan(0.15);
+  });
+
+  it('still leaves the fast reps most of the chart', () => {
+    const b = paceAxisBounds({
+      work: [...BLOCKS, ...FIFTIES], plausible: [...BLOCKS, ...FIFTIES],
+      significant: BLOCKS, isSwim: true,
+    });
+    expect(share(b, 66)).toBeGreaterThan(0.6);
+  });
+
+  it('ignores a slow lap that is over in seconds', () => {
+    const withFloat = paceAxisBounds({ work: FIFTIES, plausible: [...FIFTIES, 160], isSwim: true });
+    const without = paceAxisBounds({ work: FIFTIES, plausible: FIFTIES, isSwim: true });
+    expect(withFloat.max).toBe(without.max);
+  });
+
+  it('will not let one long slow lap pull the axis apart', () => {
+    // A twenty-minute walk home is significant by time and still has no
+    // business setting the scale of a session of reps.
+    const b = paceAxisBounds({ work: FIFTIES, plausible: [...FIFTIES, 300], significant: [300], isSwim: true });
+    expect(share(b, 66)).toBeGreaterThan(0.5);
+  });
+});
+
 describe('powerAxisBounds', () => {
   it('clears the hardest drawn lap', () => {
     const { max } = powerAxisBounds({ work: [240, 250, 245, 255], plausible: [240, 250, 245, 255, 410] });
@@ -66,6 +118,16 @@ describe('powerAxisBounds', () => {
     const a = powerAxisBounds({ work, plausible: work });
     const b = powerAxisBounds({ work, plausible: [] });
     expect(a.max).toBeCloseTo(b.max, 6);
+  });
+
+  it('gives an easy endurance block a readable bar too', () => {
+    // The mirror of the swim case: watts grow upward, so it is the EASIEST lap
+    // that collapses against the frame.
+    const work = [300, 305, 295, 180, 182];
+    const b = powerAxisBounds({ work, plausible: work, significant: [180, 182] });
+    const share = (v) => (v - b.min) / (b.max - b.min);
+    expect(share(180)).toBeGreaterThan(0.25);
+    expect(share(300)).toBeGreaterThan(0.6);
   });
 
   it('never starts below zero watts', () => {

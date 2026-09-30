@@ -1189,12 +1189,18 @@ function LapChart({ laps, color, isBike, isRun, isSwim, unitSystem = 'metric', s
   // of the viewport, with capped weights so a single huge lap can't
   // monopolise the row.
   const TARGET_VISIBLE_LAPS = 16;
-  // Bar widths are STRICTLY proportional to weight (distance for swim/run,
-  // duration for bike). A 2-km lap renders 4× as wide as a 500-m lap, no
-  // capping. Honza's feedback (2026-05): "vždy at je to poměrově prostě"
-  // — capping made dominant endurance laps fit a bit better but it broke
-  // the "scale read" of the chart for swim sets where everyone expects
-  // each interval bar to be proportional to actual distance.
+  // Bar widths are STRICTLY proportional to weight — no capping. Honza's
+  // feedback (2026-05): "vždy at je to poměrově prostě" — capping made
+  // dominant endurance laps fit a bit better but it broke the "scale read"
+  // of the chart.
+  //
+  // The weight is TIME, for every sport. It used to be distance for swim and
+  // run and duration only for the bike, which meant the x-axis measured a
+  // different thing depending on what you had done that day, and a rest lap —
+  // sixteen seconds of hanging on the wall, no distance at all — was given a
+  // width of one, so the rests between a set of fifties simply were not there.
+  // Read as time the row is the session as it happened, rests included, which
+  // is what the same chart on Strava shows and what makes the two comparable.
   //
   // When a single lap really is dominant (e.g. a 4-hour ride with one
   // 1-min sprint), it still gets scrolled into view via the zoom logic
@@ -1211,8 +1217,7 @@ function LapChart({ laps, color, isBike, isRun, isSwim, unitSystem = 'metric', s
     if (isBike)                             value = pow;
     else if (isRun  && dist > 0 && dur > 0) value = dur / (dist / 1000);
     else if (isSwim && dist > 0 && dur > 0) value = dur / (dist / 100);
-    // weight = dist for swim/run (proportional to distance), dur for bike
-    const weight = isBike ? Math.max(dur, 1) : Math.max(dist, 1);
+    const weight = Math.max(dur, 1);
     return { value, weight, dur, dist, isPause: !isBike && dist <= 0, lactate };
   });
 
@@ -1310,6 +1315,21 @@ function LapChart({ laps, color, isBike, isRun, isSwim, unitSystem = 'metric', s
 
   const slowScaleEntries = entries.filter(isPaceEligible).map(e => e.value);
 
+  // The laps that carry a real share of the session.
+  //
+  // A warm-up block is not "work" to any interval classifier and it is not
+  // junk either — it is half the session, and the axis has to leave it a bar
+  // worth looking at. Time is the measure: a lap holding a tenth of the
+  // session, or two unbroken minutes of it, is one the athlete would name if
+  // asked what they did. A sixteen-second float passes neither test and goes
+  // on clamping to a stub, which is the truth about it.
+  const totalMovingSec = entries.reduce((a, e) => a + (e.dur || 0), 0);
+  const significantValues = entries.filter((e) => {
+    if (!isPaceEligible(e)) return false;
+    const dur = e.dur || 0;
+    return dur >= 120 || (totalMovingSec > 0 && dur >= totalMovingSec * 0.1);
+  }).map(e => e.value);
+
   // IQR-based outlier clamp: removes recovery/cooldown laps whose pace
   // would collapse the scale (e.g. 2:00/100m when all intervals are 1:14–1:46).
   let scaleValues = scaleEntries.length > 0 ? scaleEntries : slowScaleEntries;
@@ -1364,8 +1384,8 @@ function LapChart({ laps, color, isBike, isRun, isSwim, unitSystem = 'metric', s
     // the bounds helper makes sure nothing plausible gets clamped at the FAST
     // edge, where a clipped bar silently misreports the best lap of the session.
     const bounds = isInverted
-      ? paceAxisBounds({ work: scaleValues, plausible: slowScaleEntries, isSwim, avgForScale })
-      : powerAxisBounds({ work: scaleValues, plausible: slowScaleEntries, avgForScale });
+      ? paceAxisBounds({ work: scaleValues, plausible: slowScaleEntries, significant: significantValues, isSwim, avgForScale })
+      : powerAxisBounds({ work: scaleValues, plausible: slowScaleEntries, significant: significantValues, avgForScale });
     chartMin = bounds.min;
     chartMax = bounds.max;
   }
