@@ -1708,7 +1708,7 @@ export const importStravaActivity = async (activityId) => {
  * @param {{ days?: number, signal?: AbortSignal }} [opts]
  */
 export const getGarminActivityStatus = async (opts = {}) => {
-  const cfg = { params: {}, timeout: 60000, noRetry: true };
+  const cfg = { params: {}, timeout: 120000, noRetry: true };
   if (opts.days != null) cfg.params.days = opts.days;
   if (opts.cachedOnly) cfg.params.cachedOnly = 1;
   if (opts.signal) cfg.signal = opts.signal;

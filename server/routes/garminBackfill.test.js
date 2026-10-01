@@ -155,6 +155,34 @@ function httpError(status, body) {
     assert.strictEqual(job.requested, 1);
   });
 
+  await test('a refused traces endpoint does not cancel the rest of the summaries', async () => {
+    calls = [];
+    responder = (url) => (
+      url.endsWith('/activityDetails')
+        ? httpError(412, { errorMessage: 'required HISTORICAL_DATA_EXPORT' })
+        : { status: 202, data: {} }
+    );
+    // Two 90-day chunks. The old job treated the details 412 as "this key
+    // cannot backfill" and never asked for the second window's summaries.
+    const job = await runJob(user('u-details-412'), NOW - 100 * 86400, NOW);
+    const summaryCalls = calls.filter((c) => c.url.endsWith('/activities'));
+    assert.ok(summaryCalls.length >= 2, `expected summaries for both windows, got ${summaryCalls.length}`);
+    assert.ok(!job.denied, 'a details refusal must not be reported as a refused history import');
+  });
+
+  await test('a refused summaries endpoint stops the run and says so', async () => {
+    calls = [];
+    responder = (url) => (
+      url.endsWith('/activities')
+        ? httpError(412, { errorMessage: 'required HISTORICAL_DATA_EXPORT' })
+        : { status: 202, data: {} }
+    );
+    const job = await runJob(user('u-summaries-412'), NOW - 100 * 86400, NOW);
+    const summaryCalls = calls.filter((c) => c.url.endsWith('/activities'));
+    assert.strictEqual(summaryCalls.length, 1, 'later summary windows should not be asked after a hard refusal');
+    assert.ok(job.denied, 'the refusal has to be visible to the history endpoint');
+  });
+
   await test('records which endpoint failed', async () => {
     calls = [];
     responder = (url) => (

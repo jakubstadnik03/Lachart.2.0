@@ -486,62 +486,89 @@ async function fetchGarminUserPermissions(tokenData) {
   }
 }
 
+/**
+ * How many days a Settings "check" or a history import may read synchronously.
+ * Garmin's pull API takes one day per request (24h max). Walking 90 of them
+ * one after another outlives the browser call, so the button sits on
+ * "Checking…" until the client gives up and it looks like nothing imported.
+ */
+const GARMIN_DIRECT_PULL_DAYS = 31;
+const GARMIN_PULL_CONCURRENCY = 5;
+
 async function fetchGarminWellnessActivitiesByDay(user, tokenData, path, startSec, endSec) {
   const CHUNK_SEC = 86400;
   const activitiesUrl = `${getGarminWellnessApiBaseUrl()}${path}`;
-  const allActivities = [];
-  let cursor = startSec;
-
-  while (cursor < endSec) {
-    const windowEnd = Math.min(cursor + CHUNK_SEC, endSec);
-    console.log(`Garmin OAuth: ${path} ${new Date(cursor * 1000).toISOString().slice(0, 10)} → ${new Date(windowEnd * 1000).toISOString().slice(0, 10)}`);
-
-    let resp;
-    try {
-      resp = await axios.get(activitiesUrl, {
-        headers: { Authorization: `${tokenData.tokenType} ${tokenData.accessToken}` },
-        params: withGarminPullToken({
-          uploadStartTimeInSeconds: cursor,
-          uploadEndTimeInSeconds: windowEnd,
-        }),
-        timeout: 20000,
-      });
-    } catch (apiErr) {
-      const status = apiErr.response?.status;
-      const body = apiErr.response?.data;
-      const bodyStr = typeof body === 'object' ? JSON.stringify(body) : (body || '');
-      console.error(`Garmin activity API error ${status} (${path}):`, body || apiErr.message);
-      if (isGarminPullTokenError(bodyStr)) {
-        // This is NOT a user consent problem — the old wording sent people off
-        // to reconnect and toggle permissions that were already granted. Pull
-        // needs the server-side pull token from the developer portal; nothing
-        // the user can do from their side changes it.
-        throw new Error(
-          garminPullToken()
-            ? 'Garmin rejected our pull token (GARMIN_PULL_TOKEN). It is short-lived — '
-              + 'generate a new one in the Garmin developer portal (API Pull Token) and update '
-              + 'the server environment. Activities still arrive via Push/Ping webhooks meanwhile.'
-            : 'Garmin pull is not configured on the server: the Health API requires a pull token '
-              + '(query parameter "token") for OAuth2 integrations, and GARMIN_PULL_TOKEN is not set. '
-              + 'Activities still arrive via Push/Ping webhooks; this only affects on-demand pulls.',
-        );
-      }
-      if (status === 401 || status === 403) {
-        await flagNeedsReconnect(user?._id, 'garmin', 'unauthorized');
-        throw new Error(
-          `Garmin API access denied (${status}). Try reconnecting your Garmin account. ` +
-          `Error: ${bodyStr || apiErr.message}`
-        );
-      }
-      throw new Error(`Garmin API returned ${status || 'network error'}: ${bodyStr || apiErr.message}`);
-    }
-
-    const batch = normalizeGarminActivityBatch(resp.data);
-    allActivities.push(...batch);
-    cursor = windowEnd;
+  const windows = [];
+  for (let cursor = startSec; cursor < endSec; cursor += CHUNK_SEC) {
+    windows.push([cursor, Math.min(cursor + CHUNK_SEC, endSec)]);
   }
 
-  return allActivities;
+  const pullError = (apiErr) => {
+    const status = apiErr.response?.status;
+    const body = apiErr.response?.data;
+    const bodyStr = typeof body === 'object' ? JSON.stringify(body) : (body || '');
+    console.error(`Garmin activity API error ${status} (${path}):`, body || apiErr.message);
+    if (isGarminPullTokenError(bodyStr)) {
+      // This is NOT a user consent problem — the old wording sent people off
+      // to reconnect and toggle permissions that were already granted. Pull
+      // needs the server-side pull token from the developer portal; nothing
+      // the user can do from their side changes it.
+      const err = new Error(
+        garminPullToken()
+          ? 'Garmin rejected our pull token (GARMIN_PULL_TOKEN). It is short-lived — '
+            + 'generate a new one in the Garmin developer portal (API Pull Token) and update '
+            + 'the server environment. Activities still arrive via Push/Ping webhooks meanwhile.'
+          : 'Garmin pull is not configured on the server: the Health API requires a pull token '
+            + '(query parameter "token") for OAuth2 integrations, and GARMIN_PULL_TOKEN is not set. '
+            + 'Activities still arrive via Push/Ping webhooks; this only affects on-demand pulls.',
+      );
+      return err;
+    }
+    if (status === 401 || status === 403) {
+      const err = new Error(
+        `Garmin API access denied (${status}). Try reconnecting your Garmin account. ` +
+        `Error: ${bodyStr || apiErr.message}`
+      );
+      err.needsReconnect = true;
+      return err;
+    }
+    return new Error(`Garmin API returned ${status || 'network error'}: ${bodyStr || apiErr.message}`);
+  };
+
+  const batches = new Array(windows.length);
+  let fatal = null;
+  let next = 0;
+
+  async function worker() {
+    while (!fatal) {
+      const i = next;
+      next += 1;
+      if (i >= windows.length) return;
+      const [cursor, windowEnd] = windows[i];
+      console.log(`Garmin OAuth: ${path} ${new Date(cursor * 1000).toISOString().slice(0, 10)} → ${new Date(windowEnd * 1000).toISOString().slice(0, 10)}`);
+      try {
+        const resp = await axios.get(activitiesUrl, {
+          headers: { Authorization: `${tokenData.tokenType} ${tokenData.accessToken}` },
+          params: withGarminPullToken({
+            uploadStartTimeInSeconds: cursor,
+            uploadEndTimeInSeconds: windowEnd,
+          }),
+          timeout: 15000,
+        });
+        batches[i] = normalizeGarminActivityBatch(resp.data);
+      } catch (apiErr) {
+        fatal = pullError(apiErr);
+      }
+    }
+  }
+
+  const workers = Math.min(GARMIN_PULL_CONCURRENCY, windows.length || 1);
+  await Promise.all(Array.from({ length: workers }, () => worker()));
+  if (fatal?.needsReconnect) {
+    await flagNeedsReconnect(user?._id, 'garmin', 'unauthorized');
+  }
+  if (fatal) throw fatal;
+  return batches.flat();
 }
 
 /**
@@ -773,6 +800,7 @@ function triggerGarminBackfillQueued(user, startSec, endSec) {
       startedAt: new Date(), finishedAt: new Date(),
       clampedByKeyLimit, maxHistoryDays: GARMIN_BACKFILL_MAX_DAYS,
       historyFrom: new Date(startSec * 1000),
+      firstSettled: Promise.resolve(),
     };
     garminBackfillJobs.set(key, noop);
     return noop;
@@ -819,6 +847,14 @@ function triggerGarminBackfillQueued(user, startSec, endSec) {
     clampedByKeyLimit,
     maxHistoryDays: GARMIN_BACKFILL_MAX_DAYS,
     historyFrom: new Date(startSec * 1000),
+    skipEndpoints: [],
+  };
+  let resolveFirst = () => {};
+  job.firstSettled = new Promise((resolve) => { resolveFirst = resolve; });
+  const noteFirst = () => {
+    if (job._notedFirst) return;
+    job._notedFirst = true;
+    resolveFirst();
   };
   garminBackfillJobs.set(key, job);
 
@@ -831,12 +867,11 @@ function triggerGarminBackfillQueued(user, startSec, endSec) {
       /**
        * A refusal that is about the key, not the window.
        *
-       * Garmin answers a backfill this consumer key is not entitled to with
-       * 412 and `required HISTORICAL_DATA_EXPORT`. That verdict is the same
-       * for every chunk and every endpoint, so grinding on asks eighteen
-       * chunks twice over and collects a 429 — and a 65-second wait — on most
-       * of them. Forty minutes of it, against a rate limit shared with every
-       * other LaChart user, to be told the same thing thirty-six times.
+       * Garmin answers an activity backfill this consumer key is not entitled
+       * to with 412 and `required HISTORICAL_DATA_EXPORT`. That verdict is
+       * the same for every chunk, so grinding on asks the rest of the window
+       * twice over and collects a 429 on most of them. A refusal of the
+       * traces endpoint alone does not mean the summaries were refused.
        */
       let jobDenied = null;
       while (cursor < endSec && !jobDenied && !job.superseded) {
@@ -849,6 +884,7 @@ function triggerGarminBackfillQueued(user, startSec, endSec) {
 
         for (const endpoint of GARMIN_BACKFILL_ENDPOINTS) {
           if (chunkOutOfRange || jobDenied) break;
+          if (job.skipEndpoints.includes(endpoint)) continue;
           const url = `${getGarminWellnessApiBaseUrl()}/rest/backfill/${endpoint}`;
           let attempt = 0;
           for (;;) {
@@ -865,6 +901,7 @@ function triggerGarminBackfillQueued(user, startSec, endSec) {
               });
               console.log(`[Garmin backfill] requested ${endpoint} ${rangeLabel} (HTTP ${resp.status}, ${job.requested + 1}/${job.total})`);
               job.requested += 1;
+              noteFirst();
               break;
             } catch (e) {
               const status = e?.response?.status;
@@ -895,6 +932,7 @@ function triggerGarminBackfillQueued(user, startSec, endSec) {
                   console.warn(`[Garmin backfill] ${rangeLabel} is older than this key's minimum (${minStart}) — skipping ahead to the allowed window (+${MIN_START_MARGIN_SEC}s margin)`);
                   nextCursor = minSec + MIN_START_MARGIN_SEC;
                   chunkOutOfRange = true;
+                  noteFirst();
                   break;
                 }
                 if (skips > MAX_MIN_START_SKIPS) {
@@ -914,11 +952,22 @@ function triggerGarminBackfillQueued(user, startSec, endSec) {
               job.failed += 1;
               job.lastError = { status: status || null, body: bodyStr.slice(0, 300), range: rangeLabel, endpoint };
               console.error(`[Garmin backfill] ${endpoint} ${rangeLabel} failed permanently (HTTP ${status || '?'}):`, body || e.message);
-              // Not this window's problem — this key may not backfill at all.
-              if (status === 412 && /HISTORICAL_DATA_EXPORT|Access denied/i.test(bodyStr)) {
+              noteFirst();
+              // A missing traces endpoint is not a missing history. Garmin's
+              // own spec backfills activity details through /backfill/activities;
+              // a 412/404 on activityDetails used to abandon every later
+              // summary chunk, so Import History reported success and then
+              // delivered nothing past the first window.
+              const historicalDenied = status === 412 && /HISTORICAL_DATA_EXPORT|Access denied/i.test(bodyStr);
+              const endpointMissing = status === 404
+                || (status === 400 && /not enabled|unknown summary|Endpoint not enabled|CONNECT_ACTIVITY/i.test(bodyStr));
+              if (endpoint === 'activities' && (historicalDenied || endpointMissing)) {
                 jobDenied = bodyStr.slice(0, 300);
                 job.denied = jobDenied;
-                console.error('[Garmin backfill] abandoning the run: the consumer key lacks the permission this needs, so every remaining chunk would be refused the same way');
+                console.error('[Garmin backfill] abandoning the run: activity history itself was refused, so every remaining chunk would be refused the same way');
+              } else if (historicalDenied || endpointMissing) {
+                if (!job.skipEndpoints.includes(endpoint)) job.skipEndpoints.push(endpoint);
+                console.warn(`[Garmin backfill] ${endpoint} is not available on this key — activity summaries will still be requested`);
               }
               break;
             }
@@ -935,6 +984,7 @@ function triggerGarminBackfillQueued(user, startSec, endSec) {
       job.lastError = { status: null, body: String(e?.message || e).slice(0, 300) };
       console.error('[Garmin backfill] job crashed:', e?.message || e);
     } finally {
+      noteFirst();
       job.running = false;
       job.finishedAt = new Date();
       console.log(`[Garmin backfill] finished for user ${key}: ${job.requested}/${job.total} requests sent `
@@ -1251,7 +1301,9 @@ async function processGarminWebhookPayload(payload) {
       }
 
       // Push payload — summary fields inline
-      if (summaryType === 'activities' && (entry.summaryId || entry.activityType || entry.startTimeInSeconds)) {
+      if ((summaryType === 'activities' || summaryType === 'manuallyUpdatedActivities')
+          && (entry.summaryId || entry.activityType || entry.startTimeInSeconds)
+          && !entry.callbackURL) {
         const r = await upsertGarminActivities(user, normalizeGarminActivityBatch([entry]));
         imported += r.imported;
         updated += r.updated;
@@ -3688,6 +3740,32 @@ router.post('/garmin/disconnect', verifyToken, async (req, res) => {
   }
 });
 
+/**
+ * Webhook deliveries are matched on garmin.athleteId. The OAuth callback's
+ * /rest/user/id lookup can fail and leave it empty, and then every backfill
+ * payload is dropped with "no user matches". Heal it before a history import
+ * so the activities Garmin sends back have somewhere to land.
+ */
+async function ensureGarminAthleteId(user, tokenData) {
+  if (!user?.garmin || user.garmin.athleteId) return user?.garmin?.athleteId || null;
+  try {
+    const idResp = await axios.get(`${getGarminWellnessApiBaseUrl()}/rest/user/id`, {
+      headers: { Authorization: `${tokenData.tokenType} ${tokenData.accessToken}` },
+      timeout: 15000,
+    });
+    const healedId = String(idResp.data?.userId || idResp.data?.id || '');
+    if (!healedId) return null;
+    user.garmin = { ...user.garmin, athleteId: healedId };
+    if (typeof user.save === 'function') await user.save();
+    console.log(`Garmin: healed missing athleteId for user ${user._id} → ${healedId}`);
+    return healedId;
+  } catch (idErr) {
+    console.error('Garmin: athleteId self-heal failed (webhook matching may not work):',
+      idErr?.response?.status, idErr?.response?.data || idErr.message);
+    return null;
+  }
+}
+
 // Helper function to get Garmin activities using garmin-connect library
 async function getGarminActivities(user, since = null, opts = {}) {
   const allowBackfill = opts.allowBackfill !== false;
@@ -3710,26 +3788,7 @@ async function getGarminActivities(user, since = null, opts = {}) {
       await user.save().catch(() => {});
     }
 
-    // Self-heal a missing athleteId (the OAuth callback's /rest/user/id lookup
-    // can fail, leaving it null). Without it, webhook deliveries can't be
-    // matched to this user and every backfill import silently drops to zero.
-    if (!user.garmin?.athleteId) {
-      try {
-        const idResp = await axios.get(`${getGarminWellnessApiBaseUrl()}/rest/user/id`, {
-          headers: { Authorization: `${tokenData.tokenType} ${tokenData.accessToken}` },
-          timeout: 15000,
-        });
-        const healedId = String(idResp.data?.userId || idResp.data?.id || '');
-        if (healedId) {
-          user.garmin = { ...user.garmin, athleteId: healedId };
-          await user.save();
-          console.log(`Garmin: healed missing athleteId for user ${user._id} → ${healedId}`);
-        }
-      } catch (idErr) {
-        console.error('Garmin: athleteId self-heal failed (webhook matching may not work):',
-          idErr?.response?.status, idErr?.response?.data || idErr.message);
-      }
-    }
+    await ensureGarminAthleteId(user, tokenData);
 
     try {
       const acts = await fetchGarminWellnessActivitiesByDay(
@@ -4282,26 +4341,72 @@ router.post('/garmin/sync-history', verifyToken, async (req, res) => {
 
     const twoYearsAgo = new Date(Date.now() - 2 * 365 * 24 * 3600 * 1000);
 
-    // OAuth path — backfill is the reliable way to get historical data.
-    // Deliberately NO immediate pull here: a 2-year day-by-day pull is ~730
-    // API calls (blows Garmin's 100/min limit), it can't succeed without pull
-    // permission anyway, and its failure path used to trigger a DUPLICATE
-    // 2-year backfill — the combination is what caused the HTTP 429 storm.
+    // OAuth path. Backfill is how Garmin delivers anything older than the
+    // short pull window, but it is asynchronous and used to return
+    // imported: 0 immediately — so a refused backfill looked exactly like a
+    // working import. Pull the window Garmin still serves directly and save
+    // those workouts before answering, and say so when the history request
+    // itself is refused.
     if (user.garmin.refreshToken) {
+      try {
+        const tokenData = await getValidGarminToken(user);
+        await ensureGarminAthleteId(user, tokenData);
+      } catch (healErr) {
+        console.warn('[Garmin history] could not refresh token before backfill:', healErr?.message || healErr);
+      }
+
       const nowSec = Math.floor(Date.now() / 1000);
       const startSec = Math.floor(twoYearsAgo.getTime() / 1000);
       const job = triggerGarminBackfillQueued(user, startSec, nowSec);
 
-      console.log(`Garmin history backfill: queued ${job.total} chunk(s) (running=${job.running}, already requested=${job.requested})`);
-      // Be honest about the cap: Garmin refuses backfill older than
-      // GARMIN_BACKFILL_MAX_DAYS for this key, so promising a 2-year import
-      // just makes a working sync look broken to the user.
+      const recentPromise = (async () => {
+        try {
+          const since = new Date(Date.now() - GARMIN_DIRECT_PULL_DAYS * 24 * 3600 * 1000);
+          const acts = await getGarminActivities(user, since, { allowBackfill: false });
+          return await upsertGarminActivities(user, acts);
+        } catch (pullErr) {
+          console.warn('[Garmin history] recent pull skipped:', pullErr?.message || pullErr);
+          return { imported: 0, updated: 0 };
+        }
+      })();
+
+      await Promise.race([
+        job.firstSettled || Promise.resolve(),
+        new Promise((resolve) => setTimeout(resolve, 12000)),
+      ]);
+      const recent = await recentPromise;
+      const imported = recent.imported || 0;
+      const updated = recent.updated || 0;
+      if (imported > 0 || updated > 0) {
+        invalidateActivityStatusCache(user._id);
+        invalidateActivitiesCacheForUser(user._id);
+      }
+
+      console.log(`Garmin history backfill: queued ${job.total} chunk(s) (running=${job.running}, requested=${job.requested}, denied=${!!job.denied}); recent pull imported ${imported}, updated ${updated}`);
       const historyFromLabel = job.historyFrom
         ? new Date(job.historyFrom).toISOString().slice(0, 10)
         : null;
+      const recentBit = imported > 0
+        ? `Saved ${imported} workout${imported === 1 ? '' : 's'} from the last ${GARMIN_DIRECT_PULL_DAYS} days. `
+        : '';
+
+      if (job.denied) {
+        return res.json({
+          imported,
+          updated,
+          backfillPending: false,
+          historyDenied: true,
+          status: 'history_denied',
+          message:
+            `${recentBit}Garmin refused the older history export for this app`
+            + (job.denied ? ` (${String(job.denied).slice(0, 180)})` : '')
+            + '. Recent workouts can still arrive automatically. Older ones need the historical-data permission on the Garmin app.',
+        });
+      }
+
       return res.json({
-        imported: 0,
-        updated: 0,
+        imported,
+        updated,
         backfillChunks: job.total,
         backfillPending: true,
         maxHistoryDays: job.maxHistoryDays,
@@ -4309,11 +4414,11 @@ router.post('/garmin/sync-history', verifyToken, async (req, res) => {
         historyFrom: historyFromLabel,
         status: 'backfill_started',
         message:
-          `Garmin is importing your activity history${historyFromLabel ? ` from ${historyFromLabel}` : ''} ` +
-          `(${job.total} request(s) queued, rate-limit aware). Activities arrive in the background over the next minutes — ` +
-          'a long history can take a while, and Garmin decides how far back it lets an app reach; the import starts at the oldest date it permits.' +
+          `${recentBit}Garmin is importing older activity history${historyFromLabel ? ` from ${historyFromLabel}` : ''} ` +
+          `(${job.total} request(s) queued). Those arrive in the background over the next minutes — ` +
+          'Garmin decides how far back it lets an app reach.' +
           (job.clampedByKeyLimit
-            ? ` Note: this import is limited to the last ${job.maxHistoryDays} days.`
+            ? ` This import is limited to the last ${job.maxHistoryDays} days.`
             : ''),
       });
     }
@@ -4401,18 +4506,30 @@ router.get('/garmin/activity-status', verifyToken, activityStatusCacheMiddleware
 
     if (user.garmin?.refreshToken) {
       try {
-        const remote = await getGarminActivities(user, since, { allowBackfill: false });
+        // A 90-day check is 90 sequential Garmin calls and the browser gives
+        // up first, which is the "Checking…" that never finishes. Garmin's
+        // direct list only covers a short upload window anyway; older
+        // workouts are what Import History asks the backfill for.
+        const pullDays = Math.min(days, GARMIN_DIRECT_PULL_DAYS);
+        const pullSince = new Date(Date.now() - pullDays * 24 * 3600 * 1000);
+        const remote = await getGarminActivities(user, pullSince, { allowBackfill: false });
         const docs = (remote || []).map((a) => mapGarminActivityToDoc(user, a));
         const local = await GarminActivity.find({
           userId: userIdMatch(user._id),
-          garminId: { $in: docs.map((d) => d.garminId) },
-        }).select('garminId').lean();
-        const importedIds = new Set(local.map((d) => String(d.garminId)));
+          startDate: { $gte: since },
+        })
+          .select('garminId name sport startDate distance movingTime elapsedTime')
+          .sort({ startDate: -1 })
+          .limit(200)
+          .lean();
+        const localIds = new Set(local.map((d) => String(d.garminId)));
+        const remoteIds = new Set(docs.map((d) => String(d.garminId)));
 
-        const counts = { imported: 0, importable: 0, total: docs.length };
+        const counts = { imported: 0, importable: 0, total: 0 };
         const activities = docs.map((d) => {
-          const imported = importedIds.has(String(d.garminId));
+          const imported = localIds.has(String(d.garminId));
           if (imported) counts.imported += 1; else counts.importable += 1;
+          counts.total += 1;
           return {
             id: String(d.garminId),
             name: d.name,
@@ -4422,9 +4539,35 @@ router.get('/garmin/activity-status', verifyToken, activityStatusCacheMiddleware
             durationSeconds: Number(d.movingTime || d.elapsedTime) || 0,
             state: imported ? 'imported' : 'importable',
           };
-        }).sort((a, b) => new Date(b.startDate) - new Date(a.startDate));
+        });
+        for (const d of local) {
+          if (remoteIds.has(String(d.garminId))) continue;
+          counts.imported += 1;
+          counts.total += 1;
+          activities.push({
+            id: String(d.garminId),
+            name: d.name,
+            sport: d.sport,
+            startDate: d.startDate,
+            distanceMeters: Number(d.distance) || 0,
+            durationSeconds: Number(d.movingTime || d.elapsedTime) || 0,
+            state: 'imported',
+          });
+        }
+        activities.sort((a, b) => new Date(b.startDate) - new Date(a.startDate));
+        const shown = activities.slice(0, 200);
 
-        return res.json({ connected: true, pullSupported: true, days, activities, counts });
+        return res.json({
+          connected: true,
+          pullSupported: true,
+          days,
+          activities: shown,
+          counts,
+          truncated: activities.length > 200,
+          message: pullDays < days
+            ? `Garmin only lets LaChart list about the last ${pullDays} days directly. Workouts already saved are shown below; use Import History for anything older.`
+            : null,
+        });
       } catch (err) {
         if (err?.pullUnsupported || err?.backfillPending || isGarminPullTokenError(err.message)) {
           return respondFromLocal(err.pullUnsupported ? err.message : undefined);

@@ -268,6 +268,12 @@ export default function ExternalActivityList({
         </div>
       )}
 
+      {connected && checked && meta.pullSupported && meta.message && (
+        <div className={`${isMobile ? 'px-2.5 py-2 text-[10px]' : 'px-4 py-3 text-sm'} text-gray-500`}>
+          {meta.message}
+        </div>
+      )}
+
       {connected && checked && meta.pullSupported && counts && (
         <SettingsRow
           isMobile={isMobile}
