@@ -4046,8 +4046,12 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
     paceStr = formatPaceFromDistanceAndDuration(dist, dur, unitSystem, 'swim');
   }
 
-  // Laps
-  const laps = Array.isArray(merged.laps) ? merged.laps : [];
+  // Laps. Memoized so the empty fallback is not a new array every render —
+  // CI treats that as an error in the split memo below.
+  const laps = useMemo(
+    () => (Array.isArray(merged.laps) ? merged.laps : []),
+    [merged.laps],
+  );
   const fmtLapDur = (s) => fmtLapClock(s);
   const hasRunSplits = useMemo(() => {
     if (!isRun) return false;
