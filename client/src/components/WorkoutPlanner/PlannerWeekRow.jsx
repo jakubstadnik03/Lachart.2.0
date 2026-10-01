@@ -138,6 +138,7 @@ export default function PlannerWeekRow({
   onOpenCompleted,
   onAddDay,
   onDropTemplate,
+  scrollMarginTop = 88,
 }) {
   const [summaryTab, setSummaryTab] = useState('plan');
   const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
@@ -196,7 +197,7 @@ export default function PlannerWeekRow({
             // looks for, and the margin is the gap it lands with — kept here
             // so the page needs no arithmetic about the header's height.
             data-planner-day={dateStr}
-            style={{ scrollMarginTop: 88 }}
+            style={{ scrollMarginTop }}
             onDragOver={(e) => {
               if (Array.from(e.dataTransfer.types).includes('application/x-lachart-template')) {
                 e.preventDefault();

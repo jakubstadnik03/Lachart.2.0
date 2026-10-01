@@ -88,6 +88,30 @@ export function paceAxisBounds({ work, plausible = [], significant = [], isSwim 
   return { min, max, step };
 }
 
+/**
+ * Which of those ticks get a label.
+ *
+ * Every step is a real tick, but a run from 5:00 to 9:15 has one every
+ * 15 seconds and they paint on top of each other. Skip ahead by whole
+ * multiples of the step until a handful fit, still on the minute where
+ * the step allows it.
+ */
+export function axisLabelValues(min, max, step, { maxLabels = 5 } = {}) {
+  const ticks = axisTickValues(min, max, step);
+  if (ticks.length <= maxLabels) return ticks;
+  let stride = 1;
+  while (Math.ceil(ticks.length / stride) > maxLabels) stride *= 2;
+  const out = [];
+  for (let i = 0; i < ticks.length; i += stride) out.push(ticks[i]);
+  const last = ticks[ticks.length - 1];
+  if (out[out.length - 1] !== last) {
+    const prev = out[out.length - 1];
+    if (Math.abs(last - prev) < step * stride * 0.75) out[out.length - 1] = last;
+    else out.push(last);
+  }
+  return out;
+}
+
 /** Tick labels from `min` to `max` in `step`s. 1:20, 1:25, 1:30 — not five slices of an awkward range. */
 export function axisTickValues(min, max, step) {
   if (!(step > 0) || !(max > min)) return [min, max];

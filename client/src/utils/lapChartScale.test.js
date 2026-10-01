@@ -1,4 +1,4 @@
-import { paceAxisBounds, powerAxisBounds } from './lapChartScale';
+import { axisLabelValues, paceAxisBounds, powerAxisBounds } from './lapChartScale';
 
 // The reported case: a 17-lap smart-detected run. The axis drew 4:45–6:55 while
 // lap 2 ran 4:34/km, so that bar — the quickest of the session — was clamped
@@ -108,6 +108,24 @@ describe('paceAxisBounds — the axis hugs the session the way Strava does', () 
     const without = paceAxisBounds({ work: FIFTIES, plausible: FIFTIES, isSwim: true });
     expect(b.max).toBe(without.max);
     expect(b.max).toBeLessThan(120);
+  });
+});
+
+describe('axisLabelValues', () => {
+  it('does not stack a 15-second label on every step of a wide run', () => {
+    // 5:00 through 9:15 is fourteen quarters. Drawn in full they sit on
+    // top of each other down the side of the chart.
+    const labels = axisLabelValues(300, 555, 15);
+    expect(labels.length).toBeLessThanOrEqual(5);
+    expect(labels[0]).toBe(300);
+    expect(labels[labels.length - 1]).toBe(555);
+    for (let i = 1; i < labels.length; i += 1) {
+      expect(labels[i] - labels[i - 1]).toBeGreaterThanOrEqual(60);
+    }
+  });
+
+  it('keeps every swim step when there are only a few', () => {
+    expect(axisLabelValues(65, 85, 5)).toEqual([65, 70, 75, 80, 85]);
   });
 });
 

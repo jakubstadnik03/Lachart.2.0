@@ -64,7 +64,7 @@ import { buildStructureTitle } from '../../utils/workoutStructureTitle';
 import { plannedWorkoutDurationSecs } from '../../utils/planCompliance';
 import { activityCompletedStats, fmtPlanDuration, userUnitSystem } from '../../utils/activityStatsLine';
 import WeekSummaryCell, { SPORT_COLORS_CELL } from '../training/WeekSummaryCell';
-import { axisTickValues, paceAxisBounds, powerAxisBounds } from '../../utils/lapChartScale';
+import { axisLabelValues, paceAxisBounds, powerAxisBounds } from '../../utils/lapChartScale';
 import { PlanMiniChart, activityProfileBars, activityLactateMarks, ActivityMiniChart, CardProfileBand, LACTATE_INK, MAX_LACTATE_BADGES } from '../training/WorkoutProfile';
 import { classifyLaps } from '../../utils/lapClassify';
 import {
@@ -1416,7 +1416,7 @@ function LapChart({ laps, color, isBike, isRun, isSwim, unitSystem = 'metric', s
   // Round steps — 1:20, 1:25, 1:30 — with the fast end at the top. Five equal
   // slices of whatever the range happened to be produced 1:15, 1:28, 1:40.
   const yTicks = chartStep
-    ? axisTickValues(chartMin, chartMax, chartStep)
+    ? axisLabelValues(chartMin, chartMax, chartStep)
     : Array.from({ length: 5 }, (_, i) => (
       isInverted ? chartMin + (range * i) / 4 : chartMax - (range * i) / 4
     ));
@@ -1438,6 +1438,15 @@ function LapChart({ laps, color, isBike, isRun, isSwim, unitSystem = 'metric', s
 
   let elevPathD = null;
 
+  // Same vertical axis as the bars. The bottom of the chart is the lowest
+  // point, the top is the highest, with a little air above the peak — the
+  // 35% shrink used to leave the hill floating in the middle of the frame.
+  const elevationY = (alt, lo, hi) => {
+    const span = Math.max(hi - lo, 1);
+    const max = hi + span * 0.08;
+    return ((max - alt) / (max - lo)) * CHART_H;
+  };
+
   // ── Preferred: detailed elevation from raw records, mapped through the SAME
   //    cumulative-weight x-axis as the bars so the terrain sits under the right
   //    laps (and shows real within-lap shape, not just straight lines).
@@ -1448,9 +1457,6 @@ function LapChart({ laps, color, isBike, isRun, isSwim, unitSystem = 'metric', s
       const altMin = Math.min(...altValues);
       const altMax = Math.max(...altValues);
       if (altMax - altMin >= 1) {
-        // Inflate the range by 35% so the highest peak sits ~74% up the chart
-        // instead of touching the top edge — gives the terrain visible headroom.
-        const altRange = (altMax - altMin) * 1.35;
         // Put every record on the SAME axis the bars use. The bars are laid out
         // by cumulative lap weight (distance for run/swim, moving time for bike),
         // so a record's x is found by locating which lap it fell in and
@@ -1485,7 +1491,7 @@ function LapChart({ laps, color, isBike, isRun, isSwim, unitSystem = 'metric', s
         const clamp = (v) => Math.max(0, Math.min(100, v));
         const pts = sampled.map((r, si) => {
           const x = clamp(xForVal(recVal(r, si * step))).toFixed(1);
-          const y = ((1 - (r.altitude - altMin) / altRange) * (CHART_H - 8) + 4).toFixed(1);
+          const y = elevationY(r.altitude, altMin, altMax).toFixed(1);
           return `${x},${y}`;
         });
         const firstX = pts[0].split(',')[0];
@@ -1513,12 +1519,11 @@ function LapChart({ laps, color, isBike, isRun, isSwim, unitSystem = 'metric', s
     const altMin = Math.min(...alts);
     const altMax = Math.max(...alts);
     if (altMax - altMin >= 2) {
-      const altRange = altMax - altMin;
       let cumW = 0;
       const pts = alts.map((alt, i) => {
         const x = (cumW / totalElevW * 100).toFixed(1);
         if (i < entries.length) cumW += entries[i].weight;
-        const y = ((1 - (alt - altMin) / altRange) * (CHART_H - 8) + 4).toFixed(1);
+        const y = elevationY(alt, altMin, altMax).toFixed(1);
         return `${x},${y}`;
       });
       const lastX = (cumW / totalElevW * 100).toFixed(1);
@@ -1664,10 +1669,10 @@ function LapChart({ laps, color, isBike, isRun, isSwim, unitSystem = 'metric', s
                 barBg = isSelected ? '#7c3aedcc' : '#a78bfaaa';
               } else {
                 const dimmed = selectedLap != null && !isSelected;
-                // One solid colour. Pace is the height of the bar; washing it
-                // out by intensity made a 1:25 and a 1:29 look like the same
-                // pale block. Strava paints the whole set in one saturated hue.
-                const alpha = isSelected ? 'ff' : dimmed ? '73' : 'f2';
+                // One colour for the set. Light enough that the elevation
+                // hill shows through the bar, still opaque enough to read
+                // the pace off the height.
+                const alpha = isSelected ? 'e6' : dimmed ? '73' : 'b3';
                 barBg = solidBarColor(color) + alpha;
               }
 
@@ -8045,20 +8050,23 @@ function DayWellnessStrip({ w, status, className = '', onOpen = null }) {
       style={onOpen ? { WebkitTapHighlightColor: 'transparent' } : undefined}
     >
       {status && <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: status.hex }} />}
-      {sleepLabel && (
-        <span className="flex items-center gap-0.5 min-w-0">
-          <MoonIcon className="w-3 h-3 flex-shrink-0" />
-          <span className="font-semibold text-gray-500">{sleepLabel}</span>
-        </span>
-      )}
       {hasRhr && (
         <span className="flex items-center gap-0.5">
           <HeartIcon className="w-3 h-3 flex-shrink-0" />
           <span className="font-semibold text-gray-500">{Math.round(w.restingHeartRate)}</span>
         </span>
       )}
+      {sleepLabel && (
+        <span className="flex items-center gap-0.5 min-w-0">
+          <MoonIcon className="w-3 h-3 flex-shrink-0" />
+          <span className="font-semibold text-gray-500">{sleepLabel}</span>
+        </span>
+      )}
       {hasHrv && (
         <span className="flex items-center gap-0.5">
+          <svg className="w-3 h-3 flex-shrink-0" viewBox="0 0 16 16" fill="none" aria-hidden>
+            <path d="M1 8h2.2l1.3-3.2L7 12l1.6-4H15" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
           <span className="font-semibold text-gray-500">{Math.round(w.hrvMs)}</span>
           <span>ms</span>
         </span>
@@ -8252,6 +8260,14 @@ export default function CalendarView({
     );
   };
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  // A phone on its side is wider than the desktop breakpoint, but it is still
+  // a phone: short, touched with a finger. The desktop month grid and its
+  // two-row toolbar do not fit there.
+  const [isPhoneLandscape, setIsPhoneLandscape] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    const coarse = window.matchMedia?.('(pointer: coarse)')?.matches ?? false;
+    return coarse && window.innerWidth >= 768 && window.innerHeight < 540;
+  });
   // Optimistic selection — marks activity immediately on click, before parent updates selectedActivityId
   const [optimisticSelectedId, setOptimisticSelectedId] = useState(null);
   // Mobile-specific state
@@ -8291,23 +8307,26 @@ export default function CalendarView({
   const [mobileHeaderHeight, setMobileHeaderHeight] = useState(0);
   const selectedMobileDayRef = useRef(selectedMobileDay);
 
-  // Switching the mobile Calendar/Charts tab → jump the scroll container back
-  // to the very top so the new tab opens at the top (Charts especially, which
-  // is otherwise inherited at whatever scroll the calendar list was left at).
-  useEffect(() => {
-    if (!isMobile) return;
+  // Charts opens at the top. Calendar keeps its own "today" scroll, so a tab
+  // change must not yank that list back to the first of the month.
+  const scrollMobileToTop = useCallback((behavior = 'auto') => {
     const header = mobileStickyHeaderRef.current;
     let el = header ? header.parentElement : null;
     while (el) {
       const oy = (typeof getComputedStyle !== 'undefined') ? getComputedStyle(el).overflowY : '';
       if ((oy === 'auto' || oy === 'scroll') && el.scrollHeight > el.clientHeight + 1) {
-        el.scrollTo({ top: 0, behavior: 'auto' });
+        el.scrollTo({ top: 0, behavior });
         return;
       }
       el = el.parentElement;
     }
-    if (typeof window !== 'undefined') window.scrollTo(0, 0);
-  }, [mobileTab, isMobile]);
+    if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior });
+  }, []);
+
+  useEffect(() => {
+    if (!isMobile || mobileTab !== 'charts') return;
+    scrollMobileToTop('auto');
+  }, [mobileTab, isMobile, scrollMobileToTop]);
   const isAutoScrollingRef = useRef(false);
   const monthSentinelBottomRef = useRef(null);
   const monthSentinelTopRef = useRef(null);
@@ -8459,7 +8478,7 @@ export default function CalendarView({
       <button
         onClick={open}
         title={dp.notes || dp.title || catLabel(dp.category)}
-        className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded font-bold border leading-none truncate max-w-[90px]"
+        className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded font-bold border leading-none truncate max-w-[90px] flex-shrink-0"
         style={{ background: hexToRgba(color, 0.12), color, borderColor: hexToRgba(color, 0.35), cursor: onDayPlanSave ? 'pointer' : 'default' }}
       >
         {dp.title || catLabel(dp.category)}
@@ -8527,6 +8546,8 @@ export default function CalendarView({
 
   // Add completed workout sheet
   const [addCompletedDate, setAddCompletedDate] = useState(null); // Date | null
+  // Mobile day "+" when logging a completed workout is not wired: plan + theme.
+  const [addMenuKey, setAddMenuKey] = useState(null);
   const [addRaceOpen, setAddRaceOpen] = useState(false);          // header "+ Race" → race form
   const [selectedRace, setSelectedRace] = useState(null);       // click race badge → detail modal
 
@@ -8539,6 +8560,13 @@ export default function CalendarView({
     window.addEventListener('lachart:tssDisplayModeChanged', onTssModeChange);
     return () => window.removeEventListener('lachart:tssDisplayModeChanged', onTssModeChange);
   }, []);
+
+  useEffect(() => {
+    if (!addMenuKey) return undefined;
+    const close = () => setAddMenuKey(null);
+    document.addEventListener('pointerdown', close);
+    return () => document.removeEventListener('pointerdown', close);
+  }, [addMenuKey]);
 
   // Drag & drop state for planned workout rescheduling
   const [draggedPw, setDraggedPw] = useState(null); // { pw, isCopy }
@@ -8645,10 +8673,16 @@ export default function CalendarView({
   // Detect mobile
   useEffect(() => {
     const handleResize = () => {
+      const coarse = window.matchMedia?.('(pointer: coarse)')?.matches ?? false;
       setIsMobile(window.innerWidth < 768);
+      setIsPhoneLandscape(coarse && window.innerWidth >= 768 && window.innerHeight < 540);
     };
     window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
+    window.addEventListener('orientationchange', handleResize);
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      window.removeEventListener('orientationchange', handleResize);
+    };
   }, []);
 
   // Keep ref in sync so scroll spy closure stays fresh
@@ -9020,6 +9054,19 @@ export default function CalendarView({
 
   const [direction, setDirection] = useState(0); // -1 = going back, 1 = going forward
   const [isFullscreen, setIsFullscreen] = useState(false);
+
+  // Phone landscape fullscreen mounts the day list after the desktop grid, so
+  // the portrait "open on today" effect never sees it.
+  useEffect(() => {
+    if (!isFullscreen || !isPhoneLandscape) return undefined;
+    const t = setTimeout(() => scrollToTodayCard(), 60);
+    return () => clearTimeout(t);
+  }, [isFullscreen, isPhoneLandscape, scrollToTodayCard]);
+
+  useEffect(() => {
+    if (!isFullscreen || !isPhoneLandscape || mobileTab !== 'charts') return;
+    scrollMobileToTop('auto');
+  }, [isFullscreen, isPhoneLandscape, mobileTab, scrollMobileToTop]);
 
   const filteredActivities = useMemo(() => {
     // Deduped first. The week summary sums this list, and one session that
@@ -9682,20 +9729,24 @@ export default function CalendarView({
     return `${(meters / 1000).toFixed(1)} km`;
   };
 
+  // Fullscreen on a phone keeps the day list: it scrolls and a training opens
+  // on tap. The desktop week grid is only for a real wide screen.
+  const showMobileCalendar = isMobile || (isFullscreen && isPhoneLandscape);
+
   const calendarContent = (
     // overflow-x-clip rather than overflow-hidden: the header below sticks to
     // the top of the page's scroller, and an `overflow: hidden` ancestor would
     // make it stick to a box that never scrolls — i.e. not stick at all. Clip
     // still trims the grid to the card's rounded corners.
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.25 }} className={`${isFullscreen ? 'fixed inset-0 z-[9998] bg-white flex flex-col p-4 md:p-5 overflow-hidden' : (isMobile ? 'bg-white' : 'bg-white rounded-2xl border border-gray-200 shadow-sm p-4 md:p-5 mb-4 md:mb-6 overflow-x-clip')}`}>
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.25 }} className={`${isFullscreen ? `fixed inset-0 z-[9998] bg-white flex flex-col overflow-hidden ${showMobileCalendar ? 'pt-[env(safe-area-inset-top)] pl-[env(safe-area-inset-left)]' : 'p-4 md:p-5'}` : (isMobile ? 'bg-white' : 'bg-white rounded-2xl border border-gray-200 shadow-sm p-4 md:p-5 mb-4 md:mb-6 overflow-x-clip')}`}>
       {/* Header — desktop only.
           The controls follow the grid down. A month of training is taller than
           the screen, and having to scroll back up to change the month or the
           view is what a header is for. The negative margins let it cover the
           card's own padding, so nothing slides through the gap. */}
-      {!isMobile && (
-      <div className={`flex flex-col sm:flex-row flex-wrap items-start sm:items-center justify-between gap-2 md:gap-3 mb-3 md:mb-4 ${isFullscreen ? '' : 'sticky top-0 z-20 bg-white -mx-4 md:-mx-5 px-4 md:px-5 -mt-4 md:-mt-5 pt-4 md:pt-5 pb-2 border-b border-gray-100'}`}>
-        <div className="flex items-center gap-1.5 md:gap-2">
+      {!showMobileCalendar && (
+      <div className={`${isPhoneLandscape ? 'flex flex-nowrap items-center gap-1.5 mb-2 overflow-x-auto [&_button]:!text-xs [&_button]:!px-2 [&_button]:!py-1' : 'flex flex-col sm:flex-row flex-wrap items-start sm:items-center justify-between gap-2 md:gap-3 mb-3 md:mb-4'} ${isFullscreen ? '' : 'sticky top-0 z-20 bg-white -mx-4 md:-mx-5 px-4 md:px-5 -mt-4 md:-mt-5 pt-4 md:pt-5 pb-2 border-b border-gray-100'}`}>
+        <div className={`flex items-center gap-1.5 md:gap-2 ${isPhoneLandscape ? 'shrink-0' : ''}`}>
           <button
             onClick={prev}
             className="px-2 md:px-3 py-1 md:py-1.5 rounded-lg md:rounded-xl border border-gray-200 bg-white hover:bg-gray-50 text-gray-700 shadow-sm transition-colors flex items-center justify-center"
@@ -9718,7 +9769,7 @@ export default function CalendarView({
           </button>
         </div>
         {isFullscreen ? (
-          <div className="text-base md:text-lg lg:text-xl font-semibold text-gray-900">
+          <div className={`text-base md:text-lg lg:text-xl font-semibold text-gray-900 ${isPhoneLandscape ? 'shrink-0' : ''}`}>
             {(() => {
               const ws = startOfWeek(anchorDate);
               const we = addDays(addDays(ws, -2*7), 16*7 - 1);
@@ -9726,16 +9777,18 @@ export default function CalendarView({
             })()}
           </div>
         ) : (
-          <MonthYearPicker
-            date={anchorDate}
-            onPick={setAnchorDate}
-            label={anchorDate.toLocaleString(undefined, { month: 'long', year: 'numeric' })}
-          />
+          <span className={isPhoneLandscape ? 'shrink-0' : undefined}>
+            <MonthYearPicker
+              date={anchorDate}
+              onPick={setAnchorDate}
+              label={anchorDate.toLocaleString(undefined, { month: 'long', year: 'numeric' })}
+            />
+          </span>
         )}
-        <div className="flex items-center gap-1.5 md:gap-2">
+        <div className={`flex items-center gap-1.5 md:gap-2 ${isPhoneLandscape ? 'shrink-0' : ''}`}>
           {/* Category filter */}
           <CalendarCategoryFilter value={categoryFilter} onChange={setCategoryFilter} activities={activities} />
-          {!isFullscreen && (
+          {!isFullscreen && !isPhoneLandscape && (
             <button
               onClick={() => setView('week')}
               className={`px-2 md:px-3 py-1 md:py-1.5 rounded-lg md:rounded-xl border shadow-sm transition-colors text-sm md:text-base ${view==='week'?'bg-primary text-white border-primary hover:bg-primary-dark':'bg-white border-gray-200 hover:bg-gray-50 text-gray-700'}`}
@@ -9743,7 +9796,7 @@ export default function CalendarView({
               Week
             </button>
           )}
-          {!isFullscreen && (
+          {!isFullscreen && !isPhoneLandscape && (
             <button
               onClick={() => setView('month')}
               className={`px-2 md:px-3 py-1 md:py-1.5 rounded-lg md:rounded-xl border shadow-sm transition-colors text-sm md:text-base ${view==='month'?'bg-primary text-white border-primary hover:bg-primary-dark':'bg-white border-gray-200 hover:bg-gray-50 text-gray-700'}`}
@@ -9802,20 +9855,41 @@ export default function CalendarView({
       )}
 
       {/* Mobile: native app-style layout — mini calendar + scrollable day list */}
-      {isMobile ? (
-        <div>
+      {showMobileCalendar ? (
+        <div className={isFullscreen ? 'flex-1 min-h-0 overflow-y-auto overscroll-contain' : undefined}>
           {/* ── Sticky header: tab bar + calendar/charts nav ── */}
           <div ref={mobileStickyHeaderRef} className="sticky top-0 z-10 bg-white border-b border-gray-100 shadow-sm">
             {/* Tab switcher */}
-            <div className="flex bg-gray-100 rounded-xl p-0.5 mx-3 mt-2 mb-2">
+            <div className="flex items-center gap-1 mx-3 mt-2 mb-2">
+            <div className="flex flex-1 bg-gray-100 rounded-xl p-0.5">
               {[['calendar', 'Calendar'], ['charts', 'Charts'], ['planner', 'Planner']].map(([tab, label]) => (
                 <button
                   key={tab}
-                  onClick={() => (tab === 'planner' ? goToPlanner() : setMobileTab(tab))}
+                  onClick={() => {
+                    if (tab === 'planner') { goToPlanner(); return; }
+                    if (tab === 'charts') {
+                      if (mobileTab === 'charts') scrollMobileToTop('smooth');
+                      else setMobileTab('charts');
+                      return;
+                    }
+                    scrollToTodayCard();
+                  }}
                   className={`flex-1 py-1.5 text-sm font-semibold rounded-lg transition-all touch-manipulation ${mobileTab === tab ? 'bg-white shadow text-gray-900' : 'text-gray-500'}`}
                   style={{ WebkitTapHighlightColor: 'transparent' }}
                 >{label}</button>
               ))}
+            </div>
+            {isFullscreen && (
+              <button
+                type="button"
+                onClick={() => setIsFullscreen(false)}
+                title="Exit fullscreen"
+                aria-label="Exit fullscreen"
+                className="w-8 h-8 shrink-0 flex items-center justify-center rounded-lg border border-gray-200 text-gray-500 active:bg-gray-50"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 9V4.5M9 9H4.5M9 9L3.75 3.75M9 15v4.5M9 15H4.5M9 15l-5.25 5.25M15 9h4.5M15 9V4.5M15 9l5.25-5.25M15 15h4.5M15 15v4.5m0-4.5l5.25 5.25" /></svg>
+              </button>
+            )}
             </div>
 
             {mobileTab === 'calendar' && (<>
@@ -10027,53 +10101,67 @@ export default function CalendarView({
                     {renderPeriodBand(key, { height: 5, showLabel: true })}
                     {/* Race day — big badge */}
                     <div className="px-3">{renderRaceBadge(key, { big: true })}</div>
-                    {/* Day header (compact — bigger info goes on the
-                        trainings inside, not the date strip).
-                        The day-theme badge ("Threshold", "Recovery", …) sits
-                        next to the date and is tappable to edit. Tapping
-                        the empty area opens the theme editor too. */}
-                    {(() => { const _dayPlan = dayPlanByDate.get(key); return (
-                    <div className={`flex items-center justify-between px-3 py-2 ${isToday ? 'bg-primary/5' : 'bg-gray-50/80'}`}>
+                    {/* Day header. The theme, when there is one, sits in front
+                        of the night's resting HR, sleep and HRV. A new theme
+                        is added from the + menu, not from a label in the row. */}
+                    <div className={`flex items-center justify-between gap-2 px-3 py-2 ${isToday ? 'bg-primary/5' : 'bg-gray-50/80'}`}>
                       <div className="flex items-center gap-2 min-w-0">
-                        <span className={`text-xs font-bold ${isToday ? 'text-primary' : isCurrentMonth ? 'text-gray-400' : 'text-gray-300'}`}>{dayNames[dayDate.getDay()]}</span>
-                        <span className={`text-base font-extrabold ${isToday ? 'text-primary' : isCurrentMonth ? 'text-gray-800' : 'text-gray-500'}`}>{dayDate.getDate()}</span>
-                        {isToday && <span className="text-[9px] bg-primary text-white px-1.5 py-0.5 rounded-full font-bold">Today</span>}
-                        {renderDayThemeChip(key, { big: true })}
-                        {!_dayPlan && onDayPlanSave && (
-                          <button
-                            onClick={e => { e.stopPropagation(); setDayPlanEditDate(key); }}
-                            className="text-[10px] text-gray-300 active:text-primary touch-manipulation px-1"
-                            style={{ WebkitTapHighlightColor: 'transparent' }}
-                            title="Add day theme"
-                          >+ theme</button>
-                        )}
+                        <span className={`text-xs font-bold flex-shrink-0 ${isToday ? 'text-primary' : isCurrentMonth ? 'text-gray-400' : 'text-gray-300'}`}>{dayNames[dayDate.getDay()]}</span>
+                        <span className={`text-base font-extrabold flex-shrink-0 ${isToday ? 'text-primary' : isCurrentMonth ? 'text-gray-800' : 'text-gray-500'}`}>{dayDate.getDate()}</span>
+                        {isToday && <span className="text-[9px] bg-primary text-white px-1.5 py-0.5 rounded-full font-bold flex-shrink-0">Today</span>}
+                        {renderDayThemeChip(key)}
+                        {renderWellness(key, { className: 'min-w-0 overflow-hidden' })}
                       </div>
-                      {(onPlanWorkout || onAddCompletedWorkout) && (
+                      {(onPlanWorkout || onAddCompletedWorkout || onDayPlanSave) && (
                         onAddCompletedWorkout ? (
-                          /* Show a tiny dropdown when "log completed" is available */
-                          <div className="relative" onClick={e => e.stopPropagation()}>
+                          <div className="relative flex-shrink-0" onClick={e => e.stopPropagation()}>
                             <button
                               onClick={e => {
                                 e.stopPropagation();
-                                // If only one action, skip menu — but we always have both here
                                 setAddCompletedDate(dayDate);
                               }}
                               className="w-6 h-6 flex items-center justify-center text-gray-300 active:text-primary text-lg leading-none touch-manipulation"
                               style={{ WebkitTapHighlightColor: 'transparent' }}
                             >+</button>
                           </div>
-                        ) : (
+                        ) : (onPlanWorkout && onDayPlanSave) ? (
+                          <button
+                            onPointerDown={e => e.stopPropagation()}
+                            onClick={e => { e.stopPropagation(); setAddMenuKey(k => (k === key ? null : key)); }}
+                            className={`w-6 h-6 flex-shrink-0 flex items-center justify-center text-lg leading-none touch-manipulation ${addMenuKey === key ? 'text-primary' : 'text-gray-300'} active:text-primary`}
+                            style={{ WebkitTapHighlightColor: 'transparent' }}
+                            aria-label="Add to this day"
+                          >+</button>
+                        ) : onPlanWorkout ? (
                         <button
                           onClick={e => { e.stopPropagation(); onPlanWorkout(dayDate); }}
-                          className="w-6 h-6 flex items-center justify-center text-gray-300 active:text-primary text-lg leading-none touch-manipulation"
+                          className="w-6 h-6 flex-shrink-0 flex items-center justify-center text-gray-300 active:text-primary text-lg leading-none touch-manipulation"
                           style={{ WebkitTapHighlightColor: 'transparent' }}
+                        >+</button>
+                        ) : (
+                        <button
+                          onClick={e => { e.stopPropagation(); setDayPlanEditDate(key); }}
+                          className="w-6 h-6 flex-shrink-0 flex items-center justify-center text-gray-300 active:text-primary text-lg leading-none touch-manipulation"
+                          style={{ WebkitTapHighlightColor: 'transparent' }}
+                          aria-label="Add day theme"
                         >+</button>
                         )
                       )}
                     </div>
-                    ); })()}
-                    {/* Apple Health recovery (sleep / resting HR / HRV) */}
-                    {renderWellness(key, { className: 'px-3 pt-1.5 -mb-0.5' })}
+                    {addMenuKey === key && onPlanWorkout && onDayPlanSave && !onAddCompletedWorkout && (
+                      <div className="flex border-t border-gray-100 bg-white" onPointerDown={e => e.stopPropagation()} onClick={e => e.stopPropagation()}>
+                        <button
+                          type="button"
+                          onClick={() => { setAddMenuKey(null); onPlanWorkout(dayDate); }}
+                          className="flex-1 px-3 py-2.5 text-left text-sm font-semibold text-gray-800 active:bg-gray-50"
+                        >Plan workout</button>
+                        <button
+                          type="button"
+                          onClick={() => { setAddMenuKey(null); setDayPlanEditDate(key); }}
+                          className="flex-1 px-3 py-2.5 text-left text-sm font-semibold text-gray-800 border-l border-gray-100 active:bg-gray-50"
+                        >Day theme</button>
+                      </div>
+                    )}
                     {/* Content */}
                     {hasItems ? (
                       <div className="px-3 pb-2.5 pt-1.5 flex flex-col gap-1.5">
