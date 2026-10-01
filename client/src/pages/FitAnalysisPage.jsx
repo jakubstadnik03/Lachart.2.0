@@ -3537,30 +3537,58 @@ const FitAnalysisPage = () => {
   }, [user, loadExternalActivities, loadRegularTrainings, loadTrainings]);
 
 
-  // Season periods → calendar bands. The whole plan is one document, so this
-  // is two requests once per athlete rather than anything per-view.
+  // Season periods → calendar bands. Read again whenever the plan is saved:
+  // the annual plan and the calendar are different pages, and a period edit
+  // has to land on the bands the next time this one is open.
   useEffect(() => {
     const athlete = selectedAthleteId || user?._id;
     if (!athlete) { setAtpBands([]); setAtpWeeks({}); return; }
     let cancelled = false;
-    (async () => {
+    let appliedAt = 0;
+
+    const apply = (full) => {
+      if (cancelled || !full?.weeks) return;
+      const stamp = new Date(full.updatedAt || 0).getTime();
+      if (stamp && stamp < appliedAt) return;
+      if (stamp) appliedAt = stamp;
+      setAtpBands(atpPeriodBands(full, atpPeriodColor));
+      setAtpWeeks(atpWeekTargets(full));
+    };
+
+    const load = async () => {
       try {
-        const plans = await getAtpPlans(selectedAthleteId || null);
+        const plans = await getAtpPlans(selectedAthleteId || null, { noCache: true });
         if (cancelled || !plans?.length) { if (!cancelled) { setAtpBands([]); setAtpWeeks({}); } return; }
         // The season the athlete is in, else the most recent one.
         const todayKey = new Date().toISOString().slice(0, 10);
         const current = plans.find((p) => p.startDate <= todayKey && todayKey <= p.endDate)
           || plans[0];
-        const full = await getAtpPlan(current._id, selectedAthleteId || null);
-        if (cancelled) return;
-        setAtpBands(atpPeriodBands(full, atpPeriodColor));
-        setAtpWeeks(atpWeekTargets(full));
+        const full = await getAtpPlan(current._id, selectedAthleteId || null, { noCache: true });
+        apply(full);
       } catch {
         // A season that will not load is not a reason for the calendar to fail.
         if (!cancelled) { setAtpBands([]); setAtpWeeks({}); }
       }
-    })();
-    return () => { cancelled = true; };
+    };
+
+    const onUpdated = (e) => {
+      const plan = e.detail;
+      if (!plan) return;
+      if (plan.deleted) { load(); return; }
+      const owner = String(plan.athleteId || '');
+      if (owner && owner !== String(athlete)) return;
+      apply(plan);
+    };
+
+    load();
+    window.addEventListener('atp:updated', onUpdated);
+    const onVisible = () => { if (document.visibilityState === 'visible') load(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('atp:updated', onUpdated);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
   }, [selectedAthleteId, user?._id]);
 
   // The bands the calendar draws: the athlete's own periods, plus the season's,
