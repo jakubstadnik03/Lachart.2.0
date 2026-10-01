@@ -25,6 +25,8 @@ import UpgradeModal from '../components/UpgradeModal';
 import PopulationInsights from '../components/Testing-page/PopulationInsights';
 import PremiumLock from '../components/PremiumLock';
 import ThresholdHistory from '../components/Testing-page/ThresholdHistory';
+import TrainingSinceTestPanel from '../components/Testing-page/TrainingSinceTestPanel';
+import { sportKind } from '../utils/hrPowerProfile';
 import TestRecommendationCard from '../components/Testing-page/TestRecommendationCard';
 import PredictedCurveCard from '../components/Testing-page/PredictedCurveCard';
 import { FREE_TEST_LIMIT, FREE_COACH_ATHLETE_LIMIT } from '../constants/planLimits';
@@ -1710,6 +1712,29 @@ const TestingPage = () => {
                           onClose={null}
                         />
                       </div>
+
+                      {(() => {
+                        const candidates = tests.filter((t) => {
+                          const kind = sportKind(t?.sport);
+                          if (kind !== 'bike' && kind !== 'run') return false;
+                          if (selectedSport !== 'all' && kind !== selectedSport) return false;
+                          return Array.isArray(t?.results) && t.results.length > 0;
+                        });
+                        if (candidates.length === 0) return null;
+                        const latest = candidates.reduce((a, b) => (
+                          new Date(b.date) > new Date(a.date) ? b : a
+                        ));
+                        return (
+                          <div style={sectionSnap}>
+                            <TrainingSinceTestPanel
+                              test={latest}
+                              tests={tests}
+                              athleteId={effectiveTargetAthleteId}
+                              onOpenTest={(id) => { handleUrlTestSelection(id); setActiveTab('tests'); }}
+                            />
+                          </div>
+                        );
+                      })()}
 
                       {/* Desktop: two-column for protocol + insights */}
                       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4" style={sectionSnap}>
