@@ -64,7 +64,7 @@ import { buildStructureTitle } from '../../utils/workoutStructureTitle';
 import { plannedWorkoutDurationSecs } from '../../utils/planCompliance';
 import { activityCompletedStats, fmtPlanDuration, userUnitSystem } from '../../utils/activityStatsLine';
 import WeekSummaryCell, { SPORT_COLORS_CELL } from '../training/WeekSummaryCell';
-import { paceAxisBounds, powerAxisBounds } from '../../utils/lapChartScale';
+import { axisTickValues, paceAxisBounds, powerAxisBounds } from '../../utils/lapChartScale';
 import { PlanMiniChart, activityProfileBars, activityLactateMarks, ActivityMiniChart, CardProfileBand, LACTATE_INK, MAX_LACTATE_BADGES } from '../training/WorkoutProfile';
 import { classifyLaps } from '../../utils/lapClassify';
 import {
@@ -1171,9 +1171,18 @@ function WeekActivityCard({ a, isSelected, onSelect, onActivityClick, onAddLacta
 }
 
 // ─── Lap Chart ────────────────────────────────────────────────────────────────
+/** Sport colour, eased back so a bar stays in the same hue and a little softer. */
+function solidBarColor(hex) {
+  const h = String(hex || '').replace('#', '');
+  if (h.length < 6) return '#7dd3fc';
+  const n = (i) => parseInt(h.slice(i, i + 2), 16);
+  const tone = (c) => Math.max(0, Math.min(255, Math.round(c * 0.78 + 40)));
+  return `#${[tone(n(0)), tone(n(2)), tone(n(4))].map((c) => c.toString(16).padStart(2, '0')).join('')}`;
+}
+
 function LapChart({ laps, color, isBike, isRun, isSwim, unitSystem = 'metric', selectedLap, onSelectLap, chartScrollRef, onScrollCenter, scaleOverride = null, records = null, sport = '', isStravaActivity = false }) {
   const CHART_H   = 200;
-  const Y_AXIS_W  = 38;
+  const Y_AXIS_W  = 54;
   const X_LABEL_H = 16;
 
   // X-axis zoom: enable horizontal scroll when a lap is selected so the
@@ -1189,7 +1198,7 @@ function LapChart({ laps, color, isBike, isRun, isSwim, unitSystem = 'metric', s
   // formula sizes the container so the AVERAGE lap takes 1/TARGET_VISIBLE
   // of the viewport, with capped weights so a single huge lap can't
   // monopolise the row.
-  const TARGET_VISIBLE_LAPS = 16;
+  const TARGET_VISIBLE_LAPS = 20;
   // Bar widths are STRICTLY proportional to weight — no capping. Honza's
   // feedback (2026-05): "vždy at je to poměrově prostě" — capping made
   // dominant endurance laps fit a bit better but it broke the "scale read"
@@ -1218,8 +1227,12 @@ function LapChart({ laps, color, isBike, isRun, isSwim, unitSystem = 'metric', s
     if (isBike)                             value = pow;
     else if (isRun  && dist > 0 && dur > 0) value = dur / (dist / 1000);
     else if (isSwim && dist > 0 && dur > 0) value = dur / (dist / 100);
-    const weight = Math.max(dur, 1);
-    return { value, weight, dur, dist, isPause: !isBike && dist <= 0, lactate };
+    const isPause = !isBike && dist <= 0;
+    // A rest is still on the clock, but drawing it at full duration opened a
+    // gap almost as wide as the rep beside it. A fraction of that time keeps
+    // the pause visible without splitting the set apart.
+    const weight = Math.max(isPause ? dur * 0.35 : dur, 1);
+    return { value, weight, dur, dist, isPause, lactate };
   });
 
   // Zoom activates only when a lap is selected AND there are many laps.
@@ -1345,24 +1358,6 @@ function LapChart({ laps, color, isBike, isRun, isSwim, unitSystem = 'metric', s
     if (filtered.length >= 2) scaleValues = filtered;
   }
 
-  const maxVal   = Math.max(...scaleValues);
-  const minVal   = Math.min(...scaleValues);
-  // Y-axis range — centre the chart around the AVERAGE of the filtered
-  // values so the "typical" bar sits at the middle line and the spread
-  // above/below is visible at a glance. Range is symmetric around the
-  // centre, sized from the actual max-deviation in the data plus a 40 %
-  // padding factor (gives bars some headroom without leaving the top of
-  // the chart visibly empty).
-  //
-  // Tuning history (2026-05):
-  //   - Original: `spread = max(IQR × 1.5, centre × 6%)` — too generous,
-  //     swim test ended up with chart range 1:11 ↔ 1:23 while real data
-  //     only covered 1:14–1:20. Honza: "nahoře byl nesmysl".
-  //   - First fix: anchored on filtered min/max + 15 % pad — too tight,
-  //     lost the centred-on-average feel. Honza: "chci větší range".
-  //   - Current: centre + max-deviation × 1.4 — keeps avg in the middle,
-  //     bars use ~70 % of the chart height, with ~15 % padding above and
-  //     below the actual data extremes for clean readability.
   // Session average (distance-weighted for run/swim, time-weighted for bike) —
   // drawn as a dashed reference line, like Strava's "Workout Analysis".
   const valuedEntries = entries.filter(e => !e.isPause && e.value > 0);
@@ -1371,24 +1366,22 @@ function LapChart({ laps, color, isBike, isRun, isSwim, unitSystem = 'metric', s
     ? valuedEntries.reduce((a, e) => a + e.value * (e.weight || 0), 0) / weightTot
     : scaleValues.reduce((a, b) => a + b, 0) / (scaleValues.length || 1);
 
-  const avgForScale = scaleValues.length
-    ? scaleValues.reduce((a, b) => a + b, 0) / scaleValues.length
-    : avgValue;
-
-  let chartMin, chartMax;
+  let chartMin, chartMax, chartStep;
   if (scaleOverride) {
     chartMin = scaleOverride.min;
     chartMax = scaleOverride.max;
+    chartStep = scaleOverride.step || null;
   } else {
     // Size the Y-axis from work laps (scaleValues), not every raw segment.
     // Outlier / pause laps still render — getBarH clamps them to the edge, and
     // the bounds helper makes sure nothing plausible gets clamped at the FAST
     // edge, where a clipped bar silently misreports the best lap of the session.
     const bounds = isInverted
-      ? paceAxisBounds({ work: scaleValues, plausible: slowScaleEntries, significant: significantValues, isSwim, avgForScale })
-      : powerAxisBounds({ work: scaleValues, plausible: slowScaleEntries, significant: significantValues, avgForScale });
-    chartMin = bounds.min;
-    chartMax = bounds.max;
+      ? paceAxisBounds({ work: scaleValues, plausible: slowScaleEntries, significant: significantValues, isSwim })
+      : powerAxisBounds({ work: scaleValues, plausible: slowScaleEntries });
+    chartMin = bounds ? bounds.min : 0;
+    chartMax = bounds ? bounds.max : 1;
+    chartStep = bounds ? bounds.step : null;
   }
   const range    = chartMax - chartMin || 1;
 
@@ -1403,20 +1396,9 @@ function LapChart({ laps, color, isBike, isRun, isSwim, unitSystem = 'metric', s
     const h = isInverted
       ? ((chartMax - val) / range) * CHART_H
       : ((val - chartMin) / range) * CHART_H;
-    // Clamp both ends — outlier laps outside [minVal, maxVal] would otherwise
-    // produce negative heights or overflow the chart.
+    // Clamp both ends — a lap outside the axis draws as a stub or a full bar
+    // rather than a negative height.
     return Math.max(3, Math.min(CHART_H, h));
-  };
-
-  // Intensity 0..1: 1 = fastest / most power, 0 = slowest / least power.
-  // CLAMP to [0,1] — minVal/maxVal come from the work laps only, so a slow
-  // warm-up/recovery lap sits OUTSIDE that band and would otherwise produce a
-  // negative intensity → negative alpha → an invalid colour → an invisible bar
-  // (the lap looked "missing" until a re-render flipped it to the dimmed alpha).
-  const getIntensity = (val) => {
-    if (!val || maxVal === minVal) return 0.5;
-    const raw = isInverted ? (maxVal - val) / (maxVal - minVal) : (val - minVal) / (maxVal - minVal);
-    return Math.max(0, Math.min(1, raw));
   };
 
   const fmtTick = (v) => {
@@ -1431,13 +1413,16 @@ function LapChart({ laps, color, isBike, isRun, isSwim, unitSystem = 'metric', s
     return m > 0 ? `${m}:${String(s).padStart(2, '0')}` : `${s}s`;
   };
   const unitLabel = isSwim ? paceUnitShort(unitSystem, 'swim') : isRun ? paceUnitShort(unitSystem, 'run') : 'W';
-  // For bike (non-inverted): high value at top → start from chartMax and step DOWN.
-  // For run/swim (inverted): fast pace (low seconds) at top → start from chartMin and step UP.
-  const yTicks = Array.from({ length: 5 }, (_, i) =>
-    isInverted
-      ? chartMin + (range * i) / 4   // run/swim: chartMin (fastest) at top
-      : chartMax - (range * i) / 4   // bike:     chartMax (most power) at top
-  );
+  // Round steps — 1:20, 1:25, 1:30 — with the fast end at the top. Five equal
+  // slices of whatever the range happened to be produced 1:15, 1:28, 1:40.
+  const yTicks = chartStep
+    ? axisTickValues(chartMin, chartMax, chartStep)
+    : Array.from({ length: 5 }, (_, i) => (
+      isInverted ? chartMin + (range * i) / 4 : chartMax - (range * i) / 4
+    ));
+  const tickTop = (v) => (isInverted
+    ? (v - chartMin) / range
+    : (chartMax - v) / range) * CHART_H;
 
   // ── Elevation outline ────────────────────────────────────────────────────────
   const hasElevation = laps.some(l =>
@@ -1623,20 +1608,12 @@ function LapChart({ laps, color, isBike, isRun, isSwim, unitSystem = 'metric', s
               minWidth: '100%',
             }}
           >
-            {/* Horizontal grid lines — one per Y-axis tick, helps visual alignment */}
-            {yTicks.map((_, i) => (
-              <div key={i} style={{
-                position: 'absolute', left: 0, right: 0,
-                top: (i / 4) * CHART_H,
-                height: 1, backgroundColor: '#F3F4F6', zIndex: 0, pointerEvents: 'none',
-              }} />
-            ))}
             {/* Dashed session-average reference line (Strava-style) */}
             {showAvgLine && (
               <div style={{
                 position: 'absolute', left: 0, right: 0,
                 top: avgLineTop, height: 0,
-                borderTop: `1.5px dashed ${color}99`,
+                borderTop: `1.5px dashed ${solidBarColor(color)}`,
                 zIndex: 3, pointerEvents: 'none',
               }} />
             )}
@@ -1686,13 +1663,12 @@ function LapChart({ laps, color, isBike, isRun, isSwim, unitSystem = 'metric', s
               } else if (hasLactate) {
                 barBg = isSelected ? '#7c3aedcc' : '#a78bfaaa';
               } else {
-                const intensity = getIntensity(ent.value);
                 const dimmed = selectedLap != null && !isSelected;
-                // Selected: ~80% opacity, unselected: 15–75%, dimmed: ~28%
-                const alpha = Math.round((
-                  isSelected ? 0.80 : dimmed ? 0.28 : (0.15 + intensity * 0.60)
-                ) * 255).toString(16).padStart(2, '0');
-                barBg = color + alpha;
+                // One solid colour. Pace is the height of the bar; washing it
+                // out by intensity made a 1:25 and a 1:29 look like the same
+                // pale block. Strava paints the whole set in one saturated hue.
+                const alpha = isSelected ? 'ff' : dimmed ? '73' : 'f2';
+                barBg = solidBarColor(color) + alpha;
               }
 
               // Use the CAPPED weight for layout so one giant lap can't push
@@ -1700,12 +1676,7 @@ function LapChart({ laps, color, isBike, isRun, isSwim, unitSystem = 'metric', s
               // is still preserved for tooltips, scroll-to-lap math (above)
               // and any downstream consumers that care about actual time/dist.
               const layoutWeight = capWeight(ent.weight);
-              // STRICTLY proportional: flex-basis 0 + flex-grow = weight means
-              // bar width is purely proportional to distance (a 200 m lap is 4×
-              // a 50 m lap). A small minWidth keeps zero-distance / pause laps
-              // from vanishing — those carry no distance so they'd otherwise be
-              // sub-pixel.
-              const itemStyle = { flex: `${layoutWeight} 0 0px`, minWidth: ent.isPause ? 4 : 2, height: CHART_H + X_LABEL_H, transition: 'flex-basis 0.25s ease' };
+              const itemStyle = { flex: `${layoutWeight} 0 0px`, minWidth: ent.isPause ? 0 : 2, height: CHART_H + X_LABEL_H, transition: 'flex-basis 0.25s ease' };
 
               return (
                 <div
@@ -1720,7 +1691,6 @@ function LapChart({ laps, color, isBike, isRun, isSwim, unitSystem = 'metric', s
                       <div style={{ width: 3, height: 3, borderRadius: '50%', backgroundColor: barBg, marginBottom: 2 }} />
                   ) : (
                       <div style={{ position: 'relative', width: '100%' }}>
-                        {/* Lactate value label above the bar */}
                         {hasLactate && (
                     <div style={{
                             position: 'absolute', bottom: barH + 2, left: 0, right: 0,
@@ -1734,13 +1704,11 @@ function LapChart({ laps, color, isBike, isRun, isSwim, unitSystem = 'metric', s
                       width: '100%',
                       height: barH,
                       backgroundColor: barBg,
-                      // Softly rounded top — moderate, not full-pill.
-                      borderRadius: '5px 5px 0 0',
+                      borderRadius: '10px 10px 0 0',
                           boxShadow: isSelected ? `0 0 0 2px ${hasLactate ? '#7c3aed' : color}, 0 2px 8px ${hasLactate ? '#7c3aed' : color}60` : undefined,
                       transition: 'height 0.2s ease, opacity 0.15s ease',
                           position: 'relative', overflow: 'hidden',
                         }}>
-                          {/* Violet cap stripe for lactate bars */}
                           {hasLactate && (
                             <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, backgroundColor: '#5b21b6', borderRadius: '3px 3px 0 0' }} />
                           )}
@@ -1769,13 +1737,17 @@ function LapChart({ laps, color, isBike, isRun, isSwim, unitSystem = 'metric', s
             background: 'linear-gradient(to right, rgba(255,255,255,0.9) 55%, rgba(255,255,255,0))',
           }}
         >
-          {yTicks.map((v, i) => (
-            <span key={i} className="absolute left-0 text-[9px] text-gray-400 leading-none select-none"
-              style={{ top: `${(i / 4) * CHART_H}px`, transform: 'translateY(-50%)' }}>
-              {fmtTick(v)}
-            </span>
-          ))}
-          <span className="absolute left-0 text-[9px] text-gray-400 leading-none select-none" style={{ top: CHART_H + 2 }}>{unitLabel}</span>
+          {yTicks.map((v) => {
+            const top = tickTop(v);
+            const shift = top < 8 ? 'translateY(0)' : top > CHART_H - 8 ? 'translateY(-100%)' : 'translateY(-50%)';
+            return (
+              <span key={v} className="absolute left-0 text-[12px] font-semibold text-slate-600 leading-none select-none tabular-nums"
+                style={{ top: `${top}px`, transform: shift }}>
+                {fmtTick(v)}
+              </span>
+            );
+          })}
+          <span className="absolute left-0 text-[12px] font-semibold text-slate-500 leading-none select-none" style={{ top: CHART_H + 4 }}>{unitLabel}</span>
         </div>
       </div>{/* end relative wrapper */}
     </div>
@@ -2492,16 +2464,16 @@ function CompareContent({ merged, athleteId, onOpen }) {
 
   const sharedScale = useMemo(() => {
     if (allValues.length < 2) return null;
-    const sorted = [...allValues].sort((a,b) => a-b);
-    const q1 = sorted[Math.floor(sorted.length*0.25)];
-    const q3 = sorted[Math.floor(sorted.length*0.75)];
+    const sorted = [...allValues].sort((a, b) => a - b);
+    const q1 = sorted[Math.floor(sorted.length * 0.25)];
+    const q3 = sorted[Math.floor(sorted.length * 0.75)];
     const iqr = q3 - q1;
-    const filtered = allValues.filter(v => v >= q1-1.5*iqr && v <= q3+1.5*iqr);
-    const minV = Math.min(...(filtered.length >= 2 ? filtered : allValues));
-    const maxV = Math.max(...(filtered.length >= 2 ? filtered : allValues));
-    const pad  = (maxV - minV || maxV*0.1) * 0.08;
-    return { min: Math.max(0, minV - pad), max: maxV + pad };
-  }, [allValues]);
+    const filtered = allValues.filter(v => v >= q1 - 1.5 * iqr && v <= q3 + 1.5 * iqr);
+    const values = filtered.length >= 2 ? filtered : allValues;
+    return (isRun || isSwim)
+      ? paceAxisBounds({ work: values, plausible: values, isSwim })
+      : powerAxisBounds({ work: values, plausible: values });
+  }, [allValues, isRun, isSwim]);
 
   const sportColor = isBike ? '#767EB5' : isRun ? '#f97316' : isSwim ? '#38bdf8' : '#6b7280';
 
@@ -5881,13 +5853,19 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                   const showSwimPace = isSwim && displayLaps.some(l => Number(l.distance || 0) > 0);
                   const hasPace = (isRun || showSwimPace) && displayLaps.some(l => Number(l.distance || 0) > 0 && lapMovingSecs(l) > 0);
                   const hasCadence = displayLaps.some(l => Number(l.average_cadence || l.avgCadence || l.avg_cadence || 0) > 0);
+                  const hasSpeed = isBike && displayLaps.some(l => {
+                    if (Number(l.average_speed || l.avgSpeed || l.avg_speed || 0) > 0) return true;
+                    return Number(l.distance || l.totalDistance || 0) > 0 && lapMovingSecs(l) > 0;
+                  });
                   const colTokens = ['1.5rem', '1fr', '1fr'];
                   if (hasPower || hasPace) colTokens.push('1fr');
                   colTokens.push('1fr');
+                  if (hasSpeed) colTokens.push('1fr');
                   if (hasCadence) colTokens.push('1fr');
                   if (showLactate) colTokens.push('1fr');
                   const cols = colTokens.join(' ');
                   const paceHeader = isBike ? 'Pwr' : paceUnitShort(unitSystem, isSwim ? 'swim' : 'run');
+                  const speedHeader = unitSystem === 'imperial' ? 'mph' : 'km/h';
                   return (
                     <div className="rounded-xl border border-gray-100 overflow-hidden">
                       <div className="grid text-[11px] font-bold text-gray-400 uppercase tracking-wide bg-gray-50 px-3 py-2 border-b border-gray-100"
@@ -5897,6 +5875,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                         <span className="text-right">Dist</span>
                         {(hasPower || hasPace) && <span className="text-right">{paceHeader}</span>}
                         <span className="text-right">HR</span>
+                        {hasSpeed && <span className="text-right">{speedHeader}</span>}
                         {hasCadence && <span className="text-right">{isSwim ? 'SPM' : cadenceDisplayUnit(sport)}</span>}
                         {showLactate && <span className="text-right">La</span>}
                       </div>
@@ -5956,6 +5935,10 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                               <span className="text-right tabular-nums text-gray-500">{lapDist > 0 ? formatDistance(lapDist, unitSystem).formatted : '—'}</span>
                               {(hasPower || hasPace) && <span className="text-right tabular-nums font-semibold" style={{ color: paceColor }}>{lapPaceStr}</span>}
                               <span className="text-right tabular-nums text-gray-500">{lapHr > 0 ? Math.round(lapHr) : '—'}</span>
+                              {hasSpeed && (() => {
+                                const spd = Number(lapSpeed) || (lapDist > 0 && lapMoving > 0 ? lapDist / lapMoving : 0);
+                                return <span className="text-right tabular-nums text-gray-500">{spd > 0 ? formatSpeed(spd, unitSystem).value.toFixed(1) : '—'}</span>;
+                              })()}
                               {hasCadence && <span className="text-right tabular-nums text-gray-500">{lapCad > 0 ? Math.round(lapCad) : '—'}</span>}
                               {showLactate && (() => {
                                 // Auto-lap: show inline input when active, saved value when set
@@ -6582,8 +6565,14 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                     const hasLactate = laps.some(l => (l.lactate ?? l.lactateValue) != null);
                     const showLactate = hasLactate || !!onAddLactate;
                     const showPace = isBike || isRun || isSwim;
-                    const cols = ['1.5rem', '1fr', '1fr', ...(showPace ? ['1fr'] : []), '1fr', ...(showLactate ? ['1fr'] : [])].join(' ');
+                    const hasCadence = laps.some(l => Number(l.average_cadence || l.avgCadence || l.avg_cadence || 0) > 0);
+                    const hasSpeed = isBike && laps.some(l => {
+                      if (Number(l.average_speed || l.avgSpeed || l.avg_speed || 0) > 0) return true;
+                      return Number(l.distance || l.totalDistance || 0) > 0 && lapMovingSecs(l) > 0;
+                    });
+                    const cols = ['1.5rem', '1fr', '1fr', ...(showPace ? ['1fr'] : []), '1fr', ...(hasSpeed ? ['1fr'] : []), ...(hasCadence ? ['1fr'] : []), ...(showLactate ? ['1fr'] : [])].join(' ');
                     const paceHeader = isBike ? 'Pwr' : paceUnitShort(unitSystem, isSwim ? 'swim' : 'run');
+                    const speedHeader = unitSystem === 'imperial' ? 'mph' : 'km/h';
                     return (
                       <div className="rounded-xl overflow-hidden border border-gray-100">
                         <div className="grid text-[9px] font-bold text-gray-400 uppercase tracking-wide bg-gray-50 px-3 py-1.5 border-b border-gray-100"
@@ -6593,6 +6582,8 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                           <span className="text-right">Time</span>
                           {showPace && <span className="text-right">{paceHeader}</span>}
                           <span className="text-right">HR</span>
+                          {hasSpeed && <span className="text-right">{speedHeader}</span>}
+                          {hasCadence && <span className="text-right">{isSwim ? 'SPM' : cadenceDisplayUnit(sport)}</span>}
                           {showLactate && <span className="text-right">La</span>}
                         </div>
                         <div className="divide-y divide-gray-50">
@@ -6606,6 +6597,10 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                             const lapSpeed = lap.average_speed || lap.avgSpeed || lap.avg_speed || null;
                             const lapPower = Number(lap.average_watts || lap.avgPower || 0);
                             const lapHr    = Number(lap.average_heartrate || lap.avgHeartRate || lap.averageHeartRate || lap.avgHR || 0);
+                            const lapCadRaw = Number(lap.average_cadence || lap.avgCadence || lap.avg_cadence || 0);
+                            const lapCad = lapCadRaw > 0
+                              ? (isStravaActivity ? (stravaHalfCadenceToSpm(lapCadRaw, sport) ?? Math.round(lapCadRaw)) : Math.round(lapCadRaw))
+                              : 0;
                             const lapLa    = lap.lactate ?? lap.lactateValue;
                             const lapNum   = lap.lapNumber ?? (i + 1);
                             // Detect lap type for color-coding (intensity-based)
@@ -6657,6 +6652,11 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                                 <span className="font-semibold text-gray-700 text-right tabular-nums">{fmtLapDur(lapDur)}</span>
                                 {showPace && <span className="text-right tabular-nums font-semibold" style={{ color: paceColor }}>{lapPaceStr}</span>}
                                 <span className="text-gray-500 text-right tabular-nums">{lapHr > 0 ? Math.round(lapHr) : '—'}</span>
+                                {hasSpeed && (() => {
+                                  const spd = Number(lapSpeed) || (lapDist > 0 && lapDur > 0 ? lapDist / lapDur : 0);
+                                  return <span className="text-gray-500 text-right tabular-nums">{spd > 0 ? formatSpeed(spd, unitSystem).value.toFixed(1) : '—'}</span>;
+                                })()}
+                                {hasCadence && <span className="text-gray-500 text-right tabular-nums">{lapCad > 0 ? Math.round(lapCad) : '—'}</span>}
                                 {showLactate && (
                                   lapLa != null ? (
                                     <span className="text-right font-semibold tabular-nums" style={{ color: '#7c3aed' }}>{Number(lapLa).toFixed(1)}</span>
