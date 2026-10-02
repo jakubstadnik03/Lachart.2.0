@@ -27,12 +27,13 @@ describe('a swim thumbnail', () => {
     expect(activityProfileBars(SWIM)).not.toBeNull();
   });
 
-  it('sizes each part by its distance, the way the lap chart does', () => {
+  it('sizes each part by its time, the way the opened lap chart does', () => {
     const bars = activityProfileBars(SWIM);
-    // 800m warm-up, 800m of repeats, 500m down — 38% / 38% / 24% of 2100m.
-    // Read in time instead, the rests alone would take a sixth of the width.
-    expect(share(bars, (b) => b.h > 0.9)).toBeGreaterThan(0.3);
-    expect(share(bars, (b) => b.h > 0.9)).toBeLessThan(0.45);
+    // The eight fast hundreds are 69s each. Against a 762s warm-up and a 454s
+    // swim-down they are about 30% of the clock — the same share the activity
+    // chart gives them. Distance would have made them 38%.
+    expect(share(bars, (b) => b.h > 0.9)).toBeGreaterThan(0.25);
+    expect(share(bars, (b) => b.h > 0.9)).toBeLessThan(0.36);
   });
 
   it('does not let one lap flatten the rest', () => {
@@ -46,10 +47,13 @@ describe('a swim thumbnail', () => {
     expect(share(bars, (b) => b.h > 0.9)).toBeGreaterThan(0.25);
   });
 
-  it('keeps a rest to a hairline rather than dropping the whole session to time', () => {
-    // Requiring every lap to carry distance sent the session back to being read
-    // in time. Half its laps have none; it must still be read in distance.
-    const byTime = activityProfileBars({ ...SWIM, sport: 'Ride' });
-    expect(JSON.stringify(activityProfileBars(SWIM))).not.toBe(JSON.stringify(byTime));
+  it('draws a pool rest as a fraction of its time, not as a full lap', () => {
+    // A ride has no rest-shrink, so the same numbers read wider on the walls.
+    // The swim must stay narrower there — that is the 0.35 the activity chart uses.
+    const asRide = activityProfileBars({ ...SWIM, sport: 'Ride' });
+    const swim = activityProfileBars(SWIM);
+    const restShare = (bars) => share(bars, (b) => b.h < 0.2);
+    expect(restShare(swim)).toBeGreaterThan(0);
+    expect(restShare(swim)).toBeLessThan(restShare(asRide));
   });
 });

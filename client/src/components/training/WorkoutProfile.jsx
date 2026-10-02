@@ -84,25 +84,26 @@ const distOf = (l) => Number(
 /**
  * What a lap's width measures — the same rule the opened workout's lap chart
  * uses, or the thumbnail draws a different session from the one it is a
- * thumbnail of. A ride is read in time; a run and a swim are read in
- * distance, because that is how their sets are written and how the chart
- * below them is drawn.
+ * thumbnail of.
  *
- * On a 4x1km with floats the two disagree sharply: the 189m float that took
- * 2:02 is a fiftieth of the session by distance and a twentieth by time, and
- * every recovery swelled the same way — which is what made the card and the
- * chart look like different workouts.
+ * Width is time, for every sport. That is how the activity's lap chart is
+ * drawn, and how the same chart reads on Strava: a rest between repeats is
+ * still on the clock. Measuring a run or a swim in distance instead made the
+ * card and the opened activity look like two different sessions — the 2:02
+ * float after a kilometre is a fiftieth of the distance and a twentieth of
+ * the time, and the calendar was drawing the fiftieth.
  *
- * A rest lap with no distance is a hairline rather than a disqualification:
- * requiring every lap to carry distance sent a whole swim back to being read
- * in time, because the rests between its repeats measure zero metres. The
- * chart does the same with Math.max(dist, 1).
+ * A rest with no distance (the wall in a pool set) is a fraction of its time
+ * rather than the whole of it, the same 0.35 the lap chart uses, so the pause
+ * stays visible without opening a gap as wide as the repeat beside it.
  */
-function lapWeigher(a, laps) {
+function lapWeigher(a) {
   const paceSport = isRunLikeSport(a?.sport);
-  const distanceLaps = laps.filter(l => distOf(l) > 0).length;
-  const useDistance = paceSport && distanceLaps >= Math.max(2, laps.length * 0.5);
-  return useDistance ? (l => Math.max(distOf(l), 1)) : durOf;
+  return (l) => {
+    const dur = durOf(l);
+    if (paceSport && distOf(l) <= 0) return Math.max(dur * 0.35, 1);
+    return Math.max(dur, 1);
+  };
 }
 
 /**

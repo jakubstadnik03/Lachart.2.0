@@ -32,6 +32,7 @@ const { stravaHalfCadenceToSpm } = require('../utils/cadenceDisplay');
 const { sanitizeSavedAutoLaps } = require('../utils/sanitizeSavedAutoLaps');
 const { findExternalDuplicate } = require('../utils/appleHealthDuplicate');
 const { mapGarminSportType, garminSportOf } = require('../utils/garminSport');
+const { garminHeadline } = require('../utils/garminHeadline');
 const { isAdminUser } = require('../utils/isAdminUser');
 // Every Strava read goes through this so the shared budget sees it — see
 // utils/stravaRequest for why hand-rolled axios.get calls were a problem.
@@ -1070,17 +1071,24 @@ async function fetchGarminActivitiesForSync(user, since = null) {
   }
 }
 
-async function findUserByGarminHealthId(healthUserId, userAccessToken = null) {
-  if (!healthUserId && !userAccessToken) return null;
+async function findUsersByGarminHealthId(healthUserId, userAccessToken = null) {
+  if (!healthUserId && !userAccessToken) return [];
+  const found = new Map();
+  const remember = (user) => {
+    if (user?._id) found.set(String(user._id), user);
+  };
+  // One Garmin account is sometimes connected on two LaChart logins. A push
+  // names the Garmin user once; both calendars have to receive it.
   if (healthUserId) {
-    const byId = await User.findOne({ 'garmin.athleteId': String(healthUserId) });
-    if (byId) return byId;
+    const rows = await User.find({ 'garmin.athleteId': String(healthUserId) });
+    for (const row of rows) remember(row);
   }
-  if (userAccessToken) {
-    const byToken = await User.findOne({ 'garmin.accessToken': String(userAccessToken) });
-    if (byToken) return byToken;
+  // Newer pushes omit the access token. When one is present and the user id
+  // is not one we stored, it is the only remaining link to the connection.
+  if (!found.size && userAccessToken) {
+    remember(await User.findOne({ 'garmin.accessToken': String(userAccessToken) }));
   }
-  return null;
+  return [...found.values()];
 }
 
 // ---------------------------------------------------------------------------
@@ -1271,8 +1279,8 @@ async function processGarminWebhookPayload(payload) {
 
     for (const entry of items) {
       const healthUserId = entry.userId || entry.userID || null;
-      const user = await findUserByGarminHealthId(healthUserId, entry.userAccessToken);
-      if (!user) {
+      const users = await findUsersByGarminHealthId(healthUserId, entry.userAccessToken);
+      if (!users.length) {
         // This is THE silent failure mode of Garmin delivery: backfill/push
         // arrives but no LaChart user matches (garmin.athleteId was never
         // stored, or the access token rotated). Without this log the server
@@ -1286,6 +1294,7 @@ async function processGarminWebhookPayload(payload) {
         );
         continue;
       }
+      for (const user of users) {
       // Delivery diagnostic — surfaced in /garmin/status as webhookLastEventAt.
       User.updateOne({ _id: user._id }, { $set: { 'garmin.webhookLastEventAt': new Date() } })
         .catch(() => {});
@@ -1375,6 +1384,7 @@ async function processGarminWebhookPayload(payload) {
         } catch (e) {
           console.warn('Garmin ping callback fetch failed:', e?.response?.data || e.message);
         }
+      }
       }
     }
   }
@@ -6855,6 +6865,7 @@ router.get('/garmin/activities/:id', verifyToken, async (req, res) => {
     if (!activity) return res.status(404).json({ error: 'Garmin activity not found' });
 
     const streamDoc = await GarminStream.findOne({ userId: targetUserId, garminId }).lean();
+    const headline = garminHeadline(activity, streamDoc?.streams);
 
     res.json({
       detail: {
@@ -6867,8 +6878,8 @@ router.get('/garmin/activities/:id', verifyToken, async (req, res) => {
         movingTime: activity.movingTime ?? activity.elapsedTime,
         elapsed_time: activity.elapsedTime,
         average_heartrate: activity.averageHeartRate,
-        average_watts: activity.averagePower,
         average_speed: activity.averageSpeed,
+        ...headline,
       },
       streams: streamDoc?.streams || {},
       laps: Array.isArray(activity.laps) ? activity.laps : [],
