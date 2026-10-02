@@ -11,7 +11,8 @@
  * Drag payload is set on `application/x-lachart-template` as JSON so the day
  * columns can read it on drop.
  */
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import ReactDOM from 'react-dom';
 import { MagnifyingGlassIcon, ChevronLeftIcon } from '@heroicons/react/24/outline';
 import { PlannerSportIcon, plannerSportKey, plannerSportColor } from './WorkoutPlanModal';
 import { PRESET_CATALOG, PRESET_CATEGORY_LABELS, buildPresetSteps } from './WorkoutBuilder';
@@ -103,7 +104,37 @@ const SELECT_ARROW = {
   paddingRight: 24,
 };
 
-export default function WorkoutTemplateLibrary({ templates = [], onOpenTemplate = null, onDeleteTemplate = null, onClose = null }) {
+function nudgeScroll(clientY) {
+  let scroller = document.querySelector('[data-planner-day]');
+  while (scroller && scroller !== document.documentElement) {
+    const oy = getComputedStyle(scroller).overflowY;
+    if ((oy === 'auto' || oy === 'scroll') && scroller.scrollHeight > scroller.clientHeight + 1) break;
+    scroller = scroller.parentElement;
+  }
+  const target = scroller && scroller !== document.documentElement ? scroller : document.scrollingElement;
+  if (!target) return;
+  const rect = target === document.scrollingElement
+    ? { top: 0, bottom: window.innerHeight }
+    : target.getBoundingClientRect();
+  const edge = 72;
+  if (clientY > rect.bottom - edge) target.scrollTop += 18;
+  else if (clientY < rect.top + edge) target.scrollTop -= 18;
+}
+
+function dayUnderPoint(x, y) {
+  const hit = document.elementFromPoint(x, y);
+  return hit?.closest?.('[data-planner-day]')?.getAttribute('data-planner-day') || null;
+}
+
+export default function WorkoutTemplateLibrary({
+  templates = [],
+  onOpenTemplate = null,
+  onDeleteTemplate = null,
+  onClose = null,
+  variant = 'panel',
+  onDropOnDay = null,
+  setDragOverDay = null,
+}) {
   const [sport, setSport] = useState('all');
   const [cat, setCat] = useState('all');
   const [q, setQ] = useState('');
@@ -151,6 +182,161 @@ export default function WorkoutTemplateLibrary({ templates = [], onOpenTemplate 
   const fromTestShown = mineShown.filter((t) => t.fromTest);
   const savedShown = mineShown.filter((t) => !t.fromTest);
   const builtInShown = savedOnly ? [] : builtIn.filter(matches);
+  const stripItems = [...fromTestShown, ...savedShown, ...builtInShown];
+
+  const dragRef = useRef(null);
+  const [ghost, setGhost] = useState(null);
+
+  useEffect(() => () => {
+    const session = dragRef.current;
+    if (session?.raf) cancelAnimationFrame(session.raf);
+  }, []);
+
+  const beginDrag = (item, x, y) => {
+    const session = { item, x, y, over: null, raf: 0 };
+    dragRef.current = session;
+    setGhost({ x, y, name: item.name, color: item.color || plannerSportColor(item.sport) });
+    document.body.style.touchAction = 'none';
+    const loop = () => {
+      const s = dragRef.current;
+      if (!s) return;
+      nudgeScroll(s.y);
+      const day = dayUnderPoint(s.x, s.y);
+      if (day !== s.over) {
+        s.over = day;
+        setDragOverDay?.(day);
+      }
+      s.raf = requestAnimationFrame(loop);
+    };
+    session.raf = requestAnimationFrame(loop);
+    if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(12);
+  };
+
+  const finishDrag = () => {
+    const session = dragRef.current;
+    if (!session) return;
+    cancelAnimationFrame(session.raf);
+    const dateStr = dayUnderPoint(session.x, session.y);
+    dragRef.current = null;
+    setGhost(null);
+    setDragOverDay?.(null);
+    document.body.style.touchAction = '';
+    if (!dateStr || !onDropOnDay) return;
+    const item = session.item;
+    onDropOnDay(new Date(`${dateStr}T12:00:00`), {
+      name: item.name,
+      sport: item.sport,
+      steps: item.steps,
+      description: item.builtIn ? '' : (item.desc || ''),
+      comment: item.builtIn ? '' : (item.comment || ''),
+      category: item.category || '',
+    });
+  };
+
+  const pressChip = (e, item) => {
+    if (e.button != null && e.button !== 0) return;
+    const pointerId = e.pointerId;
+    const startX = e.clientX;
+    const startY = e.clientY;
+    let mode = 'pending';
+    const timer = setTimeout(() => {
+      if (mode !== 'pending') return;
+      mode = 'drag';
+      beginDrag(item, startX, startY);
+    }, 220);
+    const onMove = (ev) => {
+      if (ev.pointerId !== pointerId) return;
+      const dx = ev.clientX - startX;
+      const dy = ev.clientY - startY;
+      if (mode === 'pending' && Math.hypot(dx, dy) > 8) {
+        clearTimeout(timer);
+        mode = 'scroll';
+      }
+      if (mode === 'drag') {
+        ev.preventDefault();
+        const session = dragRef.current;
+        if (!session) return;
+        session.x = ev.clientX;
+        session.y = ev.clientY;
+        setGhost((g) => (g ? { ...g, x: ev.clientX, y: ev.clientY } : g));
+      }
+    };
+    const onUp = (ev) => {
+      if (ev.pointerId !== pointerId) return;
+      clearTimeout(timer);
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+      if (mode === 'drag') finishDrag();
+    };
+    window.addEventListener('pointermove', onMove, { passive: false });
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
+  };
+
+  if (variant === 'strip') {
+    return (
+      <div className="px-3 pb-2">
+        <div className="flex items-center gap-1.5">
+          <div className="relative flex-1 min-w-0">
+            <MagnifyingGlassIcon className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+            <input
+              type="search"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Search saved and built-in"
+              className="w-full text-sm pl-8 pr-3 py-1.5 rounded-xl border border-slate-200 bg-white text-slate-800 outline-none focus:border-primary/40"
+            />
+          </div>
+          <select
+            value={sport}
+            onChange={(e) => setSport(e.target.value)}
+            className="text-xs font-semibold px-2 py-1.5 rounded-xl border border-slate-200 bg-white text-slate-700 max-w-[108px]"
+            aria-label="Sport"
+          >
+            <option value="all">All sports</option>
+            {sports.map((s) => <option key={s} value={s}>{SPORT_LABELS[s] || s}</option>)}
+          </select>
+        </div>
+        <div
+          className="mt-2 flex gap-2 overflow-x-auto pb-0.5 -mx-3 px-3"
+          style={{ WebkitOverflowScrolling: 'touch', touchAction: 'pan-x' }}
+        >
+          {stripItems.length === 0 ? (
+            <p className="text-[12px] text-slate-400 py-3">No workouts match.</p>
+          ) : stripItems.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              onPointerDown={(e) => pressChip(e, item)}
+              onContextMenu={(e) => e.preventDefault()}
+              className="shrink-0 w-[148px] text-left rounded-xl bg-white ring-1 ring-slate-200 px-2.5 py-2 active:scale-[0.98]"
+              style={{ borderLeft: `3px solid ${item.color || plannerSportColor(item.sport)}`, WebkitTouchCallout: 'none', WebkitUserSelect: 'none' }}
+            >
+              <div className="flex items-center gap-1.5 min-w-0">
+                <PlannerSportIcon sport={item.sport} size={14} color={plannerSportColor(item.sport)} />
+                <span className="text-[12px] font-semibold text-slate-800 truncate">{item.name}</span>
+              </div>
+              <div className="mt-0.5 text-[10px] text-slate-400 truncate">
+                {item.builtIn ? 'Built-in' : 'Saved'}
+                {fmtDur(stepSecs(item.steps)) ? ` · ${fmtDur(stepSecs(item.steps))}` : ''}
+              </div>
+            </button>
+          ))}
+        </div>
+        <p className="mt-1 text-[10px] text-slate-400">Hold a workout, then drop it on a day.</p>
+        {ghost && ReactDOM.createPortal(
+          <div
+            className="fixed z-[10060] pointer-events-none rounded-xl bg-white shadow-xl ring-1 ring-primary/40 px-2.5 py-2 text-[12px] font-semibold text-slate-800 max-w-[180px] truncate"
+            style={{ left: ghost.x + 14, top: ghost.y - 18, borderLeft: `3px solid ${ghost.color}` }}
+          >
+            {ghost.name}
+          </div>,
+          document.body,
+        )}
+      </div>
+    );
+  }
 
   return (
     <aside className="w-64 shrink-0 border-r border-slate-200/70 bg-white flex flex-col h-screen sticky top-0">

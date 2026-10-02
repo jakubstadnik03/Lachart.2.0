@@ -6,7 +6,7 @@
  *   • Completed trainings from the same week
  * Plus: create/edit planned workouts with WorkoutBuilder
  */
-import React, { useState, useEffect, useCallback, useMemo, useRef, lazy, Suspense } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef, lazy, Suspense } from 'react';
 import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { ChevronLeftIcon, ChevronRightIcon, RectangleStackIcon, ChartBarIcon } from '@heroicons/react/24/outline';
 import { useAuth } from '../context/AuthProvider';
@@ -104,12 +104,24 @@ export default function WorkoutPlannerPage() {
   // Mobile vs desktop: on phones we stack the planner into a vertical day list
   // and drop the drag-only template sidebar (HTML5 DnD doesn't work on touch).
   const [isMobile, setIsMobile] = useState(() => (typeof window !== 'undefined' ? window.innerWidth < 768 : false));
+  const stickyRef = useRef(null);
+  const [dayScrollMargin, setDayScrollMargin] = useState(88);
   useEffect(() => {
     const h = () => setIsMobile(window.innerWidth < 768);
     window.addEventListener('resize', h);
     window.addEventListener('orientationchange', h);
     return () => { window.removeEventListener('resize', h); window.removeEventListener('orientationchange', h); };
   }, []);
+  useLayoutEffect(() => {
+    if (!isMobile) return undefined;
+    const el = stickyRef.current;
+    if (!el) return undefined;
+    const measure = () => setDayScrollMargin((el.offsetHeight || 0) + 12);
+    measure();
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measure) : null;
+    ro?.observe(el);
+    return () => ro?.disconnect();
+  }, [isMobile]);
   // The two side panels. Until the user has toggled one, what opens depends
   // on the width: the seven days come first, a panel only when it leaves them
   // room. A choice, once made, is kept.
@@ -203,6 +215,15 @@ export default function WorkoutPlannerPage() {
     scrolledForRangeRef.current = key;
     scrollToToday();
   }, [loading, rangeStart, scrollToToday]);
+
+  // The library strip is measured after the first paint. Scroll again once its
+  // height is known, otherwise today lands underneath it.
+  const scrolledForStripRef = useRef(false);
+  useEffect(() => {
+    if (!isMobile || dayScrollMargin <= 88 || scrolledForStripRef.current) return;
+    scrolledForStripRef.current = true;
+    scrollToToday();
+  }, [isMobile, dayScrollMargin, scrollToToday]);
 
   // ── Load athlete context: latest test thresholds + profile zone ranges ──────
   // The WorkoutBuilder uses `cyclingZones` (from the profile) as the primary
@@ -579,17 +600,41 @@ export default function WorkoutPlannerPage() {
           way back was the bottom tab bar. Calendar and Charts are one page, so
           they navigate with the tab in the query string. */}
       {isMobile && (
-        <div className="sticky top-0 z-20 flex bg-gray-100 rounded-xl p-0.5 mx-3 mt-2 shadow-sm">
-          {[['calendar', 'Calendar'], ['charts', 'Charts'], ['planner', 'Planner']].map(([tab, label]) => (
-            <button
-              key={tab}
-              onClick={() => { if (tab !== 'planner') navigate(`/training-calendar?tab=${tab}`); }}
-              className={`flex-1 py-1.5 text-sm font-semibold rounded-lg transition-all touch-manipulation ${
-                tab === 'planner' ? 'bg-white shadow text-gray-900' : 'text-gray-500'
-              }`}
-              style={{ WebkitTapHighlightColor: 'transparent' }}
-            >{label}</button>
-          ))}
+        <div ref={stickyRef} className="sticky top-0 z-20 bg-slate-50/95 backdrop-blur-sm border-b border-slate-200/80">
+          <div className="flex bg-gray-100 rounded-xl p-0.5 mx-3 mt-2 mb-2">
+            {[['calendar', 'Calendar'], ['charts', 'Charts'], ['planner', 'Planner']].map(([tab, label]) => (
+              <button
+                key={tab}
+                onClick={() => {
+                  if (tab === 'planner') {
+                    setAnchorWeek(startOfWeek(new Date()));
+                    scrollToToday();
+                    return;
+                  }
+                  navigate(`/training-calendar?tab=${tab}`);
+                }}
+                className={`flex-1 py-1.5 text-sm font-semibold rounded-lg transition-all touch-manipulation ${
+                  tab === 'planner' ? 'bg-white shadow text-gray-900' : 'text-gray-500'
+                }`}
+                style={{ WebkitTapHighlightColor: 'transparent' }}
+              >{label}</button>
+            ))}
+          </div>
+          <WorkoutTemplateLibrary
+            variant="strip"
+            templates={templates}
+            setDragOverDay={setDragOverDay}
+            onDropOnDay={saveTemplateOnDay}
+            onOpenTemplate={(tpl) => setModal({
+              date: today,
+              workout: {
+                title: tpl.name, sport: tpl.sport, steps: tpl.steps,
+                description: tpl.builtIn ? '' : (tpl.desc || ''),
+                comment: tpl.builtIn ? '' : (tpl.comment || ''),
+                category: tpl.category || '',
+              },
+            })}
+          />
         </div>
       )}
       <div className="flex-1 p-4 sm:p-6 min-w-0">
@@ -767,6 +812,7 @@ export default function WorkoutPlannerPage() {
           onOpenCompleted={openCompleted}
           onAddDay={(day) => setModal({ date: day, workout: null })}
           onDropTemplate={saveTemplateOnDay}
+          scrollMarginTop={dayScrollMargin}
         />
         </div>
       ))}

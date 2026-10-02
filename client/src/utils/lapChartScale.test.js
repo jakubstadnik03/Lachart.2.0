@@ -1,4 +1,4 @@
-import { paceAxisBounds, powerAxisBounds } from './lapChartScale';
+import { axisLabelValues, paceAxisBounds, powerAxisBounds } from './lapChartScale';
 
 // The reported case: a 17-lap smart-detected run. The axis drew 4:45–6:55 while
 // lap 2 ran 4:34/km, so that bar — the quickest of the session — was clamped
@@ -55,34 +55,36 @@ describe('paceAxisBounds', () => {
   });
 });
 
-describe('paceAxisBounds — laps that matter keep a readable bar', () => {
+describe('paceAxisBounds — the axis hugs the session the way Strava does', () => {
   // The reported swim: three kilometre blocks at 1:24–1:29/100m, then fifties
-  // at about 1:06. The blocks are half an hour of swimming and drew as stubs.
+  // at about 1:06. Strava keeps both on one ruler of 5-second ticks and lets
+  // the fifties stand taller, instead of stretching the bottom so the blocks
+  // fill a third of the frame and the reps stop looking different.
   const BLOCKS = [89, 84, 88];
   const FIFTIES = [66, 67, 65, 68, 66, 63];
   const share = (b, v) => (b.max - v) / (b.max - b.min);
 
-  it('gives the long blocks a third of the height instead of a stub', () => {
-    // The old rule put the bottom edge five seconds under the slowest work lap
-    // — 1:29 on an axis ending at 1:34, three percent of the frame.
+  it('labels the axis on 5-second steps and stops just past the slowest lap', () => {
     const b = paceAxisBounds({
       work: [...BLOCKS, ...FIFTIES], plausible: [...BLOCKS, ...FIFTIES], isSwim: true,
     });
-    expect(share(b, 89)).toBeGreaterThan(0.25);
-    expect(b.max).toBeGreaterThan(89 + 5);
+    expect(b.step).toBe(5);
+    expect(b.min % 5).toBe(0);
+    expect(b.max % 5).toBe(0);
+    expect(b.max).toBeGreaterThan(89);
+    expect(b.max).toBeLessThan(89 + 20);
+    expect(share(b, 66)).toBeGreaterThan(share(b, 89) + 0.4);
   });
 
-  it('lifts a block the interval classifier did not call work', () => {
+  it('includes a drawn block the interval classifier did not call work', () => {
     // Smart detect reads a steady kilometre as recovery often enough that the
-    // axis cannot be left to the work set alone.
-    const withBlocks = paceAxisBounds({
-      work: FIFTIES, plausible: [...BLOCKS, ...FIFTIES], significant: BLOCKS, isSwim: true,
-    });
-    const without = paceAxisBounds({
+    // axis cannot be left to the work set alone — but only when that lap is
+    // actually drawn.
+    const b = paceAxisBounds({
       work: FIFTIES, plausible: [...BLOCKS, ...FIFTIES], isSwim: true,
     });
-    expect(withBlocks.max).toBeGreaterThan(without.max);
-    expect(share(withBlocks, 89)).toBeGreaterThan(0.15);
+    expect(b.max).toBeGreaterThan(89);
+    expect(share(b, 66)).toBeGreaterThan(0.5);
   });
 
   it('still leaves the fast reps most of the chart', () => {
@@ -91,26 +93,6 @@ describe('paceAxisBounds — laps that matter keep a readable bar', () => {
       significant: BLOCKS, isSwim: true,
     });
     expect(share(b, 66)).toBeGreaterThan(0.6);
-  });
-
-  it('contains a swim-down without handing it a third of the chart', () => {
-    // 200 m at 1:48 after a set at 1:19–1:29. It belongs on the chart, and it
-    // belongs there as a short bar — asking for both containment and a
-    // guaranteed height pushed the floor from 1:55 to 2:05 and squashed
-    // everything above it.
-    const work = [85, 85, 79, 89, 85, 84, 88];
-    const b = paceAxisBounds({
-      work, plausible: [...work, 108], significant: [89, 108], isSwim: true, avgForScale: 85,
-    });
-    expect(b.max).toBeGreaterThan(108);        // inside the frame, not clamped
-    expect(share(b, 108)).toBeLessThan(0.25);  // but still a short bar
-    expect(share(b, 79)).toBeGreaterThan(0.9); // and the quickest nearly fills it
-  });
-
-  it('keeps the dead space above the quickest lap small', () => {
-    const work = [85, 85, 79, 89];
-    const b = paceAxisBounds({ work, plausible: work, isSwim: true });
-    expect(79 - b.min).toBeLessThanOrEqual(3);
   });
 
   it('ignores a slow lap that is over in seconds', () => {
@@ -123,7 +105,27 @@ describe('paceAxisBounds — laps that matter keep a readable bar', () => {
     // A twenty-minute walk home is significant by time and still has no
     // business setting the scale of a session of reps.
     const b = paceAxisBounds({ work: FIFTIES, plausible: [...FIFTIES, 300], significant: [300], isSwim: true });
-    expect(share(b, 66)).toBeGreaterThan(0.5);
+    const without = paceAxisBounds({ work: FIFTIES, plausible: FIFTIES, isSwim: true });
+    expect(b.max).toBe(without.max);
+    expect(b.max).toBeLessThan(120);
+  });
+});
+
+describe('axisLabelValues', () => {
+  it('does not stack a 15-second label on every step of a wide run', () => {
+    // 5:00 through 9:15 is fourteen quarters. Drawn in full they sit on
+    // top of each other down the side of the chart.
+    const labels = axisLabelValues(300, 555, 15);
+    expect(labels.length).toBeLessThanOrEqual(5);
+    expect(labels[0]).toBe(300);
+    expect(labels[labels.length - 1]).toBe(555);
+    for (let i = 1; i < labels.length; i += 1) {
+      expect(labels[i] - labels[i - 1]).toBeGreaterThanOrEqual(60);
+    }
+  });
+
+  it('keeps every swim step when there are only a few', () => {
+    expect(axisLabelValues(65, 85, 5)).toEqual([65, 70, 75, 80, 85]);
   });
 });
 

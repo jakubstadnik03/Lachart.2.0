@@ -64,7 +64,7 @@ import { buildStructureTitle } from '../../utils/workoutStructureTitle';
 import { plannedWorkoutDurationSecs } from '../../utils/planCompliance';
 import { activityCompletedStats, fmtPlanDuration, userUnitSystem } from '../../utils/activityStatsLine';
 import WeekSummaryCell, { SPORT_COLORS_CELL } from '../training/WeekSummaryCell';
-import { paceAxisBounds, powerAxisBounds } from '../../utils/lapChartScale';
+import { axisLabelValues, paceAxisBounds, powerAxisBounds } from '../../utils/lapChartScale';
 import { PlanMiniChart, activityProfileBars, activityLactateMarks, ActivityMiniChart, CardProfileBand, LACTATE_INK, MAX_LACTATE_BADGES } from '../training/WorkoutProfile';
 import { classifyLaps } from '../../utils/lapClassify';
 import {
@@ -1171,9 +1171,18 @@ function WeekActivityCard({ a, isSelected, onSelect, onActivityClick, onAddLacta
 }
 
 // ─── Lap Chart ────────────────────────────────────────────────────────────────
+/** Sport colour, eased back so a bar stays in the same hue and a little softer. */
+function solidBarColor(hex) {
+  const h = String(hex || '').replace('#', '');
+  if (h.length < 6) return '#7dd3fc';
+  const n = (i) => parseInt(h.slice(i, i + 2), 16);
+  const tone = (c) => Math.max(0, Math.min(255, Math.round(c * 0.78 + 40)));
+  return `#${[tone(n(0)), tone(n(2)), tone(n(4))].map((c) => c.toString(16).padStart(2, '0')).join('')}`;
+}
+
 function LapChart({ laps, color, isBike, isRun, isSwim, unitSystem = 'metric', selectedLap, onSelectLap, chartScrollRef, onScrollCenter, scaleOverride = null, records = null, sport = '', isStravaActivity = false }) {
   const CHART_H   = 200;
-  const Y_AXIS_W  = 38;
+  const Y_AXIS_W  = 54;
   const X_LABEL_H = 16;
 
   // X-axis zoom: enable horizontal scroll when a lap is selected so the
@@ -1189,7 +1198,7 @@ function LapChart({ laps, color, isBike, isRun, isSwim, unitSystem = 'metric', s
   // formula sizes the container so the AVERAGE lap takes 1/TARGET_VISIBLE
   // of the viewport, with capped weights so a single huge lap can't
   // monopolise the row.
-  const TARGET_VISIBLE_LAPS = 16;
+  const TARGET_VISIBLE_LAPS = 20;
   // Bar widths are STRICTLY proportional to weight — no capping. Honza's
   // feedback (2026-05): "vždy at je to poměrově prostě" — capping made
   // dominant endurance laps fit a bit better but it broke the "scale read"
@@ -1218,8 +1227,12 @@ function LapChart({ laps, color, isBike, isRun, isSwim, unitSystem = 'metric', s
     if (isBike)                             value = pow;
     else if (isRun  && dist > 0 && dur > 0) value = dur / (dist / 1000);
     else if (isSwim && dist > 0 && dur > 0) value = dur / (dist / 100);
-    const weight = Math.max(dur, 1);
-    return { value, weight, dur, dist, isPause: !isBike && dist <= 0, lactate };
+    const isPause = !isBike && dist <= 0;
+    // A rest is still on the clock, but drawing it at full duration opened a
+    // gap almost as wide as the rep beside it. A fraction of that time keeps
+    // the pause visible without splitting the set apart.
+    const weight = Math.max(isPause ? dur * 0.35 : dur, 1);
+    return { value, weight, dur, dist, isPause, lactate };
   });
 
   // Zoom activates only when a lap is selected AND there are many laps.
@@ -1345,24 +1358,6 @@ function LapChart({ laps, color, isBike, isRun, isSwim, unitSystem = 'metric', s
     if (filtered.length >= 2) scaleValues = filtered;
   }
 
-  const maxVal   = Math.max(...scaleValues);
-  const minVal   = Math.min(...scaleValues);
-  // Y-axis range — centre the chart around the AVERAGE of the filtered
-  // values so the "typical" bar sits at the middle line and the spread
-  // above/below is visible at a glance. Range is symmetric around the
-  // centre, sized from the actual max-deviation in the data plus a 40 %
-  // padding factor (gives bars some headroom without leaving the top of
-  // the chart visibly empty).
-  //
-  // Tuning history (2026-05):
-  //   - Original: `spread = max(IQR × 1.5, centre × 6%)` — too generous,
-  //     swim test ended up with chart range 1:11 ↔ 1:23 while real data
-  //     only covered 1:14–1:20. Honza: "nahoře byl nesmysl".
-  //   - First fix: anchored on filtered min/max + 15 % pad — too tight,
-  //     lost the centred-on-average feel. Honza: "chci větší range".
-  //   - Current: centre + max-deviation × 1.4 — keeps avg in the middle,
-  //     bars use ~70 % of the chart height, with ~15 % padding above and
-  //     below the actual data extremes for clean readability.
   // Session average (distance-weighted for run/swim, time-weighted for bike) —
   // drawn as a dashed reference line, like Strava's "Workout Analysis".
   const valuedEntries = entries.filter(e => !e.isPause && e.value > 0);
@@ -1371,24 +1366,22 @@ function LapChart({ laps, color, isBike, isRun, isSwim, unitSystem = 'metric', s
     ? valuedEntries.reduce((a, e) => a + e.value * (e.weight || 0), 0) / weightTot
     : scaleValues.reduce((a, b) => a + b, 0) / (scaleValues.length || 1);
 
-  const avgForScale = scaleValues.length
-    ? scaleValues.reduce((a, b) => a + b, 0) / scaleValues.length
-    : avgValue;
-
-  let chartMin, chartMax;
+  let chartMin, chartMax, chartStep;
   if (scaleOverride) {
     chartMin = scaleOverride.min;
     chartMax = scaleOverride.max;
+    chartStep = scaleOverride.step || null;
   } else {
     // Size the Y-axis from work laps (scaleValues), not every raw segment.
     // Outlier / pause laps still render — getBarH clamps them to the edge, and
     // the bounds helper makes sure nothing plausible gets clamped at the FAST
     // edge, where a clipped bar silently misreports the best lap of the session.
     const bounds = isInverted
-      ? paceAxisBounds({ work: scaleValues, plausible: slowScaleEntries, significant: significantValues, isSwim, avgForScale })
-      : powerAxisBounds({ work: scaleValues, plausible: slowScaleEntries, significant: significantValues, avgForScale });
-    chartMin = bounds.min;
-    chartMax = bounds.max;
+      ? paceAxisBounds({ work: scaleValues, plausible: slowScaleEntries, significant: significantValues, isSwim })
+      : powerAxisBounds({ work: scaleValues, plausible: slowScaleEntries });
+    chartMin = bounds ? bounds.min : 0;
+    chartMax = bounds ? bounds.max : 1;
+    chartStep = bounds ? bounds.step : null;
   }
   const range    = chartMax - chartMin || 1;
 
@@ -1403,20 +1396,9 @@ function LapChart({ laps, color, isBike, isRun, isSwim, unitSystem = 'metric', s
     const h = isInverted
       ? ((chartMax - val) / range) * CHART_H
       : ((val - chartMin) / range) * CHART_H;
-    // Clamp both ends — outlier laps outside [minVal, maxVal] would otherwise
-    // produce negative heights or overflow the chart.
+    // Clamp both ends — a lap outside the axis draws as a stub or a full bar
+    // rather than a negative height.
     return Math.max(3, Math.min(CHART_H, h));
-  };
-
-  // Intensity 0..1: 1 = fastest / most power, 0 = slowest / least power.
-  // CLAMP to [0,1] — minVal/maxVal come from the work laps only, so a slow
-  // warm-up/recovery lap sits OUTSIDE that band and would otherwise produce a
-  // negative intensity → negative alpha → an invalid colour → an invisible bar
-  // (the lap looked "missing" until a re-render flipped it to the dimmed alpha).
-  const getIntensity = (val) => {
-    if (!val || maxVal === minVal) return 0.5;
-    const raw = isInverted ? (maxVal - val) / (maxVal - minVal) : (val - minVal) / (maxVal - minVal);
-    return Math.max(0, Math.min(1, raw));
   };
 
   const fmtTick = (v) => {
@@ -1431,13 +1413,16 @@ function LapChart({ laps, color, isBike, isRun, isSwim, unitSystem = 'metric', s
     return m > 0 ? `${m}:${String(s).padStart(2, '0')}` : `${s}s`;
   };
   const unitLabel = isSwim ? paceUnitShort(unitSystem, 'swim') : isRun ? paceUnitShort(unitSystem, 'run') : 'W';
-  // For bike (non-inverted): high value at top → start from chartMax and step DOWN.
-  // For run/swim (inverted): fast pace (low seconds) at top → start from chartMin and step UP.
-  const yTicks = Array.from({ length: 5 }, (_, i) =>
-    isInverted
-      ? chartMin + (range * i) / 4   // run/swim: chartMin (fastest) at top
-      : chartMax - (range * i) / 4   // bike:     chartMax (most power) at top
-  );
+  // Round steps — 1:20, 1:25, 1:30 — with the fast end at the top. Five equal
+  // slices of whatever the range happened to be produced 1:15, 1:28, 1:40.
+  const yTicks = chartStep
+    ? axisLabelValues(chartMin, chartMax, chartStep)
+    : Array.from({ length: 5 }, (_, i) => (
+      isInverted ? chartMin + (range * i) / 4 : chartMax - (range * i) / 4
+    ));
+  const tickTop = (v) => (isInverted
+    ? (v - chartMin) / range
+    : (chartMax - v) / range) * CHART_H;
 
   // ── Elevation outline ────────────────────────────────────────────────────────
   const hasElevation = laps.some(l =>
@@ -1453,6 +1438,15 @@ function LapChart({ laps, color, isBike, isRun, isSwim, unitSystem = 'metric', s
 
   let elevPathD = null;
 
+  // Same vertical axis as the bars. The bottom of the chart is the lowest
+  // point, the top is the highest, with a little air above the peak — the
+  // 35% shrink used to leave the hill floating in the middle of the frame.
+  const elevationY = (alt, lo, hi) => {
+    const span = Math.max(hi - lo, 1);
+    const max = hi + span * 0.08;
+    return ((max - alt) / (max - lo)) * CHART_H;
+  };
+
   // ── Preferred: detailed elevation from raw records, mapped through the SAME
   //    cumulative-weight x-axis as the bars so the terrain sits under the right
   //    laps (and shows real within-lap shape, not just straight lines).
@@ -1463,9 +1457,6 @@ function LapChart({ laps, color, isBike, isRun, isSwim, unitSystem = 'metric', s
       const altMin = Math.min(...altValues);
       const altMax = Math.max(...altValues);
       if (altMax - altMin >= 1) {
-        // Inflate the range by 35% so the highest peak sits ~74% up the chart
-        // instead of touching the top edge — gives the terrain visible headroom.
-        const altRange = (altMax - altMin) * 1.35;
         // Put every record on the SAME axis the bars use. The bars are laid out
         // by cumulative lap weight (distance for run/swim, moving time for bike),
         // so a record's x is found by locating which lap it fell in and
@@ -1500,7 +1491,7 @@ function LapChart({ laps, color, isBike, isRun, isSwim, unitSystem = 'metric', s
         const clamp = (v) => Math.max(0, Math.min(100, v));
         const pts = sampled.map((r, si) => {
           const x = clamp(xForVal(recVal(r, si * step))).toFixed(1);
-          const y = ((1 - (r.altitude - altMin) / altRange) * (CHART_H - 8) + 4).toFixed(1);
+          const y = elevationY(r.altitude, altMin, altMax).toFixed(1);
           return `${x},${y}`;
         });
         const firstX = pts[0].split(',')[0];
@@ -1528,12 +1519,11 @@ function LapChart({ laps, color, isBike, isRun, isSwim, unitSystem = 'metric', s
     const altMin = Math.min(...alts);
     const altMax = Math.max(...alts);
     if (altMax - altMin >= 2) {
-      const altRange = altMax - altMin;
       let cumW = 0;
       const pts = alts.map((alt, i) => {
         const x = (cumW / totalElevW * 100).toFixed(1);
         if (i < entries.length) cumW += entries[i].weight;
-        const y = ((1 - (alt - altMin) / altRange) * (CHART_H - 8) + 4).toFixed(1);
+        const y = elevationY(alt, altMin, altMax).toFixed(1);
         return `${x},${y}`;
       });
       const lastX = (cumW / totalElevW * 100).toFixed(1);
@@ -1623,20 +1613,12 @@ function LapChart({ laps, color, isBike, isRun, isSwim, unitSystem = 'metric', s
               minWidth: '100%',
             }}
           >
-            {/* Horizontal grid lines — one per Y-axis tick, helps visual alignment */}
-            {yTicks.map((_, i) => (
-              <div key={i} style={{
-                position: 'absolute', left: 0, right: 0,
-                top: (i / 4) * CHART_H,
-                height: 1, backgroundColor: '#F3F4F6', zIndex: 0, pointerEvents: 'none',
-              }} />
-            ))}
             {/* Dashed session-average reference line (Strava-style) */}
             {showAvgLine && (
               <div style={{
                 position: 'absolute', left: 0, right: 0,
                 top: avgLineTop, height: 0,
-                borderTop: `1.5px dashed ${color}99`,
+                borderTop: `1.5px dashed ${solidBarColor(color)}`,
                 zIndex: 3, pointerEvents: 'none',
               }} />
             )}
@@ -1686,19 +1668,12 @@ function LapChart({ laps, color, isBike, isRun, isSwim, unitSystem = 'metric', s
               } else if (hasLactate) {
                 barBg = isSelected ? '#7c3aedcc' : '#a78bfaaa';
               } else {
-                const intensity = getIntensity(ent.value);
                 const dimmed = selectedLap != null && !isSelected;
-                // Shading says how hard the lap was, and it was saying it at
-                // the cost of the lap being there at all: the easiest bars sat
-                // at 15% opacity, which on a white card is barely a tint. An
-                // easy lap is not a faint lap. The band now runs 45–90%, so
-                // the hardest still reads darkest and the easiest still reads
-                // as a bar. The top stays under full opacity because the
-                // elevation trace behind the row has to show through.
-                const alpha = Math.round((
-                  isSelected ? 0.95 : dimmed ? 0.30 : (0.45 + intensity * 0.45)
-                ) * 255).toString(16).padStart(2, '0');
-                barBg = color + alpha;
+                // One colour for the set. Light enough that the elevation
+                // hill shows through the bar, still opaque enough to read
+                // the pace off the height.
+                const alpha = isSelected ? 'e6' : dimmed ? '73' : 'b3';
+                barBg = solidBarColor(color) + alpha;
               }
 
               // Use the CAPPED weight for layout so one giant lap can't push
@@ -1706,12 +1681,7 @@ function LapChart({ laps, color, isBike, isRun, isSwim, unitSystem = 'metric', s
               // is still preserved for tooltips, scroll-to-lap math (above)
               // and any downstream consumers that care about actual time/dist.
               const layoutWeight = capWeight(ent.weight);
-              // STRICTLY proportional: flex-basis 0 + flex-grow = weight means
-              // bar width is purely proportional to distance (a 200 m lap is 4×
-              // a 50 m lap). A small minWidth keeps zero-distance / pause laps
-              // from vanishing — those carry no distance so they'd otherwise be
-              // sub-pixel.
-              const itemStyle = { flex: `${layoutWeight} 0 0px`, minWidth: ent.isPause ? 4 : 2, height: CHART_H + X_LABEL_H, transition: 'flex-basis 0.25s ease' };
+              const itemStyle = { flex: `${layoutWeight} 0 0px`, minWidth: ent.isPause ? 0 : 2, height: CHART_H + X_LABEL_H, transition: 'flex-basis 0.25s ease' };
 
               return (
                 <div
@@ -1726,7 +1696,6 @@ function LapChart({ laps, color, isBike, isRun, isSwim, unitSystem = 'metric', s
                       <div style={{ width: 3, height: 3, borderRadius: '50%', backgroundColor: barBg, marginBottom: 2 }} />
                   ) : (
                       <div style={{ position: 'relative', width: '100%' }}>
-                        {/* Lactate value label above the bar */}
                         {hasLactate && (
                     <div style={{
                             position: 'absolute', bottom: barH + 2, left: 0, right: 0,
@@ -1740,13 +1709,11 @@ function LapChart({ laps, color, isBike, isRun, isSwim, unitSystem = 'metric', s
                       width: '100%',
                       height: barH,
                       backgroundColor: barBg,
-                      // Softly rounded top — moderate, not full-pill.
-                      borderRadius: '5px 5px 0 0',
+                      borderRadius: '10px 10px 0 0',
                           boxShadow: isSelected ? `0 0 0 2px ${hasLactate ? '#7c3aed' : color}, 0 2px 8px ${hasLactate ? '#7c3aed' : color}60` : undefined,
                       transition: 'height 0.2s ease, opacity 0.15s ease',
                           position: 'relative', overflow: 'hidden',
                         }}>
-                          {/* Violet cap stripe for lactate bars */}
                           {hasLactate && (
                             <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, backgroundColor: '#5b21b6', borderRadius: '3px 3px 0 0' }} />
                           )}
@@ -1775,13 +1742,17 @@ function LapChart({ laps, color, isBike, isRun, isSwim, unitSystem = 'metric', s
             background: 'linear-gradient(to right, rgba(255,255,255,0.9) 55%, rgba(255,255,255,0))',
           }}
         >
-          {yTicks.map((v, i) => (
-            <span key={i} className="absolute left-0 text-[9px] text-gray-400 leading-none select-none"
-              style={{ top: `${(i / 4) * CHART_H}px`, transform: 'translateY(-50%)' }}>
-              {fmtTick(v)}
-            </span>
-          ))}
-          <span className="absolute left-0 text-[9px] text-gray-400 leading-none select-none" style={{ top: CHART_H + 2 }}>{unitLabel}</span>
+          {yTicks.map((v) => {
+            const top = tickTop(v);
+            const shift = top < 8 ? 'translateY(0)' : top > CHART_H - 8 ? 'translateY(-100%)' : 'translateY(-50%)';
+            return (
+              <span key={v} className="absolute left-0 text-[12px] font-semibold text-slate-600 leading-none select-none tabular-nums"
+                style={{ top: `${top}px`, transform: shift }}>
+                {fmtTick(v)}
+              </span>
+            );
+          })}
+          <span className="absolute left-0 text-[12px] font-semibold text-slate-500 leading-none select-none" style={{ top: CHART_H + 4 }}>{unitLabel}</span>
         </div>
       </div>{/* end relative wrapper */}
     </div>
@@ -2498,16 +2469,16 @@ function CompareContent({ merged, athleteId, onOpen }) {
 
   const sharedScale = useMemo(() => {
     if (allValues.length < 2) return null;
-    const sorted = [...allValues].sort((a,b) => a-b);
-    const q1 = sorted[Math.floor(sorted.length*0.25)];
-    const q3 = sorted[Math.floor(sorted.length*0.75)];
+    const sorted = [...allValues].sort((a, b) => a - b);
+    const q1 = sorted[Math.floor(sorted.length * 0.25)];
+    const q3 = sorted[Math.floor(sorted.length * 0.75)];
     const iqr = q3 - q1;
-    const filtered = allValues.filter(v => v >= q1-1.5*iqr && v <= q3+1.5*iqr);
-    const minV = Math.min(...(filtered.length >= 2 ? filtered : allValues));
-    const maxV = Math.max(...(filtered.length >= 2 ? filtered : allValues));
-    const pad  = (maxV - minV || maxV*0.1) * 0.08;
-    return { min: Math.max(0, minV - pad), max: maxV + pad };
-  }, [allValues]);
+    const filtered = allValues.filter(v => v >= q1 - 1.5 * iqr && v <= q3 + 1.5 * iqr);
+    const values = filtered.length >= 2 ? filtered : allValues;
+    return (isRun || isSwim)
+      ? paceAxisBounds({ work: values, plausible: values, isSwim })
+      : powerAxisBounds({ work: values, plausible: values });
+  }, [allValues, isRun, isSwim]);
 
   const sportColor = isBike ? '#767EB5' : isRun ? '#f97316' : isSwim ? '#38bdf8' : '#6b7280';
 
@@ -4080,8 +4051,12 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
     paceStr = formatPaceFromDistanceAndDuration(dist, dur, unitSystem, 'swim');
   }
 
-  // Laps
-  const laps = Array.isArray(merged.laps) ? merged.laps : [];
+  // Laps. Memoized so the empty fallback is not a new array every render —
+  // CI treats that as an error in the split memo below.
+  const laps = useMemo(
+    () => (Array.isArray(merged.laps) ? merged.laps : []),
+    [merged.laps],
+  );
   const fmtLapDur = (s) => fmtLapClock(s);
   const hasRunSplits = useMemo(() => {
     if (!isRun) return false;
@@ -5887,13 +5862,19 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                   const showSwimPace = isSwim && displayLaps.some(l => Number(l.distance || 0) > 0);
                   const hasPace = (isRun || showSwimPace) && displayLaps.some(l => Number(l.distance || 0) > 0 && lapMovingSecs(l) > 0);
                   const hasCadence = displayLaps.some(l => Number(l.average_cadence || l.avgCadence || l.avg_cadence || 0) > 0);
+                  const hasSpeed = isBike && displayLaps.some(l => {
+                    if (Number(l.average_speed || l.avgSpeed || l.avg_speed || 0) > 0) return true;
+                    return Number(l.distance || l.totalDistance || 0) > 0 && lapMovingSecs(l) > 0;
+                  });
                   const colTokens = ['1.5rem', '1fr', '1fr'];
                   if (hasPower || hasPace) colTokens.push('1fr');
                   colTokens.push('1fr');
+                  if (hasSpeed) colTokens.push('1fr');
                   if (hasCadence) colTokens.push('1fr');
                   if (showLactate) colTokens.push('1fr');
                   const cols = colTokens.join(' ');
                   const paceHeader = isBike ? 'Pwr' : paceUnitShort(unitSystem, isSwim ? 'swim' : 'run');
+                  const speedHeader = unitSystem === 'imperial' ? 'mph' : 'km/h';
                   return (
                     <div className="rounded-xl border border-gray-100 overflow-hidden">
                       <div className="grid text-[11px] font-bold text-gray-400 uppercase tracking-wide bg-gray-50 px-3 py-2 border-b border-gray-100"
@@ -5903,6 +5884,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                         <span className="text-right">Dist</span>
                         {(hasPower || hasPace) && <span className="text-right">{paceHeader}</span>}
                         <span className="text-right">HR</span>
+                        {hasSpeed && <span className="text-right">{speedHeader}</span>}
                         {hasCadence && <span className="text-right">{isSwim ? 'SPM' : cadenceDisplayUnit(sport)}</span>}
                         {showLactate && <span className="text-right">La</span>}
                       </div>
@@ -5962,6 +5944,10 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                               <span className="text-right tabular-nums text-gray-500">{lapDist > 0 ? formatDistance(lapDist, unitSystem).formatted : '—'}</span>
                               {(hasPower || hasPace) && <span className="text-right tabular-nums font-semibold" style={{ color: paceColor }}>{lapPaceStr}</span>}
                               <span className="text-right tabular-nums text-gray-500">{lapHr > 0 ? Math.round(lapHr) : '—'}</span>
+                              {hasSpeed && (() => {
+                                const spd = Number(lapSpeed) || (lapDist > 0 && lapMoving > 0 ? lapDist / lapMoving : 0);
+                                return <span className="text-right tabular-nums text-gray-500">{spd > 0 ? formatSpeed(spd, unitSystem).value.toFixed(1) : '—'}</span>;
+                              })()}
                               {hasCadence && <span className="text-right tabular-nums text-gray-500">{lapCad > 0 ? Math.round(lapCad) : '—'}</span>}
                               {showLactate && (() => {
                                 // Auto-lap: show inline input when active, saved value when set
@@ -6588,8 +6574,14 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                     const hasLactate = laps.some(l => (l.lactate ?? l.lactateValue) != null);
                     const showLactate = hasLactate || !!onAddLactate;
                     const showPace = isBike || isRun || isSwim;
-                    const cols = ['1.5rem', '1fr', '1fr', ...(showPace ? ['1fr'] : []), '1fr', ...(showLactate ? ['1fr'] : [])].join(' ');
+                    const hasCadence = laps.some(l => Number(l.average_cadence || l.avgCadence || l.avg_cadence || 0) > 0);
+                    const hasSpeed = isBike && laps.some(l => {
+                      if (Number(l.average_speed || l.avgSpeed || l.avg_speed || 0) > 0) return true;
+                      return Number(l.distance || l.totalDistance || 0) > 0 && lapMovingSecs(l) > 0;
+                    });
+                    const cols = ['1.5rem', '1fr', '1fr', ...(showPace ? ['1fr'] : []), '1fr', ...(hasSpeed ? ['1fr'] : []), ...(hasCadence ? ['1fr'] : []), ...(showLactate ? ['1fr'] : [])].join(' ');
                     const paceHeader = isBike ? 'Pwr' : paceUnitShort(unitSystem, isSwim ? 'swim' : 'run');
+                    const speedHeader = unitSystem === 'imperial' ? 'mph' : 'km/h';
                     return (
                       <div className="rounded-xl overflow-hidden border border-gray-100">
                         <div className="grid text-[9px] font-bold text-gray-400 uppercase tracking-wide bg-gray-50 px-3 py-1.5 border-b border-gray-100"
@@ -6599,6 +6591,8 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                           <span className="text-right">Time</span>
                           {showPace && <span className="text-right">{paceHeader}</span>}
                           <span className="text-right">HR</span>
+                          {hasSpeed && <span className="text-right">{speedHeader}</span>}
+                          {hasCadence && <span className="text-right">{isSwim ? 'SPM' : cadenceDisplayUnit(sport)}</span>}
                           {showLactate && <span className="text-right">La</span>}
                         </div>
                         <div className="divide-y divide-gray-50">
@@ -6612,6 +6606,10 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                             const lapSpeed = lap.average_speed || lap.avgSpeed || lap.avg_speed || null;
                             const lapPower = Number(lap.average_watts || lap.avgPower || 0);
                             const lapHr    = Number(lap.average_heartrate || lap.avgHeartRate || lap.averageHeartRate || lap.avgHR || 0);
+                            const lapCadRaw = Number(lap.average_cadence || lap.avgCadence || lap.avg_cadence || 0);
+                            const lapCad = lapCadRaw > 0
+                              ? (isStravaActivity ? (stravaHalfCadenceToSpm(lapCadRaw, sport) ?? Math.round(lapCadRaw)) : Math.round(lapCadRaw))
+                              : 0;
                             const lapLa    = lap.lactate ?? lap.lactateValue;
                             const lapNum   = lap.lapNumber ?? (i + 1);
                             // Detect lap type for color-coding (intensity-based)
@@ -6663,6 +6661,11 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
                                 <span className="font-semibold text-gray-700 text-right tabular-nums">{fmtLapDur(lapDur)}</span>
                                 {showPace && <span className="text-right tabular-nums font-semibold" style={{ color: paceColor }}>{lapPaceStr}</span>}
                                 <span className="text-gray-500 text-right tabular-nums">{lapHr > 0 ? Math.round(lapHr) : '—'}</span>
+                                {hasSpeed && (() => {
+                                  const spd = Number(lapSpeed) || (lapDist > 0 && lapDur > 0 ? lapDist / lapDur : 0);
+                                  return <span className="text-gray-500 text-right tabular-nums">{spd > 0 ? formatSpeed(spd, unitSystem).value.toFixed(1) : '—'}</span>;
+                                })()}
+                                {hasCadence && <span className="text-gray-500 text-right tabular-nums">{lapCad > 0 ? Math.round(lapCad) : '—'}</span>}
                                 {showLactate && (
                                   lapLa != null ? (
                                     <span className="text-right font-semibold tabular-nums" style={{ color: '#7c3aed' }}>{Number(lapLa).toFixed(1)}</span>
@@ -8047,20 +8050,23 @@ function DayWellnessStrip({ w, status, className = '', onOpen = null }) {
       style={onOpen ? { WebkitTapHighlightColor: 'transparent' } : undefined}
     >
       {status && <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: status.hex }} />}
-      {sleepLabel && (
-        <span className="flex items-center gap-0.5 min-w-0">
-          <MoonIcon className="w-3 h-3 flex-shrink-0" />
-          <span className="font-semibold text-gray-500">{sleepLabel}</span>
-        </span>
-      )}
       {hasRhr && (
         <span className="flex items-center gap-0.5">
           <HeartIcon className="w-3 h-3 flex-shrink-0" />
           <span className="font-semibold text-gray-500">{Math.round(w.restingHeartRate)}</span>
         </span>
       )}
+      {sleepLabel && (
+        <span className="flex items-center gap-0.5 min-w-0">
+          <MoonIcon className="w-3 h-3 flex-shrink-0" />
+          <span className="font-semibold text-gray-500">{sleepLabel}</span>
+        </span>
+      )}
       {hasHrv && (
         <span className="flex items-center gap-0.5">
+          <svg className="w-3 h-3 flex-shrink-0" viewBox="0 0 16 16" fill="none" aria-hidden>
+            <path d="M1 8h2.2l1.3-3.2L7 12l1.6-4H15" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
           <span className="font-semibold text-gray-500">{Math.round(w.hrvMs)}</span>
           <span>ms</span>
         </span>
@@ -8254,6 +8260,14 @@ export default function CalendarView({
     );
   };
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  // A phone on its side is wider than the desktop breakpoint, but it is still
+  // a phone: short, touched with a finger. The desktop month grid and its
+  // two-row toolbar do not fit there.
+  const [isPhoneLandscape, setIsPhoneLandscape] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    const coarse = window.matchMedia?.('(pointer: coarse)')?.matches ?? false;
+    return coarse && window.innerWidth >= 768 && window.innerHeight < 540;
+  });
   // Optimistic selection — marks activity immediately on click, before parent updates selectedActivityId
   const [optimisticSelectedId, setOptimisticSelectedId] = useState(null);
   // Mobile-specific state
@@ -8293,23 +8307,26 @@ export default function CalendarView({
   const [mobileHeaderHeight, setMobileHeaderHeight] = useState(0);
   const selectedMobileDayRef = useRef(selectedMobileDay);
 
-  // Switching the mobile Calendar/Charts tab → jump the scroll container back
-  // to the very top so the new tab opens at the top (Charts especially, which
-  // is otherwise inherited at whatever scroll the calendar list was left at).
-  useEffect(() => {
-    if (!isMobile) return;
+  // Charts opens at the top. Calendar keeps its own "today" scroll, so a tab
+  // change must not yank that list back to the first of the month.
+  const scrollMobileToTop = useCallback((behavior = 'auto') => {
     const header = mobileStickyHeaderRef.current;
     let el = header ? header.parentElement : null;
     while (el) {
       const oy = (typeof getComputedStyle !== 'undefined') ? getComputedStyle(el).overflowY : '';
       if ((oy === 'auto' || oy === 'scroll') && el.scrollHeight > el.clientHeight + 1) {
-        el.scrollTo({ top: 0, behavior: 'auto' });
+        el.scrollTo({ top: 0, behavior });
         return;
       }
       el = el.parentElement;
     }
-    if (typeof window !== 'undefined') window.scrollTo(0, 0);
-  }, [mobileTab, isMobile]);
+    if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior });
+  }, []);
+
+  useEffect(() => {
+    if (!isMobile || mobileTab !== 'charts') return;
+    scrollMobileToTop('auto');
+  }, [mobileTab, isMobile, scrollMobileToTop]);
   const isAutoScrollingRef = useRef(false);
   const monthSentinelBottomRef = useRef(null);
   const monthSentinelTopRef = useRef(null);
@@ -8461,7 +8478,7 @@ export default function CalendarView({
       <button
         onClick={open}
         title={dp.notes || dp.title || catLabel(dp.category)}
-        className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded font-bold border leading-none truncate max-w-[90px]"
+        className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded font-bold border leading-none truncate max-w-[90px] flex-shrink-0"
         style={{ background: hexToRgba(color, 0.12), color, borderColor: hexToRgba(color, 0.35), cursor: onDayPlanSave ? 'pointer' : 'default' }}
       >
         {dp.title || catLabel(dp.category)}
@@ -8529,6 +8546,8 @@ export default function CalendarView({
 
   // Add completed workout sheet
   const [addCompletedDate, setAddCompletedDate] = useState(null); // Date | null
+  // Mobile day "+" when logging a completed workout is not wired: plan + theme.
+  const [addMenuKey, setAddMenuKey] = useState(null);
   const [addRaceOpen, setAddRaceOpen] = useState(false);          // header "+ Race" → race form
   const [selectedRace, setSelectedRace] = useState(null);       // click race badge → detail modal
 
@@ -8541,6 +8560,13 @@ export default function CalendarView({
     window.addEventListener('lachart:tssDisplayModeChanged', onTssModeChange);
     return () => window.removeEventListener('lachart:tssDisplayModeChanged', onTssModeChange);
   }, []);
+
+  useEffect(() => {
+    if (!addMenuKey) return undefined;
+    const close = () => setAddMenuKey(null);
+    document.addEventListener('pointerdown', close);
+    return () => document.removeEventListener('pointerdown', close);
+  }, [addMenuKey]);
 
   // Drag & drop state for planned workout rescheduling
   const [draggedPw, setDraggedPw] = useState(null); // { pw, isCopy }
@@ -8647,10 +8673,16 @@ export default function CalendarView({
   // Detect mobile
   useEffect(() => {
     const handleResize = () => {
+      const coarse = window.matchMedia?.('(pointer: coarse)')?.matches ?? false;
       setIsMobile(window.innerWidth < 768);
+      setIsPhoneLandscape(coarse && window.innerWidth >= 768 && window.innerHeight < 540);
     };
     window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
+    window.addEventListener('orientationchange', handleResize);
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      window.removeEventListener('orientationchange', handleResize);
+    };
   }, []);
 
   // Keep ref in sync so scroll spy closure stays fresh
@@ -9022,6 +9054,19 @@ export default function CalendarView({
 
   const [direction, setDirection] = useState(0); // -1 = going back, 1 = going forward
   const [isFullscreen, setIsFullscreen] = useState(false);
+
+  // Phone landscape fullscreen mounts the day list after the desktop grid, so
+  // the portrait "open on today" effect never sees it.
+  useEffect(() => {
+    if (!isFullscreen || !isPhoneLandscape) return undefined;
+    const t = setTimeout(() => scrollToTodayCard(), 60);
+    return () => clearTimeout(t);
+  }, [isFullscreen, isPhoneLandscape, scrollToTodayCard]);
+
+  useEffect(() => {
+    if (!isFullscreen || !isPhoneLandscape || mobileTab !== 'charts') return;
+    scrollMobileToTop('auto');
+  }, [isFullscreen, isPhoneLandscape, mobileTab, scrollMobileToTop]);
 
   const filteredActivities = useMemo(() => {
     // Deduped first. The week summary sums this list, and one session that
@@ -9684,20 +9729,24 @@ export default function CalendarView({
     return `${(meters / 1000).toFixed(1)} km`;
   };
 
+  // Fullscreen on a phone keeps the day list: it scrolls and a training opens
+  // on tap. The desktop week grid is only for a real wide screen.
+  const showMobileCalendar = isMobile || (isFullscreen && isPhoneLandscape);
+
   const calendarContent = (
     // overflow-x-clip rather than overflow-hidden: the header below sticks to
     // the top of the page's scroller, and an `overflow: hidden` ancestor would
     // make it stick to a box that never scrolls — i.e. not stick at all. Clip
     // still trims the grid to the card's rounded corners.
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.25 }} className={`${isFullscreen ? 'fixed inset-0 z-[9998] bg-white flex flex-col p-4 md:p-5 overflow-hidden' : (isMobile ? 'bg-white' : 'bg-white rounded-2xl border border-gray-200 shadow-sm p-4 md:p-5 mb-4 md:mb-6 overflow-x-clip')}`}>
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.25 }} className={`${isFullscreen ? `fixed inset-0 z-[9998] bg-white flex flex-col overflow-hidden ${showMobileCalendar ? 'pt-[env(safe-area-inset-top)] pl-[env(safe-area-inset-left)]' : 'p-4 md:p-5'}` : (isMobile ? 'bg-white' : 'bg-white rounded-2xl border border-gray-200 shadow-sm p-4 md:p-5 mb-4 md:mb-6 overflow-x-clip')}`}>
       {/* Header — desktop only.
           The controls follow the grid down. A month of training is taller than
           the screen, and having to scroll back up to change the month or the
           view is what a header is for. The negative margins let it cover the
           card's own padding, so nothing slides through the gap. */}
-      {!isMobile && (
-      <div className={`flex flex-col sm:flex-row flex-wrap items-start sm:items-center justify-between gap-2 md:gap-3 mb-3 md:mb-4 ${isFullscreen ? '' : 'sticky top-0 z-20 bg-white -mx-4 md:-mx-5 px-4 md:px-5 -mt-4 md:-mt-5 pt-4 md:pt-5 pb-2 border-b border-gray-100'}`}>
-        <div className="flex items-center gap-1.5 md:gap-2">
+      {!showMobileCalendar && (
+      <div className={`${isPhoneLandscape ? 'flex flex-nowrap items-center gap-1.5 mb-2 overflow-x-auto [&_button]:!text-xs [&_button]:!px-2 [&_button]:!py-1' : 'flex flex-col sm:flex-row flex-wrap items-start sm:items-center justify-between gap-2 md:gap-3 mb-3 md:mb-4'} ${isFullscreen ? '' : 'sticky top-0 z-20 bg-white -mx-4 md:-mx-5 px-4 md:px-5 -mt-4 md:-mt-5 pt-4 md:pt-5 pb-2 border-b border-gray-100'}`}>
+        <div className={`flex items-center gap-1.5 md:gap-2 ${isPhoneLandscape ? 'shrink-0' : ''}`}>
           <button
             onClick={prev}
             className="px-2 md:px-3 py-1 md:py-1.5 rounded-lg md:rounded-xl border border-gray-200 bg-white hover:bg-gray-50 text-gray-700 shadow-sm transition-colors flex items-center justify-center"
@@ -9720,7 +9769,7 @@ export default function CalendarView({
           </button>
         </div>
         {isFullscreen ? (
-          <div className="text-base md:text-lg lg:text-xl font-semibold text-gray-900">
+          <div className={`text-base md:text-lg lg:text-xl font-semibold text-gray-900 ${isPhoneLandscape ? 'shrink-0' : ''}`}>
             {(() => {
               const ws = startOfWeek(anchorDate);
               const we = addDays(addDays(ws, -2*7), 16*7 - 1);
@@ -9728,16 +9777,18 @@ export default function CalendarView({
             })()}
           </div>
         ) : (
-          <MonthYearPicker
-            date={anchorDate}
-            onPick={setAnchorDate}
-            label={anchorDate.toLocaleString(undefined, { month: 'long', year: 'numeric' })}
-          />
+          <span className={isPhoneLandscape ? 'shrink-0' : undefined}>
+            <MonthYearPicker
+              date={anchorDate}
+              onPick={setAnchorDate}
+              label={anchorDate.toLocaleString(undefined, { month: 'long', year: 'numeric' })}
+            />
+          </span>
         )}
-        <div className="flex items-center gap-1.5 md:gap-2">
+        <div className={`flex items-center gap-1.5 md:gap-2 ${isPhoneLandscape ? 'shrink-0' : ''}`}>
           {/* Category filter */}
           <CalendarCategoryFilter value={categoryFilter} onChange={setCategoryFilter} activities={activities} />
-          {!isFullscreen && (
+          {!isFullscreen && !isPhoneLandscape && (
             <button
               onClick={() => setView('week')}
               className={`px-2 md:px-3 py-1 md:py-1.5 rounded-lg md:rounded-xl border shadow-sm transition-colors text-sm md:text-base ${view==='week'?'bg-primary text-white border-primary hover:bg-primary-dark':'bg-white border-gray-200 hover:bg-gray-50 text-gray-700'}`}
@@ -9745,7 +9796,7 @@ export default function CalendarView({
               Week
             </button>
           )}
-          {!isFullscreen && (
+          {!isFullscreen && !isPhoneLandscape && (
             <button
               onClick={() => setView('month')}
               className={`px-2 md:px-3 py-1 md:py-1.5 rounded-lg md:rounded-xl border shadow-sm transition-colors text-sm md:text-base ${view==='month'?'bg-primary text-white border-primary hover:bg-primary-dark':'bg-white border-gray-200 hover:bg-gray-50 text-gray-700'}`}
@@ -9804,20 +9855,41 @@ export default function CalendarView({
       )}
 
       {/* Mobile: native app-style layout — mini calendar + scrollable day list */}
-      {isMobile ? (
-        <div>
+      {showMobileCalendar ? (
+        <div className={isFullscreen ? 'flex-1 min-h-0 overflow-y-auto overscroll-contain' : undefined}>
           {/* ── Sticky header: tab bar + calendar/charts nav ── */}
           <div ref={mobileStickyHeaderRef} className="sticky top-0 z-10 bg-white border-b border-gray-100 shadow-sm">
             {/* Tab switcher */}
-            <div className="flex bg-gray-100 rounded-xl p-0.5 mx-3 mt-2 mb-2">
+            <div className="flex items-center gap-1 mx-3 mt-2 mb-2">
+            <div className="flex flex-1 bg-gray-100 rounded-xl p-0.5">
               {[['calendar', 'Calendar'], ['charts', 'Charts'], ['planner', 'Planner']].map(([tab, label]) => (
                 <button
                   key={tab}
-                  onClick={() => (tab === 'planner' ? goToPlanner() : setMobileTab(tab))}
+                  onClick={() => {
+                    if (tab === 'planner') { goToPlanner(); return; }
+                    if (tab === 'charts') {
+                      if (mobileTab === 'charts') scrollMobileToTop('smooth');
+                      else setMobileTab('charts');
+                      return;
+                    }
+                    scrollToTodayCard();
+                  }}
                   className={`flex-1 py-1.5 text-sm font-semibold rounded-lg transition-all touch-manipulation ${mobileTab === tab ? 'bg-white shadow text-gray-900' : 'text-gray-500'}`}
                   style={{ WebkitTapHighlightColor: 'transparent' }}
                 >{label}</button>
               ))}
+            </div>
+            {isFullscreen && (
+              <button
+                type="button"
+                onClick={() => setIsFullscreen(false)}
+                title="Exit fullscreen"
+                aria-label="Exit fullscreen"
+                className="w-8 h-8 shrink-0 flex items-center justify-center rounded-lg border border-gray-200 text-gray-500 active:bg-gray-50"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 9V4.5M9 9H4.5M9 9L3.75 3.75M9 15v4.5M9 15H4.5M9 15l-5.25 5.25M15 9h4.5M15 9V4.5M15 9l5.25-5.25M15 15h4.5M15 15v4.5m0-4.5l5.25 5.25" /></svg>
+              </button>
+            )}
             </div>
 
             {mobileTab === 'calendar' && (<>
@@ -10029,53 +10101,67 @@ export default function CalendarView({
                     {renderPeriodBand(key, { height: 5, showLabel: true })}
                     {/* Race day — big badge */}
                     <div className="px-3">{renderRaceBadge(key, { big: true })}</div>
-                    {/* Day header (compact — bigger info goes on the
-                        trainings inside, not the date strip).
-                        The day-theme badge ("Threshold", "Recovery", …) sits
-                        next to the date and is tappable to edit. Tapping
-                        the empty area opens the theme editor too. */}
-                    {(() => { const _dayPlan = dayPlanByDate.get(key); return (
-                    <div className={`flex items-center justify-between px-3 py-2 ${isToday ? 'bg-primary/5' : 'bg-gray-50/80'}`}>
+                    {/* Day header. The theme, when there is one, sits in front
+                        of the night's resting HR, sleep and HRV. A new theme
+                        is added from the + menu, not from a label in the row. */}
+                    <div className={`flex items-center justify-between gap-2 px-3 py-2 ${isToday ? 'bg-primary/5' : 'bg-gray-50/80'}`}>
                       <div className="flex items-center gap-2 min-w-0">
-                        <span className={`text-xs font-bold ${isToday ? 'text-primary' : isCurrentMonth ? 'text-gray-400' : 'text-gray-300'}`}>{dayNames[dayDate.getDay()]}</span>
-                        <span className={`text-base font-extrabold ${isToday ? 'text-primary' : isCurrentMonth ? 'text-gray-800' : 'text-gray-500'}`}>{dayDate.getDate()}</span>
-                        {isToday && <span className="text-[9px] bg-primary text-white px-1.5 py-0.5 rounded-full font-bold">Today</span>}
-                        {renderDayThemeChip(key, { big: true })}
-                        {!_dayPlan && onDayPlanSave && (
-                          <button
-                            onClick={e => { e.stopPropagation(); setDayPlanEditDate(key); }}
-                            className="text-[10px] text-gray-300 active:text-primary touch-manipulation px-1"
-                            style={{ WebkitTapHighlightColor: 'transparent' }}
-                            title="Add day theme"
-                          >+ theme</button>
-                        )}
+                        <span className={`text-xs font-bold flex-shrink-0 ${isToday ? 'text-primary' : isCurrentMonth ? 'text-gray-400' : 'text-gray-300'}`}>{dayNames[dayDate.getDay()]}</span>
+                        <span className={`text-base font-extrabold flex-shrink-0 ${isToday ? 'text-primary' : isCurrentMonth ? 'text-gray-800' : 'text-gray-500'}`}>{dayDate.getDate()}</span>
+                        {isToday && <span className="text-[9px] bg-primary text-white px-1.5 py-0.5 rounded-full font-bold flex-shrink-0">Today</span>}
+                        {renderDayThemeChip(key)}
+                        {renderWellness(key, { className: 'min-w-0 overflow-hidden' })}
                       </div>
-                      {(onPlanWorkout || onAddCompletedWorkout) && (
+                      {(onPlanWorkout || onAddCompletedWorkout || onDayPlanSave) && (
                         onAddCompletedWorkout ? (
-                          /* Show a tiny dropdown when "log completed" is available */
-                          <div className="relative" onClick={e => e.stopPropagation()}>
+                          <div className="relative flex-shrink-0" onClick={e => e.stopPropagation()}>
                             <button
                               onClick={e => {
                                 e.stopPropagation();
-                                // If only one action, skip menu — but we always have both here
                                 setAddCompletedDate(dayDate);
                               }}
                               className="w-6 h-6 flex items-center justify-center text-gray-300 active:text-primary text-lg leading-none touch-manipulation"
                               style={{ WebkitTapHighlightColor: 'transparent' }}
                             >+</button>
                           </div>
-                        ) : (
+                        ) : (onPlanWorkout && onDayPlanSave) ? (
+                          <button
+                            onPointerDown={e => e.stopPropagation()}
+                            onClick={e => { e.stopPropagation(); setAddMenuKey(k => (k === key ? null : key)); }}
+                            className={`w-6 h-6 flex-shrink-0 flex items-center justify-center text-lg leading-none touch-manipulation ${addMenuKey === key ? 'text-primary' : 'text-gray-300'} active:text-primary`}
+                            style={{ WebkitTapHighlightColor: 'transparent' }}
+                            aria-label="Add to this day"
+                          >+</button>
+                        ) : onPlanWorkout ? (
                         <button
                           onClick={e => { e.stopPropagation(); onPlanWorkout(dayDate); }}
-                          className="w-6 h-6 flex items-center justify-center text-gray-300 active:text-primary text-lg leading-none touch-manipulation"
+                          className="w-6 h-6 flex-shrink-0 flex items-center justify-center text-gray-300 active:text-primary text-lg leading-none touch-manipulation"
                           style={{ WebkitTapHighlightColor: 'transparent' }}
+                        >+</button>
+                        ) : (
+                        <button
+                          onClick={e => { e.stopPropagation(); setDayPlanEditDate(key); }}
+                          className="w-6 h-6 flex-shrink-0 flex items-center justify-center text-gray-300 active:text-primary text-lg leading-none touch-manipulation"
+                          style={{ WebkitTapHighlightColor: 'transparent' }}
+                          aria-label="Add day theme"
                         >+</button>
                         )
                       )}
                     </div>
-                    ); })()}
-                    {/* Apple Health recovery (sleep / resting HR / HRV) */}
-                    {renderWellness(key, { className: 'px-3 pt-1.5 -mb-0.5' })}
+                    {addMenuKey === key && onPlanWorkout && onDayPlanSave && !onAddCompletedWorkout && (
+                      <div className="flex border-t border-gray-100 bg-white" onPointerDown={e => e.stopPropagation()} onClick={e => e.stopPropagation()}>
+                        <button
+                          type="button"
+                          onClick={() => { setAddMenuKey(null); onPlanWorkout(dayDate); }}
+                          className="flex-1 px-3 py-2.5 text-left text-sm font-semibold text-gray-800 active:bg-gray-50"
+                        >Plan workout</button>
+                        <button
+                          type="button"
+                          onClick={() => { setAddMenuKey(null); setDayPlanEditDate(key); }}
+                          className="flex-1 px-3 py-2.5 text-left text-sm font-semibold text-gray-800 border-l border-gray-100 active:bg-gray-50"
+                        >Day theme</button>
+                      </div>
+                    )}
                     {/* Content */}
                     {hasItems ? (
                       <div className="px-3 pb-2.5 pt-1.5 flex flex-col gap-1.5">

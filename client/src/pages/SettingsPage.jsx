@@ -1465,10 +1465,26 @@ const SettingsPage = () => {
         setGarminSyncError(msg);
         return;
       }
+      if (res?.historyDenied) {
+        const msg = res.message || 'Garmin refused the older history export.';
+        addNotification(msg, 'error');
+        setGarminSyncError(msg);
+        if ((res.imported || 0) + (res.updated || 0) > 0) {
+          setGarminLastSync(new Date().toISOString());
+          await handleSyncComplete();
+          window.dispatchEvent(new CustomEvent('garminSyncComplete', { detail: res }));
+        }
+        return;
+      }
       if (res?.backfillPending || res?.status === 'backfill_started') {
         const msg = res.message || 'Garmin is importing your history. Activities usually arrive within a few minutes.';
         addNotification(msg, 'info');
         setGarminSyncError(null);
+        if ((res.imported || 0) + (res.updated || 0) > 0) {
+          setGarminLastSync(new Date().toISOString());
+          await handleSyncComplete();
+          window.dispatchEvent(new CustomEvent('garminSyncComplete', { detail: res }));
+        }
         return;
       }
       addNotification(`History import: ${res.imported || 0} new, ${res.updated || 0} updated`, 'success');
