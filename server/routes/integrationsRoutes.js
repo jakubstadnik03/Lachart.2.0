@@ -494,6 +494,11 @@ async function fetchGarminUserPermissions(tokenData) {
  */
 const GARMIN_DIRECT_PULL_DAYS = 31;
 const GARMIN_PULL_CONCURRENCY = 5;
+// Settings → Check must answer while the athlete is still looking at the button.
+// A full 31-day walk (and the second walk through /activityDetails) outlives the
+// browser call, so the button sits on "Checking…" until the client gives up.
+const GARMIN_STATUS_PULL_DAYS = 7;
+const GARMIN_STATUS_PULL_MS = 12000;
 
 async function fetchGarminWellnessActivitiesByDay(user, tokenData, path, startSec, endSec) {
   const CHUNK_SEC = 86400;
@@ -3798,6 +3803,16 @@ async function getGarminActivities(user, since = null, opts = {}) {
       return acts;
     } catch (activitiesErr) {
       if (!isGarminPullTokenError(activitiesErr.message)) throw activitiesErr;
+      // A settings check must not start a second 31-day walk that the browser
+      // will abandon. Sync can still try /activityDetails below.
+      if (!allowBackfill) {
+        const err = new Error(
+          'Garmin does not allow apps to list activities on demand. '
+          + 'New sessions arrive via push within a few minutes; use Import History for older ones.'
+        );
+        err.pullUnsupported = true;
+        throw err;
+      }
       console.warn('Garmin /activities pull failed, trying /activityDetails:', activitiesErr.message);
     }
 
@@ -4505,14 +4520,31 @@ router.get('/garmin/activity-status', verifyToken, activityStatusCacheMiddleware
     };
 
     if (user.garmin?.refreshToken) {
+      // No pull token means every day-window returns InvalidPullTokenException.
+      // Walking them anyway is what leaves "Checking…" on the screen.
+      if (!garminPullToken()) {
+        return respondFromLocal(
+          'Garmin does not let LaChart list activities on demand. '
+          + 'New sessions arrive via push within a few minutes; use Import History for older ones.'
+        );
+      }
       try {
         // A 90-day check is 90 sequential Garmin calls and the browser gives
         // up first, which is the "Checking…" that never finishes. Garmin's
         // direct list only covers a short upload window anyway; older
         // workouts are what Import History asks the backfill for.
-        const pullDays = Math.min(days, GARMIN_DIRECT_PULL_DAYS);
+        const pullDays = Math.min(days, GARMIN_STATUS_PULL_DAYS);
         const pullSince = new Date(Date.now() - pullDays * 24 * 3600 * 1000);
-        const remote = await getGarminActivities(user, pullSince, { allowBackfill: false });
+        const remote = await Promise.race([
+          getGarminActivities(user, pullSince, { allowBackfill: false }),
+          new Promise((_, reject) => {
+            setTimeout(() => {
+              const err = new Error('Garmin activity list timed out');
+              err.pullTimeout = true;
+              reject(err);
+            }, GARMIN_STATUS_PULL_MS);
+          }),
+        ]);
         const docs = (remote || []).map((a) => mapGarminActivityToDoc(user, a));
         const local = await GarminActivity.find({
           userId: userIdMatch(user._id),
