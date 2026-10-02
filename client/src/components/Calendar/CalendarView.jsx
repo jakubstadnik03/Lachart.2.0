@@ -76,6 +76,7 @@ import {
   resolveActivitySaveKind,
 } from '../../utils/activityEventPatches';
 import { sanitizeDecimalInput, parseLactateValue } from '../../utils/lactateInput';
+import { summarizeTrace } from '../../utils/traceSummary';
 import { fetchWellness } from '../../services/wellnessData';
 import { baseline, dayRecoveryStatus } from '../../utils/recovery';
 import WellnessDetailSheet from '../shared/WellnessDetailSheet';
@@ -3267,9 +3268,17 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
     );
     const displayTss = userManualTss ?? fileTss;
     const caloriesVal = resolveActivityCaloriesKcal({ ...detail, ...a });
+    // The list row is a summary. Spreading it over the detail used to replace
+    // a loaded lap array with the summary's empty one, so the chart under a
+    // Garmin ride — and any ride whose laps live only on the detail — opened
+    // blank while the same session from Strava did not.
+    const laps = (Array.isArray(detail?.laps) && detail.laps.length)
+      ? detail.laps
+      : (Array.isArray(a?.laps) && a.laps.length ? a.laps : []);
     return {
       ...detail,
       ...a,
+      laps,
       id: getActivityAppId(a),
       stravaId: a.stravaId ?? detail.stravaId,
       garminId: a.garminId ?? detail.garminId,
@@ -3991,21 +4000,27 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
   }, [tssMode, activityKey]); // eslint-disable-line react-hooks/exhaustive-deps
   // Use actual average power for `power` — don't fall through to NP, otherwise
   // np === power and the NP label is never shown (the condition below checks ≠).
-  const power = Number(merged.avgPower || merged.averagePower || merged.average_watts || 0);
-  const np    = Number(merged.normalizedPower || merged.weightedAveragePower || merged.weighted_average_watts || 0);
+  //
+  // A Garmin summary stores the heart rate and leaves the rest on the trace.
+  // The chart was already drawing power, cadence and the climb; the pills
+  // beside it only read the summary, so they stayed empty. The trace fills
+  // whatever the summary did not bring.
+  const trace = useMemo(() => summarizeTrace(chartTraining?.records), [chartTraining]);
+  const power = Number(merged.avgPower || merged.averagePower || merged.average_watts || 0) || trace.avgPower || 0;
+  const np    = Number(merged.normalizedPower || merged.weightedAveragePower || merged.weighted_average_watts || 0) || trace.normalizedPower || 0;
   const hr    = Number(merged.averageHeartRate || merged.average_heartrate || merged.avgHR || merged.avgHeartRate || 0);
-  const maxHR = Number(merged.maxHeartRate || merged.max_heartrate || merged.maxHr || 0);
-  const maxPower = Number(merged.maxPower || merged.max_watts || merged.maxWatts || 0);
+  const maxHR = Number(merged.maxHeartRate || merged.max_heartrate || merged.maxHr || 0) || trace.maxHeartRate || 0;
+  const maxPower = Number(merged.maxPower || merged.max_watts || merged.maxWatts || 0) || trace.maxPower || 0;
   const calories = resolveActivityCaloriesKcal(merged);
   const rpe = Number(merged.rpe || merged.RPE || 0);
   const sessionLactate = merged.lactate != null ? Number(merged.lactate) : null;
-  const elevation = Number(merged.totalElevationGain || merged.elevationGain || merged.total_elevation_gain || 0);
+  const elevation = Number(merged.totalElevationGain || merged.elevationGain || merged.total_elevation_gain || 0) || trace.elevationGain || 0;
   // Strava reports running cadence as strides/min — one foot. The per-second
   // records are already doubled to spm when they are built (normCad, above),
   // so taking this average raw printed 84 next to a min of 100 and a max of
   // 180: three numbers, two different units, one of them impossible. FIT files
   // already store full spm and must not be doubled again.
-  const cadenceRaw = Number(merged.averageCadence || merged.average_cadence || merged.avgCadence || 0);
+  const cadenceRaw = Number(merged.averageCadence || merged.average_cadence || merged.avgCadence || 0) || trace.avgCadence || 0;
   const cadence = String(merged?.id || merged?._id || a?.id || a?._id || '').startsWith('strava-')
     ? (stravaHalfCadenceToSpm(cadenceRaw, sport) ?? cadenceRaw)
     : cadenceRaw;
@@ -4029,6 +4044,10 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
     if (id.startsWith('fit-') || merged?.source === 'fit' || merged?.type === 'fit') {
       const raw = String(merged?._id || id.replace(/^fit-/, ''));
       return raw ? `fit-${raw}` : null;
+    }
+    if (id.startsWith('garmin-') || merged?.source === 'garmin' || merged?.type === 'garmin' || merged?.garminId) {
+      const raw = String(merged?.garminId || id.replace(/^garmin-/, ''));
+      return raw ? `garmin-${raw}` : null;
     }
     return null;
   }, [merged]);

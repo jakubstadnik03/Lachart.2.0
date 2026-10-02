@@ -154,6 +154,18 @@ describe.each([
     }))).toHaveLength(2);
   });
 
+  it('keeps the lap shape when the preferred copy has none', () => {
+    const [strava, garmin] = offsetPair('2026-08-18T09:02:08.000Z', {
+      strava: { sport: 'Ride', elapsedTime: 4790, movingTime: 4790, distance: 34960, averageHeartRate: 121 },
+      garmin: { sport: 'cycling', elapsedTime: 4793, movingTime: 4793, distance: 34960, averageHeartRate: 121 },
+    });
+    garmin.lapProfile = [{ d: 300, w: 200 }, { d: 180, w: 320 }, { d: 600, w: 250 }];
+    const kept = dedupe([strava, garmin]);
+    expect(kept).toHaveLength(1);
+    expect(kept[0].stravaId).toBe(91);
+    expect(kept[0].lapProfile).toHaveLength(3);
+  });
+
   it('collapses an evening session its two providers date a day apart', () => {
     // A swim that starts 40 minutes before midnight local time. Strava writes
     // the local clock and Garmin the real instant, so the calendar drew the

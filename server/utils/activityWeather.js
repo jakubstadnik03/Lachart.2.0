@@ -18,6 +18,8 @@ const axios = require('axios');
 const ActivityWeather = require('../models/ActivityWeather');
 const StravaActivity = require('../models/StravaActivity');
 const StravaStream = require('../models/StravaStream');
+const GarminActivity = require('../models/GarminActivity');
+const GarminStream = require('../models/GarminStream');
 const FitTraining = require('../models/fitTraining');
 const User = require('../models/UserModel');
 const stravaBudget = require('./stravaBudget');
@@ -164,6 +166,7 @@ async function locateActivity(userId, activityKey) {
   const key = String(activityKey || '');
   const stravaId = key.startsWith('strava-') ? key.slice(7) : null;
   const fitId = key.startsWith('fit-') ? key.slice(4) : null;
+  const garminId = key.startsWith('garmin-') ? key.slice(7) : null;
 
   if (stravaId) {
     const act = await StravaActivity.findOne({ userId, stravaId }).select('startDate').lean();
@@ -190,6 +193,24 @@ async function locateActivity(userId, activityKey) {
     // `failed` means we never got an answer — a rate limit, an expired token —
     // so the absence must not be recorded as permanent.
     return { when: act.startDate, lat: null, lng: null, retryable: !!result.failed };
+  }
+
+  if (garminId) {
+    const act = await GarminActivity.findOne({ userId, garminId })
+      .select('startDate raw.startingLatitudeInDegree raw.startingLongitudeInDegree')
+      .lean();
+    if (!act) return null;
+    const lat = Number(act.raw?.startingLatitudeInDegree);
+    const lng = Number(act.raw?.startingLongitudeInDegree);
+    if (Number.isFinite(lat) && Number.isFinite(lng) && !(lat === 0 && lng === 0)) {
+      return { when: act.startDate, lat, lng };
+    }
+    const stream = await GarminStream.findOne({ userId, garminId }).select('streams packed').lean();
+    const first = channel(stream?.streams, 'latlng').find(
+      (p) => Array.isArray(p) && Number.isFinite(Number(p[0])) && !(Number(p[0]) === 0 && Number(p[1]) === 0),
+    );
+    if (first) return { when: act.startDate, lat: Number(first[0]), lng: Number(first[1]) };
+    return { when: act.startDate, lat: null, lng: null };
   }
 
   if (fitId) {
