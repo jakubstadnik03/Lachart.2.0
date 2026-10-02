@@ -511,6 +511,16 @@ const userSchema = new mongoose.Schema({
      *  dormant accounts). Sent once ever; segment recorded for analytics. */
     winBackSent:              { type: Date, default: null },
     winBackSegment:           { type: String, default: null },
+    /** One-time "what was missing" email. Two segments: `churned` for accounts
+     *  whose subscription ended, `never-started` for those that never began a
+     *  plan at all — the mail cannot tell the second group their subscription
+     *  ended, so the copy differs and the segment is recorded. Sent once ever.
+     *
+     *  These two keys have to be declared here or the subdocument is strict
+     *  enough to drop them silently: the send would never mark anyone, and the
+     *  scheduler would mail the same people on every tick. */
+    cancelFeedbackSent:       { type: Date, default: null },
+    cancelFeedbackSegment:    { type: String, default: null },
     /** One-time "zones ready — connect Strava/Garmin/Apple Health" email for
      *  athletes who have ≥1 test but no tracker. Sent once ever. */
     trackerConnectSent:       { type: Date, default: null },

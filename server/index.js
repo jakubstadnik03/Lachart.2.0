@@ -305,6 +305,7 @@ const { startProductUpdateScheduler } = require('./services/productUpdateSchedul
 const { startGarminTokenRefreshScheduler } = require('./services/garminTokenRefreshScheduler');
 const { startStreamBackfillScheduler } = require('./services/streamBackfillScheduler');
 const { startWinBackScheduler } = require('./services/winBackScheduler');
+const { startCancelFeedbackScheduler } = require('./services/cancelFeedbackScheduler');
 const { startPredictedCurveScheduler } = require('./services/predictedCurveScheduler');
 const { startTrackerConnectScheduler } = require('./services/trackerConnectScheduler');
 const { startThresholdShiftScheduler } = require('./services/thresholdShiftScheduler');
@@ -409,6 +410,7 @@ startStreamBackfillScheduler();
 // One-time win-back to lapsed free accounts. OFF unless ENABLE_WINBACK_SCHEDULER=true
 // — a 435-person campaign is a deliberate decision, not a deploy side effect.
 startWinBackScheduler();
+startCancelFeedbackScheduler();
 
 // "Here is the curve your training implies" — athletes who have never tested.
 // Off by default: it writes to most of the base, so it is switched on by hand

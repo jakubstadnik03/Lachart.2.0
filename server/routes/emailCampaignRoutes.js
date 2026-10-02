@@ -519,11 +519,13 @@ router.get('/cancel-feedback/status', verifyToken, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ?segment=churned | never-started
 router.get('/cancel-feedback/preview', verifyToken, async (req, res) => {
   try {
     const me = await requireAdmin(req, res);
     if (!me) return;
-    res.set('Content-Type', 'text/html').send(cancelFeedback.renderPreview(me));
+    const segment = cancelFeedback.SEGMENTS[req.query.segment] ? req.query.segment : 'churned';
+    res.set('Content-Type', 'text/html').send(cancelFeedback.renderPreview(me, segment));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -531,9 +533,10 @@ router.post('/cancel-feedback/test', verifyToken, async (req, res) => {
   try {
     const me = await requireAdmin(req, res);
     if (!me) return;
+    const segment = cancelFeedback.SEGMENTS[req.body?.segment] ? req.body.segment : 'churned';
     const result = await cancelFeedback.sendCancelFeedback(
       { _id: me._id, email: me.email, name: me.name },
-      { preview: true, track: false },
+      { preview: true, track: false, segment },
     );
     res.json({ ...result, to: me.email });
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -548,11 +551,12 @@ router.post('/cancel-feedback/run', verifyToken, async (req, res) => {
     const limit = Math.min(Number(req.body?.limit) || 50, 200);
     const intervalMs = Math.max(Number(req.body?.intervalMs) || 20000, 2000);
 
-    const candidates = await cancelFeedback.findReadyCandidates(limit);
+    const segment = cancelFeedback.SEGMENTS[req.body?.segment] ? req.body.segment : null;
+    const candidates = await cancelFeedback.findReadyCandidates(limit, { segment });
     const results = [];
     for (let i = 0; i < candidates.length; i += 1) {
-      const { user } = candidates[i];
-      const r = await cancelFeedback.sendCancelFeedback(user, { dryRun });
+      const { user, segment: seg } = candidates[i];
+      const r = await cancelFeedback.sendCancelFeedback(user, { dryRun, segment: seg });
       results.push({ email: user.email, ...r });
       if (!dryRun && i < candidates.length - 1) {
         await new Promise((resolve) => setTimeout(resolve, intervalMs));
