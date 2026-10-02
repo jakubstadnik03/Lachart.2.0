@@ -149,6 +149,33 @@ export function duplicateStepAt(list, index, nextId) {
   return next;
 }
 
+/**
+ * A fresh step after this one, rather than a copy of it.
+ *
+ * Duplicate is the right tool for a 5x5 and the wrong one for "and then an
+ * easy kilometre": the copy arrives carrying the interval's distance, target
+ * and note, and all three have to be cleared before the step is the one you
+ * wanted. This starts blank, in the same units as its neighbour so the first
+ * thing you type is the number and not the unit.
+ */
+export function addStepAfter(list, index, nextId) {
+  const src = list[index];
+  if (!src) return list;
+  const isDist = src.durationType === 'distance';
+  const step = {
+    clientId: nextId(),
+    stepType: src.stepType === 'work' ? 'recovery' : 'work',
+    ...(isDist
+      ? { durationType: 'distance', distanceMeters: src.distanceMeters || 400 }
+      : { durationSeconds: src.durationSeconds || 300 }),
+    powerTarget: src.stepType === 'work' ? { type: 'zone', value: 1 } : { type: 'lt2' },
+    ...(src.groupId ? { groupId: src.groupId } : {}),
+  };
+  const next = [...list];
+  next.splice(index + 1, 0, step);
+  return next;
+}
+
 export function moveStepOrGroup(list, index, dir) {
   if (!Array.isArray(list) || !dir || !list[index]) return list;
   const units = unitsOf(list);
@@ -191,25 +218,44 @@ export function moveStepOrGroup(list, index, dir) {
 export function buildRampSteps(spec, context) {
   const count = Math.max(2, Math.min(12, Number(spec?.count) || 0));
   const dur = Number(spec?.durationSeconds) || 0;
-  if (!dur || !spec?.from || !spec?.to) return [];
+  const metres = Number(spec?.distanceMeters) || 0;
+  if ((!dur && !metres) || !spec?.from || !spec?.to) return [];
 
-  const fromWatts = resolveTargetWatts(spec.from, context);
-  const toWatts = resolveTargetWatts(spec.to, context);
-  if (!Number.isFinite(fromWatts) || !Number.isFinite(toWatts)) return [];
+  // Interpolate in the unit the sport is run in. This used to interpolate
+  // watts whatever the sport, so "3 km building to LT2" on a RUN came out as
+  // five steps of 150–250 W — a number no runner has, on a warm-up whose
+  // distance had been thrown away for a duration nobody asked for.
+  const isPace = context?.sport === 'run' || context?.sport === 'swim';
+  const resolve = isPace
+    ? (t) => (context.sport === 'swim' ? resolveTargetSwimPace(t, context) : resolveTargetPace(t, context))
+    : (t) => resolveTargetWatts(t, context);
+
+  const fromVal = resolve(spec.from);
+  const toVal = resolve(spec.to);
+  if (!Number.isFinite(fromVal) || !Number.isFinite(toVal)) return [];
 
   const label = String(spec.rampType || 'warmup');
+  // A distance ramp splits the distance; a time ramp splits the time. Either
+  // way the athlete gets back the unit they wrote the warm-up in.
+  const perStepMetres = metres ? Math.round(metres / count) : 0;
+
   return Array.from({ length: count }, (_, i) => {
     const frac = count > 1 ? i / (count - 1) : 1;
     // Warm-up climbs from `from` to `to`; a cool-down runs the same line
     // backwards, so the two share one description instead of two.
-    const w = Math.round(label === 'cooldown'
-      ? toWatts + (fromWatts - toWatts) * frac
-      : fromWatts + (toWatts - fromWatts) * frac);
+    const v = label === 'cooldown'
+      ? toVal + (fromVal - toVal) * frac
+      : fromVal + (toVal - fromVal) * frac;
+    const length = perStepMetres
+      ? { durationType: 'distance', distanceMeters: perStepMetres }
+      : { durationSeconds: dur };
     return {
       stepType: label,
       isRamp: false,
-      durationSeconds: dur,
-      powerTarget: { type: 'watts', value: w },
+      ...length,
+      powerTarget: isPace
+        ? { type: 'pace', value: Math.round(v) }
+        : { type: 'watts', value: Math.round(v) },
       label: `${label.charAt(0).toUpperCase()}${label.slice(1)} ${i + 1}`,
     };
   });
@@ -239,16 +285,17 @@ export function materializeParsedWorkout(items, { context = {}, nextId }) {
       return;
     }
     if (it.build) {
-      const stepSecs = it.build.secs
-        || (it.build.metres > 0
-          ? Math.max(60, Math.round((estimateSecondsFromDistance(it.build.metres, { type: 'zone', value: 2 }, context) || it.build.metres / 3) / it.build.count))
-          : 180);
+      // A warm-up written as a distance stays a distance. It used to be
+      // converted to an estimated duration here, so "3 km build" came back as
+      // 5 × 2:31 and the kilometres the athlete had typed were gone.
       const spec = {
         rampType: 'warmup',
         count: it.build.count,
-        durationSeconds: stepSecs,
         from: { type: 'zone', value: 1 },
         to: it.build.to || { type: 'zone', value: 3 },
+        ...(it.build.metres > 0
+          ? { distanceMeters: it.build.metres }
+          : { durationSeconds: it.build.secs || 180 }),
       };
       const gid = nextId();
       buildRampSteps(spec, context).forEach((st, i) => {
@@ -656,6 +703,9 @@ export function resolveTargetWatts(target, context) {
   const pinned = Number(target.override);
   if (Number.isFinite(pinned) && pinned > 0 && target.type !== 'watts') return pinned;
   if (target.type === 'watts')        return mid(target);
+  // A pace target says nothing about watts. Returning 0 keeps it out of the
+  // bike maths rather than inventing a figure for a chart to draw.
+  if (target.type === 'pace')         return 0;
   if (target.type === 'percent_ftp')  return ftp * (mid(target) / 100);
   if (target.type === 'percent_lt1')  return (lt1Power || ftp * 0.75) * (mid(target) / 100);
   if (target.type === 'percent_lt2')  return (lt2Power || ftp) * (mid(target) / 100);
@@ -686,6 +736,8 @@ export function resolveTargetPace(target, context) {
   if (!lt2p) return null;
   if (!target || target.type === 'open') return lt2p * 1.25; // easy jog
   const mid = (t) => t.useRange ? (t.rangeMin + t.rangeMax) / 2 : (t.value || 0);
+  // A pace typed in outright is the answer; nothing to resolve it against.
+  if (target.type === 'pace') return mid(target) || null;
   const lt1p = lt1Pace || runningZones?.lt1 || lt2p * 1.12;
   if (target.type === 'lt1')         return target.override ?? lt1p;
   if (target.type === 'lt2')         return target.override ?? lt2p;
@@ -718,6 +770,7 @@ export function resolveTargetSwimPace(target, context) {
   if (!lt2p) return null;
   if (!target || target.type === 'open') return lt2p * 1.2;
   const mid = (t) => t.useRange ? (t.rangeMin + t.rangeMax) / 2 : (t.value || 0);
+  if (target.type === 'pace') return mid(target) || null;
   const lt1p = lt1Swim || swimmingZones?.lt1 || lt2p * 1.10;
   if (target.type === 'lt1')         return target.override ?? lt1p;
   if (target.type === 'lt2')         return target.override ?? lt2p;
@@ -1277,7 +1330,26 @@ const TARGET_TYPES = [
   { value: 'percent_lt2', label: '% of LT2' },
   { value: 'percent_ftp', label: '% of FTP' },
   { value: 'watts',       label: 'Exact watts' },
+  { value: 'pace',        label: 'Exact pace' },
 ];
+
+/**
+ * The exact-value target the sport is actually ridden or run in.
+ *
+ * "Exact watts" was the only way to pin a number, which on a run is not a
+ * number anybody uses — a coach writing 4x800 writes the pace they want held,
+ * and the only way to say it here was to pick a zone and hope. Pace targets
+ * are stored the way every other pace in the app is, seconds per kilometre or
+ * per hundred metres.
+ */
+export function exactTargetTypeFor(sport) {
+  return sport === 'run' || sport === 'swim' ? 'pace' : 'watts';
+}
+
+export function targetTypesFor(sport) {
+  const drop = exactTargetTypeFor(sport) === 'pace' ? 'watts' : 'pace';
+  return TARGET_TYPES.filter((t) => t.value !== drop);
+}
 
 // ─── Workout Preview Chart – hover tooltips, power labels, drag-to-resize ────
 export function WorkoutChart({ steps, context, onStepResize, onStepClick, onStepPower, onStepMove }) {
@@ -2236,7 +2308,7 @@ function InlinePowerEditor({ value = {}, onChange, onClose, context }) {
         className="text-xs border border-slate-200 rounded-lg px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-primary"
         autoFocus
       >
-        {TARGET_TYPES.map(tt => <option key={tt.value} value={tt.value}>{tt.label}</option>)}
+        {targetTypesFor(context.sport).map(tt => <option key={tt.value} value={tt.value}>{tt.label}</option>)}
       </select>
 
       {/* Zone picker */}
@@ -2277,7 +2349,28 @@ function InlinePowerEditor({ value = {}, onChange, onClose, context }) {
         </div>
       )}
 
-      {/* Exact watts / pace */}
+      {/* Exact pace — typed the way a pace is spoken, not as a count of
+          seconds. 4:11 is a pace; 251 is a number you have to convert. */}
+      {t.type === 'pace' && (
+        <div className="flex items-center gap-1.5">
+          <input
+            type="text"
+            inputMode="numeric"
+            autoFocus
+            defaultValue={t.value ? fmtPace(t.value, isSwim ? 'swim' : 'run') : ''}
+            onBlur={(e) => {
+              const secs = parseDuration(e.target.value);
+              if (secs > 0) set('value', paceStore(secs));
+            }}
+            onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+            className="w-20 text-xs text-center border border-slate-200 rounded-lg px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-primary bg-white tabular-nums"
+            placeholder="m:ss"
+          />
+          <span className="text-xs text-slate-400">{unitLabel}</span>
+        </div>
+      )}
+
+      {/* Exact watts */}
       {t.type === 'watts' && (
         <div className="flex items-center gap-1.5">
           {t.useRange ? (
@@ -2400,7 +2493,7 @@ function DurationStepper({ value, display, onDisplayChange, onCommit, onBump, is
   );
 }
 
-function StepRow({ step, index, total, onUpdate, onDelete, onDuplicate = null, onMoveUp, onMoveDown, context, highlighted = false, dragHandleProps = {} }) {
+function StepRow({ step, index, total, onUpdate, onDelete, onDuplicate = null, onAddAfter = null, onMoveUp, onMoveDown, context, highlighted = false, dragHandleProps = {} }) {
   const [powerOpen, setPowerOpen] = useState(false);
   const [noteOpen, setNoteOpen] = useState(false);
   const col = STEP_COLORS[step.stepType] || STEP_COLORS.work;
@@ -2570,6 +2663,19 @@ function StepRow({ step, index, total, onUpdate, onDelete, onDuplicate = null, o
               Duplicate interval
             </button>
           )}
+          {onAddAfter && (
+            <button
+              type="button"
+              onClick={onAddAfter}
+              className="text-[11px] text-slate-400 hover:text-slate-600 text-left inline-flex items-center gap-1"
+              title="Add a new step after this one"
+            >
+              <svg className="w-3 h-3" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.8}>
+                <path d="M8 3v10M3 8h10" strokeLinecap="round" />
+              </svg>
+              Add after
+            </button>
+          )}
         </div>
       </div>
 
@@ -2668,13 +2774,21 @@ function RecipeTarget({ value, onChange }) {
   );
 }
 
-function SessionRecipeForm({ sport, onBuild }) {
+function SessionRecipeForm({ sport, onBuild, onDraft }) {
   const units = recipeUnitsFor(sport);
   const [warm, setWarm] = useState({ on: true, qty: 15, unit: 'min', target: 'zone1', build: false, buildTo: 'zone3' });
   const [sets, setSets] = useState([{ reps: 4, qty: 10, unit: 'min', target: 'lt2', recQty: 2, recUnit: 'min', recTarget: 'zone1' }]);
   const [cool, setCool] = useState({ on: true, qty: 10, unit: 'min', target: 'zone1' });
   const patchSet = (i, patch) => setSets((prev) => prev.map((st, j) => (j === i ? { ...st, ...patch } : st)));
   const items = recipeToItems({ warm, sets, cool });
+
+  // The chart follows the form as it is filled in. Until now the preview sat
+  // empty until "Build steps" was pressed, so the one thing that tells you
+  // whether the session you are describing is the session you meant only
+  // appeared once it was too late to be a preview.
+  const draftKey = JSON.stringify(items);
+  useEffect(() => { onDraft?.(items); }, [draftKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => () => onDraft?.(null), []); // eslint-disable-line react-hooks/exhaustive-deps
   const label = 'w-[5.5rem] shrink-0 text-[11px] font-semibold uppercase tracking-wide text-slate-400 whitespace-nowrap';
   return (
     <div className="flex flex-col gap-2.5">
@@ -2743,7 +2857,7 @@ function SessionRecipeForm({ sport, onBuild }) {
  * way a coach writes it on a whiteboard — "15min WU + 4x10min LT2 2min rec
  * + 10min CD". Both end as the same steps.
  */
-function SessionComposer({ context, sport, onAdd, defaultOpen }) {
+function SessionComposer({ context, sport, onAdd, onDraft, defaultOpen }) {
   const [mode, setMode] = useState('form');
   const [text, setText] = useState('');
   const [warnings, setWarnings] = useState([]);
@@ -2757,6 +2871,16 @@ function SessionComposer({ context, sport, onAdd, defaultOpen }) {
     const parsed = parseWorkoutText(text);
     if (add(parsed.items, parsed.warnings)) setText('');
   };
+  /** Items → steps for the ghosted preview. Never touches the real list. */
+  const draft = (items) => {
+    if (!onDraft) return;
+    onDraft(items && items.length ? materializeParsedWorkout(items, { context, nextId: uid }) : null);
+  };
+  // Typing it out previews too, on every keystroke that still parses.
+  useEffect(() => {
+    if (mode !== 'text') return;
+    draft(text.trim() ? parseWorkoutText(text).items : null);
+  }, [text, mode]); // eslint-disable-line react-hooks/exhaustive-deps
   const tab = (key, labelText) => (
     <button type="button" onClick={() => setMode(key)}
       className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition-colors ${mode === key ? 'bg-white text-primary shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>
@@ -2776,7 +2900,7 @@ function SessionComposer({ context, sport, onAdd, defaultOpen }) {
           {tab('text', 'Type it')}
         </div>
         {mode === 'form' ? (
-          <SessionRecipeForm sport={sport} onBuild={(items) => add(items)} />
+          <SessionRecipeForm sport={sport} onBuild={(items) => { draft(null); add(items); }} onDraft={draft} />
         ) : (
           <>
             <textarea
@@ -2953,7 +3077,11 @@ export default function WorkoutBuilder({ initialSteps = [], context = {}, sport 
     notify(next);
   };
   const deleteStep   = (idx)     => notify(steps.filter((_,i)=>i!==idx));
+  // Steps the composer is still describing: drawn behind the real ones so the
+  // chart answers "is this the session I meant" while it is still a question.
+  const [draftSteps, setDraftSteps] = useState(null);
   const duplicateStep = (idx) => notify(duplicateStepAt(steps, idx, uid));
+  const addAfterStep = (idx) => notify(addStepAfter(steps, idx, uid));
   const moveStep = (idx, dir) => {
     const next = moveStepOrGroup(steps, idx, dir);
     if (next !== steps) notify(next);
@@ -3106,7 +3234,7 @@ export default function WorkoutBuilder({ initialSteps = [], context = {}, sport 
             <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">Workout Preview</span>
             <span className="text-[10px] text-slate-400">{previewTotalLabel}</span>
           </div>
-          <WorkoutChart steps={steps} context={ctx} onStepResize={handleStepResize}
+          <WorkoutChart steps={draftSteps?.length ? [...steps, ...draftSteps] : steps} context={ctx} onStepResize={handleStepResize}
             onStepClick={handleChartStepClick} onStepPower={handleStepPower}
             onStepMove={handleStepMove}/>
           <div className="flex flex-wrap gap-x-3 gap-y-1 mt-2">
@@ -3135,7 +3263,13 @@ export default function WorkoutBuilder({ initialSteps = [], context = {}, sport 
         </div>
       )}
 
-      <SessionComposer context={ctx} sport={sport} onAdd={(ns) => notify([...steps, ...ns])} defaultOpen={steps.length === 0} />
+      <SessionComposer
+        context={ctx}
+        sport={sport}
+        onAdd={(ns) => { setDraftSteps(null); notify([...steps, ...ns]); }}
+        onDraft={setDraftSteps}
+        defaultOpen={steps.length === 0}
+      />
 
       {/* Quick builders — collapsed when steps already exist */}
       <details
@@ -3247,7 +3381,7 @@ export default function WorkoutBuilder({ initialSteps = [], context = {}, sport 
                           onDrop={(e) => { e.stopPropagation(); handleDrop(bi); }}
                         >
                           <StepRow step={steps[bi]} index={bi} total={steps.length}
-                            onUpdate={u=>updateStep(bi,u)} onDelete={()=>deleteStep(bi)} onDuplicate={()=>duplicateStep(bi)}
+                            onUpdate={u=>updateStep(bi,u)} onDelete={()=>deleteStep(bi)} onDuplicate={()=>duplicateStep(bi)} onAddAfter={()=>addAfterStep(bi)}
                             onMoveUp={()=>moveStep(bi,-1)} onMoveDown={()=>moveStep(bi,1)} context={ctx}
                             highlighted={highlightedStepId === steps[bi].clientId}
                             dragHandleProps={{
@@ -3419,7 +3553,7 @@ export default function WorkoutBuilder({ initialSteps = [], context = {}, sport 
                           onDrop={e => { e.stopPropagation(); handleDrop(gi); }}
                         >
                           <StepRow step={steps[gi]} index={gi} total={steps.length}
-                            onUpdate={u=>updateStep(gi,u)} onDelete={()=>deleteStep(gi)} onDuplicate={()=>duplicateStep(gi)}
+                            onUpdate={u=>updateStep(gi,u)} onDelete={()=>deleteStep(gi)} onDuplicate={()=>duplicateStep(gi)} onAddAfter={()=>addAfterStep(gi)}
                             onMoveUp={()=>moveStep(gi,-1)} onMoveDown={()=>moveStep(gi,1)} context={ctx}
                             highlighted={highlightedStepId === steps[gi].clientId}
                             dragHandleProps={{
@@ -3449,7 +3583,7 @@ export default function WorkoutBuilder({ initialSteps = [], context = {}, sport 
                     checked={selectedIndices.has(idx)} onChange={()=>toggleSelect(idx)}/>
                   <div className="flex-1 min-w-0">
                     <StepRow step={s} index={idx} total={steps.length}
-                      onUpdate={u=>updateStep(idx,u)} onDelete={()=>deleteStep(idx)} onDuplicate={()=>duplicateStep(idx)}
+                      onUpdate={u=>updateStep(idx,u)} onDelete={()=>deleteStep(idx)} onDuplicate={()=>duplicateStep(idx)} onAddAfter={()=>addAfterStep(idx)}
                       onMoveUp={()=>moveStep(idx,-1)} onMoveDown={()=>moveStep(idx,1)} context={ctx}
                       highlighted={highlightedStepId === s.clientId}
                       dragHandleProps={{
