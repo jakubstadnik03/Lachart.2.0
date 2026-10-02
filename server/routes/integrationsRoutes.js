@@ -462,10 +462,15 @@ function normalizeGarminActivityBatch(data) {
   return arr.map((item) => {
     if (item?.summary && typeof item.summary === 'object') {
       const summary = item.summary;
+      // Activity Details records carry samples and lap markers next to the
+      // summary. Spreading only the summary used to throw those away, so a
+      // successful pull stored the headline numbers and an empty chart.
       return {
         ...summary,
         activityId: summary.activityId || summary.summaryId || item.activityId,
         activityName: summary.activityName || summary.activityType || item.activityName,
+        samples: item.samples || summary.samples,
+        laps: item.laps || summary.laps,
       };
     }
     return item;
@@ -558,10 +563,32 @@ async function fetchGarminWellnessActivitiesByDay(user, tokenData, path, startSe
             uploadStartTimeInSeconds: cursor,
             uploadEndTimeInSeconds: windowEnd,
           }),
-          timeout: 15000,
+          timeout: 30000,
         });
         batches[i] = normalizeGarminActivityBatch(resp.data);
       } catch (apiErr) {
+        // The summary walk and the details walk share one per-key budget.
+        // A 429 on the first details day used to abandon every later day,
+        // which is how a ride kept its averages and lost its laps.
+        if (apiErr.response?.status === 429) {
+          console.warn(`Garmin pull 429 on ${path}, waiting 65s`);
+          await new Promise((r) => setTimeout(r, 65000));
+          try {
+            const retry = await axios.get(activitiesUrl, {
+              headers: { Authorization: `${tokenData.tokenType} ${tokenData.accessToken}` },
+              params: withGarminPullToken({
+                uploadStartTimeInSeconds: cursor,
+                uploadEndTimeInSeconds: windowEnd,
+              }),
+              timeout: 30000,
+            });
+            batches[i] = normalizeGarminActivityBatch(retry.data);
+            continue;
+          } catch (retryErr) {
+            fatal = pullError(retryErr);
+            continue;
+          }
+        }
         fatal = pullError(apiErr);
       }
     }
@@ -1009,7 +1036,7 @@ function triggerGarminBackfillQueued(user, startSec, endSec) {
  */
 async function fetchGarminActivitiesForSync(user, since = null) {
   try {
-    const activities = await getGarminActivities(user, since);
+    const activities = await getGarminActivities(user, since, { withDetails: true });
     return { activities, backfillPending: false, backfillChunks: 0, message: null };
   } catch (err) {
     if (!user?.garmin?.refreshToken || !isGarminPullTokenError(err.message)) {
@@ -3800,6 +3827,31 @@ async function getGarminActivities(user, since = null, opts = {}) {
         user, tokenData, '/rest/activities', startSec, nowSec
       );
       console.log(`Garmin OAuth (/activities): fetched ${acts.length} activities`);
+      // Summaries have no samples. Laps and the chart come from activityDetails,
+      // which is a second pull over the same window. The settings check does
+      // not ask for this — it only needs names and durations.
+      if (opts.withDetails && acts.length && garminPullToken()) {
+        try {
+          const details = await fetchGarminWellnessActivitiesByDay(
+            user, tokenData, '/rest/activityDetails', startSec, nowSec
+          );
+          console.log(`Garmin OAuth (/activityDetails): fetched ${details.length} detail records`);
+          if (details.length) {
+            const byId = new Map();
+            for (const a of acts) {
+              const id = String(a.activityId || a.summaryId || '');
+              if (id) byId.set(id, a);
+            }
+            for (const d of details) {
+              const id = String(d.activityId || d.summaryId || d.summary?.activityId || '').replace(/-detail$/, '');
+              if (id) byId.set(id, d);
+            }
+            return [...byId.values()];
+          }
+        } catch (detailsErr) {
+          console.warn('Garmin /activityDetails pull failed, keeping summaries:', detailsErr.message);
+        }
+      }
       return acts;
     } catch (activitiesErr) {
       if (!isGarminPullTokenError(activitiesErr.message)) throw activitiesErr;
@@ -4377,7 +4429,7 @@ router.post('/garmin/sync-history', verifyToken, async (req, res) => {
       const recentPromise = (async () => {
         try {
           const since = new Date(Date.now() - GARMIN_DIRECT_PULL_DAYS * 24 * 3600 * 1000);
-          const acts = await getGarminActivities(user, since, { allowBackfill: false });
+          const acts = await getGarminActivities(user, since, { allowBackfill: false, withDetails: true });
           return await upsertGarminActivities(user, acts);
         } catch (pullErr) {
           console.warn('[Garmin history] recent pull skipped:', pullErr?.message || pullErr);
@@ -8961,6 +9013,8 @@ module.exports.resumeShallowStravaBackfills = resumeShallowStravaBackfills;
 module.exports._acCategorizeByTitle = _acCategorizeByTitle;
 // Exported for unit testing the Garmin Activity Details → laps/streams parser.
 module.exports.parseGarminActivityDetails = parseGarminActivityDetails;
+module.exports.getGarminActivities = getGarminActivities;
+module.exports.upsertGarminActivities = upsertGarminActivities;
 // Exported for unit testing the history backfill — in particular that a full
 // backfill asks for activityDetails as well as activities, which is what puts
 // per-second traces in GarminStream.
