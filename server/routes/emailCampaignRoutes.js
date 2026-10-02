@@ -506,6 +506,67 @@ router.post('/tracker-connect/test', verifyToken, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── Cancel feedback ─────────────────────────────────────────────────────────
+// A one-off ask to everyone whose subscription ended. No scheduler: it is a
+// couple of dozen people, and a drip that trickles one a day for a month would
+// have them answering a question about something they left in July.
+const cancelFeedback = require('../services/cancelFeedbackCampaignService');
+
+router.get('/cancel-feedback/status', verifyToken, async (req, res) => {
+  try {
+    if (!(await requireAdmin(req, res))) return;
+    res.json({ promoCode: cancelFeedback.PROMO_CODE, ...(await cancelFeedback.getCampaignStats()) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+router.get('/cancel-feedback/preview', verifyToken, async (req, res) => {
+  try {
+    const me = await requireAdmin(req, res);
+    if (!me) return;
+    res.set('Content-Type', 'text/html').send(cancelFeedback.renderPreview(me));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+router.post('/cancel-feedback/test', verifyToken, async (req, res) => {
+  try {
+    const me = await requireAdmin(req, res);
+    if (!me) return;
+    const result = await cancelFeedback.sendCancelFeedback(
+      { _id: me._id, email: me.email, name: me.name },
+      { preview: true, track: false },
+    );
+    res.json({ ...result, to: me.email });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/email/cancel-feedback/run — the real send, paced for the relay.
+// dryRun lists exactly who would get it and marks nobody.
+router.post('/cancel-feedback/run', verifyToken, async (req, res) => {
+  try {
+    if (!(await requireAdmin(req, res))) return;
+    const dryRun = req.body?.dryRun !== false;        // opt IN to sending
+    const limit = Math.min(Number(req.body?.limit) || 50, 200);
+    const intervalMs = Math.max(Number(req.body?.intervalMs) || 20000, 2000);
+
+    const candidates = await cancelFeedback.findReadyCandidates(limit);
+    const results = [];
+    for (let i = 0; i < candidates.length; i += 1) {
+      const { user } = candidates[i];
+      const r = await cancelFeedback.sendCancelFeedback(user, { dryRun });
+      results.push({ email: user.email, ...r });
+      if (!dryRun && i < candidates.length - 1) {
+        await new Promise((resolve) => setTimeout(resolve, intervalMs));
+      }
+    }
+    res.json({
+      dryRun,
+      candidates: candidates.length,
+      sent: results.filter((r) => r.sent).length,
+      results,
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 const predictedCurve = require('../services/predictedCurveCampaignService');
 
 // GET /api/email/predicted-curve/status — how many already sent + ready, by sport.
