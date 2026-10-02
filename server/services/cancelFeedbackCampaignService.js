@@ -111,13 +111,30 @@ function unsubscribeUrlFor(userId) {
   return `${base}/api/email/unsubscribe?u=${encodeURIComponent(String(userId))}&t=${unsubscribeTokenFor(userId)}`;
 }
 
-/** Anyone who reached a subscription and then stopped it, however far they got. */
+/**
+ * Everyone the subscription collection knows about, split two ways.
+ *
+ * `churned` reached a subscription and stopped it. `anySub` is everyone with a
+ * subscription row at all, and it is the one the second segment has to be
+ * measured against — "not churned" is NOT the same as "never started", and
+ * reading it that way put a hundred paying subscribers in a queue for a mail
+ * telling them they had never paid, with a 100%-off code attached.
+ */
+async function subscriptionAudience() {
+  const rows = await Subscription.find({}, { userId: 1, status: 1, cancelAtPeriodEnd: 1 }).lean();
+  const churned = new Set();
+  const anySub = new Set();
+  for (const r of rows) {
+    const id = String(r.userId || '');
+    if (!id) continue;
+    anySub.add(id);
+    if (r.status === 'canceled' || r.cancelAtPeriodEnd) churned.add(id);
+  }
+  return { churned: [...churned], anySub: [...anySub] };
+}
+
 async function churnedUserIds() {
-  const rows = await Subscription.find(
-    { $or: [{ status: 'canceled' }, { cancelAtPeriodEnd: true }] },
-    { userId: 1 },
-  ).lean();
-  return [...new Set(rows.map((r) => String(r.userId)).filter(Boolean))];
+  return (await subscriptionAudience()).churned;
 }
 
 function isEligibleBase(user) {
@@ -199,10 +216,14 @@ function lastLifecycleSend(user) {
 }
 
 /** Which of the two mails this user should get, or null for neither. */
-async function segmentFor(user, churnedIds = null) {
+async function segmentFor(user, audience = null) {
   if (!isEligibleBase(user)) return null;
-  const ids = churnedIds || (await churnedUserIds());
-  if (ids.includes(String(user._id))) return 'churned';
+  const { churned, anySub } = audience || (await subscriptionAudience());
+  const id = String(user._id);
+  if (churned.includes(id)) return 'churned';
+  // A live subscriber is neither. They are paying right now, and the second
+  // mail opens by telling the reader they never have.
+  if (anySub.includes(id)) return null;
   // Everyone else gets the softer one — but not on the heels of another
   // campaign. Nearly all of them have had a win-back mail offering a trial,
   // and a second offer a week later reads as pestering rather than generosity.
@@ -260,7 +281,8 @@ async function sendCancelFeedback(user, { dryRun = false, track = true, preview 
 }
 
 async function findReadyCandidates(limit = 50, { segment = null } = {}) {
-  const ids = await churnedUserIds();
+  const audience = await subscriptionAudience();
+  const { churned: ids, anySub } = audience;
   const base = {
     email: { $exists: true, $nin: [null, ''] },
     isActive: { $ne: false },
@@ -279,7 +301,7 @@ async function findReadyCandidates(limit = 50, { segment = null } = {}) {
     const out = [];
     for (const user of pool) {
       if (out.length >= want) break;
-      const seg = await segmentFor(user, ids);
+      const seg = await segmentFor(user, audience);
       if (!seg) continue;
       out.push({ user, segment: seg });
     }
@@ -291,15 +313,16 @@ async function findReadyCandidates(limit = 50, { segment = null } = {}) {
   // others by signup date they would be asked in December about a July
   // cancellation. Only once they are exhausted does the long tail start.
   if (segment === 'churned') return take(limit, { _id: { $in: ids } });
-  if (segment === 'never-started') return take(limit, { _id: { $nin: ids } });
+  // The long tail is "no subscription row at all", not "not churned".
+  if (segment === 'never-started') return take(limit, { _id: { $nin: anySub } });
 
   const churned = await take(limit, { _id: { $in: ids } });
-  const rest = await take(limit - churned.length, { _id: { $nin: ids } });
+  const rest = await take(limit - churned.length, { _id: { $nin: anySub } });
   return [...churned, ...rest];
 }
 
 async function getCampaignStats() {
-  const ids = await churnedUserIds();
+  const { churned: ids } = await subscriptionAudience();
   const optedIn = {
     email: { $exists: true, $nin: [null, ''] },
     isActive: { $ne: false },
