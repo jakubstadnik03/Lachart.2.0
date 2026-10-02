@@ -76,7 +76,14 @@ export function paceAxisBounds({ work, plausible = [], significant = [], isSwim 
   const bigVals = (significant || []).filter((v) => Number.isFinite(v) && v > 0 && v <= workSlow + allowance);
   const slow = Math.max(workSlow, ...(inSession.length ? inSession : [workSlow]), ...(bigVals.length ? bigVals : [workSlow]));
 
-  let min = snapDown(drawnFast - pad, step);
+  // Snapping down to a tick already leaves air above the quickest lap — half
+  // a tick on average — so padding by a tick first and then snapping gave
+  // away a second one. On a run that is fifteen seconds of empty chart above
+  // the fastest rep, and the bar read as though the scale had lost its nerve.
+  // The only lap that needs the extra tick is one landing exactly on a tick,
+  // which would otherwise draw flat against the frame.
+  let min = snapDown(drawnFast, step);
+  if (min >= drawnFast) min -= step;
   min = Math.max(isSwim ? 25 : 60, min);
   min = snapDown(min, step);
 

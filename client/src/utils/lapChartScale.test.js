@@ -129,6 +129,30 @@ describe('axisLabelValues', () => {
   });
 });
 
+describe('paceAxisBounds — air above the quickest lap', () => {
+  it('leaves one tick at most, not two', () => {
+    // 1:19 on a five-second grid belongs under a 1:15 top. Padding by a tick
+    // and then snapping to the grid put it under 1:10 — nine seconds of empty
+    // chart on an axis forty wide.
+    const work = [85, 85, 79, 89];
+    const { min } = paceAxisBounds({ work, plausible: work, isSwim: true });
+    expect(min).toBe(75);
+  });
+
+  it('still clears a lap that lands exactly on a tick', () => {
+    // 1:20 under a 1:20 top would draw flat against the frame and read as the
+    // edge of the scale rather than as its own pace.
+    const { min } = paceAxisBounds({ work: [80, 85, 90], plausible: [80, 85, 90], isSwim: true });
+    expect(min).toBeLessThan(80);
+  });
+
+  it('saves a whole tick on a run, where a tick is fifteen seconds', () => {
+    const work = [293, 288, 291, 279, 305];
+    const { min } = paceAxisBounds({ work, plausible: [...work, 274] });
+    expect(min).toBe(270);
+  });
+});
+
 describe('powerAxisBounds', () => {
   it('clears the hardest drawn lap', () => {
     const { max } = powerAxisBounds({ work: [240, 250, 245, 255], plausible: [240, 250, 245, 255, 410] });
