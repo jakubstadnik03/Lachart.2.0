@@ -98,31 +98,45 @@ export function paceAxisBounds({ work, plausible = [], significant = [], isSwim 
   // The quickest lap that gets a bar, whichever set it came from.
   const drawnFast = drawn.length ? Math.min(globalFast, ...drawn) : globalFast;
 
-  // Padding proportional to the spread, with the old fixed value as a floor.
-  // Eight seconds on an axis spanning two minutes is six percent — no visible
-  // headroom at all, so the quickest rep drew against the frame even when it
-  // was inside the scale.
+  // Enough headroom that the quickest lap does not draw against the frame, and
+  // no more. At 15% of the spread it was a sixth of the chart standing empty
+  // above the fastest bar; the same chart elsewhere puts that bar within a
+  // second or two of the top, and the gap read as a scale that had lost its
+  // nerve. Snapping the edge down to a five-second grid cost up to another
+  // five seconds, and bought nothing: the tick labels are quarters of the
+  // range and land on arbitrary seconds either way.
   const spread = Math.max(workSlow - globalFast, isSwim ? 5 : 15);
-  const fastPad = Math.max(isSwim ? 3 : 8, spread * 0.15);
-  const slowPad = Math.max(isSwim ? 5 : 15, spread * 0.15);
+  const fastPad = Math.max(isSwim ? 2 : 5, spread * 0.06);
+  const slowPad = Math.max(isSwim ? 3 : 10, spread * 0.08);
 
   let min = drawnFast - fastPad;
   min = Math.max(isSwim ? 25 : 60, min);
-  min = Math.floor(min / 5) * 5;
+  min = Math.floor(min);
 
   // Slow edge from WORK laps only, placed so the session average lands near the
   // middle. Recovery laps clamp to a stub at the bottom instead of defining it.
   let max = Math.max(workSlow + slowPad, 2 * avg - min);
 
-  // Give the slowest lap that matters a bar somebody can read. Work laps count
-  // as significant by definition — the slow end of the work set is exactly
-  // what used to collapse against the frame.
+  // Two different things are owed to the slow end, and conflating them made
+  // the axis half again as wide as it needed to be.
+  //
+  // CONTAIN: a lap that matters must be inside the frame rather than clamped
+  // to a stub at the bottom. That is all it is owed — a 200 m swim-down at
+  // 1:48 belongs on the chart, and belongs there as a short bar.
+  //
+  // LIFT: the slowest lap of the WORK set is the one that collapsed against
+  // the frame and started this, so it alone gets a guaranteed height.
+  //
+  // Asking for both at once gave the swim-down thirty percent of the chart
+  // and pushed the floor from 1:50 to 2:05, which is the axis "being too low"
+  // — every bar squashed to make room under the easiest thing in the session.
   const bigVals = (significant || []).filter((v) => Number.isFinite(v) && v > 0);
   const slowestThatMatters = Math.max(workSlow, ...(bigVals.length ? bigVals : [workSlow]));
   const stretchSpan = Math.max(workSlow - min, isSwim ? STRETCH_FLOOR.swim : STRETCH_FLOOR.run);
   const ceilingForStretch = min + stretchSpan * MAX_SLOW_STRETCH;
-  const wanted = slowEdgeForVisibleBar(Math.min(slowestThatMatters, ceilingForStretch), min);
-  if (wanted > max) max = wanted;
+  const contained = Math.min(slowestThatMatters, ceilingForStretch) + slowPad;
+  const lifted = slowEdgeForVisibleBar(Math.min(workSlow, ceilingForStretch), min);
+  max = Math.max(max, contained, lifted);
 
   max = Math.min(isSwim ? 600 : 720, max);
   max = Math.ceil(max / 5) * 5;

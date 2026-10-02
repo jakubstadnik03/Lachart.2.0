@@ -93,6 +93,26 @@ describe('paceAxisBounds — laps that matter keep a readable bar', () => {
     expect(share(b, 66)).toBeGreaterThan(0.6);
   });
 
+  it('contains a swim-down without handing it a third of the chart', () => {
+    // 200 m at 1:48 after a set at 1:19–1:29. It belongs on the chart, and it
+    // belongs there as a short bar — asking for both containment and a
+    // guaranteed height pushed the floor from 1:55 to 2:05 and squashed
+    // everything above it.
+    const work = [85, 85, 79, 89, 85, 84, 88];
+    const b = paceAxisBounds({
+      work, plausible: [...work, 108], significant: [89, 108], isSwim: true, avgForScale: 85,
+    });
+    expect(b.max).toBeGreaterThan(108);        // inside the frame, not clamped
+    expect(share(b, 108)).toBeLessThan(0.25);  // but still a short bar
+    expect(share(b, 79)).toBeGreaterThan(0.9); // and the quickest nearly fills it
+  });
+
+  it('keeps the dead space above the quickest lap small', () => {
+    const work = [85, 85, 79, 89];
+    const b = paceAxisBounds({ work, plausible: work, isSwim: true });
+    expect(79 - b.min).toBeLessThanOrEqual(3);
+  });
+
   it('ignores a slow lap that is over in seconds', () => {
     const withFloat = paceAxisBounds({ work: FIFTIES, plausible: [...FIFTIES, 160], isSwim: true });
     const without = paceAxisBounds({ work: FIFTIES, plausible: FIFTIES, isSwim: true });

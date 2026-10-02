@@ -1682,15 +1682,21 @@ function LapChart({ laps, color, isBike, isRun, isSwim, unitSystem = 'metric', s
               const hasLactate = ent.lactate != null && !isNaN(ent.lactate);
               let barBg;
               if (ent.isPause) {
-                barBg = isSelected ? color + '55' : '#E5E7EB99';
+                barBg = isSelected ? color + '77' : '#D1D5DBcc';
               } else if (hasLactate) {
                 barBg = isSelected ? '#7c3aedcc' : '#a78bfaaa';
               } else {
                 const intensity = getIntensity(ent.value);
                 const dimmed = selectedLap != null && !isSelected;
-                // Selected: ~80% opacity, unselected: 15–75%, dimmed: ~28%
+                // Shading says how hard the lap was, and it was saying it at
+                // the cost of the lap being there at all: the easiest bars sat
+                // at 15% opacity, which on a white card is barely a tint. An
+                // easy lap is not a faint lap. The band now runs 45–90%, so
+                // the hardest still reads darkest and the easiest still reads
+                // as a bar. The top stays under full opacity because the
+                // elevation trace behind the row has to show through.
                 const alpha = Math.round((
-                  isSelected ? 0.80 : dimmed ? 0.28 : (0.15 + intensity * 0.60)
+                  isSelected ? 0.95 : dimmed ? 0.30 : (0.45 + intensity * 0.45)
                 ) * 255).toString(16).padStart(2, '0');
                 barBg = color + alpha;
               }
