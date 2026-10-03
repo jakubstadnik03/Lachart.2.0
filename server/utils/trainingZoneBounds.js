@@ -123,6 +123,28 @@ function ltZoneBounds({ lt1, lt2, ascending, floorFactor = ZONE_SHAPE.floor, top
   return enforceOrder(round ? raw.map(Math.round) : raw, ascending);
 }
 
+
+/**
+ * A representative value for one zone, derived from the thresholds.
+ *
+ * Used when an athlete has no zone table of their own and something still has
+ * to turn "Z2" into a pace or a wattage — exporting a planned session to a
+ * watch, mostly. It was a hardcoded array in four files, written against the
+ * zone shape as it stood years ago and never moved when the shape did: it put
+ * Z2 at LT1 exactly, so a session planned as an endurance run exported with
+ * the aerobic threshold as its target. That is not a rounding difference, it
+ * is a harder session than the one that was written.
+ *
+ * Deriving it from the same bounds means the fallback cannot drift from the
+ * table again.
+ */
+function zoneTargetFromThresholds(zone, { lt1, lt2, ascending, topFactor }) {
+  const bounds = ltZoneBounds({ lt1, lt2, ascending, topFactor, round: false });
+  if (!bounds) return null;
+  const i = Math.max(0, Math.min(4, Math.round(Number(zone)) - 1));
+  return (bounds[i] + bounds[i + 1]) / 2;
+}
+
 /** Boundary list -> { zone1..zone5 } with shared min/max edges. */
 function zonesFromBounds(bounds) {
   if (!bounds) return null;
@@ -141,4 +163,4 @@ function measuredMaxHr(test) {
   return valid.length ? Math.max(...valid) : null;
 }
 
-module.exports = { ltZoneBounds, zonesFromBounds, measuredMaxHr, TOP_FACTOR };
+module.exports = { ltZoneBounds, zoneTargetFromThresholds, zonesFromBounds, measuredMaxHr, TOP_FACTOR };

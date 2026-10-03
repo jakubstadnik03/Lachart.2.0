@@ -1,4 +1,6 @@
 /**
+
+const { zoneTargetFromThresholds, TOP_FACTOR } = require('./trainingZoneBounds');
  * workoutExporters
  * ────────────────
  * Convert a LaChart PlannedWorkout document into one of the structured
@@ -128,7 +130,9 @@ function resolveTargetPaceSecPerKm(target, ctx = {}) {
       const max = (pz.max != null && pz.max !== Infinity && pz.max > 0) ? pz.max : pz.min * 1.08;
       return (pz.min + max) / 2;
     }
-    return [lt2p * 1.30, lt1p, lt2p * 1.04, lt2p, lt2p * 0.93][Math.min(z - 1, 4)];
+    return zoneTargetFromThresholds(z, {
+      lt1: lt1p, lt2: lt2p, ascending: false, topFactor: TOP_FACTOR.pace,
+    });
   }
   return null;
 }
@@ -155,7 +159,9 @@ function resolveTargetSwimPaceSecPer100m(target, ctx = {}) {
       const max = (pz.max != null && pz.max !== Infinity && pz.max > 0) ? pz.max : pz.min * 1.08;
       return (pz.min + max) / 2;
     }
-    return [lt2p * 1.25, lt1p, lt2p * 1.04, lt2p, lt2p * 0.92][Math.min(z - 1, 4)];
+    return zoneTargetFromThresholds(z, {
+      lt1: lt1p, lt2: lt2p, ascending: false, topFactor: TOP_FACTOR.pace,
+    });
   }
   return null;
 }

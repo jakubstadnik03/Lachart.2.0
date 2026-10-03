@@ -10,6 +10,7 @@
  * targets match the ZWO/TCX/FIT exports and the in-app live screen.
  */
 import { Capacitor, registerPlugin } from '@capacitor/core';
+import { zoneTargetFromThresholds, TOP_FACTOR } from '../utils/trainingZoneBounds';
 
 const LaChartWorkoutPlan = registerPlugin('LaChartWorkoutPlan');
 
@@ -146,7 +147,7 @@ function resolveSpeedRange(target, ctx = {}) {
   else if (target.type === 'zone') {
     const z = Math.max(1, Math.min(5, Number(target.value) || 2));
     pace = zoneMid(runningZones?.[`zone${z}`])
-      || [lt2p * 1.30, lt1p, lt2p * 1.04, lt2p, lt2p * 0.93][z - 1];
+      || zoneTargetFromThresholds(z, { lt1: lt1p, lt2: lt2p, ascending: false, topFactor: TOP_FACTOR.pace });
   }
   if (!(pace > 0)) return null;
   const centre = 1000 / pace; // m/s

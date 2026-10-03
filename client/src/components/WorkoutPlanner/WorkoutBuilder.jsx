@@ -18,6 +18,7 @@
 import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { paceToViewer, paceFromViewer, viewerPaceSuffix } from '../../utils/viewerUnits';
 import { parseWorkoutText } from '../../utils/workoutText';
+import { zoneTargetFromThresholds, TOP_FACTOR } from '../../utils/trainingZoneBounds';
 import { PlusIcon, TrashIcon, ChevronDownIcon, ChevronUpIcon,
          ArrowPathIcon, XMarkIcon, Bars3Icon } from '@heroicons/react/24/outline';
 
@@ -756,7 +757,9 @@ export function resolveTargetPace(target, context) {
       return (min + max) / 2;
     }
     // Fallback: calculate from thresholds
-    return [lt2p * 1.30, lt1p, lt2p * 1.04, lt2p, lt2p * 0.93][Math.min(z - 1, 4)];
+    return zoneTargetFromThresholds(z, {
+      lt1: lt1p, lt2: lt2p, ascending: false, topFactor: TOP_FACTOR.pace,
+    });
   }
   return null;
 }
@@ -786,7 +789,9 @@ export function resolveTargetSwimPace(target, context) {
       const max = (pz.max != null && pz.max !== Infinity && pz.max > 0) ? pz.max : min * 1.08;
       return (min + max) / 2;
     }
-    return [lt2p * 1.25, lt1p, lt2p * 1.04, lt2p, lt2p * 0.92][Math.min(z - 1, 4)];
+    return zoneTargetFromThresholds(z, {
+      lt1: lt1p, lt2: lt2p, ascending: false, topFactor: TOP_FACTOR.pace,
+    });
   }
   return null;
 }
