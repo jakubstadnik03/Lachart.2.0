@@ -96,9 +96,15 @@ describe('generating zones for an athlete on miles', () => {
     act(() => {
       [...container.querySelectorAll('button')].find((b) => b.textContent === 'Generate pace zones').click();
     });
-    // Zone three runs from LT1 to LT2, and both are read back per mile.
+    // Zone three starts at LT1 and stops just short of LT2, because the
+    // threshold zone straddles LT2 rather than sitting above it. Both ends are
+    // read back per mile.
     expect(field('Zone 3 min pace').value).toBe('12:00');
-    expect(field('Zone 3 max pace').value).toBe('10:00');
+    expect(field('Zone 3 max pace').value).toBe('10:19');
+    // The threshold the coach typed is INSIDE the threshold zone, which is the
+    // whole point: 10:00/mi is a zone-four effort, not the line above it.
+    expect(field('Zone 4 min pace').value).toBe('10:19');
+    expect(field('Zone 4 max pace').value).toBe('9:42');
   });
 });
 

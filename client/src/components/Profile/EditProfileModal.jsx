@@ -9,7 +9,7 @@ import {
 } from '../../utils/unitsConverter';
 import { parsePaceSeconds, formatPaceClock } from '../../utils/paceText';
 import { getEditProfileZonesPrefs, setEditProfileZonesPrefs } from '../../utils/uiPrefs';
-import { ltZones } from '../../utils/trainingZoneBounds';
+import { ltZones, TOP_FACTOR } from '../../utils/trainingZoneBounds';
 
 import { splitProfileNameFields } from '../../utils/profileName';
 
@@ -553,7 +553,7 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData, zonesOnly = fal
       }
 
       const zones = withZoneDescriptions(ltZones({
-        lt1, lt2, ascending: true, floorFactor: 0.70, topFactor: 1.20,
+        lt1, lt2, ascending: true, topFactor: TOP_FACTOR.power,
       }));
 
       setFormData(prev => ({
@@ -587,7 +587,7 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData, zonesOnly = fal
       // hand a mile athlete a zone edge one second off the threshold they just
       // typed.
       const zones = withZoneDescriptions(ltZones({
-        lt1, lt2, ascending: false, floorFactor: 0.70, topFactor: 1.20, round: false,
+        lt1, lt2, ascending: false, topFactor: TOP_FACTOR.pace, round: false,
       }));
 
       setFormData(prev => ({

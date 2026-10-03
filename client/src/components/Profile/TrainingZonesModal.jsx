@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import Modal from '../Modal';
-import { ltZones } from '../../utils/trainingZoneBounds';
+import { ltZones, TOP_FACTOR } from '../../utils/trainingZoneBounds';
 import { parsePaceSeconds, formatPaceClock } from '../../utils/paceText';
 import { paceToViewer, paceFromViewer, viewerPaceSuffix, viewerIsImperial } from '../../utils/viewerUnits';
 
@@ -249,7 +249,7 @@ const TrainingZonesModal = ({ isOpen, onClose, onSubmit, userData, forAthlete = 
       const lt2 = Number(sp.lt2);
       const pace = sportId !== 'cycling';
       if (lt1 > 0 && lt2 > 0 && (pace ? lt2 < lt1 : lt2 > lt1)) {
-        const zones = withDescriptions(ltZones({ lt1, lt2, ascending: !pace, floorFactor: 0.50, topFactor: 1.30 }));
+        const zones = withDescriptions(ltZones({ lt1, lt2, ascending: !pace, topFactor: pace ? TOP_FACTOR.pace : TOP_FACTOR.power }));
         if (zones) {
           ZONES.forEach(({ key }) => {
             sp[key] = { ...zones[key], lactate: sp[key]?.lactate || { min: '', max: '' } };
@@ -334,7 +334,8 @@ const TrainingZonesModal = ({ isOpen, onClose, onSubmit, userData, forAthlete = 
       if (!sport.pace && lt2 <= lt1) { setError('LT2 must be higher than LT1 — it is the harder of the two.'); return; }
       if (sport.pace && lt2 >= lt1) { setError('LT2 must be the faster pace — fewer minutes per ' + paceUnit.slice(1) + ' than LT1.'); return; }
       const zones = withDescriptions(ltZones({
-        lt1, lt2, ascending: !sport.pace, floorFactor: 0.50, topFactor: 1.30,
+        lt1, lt2, ascending: !sport.pace,
+        topFactor: sport.pace ? TOP_FACTOR.pace : TOP_FACTOR.power,
       }));
       // Keep any lactate the athlete typed against the zones.
       const merged = {};

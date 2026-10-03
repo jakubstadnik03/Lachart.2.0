@@ -47,13 +47,49 @@ function enforceOrder(bounds, ascending) {
  * half again as fast as their threshold; heart rate least of all, because LT2
  * already sits at 88-92 % of maximum.
  */
+/**
+ * Where the five zones sit between the two measured thresholds.
+ *
+ * These were four numbers scattered across four call sites, and the call sites
+ * disagreed: the same test produced a different table depending on whether the
+ * zones came from the server, the testing page, the profile editor or the
+ * zones modal. One of them put the top of Z5 at 1.20x LT2 while the others
+ * used 1.30. A coach who regenerated their zones from a different screen got
+ * different zones, which is indistinguishable from the model being arbitrary.
+ *
+ * The shape itself changed with them, after a threshold coach compared his own
+ * reading of his own tests against ours and went back to doing it by hand:
+ *
+ *   Z4 was LT2 to 1.04x LT2 — four percent wide and sitting entirely ABOVE the
+ *   threshold. Running at exactly LT2 landed on the Z3/Z4 line and a second
+ *   slower was "tempo", so the zone a threshold session is built around was
+ *   both nearly impossible to land in and on the wrong side of the number it
+ *   is named after. It now straddles LT2 by THRESHOLD_BAND either way, which
+ *   is how a threshold session is actually prescribed.
+ *
+ *   Z1 ran to 0.90x LT1 and took forty percent of the axis while Z2 — the
+ *   endurance band most of the week is ridden in — got ten. The split moved to
+ *   0.80x LT1, which hands that volume to the zone it belongs to.
+ *
+ * Changing these changes everybody's generated zones, so they live in one
+ * place with the reasoning attached rather than as four magic numbers.
+ */
+const ZONE_SHAPE = {
+  /** Bottom of Z1, as a fraction of LT1. */
+  floor: 0.70,
+  /** Z1 / Z2 split, as a fraction of LT1. */
+  easySplit: 0.80,
+  /** Half-width of the threshold zone, as a fraction of LT2. */
+  thresholdBand: 0.03,
+};
+
 const TOP_FACTOR = {
   power: 1.5,      // watts
   pace: 1.3,       // pace seconds are divided, so this reads as "faster by"
   heartRate: 1.12,
 };
 
-function ltZoneBounds({ lt1, lt2, ascending, floorFactor = 0.5, topFactor = 1.1, top = null, round = true }) {
+function ltZoneBounds({ lt1, lt2, ascending, floorFactor = ZONE_SHAPE.floor, topFactor = 1.1, top = null, round = true }) {
   const a = Number(lt1);
   const b = Number(lt2);
   if (!Number.isFinite(a) || !Number.isFinite(b) || a <= 0 || b <= 0) return null;
@@ -78,10 +114,10 @@ function ltZoneBounds({ lt1, lt2, ascending, floorFactor = 0.5, topFactor = 1.1,
 
   const raw = [
     scale(a, floorFactor), // bottom of Z1
-    scale(a, 0.9), //         Z1 / Z2
-    a, //                     Z2 / Z3 — aerobic threshold
-    b, //                     Z3 / Z4 — anaerobic threshold
-    scale(b, 1.04), //        Z4 / Z5
+    scale(a, ZONE_SHAPE.easySplit), //              Z1 / Z2
+    a, //                                          Z2 / Z3 — aerobic threshold
+    scale(b, 1 - ZONE_SHAPE.thresholdBand), //     Z3 / Z4 — just under LT2
+    scale(b, 1 + ZONE_SHAPE.thresholdBand), //     Z4 / Z5 — just over it
     ceiling, //               top of Z5
   ];
   return enforceOrder(round ? raw.map(Math.round) : raw, ascending);

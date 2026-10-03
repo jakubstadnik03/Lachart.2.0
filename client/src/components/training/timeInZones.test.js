@@ -32,8 +32,12 @@ describe('pace zones', () => {
 
   it('puts threshold work at threshold', () => {
     expect(zoneOf(230)).toBe(3); // 3:50/km — between LT1 and LT2
-    expect(zoneOf(205)).toBe(3); // 3:25/km — still slower than LT2
-    expect(zoneOf(196)).toBe(4); // 3:16/km — the narrow band just past LT2
+    // A few seconds either side of LT2 is threshold work, and is counted as
+    // such. It used to take until 3:20 exactly to leave zone three, so a
+    // session held three seconds off the threshold read as tempo.
+    expect(zoneOf(205)).toBe(4); // 3:25/km — just slower than LT2
+    expect(zoneOf(200)).toBe(4); // 3:20/km — LT2 itself
+    expect(zoneOf(196)).toBe(4); // 3:16/km — just faster
   });
 
   it('keeps zone five for pace faster than threshold', () => {
