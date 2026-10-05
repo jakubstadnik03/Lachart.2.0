@@ -1,6 +1,4 @@
 /**
-
-const { zoneTargetFromThresholds, TOP_FACTOR } = require('./trainingZoneBounds');
  * workoutExporters
  * ────────────────
  * Convert a LaChart PlannedWorkout document into one of the structured
@@ -23,6 +21,8 @@ const { zoneTargetFromThresholds, TOP_FACTOR } = require('./trainingZoneBounds')
  * and returns absolute watts for any target type. For ZWO we need the
  * fractional FTP, so we divide by `ctx.ftp` after resolving.
  */
+
+const { zoneTargetFromThresholds, TOP_FACTOR } = require('./trainingZoneBounds');
 
 const STEP_TYPE_TO_INTENSITY = {
   warmup:   'Active',
@@ -98,7 +98,14 @@ function resolveTargetWatts(target, ctx = {}) {
     const z = Math.max(1, Math.min(5, Number(target.value) || 1));
     const profileMid = cyclingZones ? zoneMid(cyclingZones[`zone${z}`]) : null;
     if (profileMid != null && profileMid > 0) return Math.round(profileMid);
-    return Math.round([lt1 * 0.8, lt1, lt2 * 0.95, lt2, lt2 * 1.1][z - 1]);
+    // The bike was left on the frozen table when the pace resolvers moved to
+    // the zone bounds, so a watts target and a pace target for the same zone
+    // disagreed: Z2 came out at LT1 exactly, the threshold itself, for a
+    // session written as endurance.
+    const mid = zoneTargetFromThresholds(z, {
+      lt1, lt2, ascending: true, topFactor: TOP_FACTOR.power,
+    });
+    return mid != null ? Math.round(mid) : null;
   }
   return null;
 }
