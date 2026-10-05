@@ -79,6 +79,8 @@ function resolveTargetWatts(target, ctx = {}) {
   // recompute the zone and quietly send something else.
   const pinned = Number(target.override);
   if (Number.isFinite(pinned) && pinned > 0) return Math.round(pinned);
+  // A pace target says nothing about watts — it belongs to the pace branch.
+  if (target.type === 'pace') return null;
   if (target.type === 'watts') {
     return target.useRange
       ? Math.round((Number(target.rangeMin || 0) + Number(target.rangeMax || 0)) / 2)
@@ -117,6 +119,10 @@ function resolveTargetPaceSecPerKm(target, ctx = {}) {
   const lt1p = lt1Pace || runningZones?.lt1 || lt2p * 1.12;
   const pinned = Number(target.override);
   if (Number.isFinite(pinned) && pinned > 0) return pinned;
+  // A pace typed outright is the answer; there is nothing to resolve it
+  // against. Without this the watch got a zone midpoint where the athlete had
+  // asked for a number.
+  if (target.type === 'pace') return mid(target) || null;
   if (target.type === 'lt1') return lt1p;
   if (target.type === 'lt2') return lt2p;
   // 100 % LT2 = lt2Pace; 105 % means 5 % faster (÷1.05).
@@ -147,6 +153,7 @@ function resolveTargetSwimPaceSecPer100m(target, ctx = {}) {
   const lt1p = lt1Swim || swimmingZones?.lt1 || lt2p * 1.10;
   const pinned = Number(target.override);
   if (Number.isFinite(pinned) && pinned > 0) return pinned;
+  if (target.type === 'pace') return mid(target) || null;
   if (target.type === 'lt1') return lt1p;
   if (target.type === 'lt2') return lt2p;
   if (target.type === 'percent_lt1') return mid(target) > 0 ? lt1p / (mid(target) / 100) : null;

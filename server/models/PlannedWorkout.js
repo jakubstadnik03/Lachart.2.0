@@ -4,7 +4,13 @@ const mongoose = require('mongoose');
 const stepTargetSchema = new mongoose.Schema({
   type: {
     type: String,
-    enum: ['watts', 'percent_ftp', 'percent_lt1', 'percent_lt2',
+    // 'pace' carries seconds per km (run) or per 100 m (swim) in `value`, the
+    // way every other pace in the app is stored. It was added to the builder
+    // without being added here, so a run planned with an exact pace — or any
+    // run whose warm-up ramp was generated, since those are pace targets now —
+    // failed to save with a 500 and a validation error the athlete could do
+    // nothing about.
+    enum: ['watts', 'pace', 'percent_ftp', 'percent_lt1', 'percent_lt2',
            'zone', 'lt1', 'lt2', 'open'],
     default: 'open',
   },
