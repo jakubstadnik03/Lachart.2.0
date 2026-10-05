@@ -21,6 +21,7 @@ process.env.JWT_SECRET = process.env.JWT_SECRET || 'test';
 const assert = require('assert');
 const {
   pendingFilter, releaseCutoff, queueKey, listIssues,
+  pickAudienceBlocks, prepareHtmlForRecipient,
 } = require('./productUpdateCampaignService');
 
 let failures = 0;
@@ -104,6 +105,57 @@ ok('every issue on disk has a release date and a unique place in the queue', () 
   assert.strictEqual(new Set(keys).size, keys.length, 'no two issues share a slot');
   for (const m of issues) {
     assert.ok(releaseCutoff(m), `issue ${m.id} has no usable release date`);
+  }
+});
+
+console.log('\nand nobody is sold what they already pay for');
+
+const TWO_SIDED = '<p>keep</p>'
+  + '<!-- trial-only --><a>Start your 2-week free trial</a><!-- /trial-only -->'
+  + '<!-- subscriber-only --><a>Open the workout planner</a><!-- /subscriber-only -->'
+  + '<p>tail</p>';
+
+ok('a reader who has not started gets the offer', () => {
+  const html = pickAudienceBlocks(TWO_SIDED, false);
+  assert.ok(html.includes('free trial'));
+  assert.ok(!html.includes('Open the workout planner'));
+  assert.ok(html.includes('keep') && html.includes('tail'), 'the rest of the letter survives');
+});
+
+ok('a paying customer gets the other half', () => {
+  const html = pickAudienceBlocks(TWO_SIDED, true);
+  assert.ok(!html.includes('free trial'), 'they are not offered what they already buy');
+  assert.ok(html.includes('Open the workout planner'));
+  assert.ok(html.includes('keep') && html.includes('tail'));
+});
+
+ok('an issue that marks neither side reads the same for everyone', () => {
+  const plain = '<p>one letter for everybody</p>';
+  assert.strictEqual(pickAudienceBlocks(plain, true), plain);
+  assert.strictEqual(pickAudienceBlocks(plain, false), plain);
+});
+
+ok('no issue on disk pitches a trial to a subscriber', () => {
+  // 32 of the 616 queued for the training-loop issue pay for LaChart, one of
+  // them 30th in line, and the letter opened its close with "Two weeks free,
+  // no card charged today".
+  const fs = require('fs');
+  const path = require('path');
+  const root = path.join(__dirname, '..', 'templates', 'productUpdate');
+  for (const m of listIssues()) {
+    const raw = fs.readFileSync(path.join(root, m.id, 'en.html'), 'utf8');
+    const forSubscriber = prepareHtmlForRecipient(raw, {
+      assets: [], unsubscribeUrl: 'https://example.test/u', utmCampaign: m.utmCampaign, subscriber: true,
+    });
+    // Only what is asked of the reader at the close. A letter may still
+    // mention a trial as a fact about someone else — the coach invitation
+    // explains that an invited coach gets one — and that is not a pitch.
+    const closes = forSubscriber.match(/<section class="cta">[\s\S]*?<\/section>/g) || [];
+    assert.strictEqual(closes.length, 1, `issue ${m.id} ends with ${closes.length} calls to action`);
+    assert.ok(!/free trial|no card charged|Create free account/i.test(closes[0]),
+      `issue ${m.id} still sells a trial to someone who already pays`);
+    // and the letter is still a letter
+    assert.ok(forSubscriber.includes('Unsubscribe'), `issue ${m.id} lost its footer`);
   }
 });
 

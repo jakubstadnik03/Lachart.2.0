@@ -26,6 +26,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { createCampaignTransporter, campaignSender } = require('../utils/createEmailTransporter');
 const User = require('../models/UserModel');
+const Subscription = require('../models/SubscriptionModel');
 
 const ROOT = path.join(__dirname, '..', 'templates', 'productUpdate');
 const IMG_EXT = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp']);
@@ -137,15 +138,51 @@ function loadIssueHtml(issueId) {
 }
 
 /**
+ * Does this account pay for LaChart right now? The newsletter goes to everyone,
+ * subscribers included — it is a "what's new", not an upgrade pitch — but its
+ * call to action is written for someone who has not started: "Two weeks free,
+ * no card charged today". 32 of the 616 queued for the training-loop issue are
+ * paying customers, one of them 30th in line, and that is the last sentence
+ * they should be reading from us.
+ */
+async function paysForLaChart(userId) {
+  if (!userId) return false;
+  const row = await Subscription.findOne({
+    userId: String(userId),
+    plan: { $nin: ['free', null] },
+    status: { $in: ['active', 'trialing'] },
+  }, { _id: 1 }).lean();
+  return !!row;
+}
+
+/**
+ * Keep the half of a two-sided block that applies to this reader and drop the
+ * other. A template marks them as
+ *
+ *   <!-- trial-only --> … <!-- /trial-only -->
+ *   <!-- subscriber-only --> … <!-- /subscriber-only -->
+ *
+ * An issue that marks neither reads the same for everybody, as before.
+ */
+function pickAudienceBlocks(html, subscriber) {
+  const drop = subscriber ? 'trial-only' : 'subscriber-only';
+  return html.replace(
+    new RegExp(`<!--\\s*${drop}\\s*-->[\\s\\S]*?<!--\\s*/${drop}\\s*-->`, 'g'),
+    '',
+  );
+}
+
+/**
  * Transform issue HTML for a single recipient:
  *   • strip the design-time mock mail-client chrome,
  *   • rewrite src="assets/foo.png" → src="cid:foo.png",
  *   • replace #unsub with the recipient's signed unsubscribe URL,
  *   • append UTM params to outbound lachart.net links.
  */
-function prepareHtmlForRecipient(rawHtml, { assets, unsubscribeUrl, utmCampaign }) {
+function prepareHtmlForRecipient(rawHtml, { assets, unsubscribeUrl, utmCampaign, subscriber = false }) {
   let html = rawHtml;
   html = html.replace(/<!--\s*Mock mail-client header[\s\S]*?<article class="email">/, '<article class="email">');
+  html = pickAudienceBlocks(html, subscriber);
   for (const file of assets) {
     html = html.replaceAll(`assets/${file}`, `cid:${file}`);
   }
@@ -193,6 +230,7 @@ async function sendOne(user, issueId, { dryRun = false } = {}) {
   const assets = listAssets(issueId);
   const html = prepareHtmlForRecipient(loadIssueHtml(issueId), {
     assets,
+    subscriber: await paysForLaChart(user._id),
     unsubscribeUrl: unsubscribeUrlFor(user._id),
     utmCampaign: meta.utmCampaign,
   });
@@ -405,6 +443,9 @@ module.exports = {
   getActiveIssueId,
   getScheduledIssueId,
   pendingFilter,
+  pickAudienceBlocks,
+  paysForLaChart,
+  prepareHtmlForRecipient,
   releaseCutoff,
   queueKey,
   sendOne,
