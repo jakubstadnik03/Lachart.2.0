@@ -436,8 +436,20 @@ function getGarminActivityApiBaseUrl() {
  * short-lived, so it lives in env rather than code. Without it we simply omit
  * the parameter and behave exactly as before.
  */
+let pullTokenRejected = false;
+
 function garminPullToken() {
+  if (pullTokenRejected) return null;
   return process.env.GARMIN_PULL_TOKEN || null;
+}
+
+function notePullTokenRejected() {
+  if (pullTokenRejected) return;
+  pullTokenRejected = true;
+  console.warn(
+    '[Garmin] pull token missing or rejected. On-demand list calls are skipped; '
+    + 'new activities arrive by push and history by backfill. No portal token to mint.'
+  );
 }
 
 /** Merge the pull token into a pull request's query params when configured. */
@@ -520,6 +532,7 @@ async function fetchGarminWellnessActivitiesByDay(user, tokenData, path, startSe
     const bodyStr = typeof body === 'object' ? JSON.stringify(body) : (body || '');
     console.error(`Garmin activity API error ${status} (${path}):`, body || apiErr.message);
     if (isGarminPullTokenError(bodyStr)) {
+      notePullTokenRejected();
       // This is NOT a user consent problem — the old wording sent people off
       // to reconnect and toggle permissions that were already granted. Pull
       // needs the server-side pull token from the developer portal; nothing
@@ -1308,6 +1321,10 @@ async function processGarminWebhookPayload(payload) {
       if (GARMIN_WELLNESS_TYPES.has(summaryType)) {
         try {
           if (entry.callbackURL) {
+            if (!garminPullToken()) {
+              console.warn(`[Garmin webhook] wellness ${summaryType} ping skipped — push delivers this without a pull token`);
+              continue;
+            }
             const tokenData = await getValidGarminToken(user);
             // Ping callbacks are pulls too — without GARMIN_PULL_TOKEN they get
             // the same HTTP 400 InvalidPullTokenException as direct pulls.
@@ -1352,8 +1369,14 @@ async function processGarminWebhookPayload(payload) {
         continue;
       }
 
-      // Ping payload — fetch pre-formed callback URL
+      // Ping payload — fetch pre-formed callback URL. A ping is a pull, so
+      // without a portal token there is nothing to fetch. Push sends the
+      // activity in the body and never reaches this branch.
       if (entry.callbackURL) {
+        if (!garminPullToken()) {
+          console.warn(`[Garmin webhook] ${summaryType} ping skipped — no pull token; push delivers the same data`);
+          continue;
+        }
         try {
           const tokenData = await getValidGarminToken(user);
           const resp = await axios.get(entry.callbackURL, {
@@ -3831,6 +3854,33 @@ async function getGarminActivities(user, since = null, opts = {}) {
     }
 
     await ensureGarminAthleteId(user, tokenData);
+
+    // Garmin mints the pull token only from a button in the developer portal.
+    // There is no API to create or refresh it, and it dies in a day. Push and
+    // backfill do not use it, so an on-demand list is skipped instead of
+    // waiting on a call Garmin will reject.
+    if (!garminPullToken()) {
+      if (!allowBackfill) {
+        const err = new Error(
+          'Garmin does not allow apps to list activities on demand. '
+          + 'New sessions arrive via push within a few minutes; use Import History for older ones.'
+        );
+        err.pullUnsupported = true;
+        throw err;
+      }
+      const job = triggerGarminBackfillQueued(user, startSec, nowSec);
+      console.log('[Garmin] direct pull skipped (no pull token); '
+        + `queued ${job.total} backfill chunk(s) — delivery goes through push.`);
+      const err = new Error(
+        `Garmin is sending your activities (${job.total} batch${job.total === 1 ? '' : 'es'} requested) — `
+        + 'they usually arrive within a few minutes. Nothing else to do; '
+        + 'your calendar fills in on its own.'
+      );
+      err.backfillPending = true;
+      err.backfillChunks = job.total;
+      err.backfillError = job.lastError;
+      throw err;
+    }
 
     try {
       const acts = await fetchGarminWellnessActivitiesByDay(
