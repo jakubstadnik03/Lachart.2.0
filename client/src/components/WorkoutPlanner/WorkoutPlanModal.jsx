@@ -25,6 +25,7 @@ import { plannedTotals, stepTotalSecs } from './plannedTotals';
 import WorkoutBuilder, {
   PRESET_CATALOG, PRESET_CATEGORY_LABELS, buildPresetSteps, computeEstTSS,
   expandSteps, resolveTargetWatts, resolveTargetPace, resolveTargetSwimPace,
+  resolveStepDistanceMeters,
   fmtDuration as fmtStepDuration, fmtPace, fmtDistance,
 } from './WorkoutBuilder';
 import api from '../../services/api';
@@ -395,6 +396,13 @@ export function FieldSelect({ label, value, options, onChange, placeholder = 'Se
 export function WorkoutSummary({ steps, context, sport, estTss }) {
   const expanded = expandSteps(Array.isArray(steps) ? steps : []);
   if (!expanded.length) return null;
+  // The same distance the chart's own header reports. This row used to count
+  // only the steps programmed AS a distance, so a run of 5×2 km with jogged
+  // warm-up, recoveries and cool-down read "10 km" here and "15.5 km" six
+  // pixels away in the preview header — two distances for one session, and
+  // neither said which it meant. For bike the resolver still returns 0 on a
+  // timed step, so nothing is invented where there is no pace to invent it.
+  const distCtx = { ...(context || {}), sport: sport || context?.sport };
 
   let totalSecs = 0;
   let workSecs = 0;
@@ -405,7 +413,7 @@ export function WorkoutSummary({ steps, context, sport, estTss }) {
     const dur = Number(s.durationSeconds) || 0;
     totalSecs += dur;
     if (s.stepType === 'work') workSecs += dur;
-    if (s.durationType === 'distance' && Number(s.distanceMeters) > 0) distM += Number(s.distanceMeters);
+    distM += resolveStepDistanceMeters(s, distCtx) || 0;
     const w = resolveTargetWatts(s.powerTarget, context);
     if (w > 0) { wattSum += w * dur; wattSecs += dur; }
   }

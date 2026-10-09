@@ -1498,15 +1498,23 @@ export function WorkoutChart({ steps, context, onStepResize, onStepClick, onStep
           const barH = isPowerDragging ? Math.max(FLOOR, watts / maxW) * H : barHRaw;
           const powerLabel = isPowerDragging ? `${Math.round(watts)}W` : powerLabelRaw;
 
+          // A step the composer is still describing is drawn faintly and
+          // outlined, never as a solid bar among the real ones.
+          const isDraft = Boolean(s.isDraft);
+          const solid = isDragging ? 1 : 0.85;
+          const baseOpacity = isDraft ? 0.3 : solid;
+
           let shape;
           if (s.isRamp && s.stepType === 'warmup') {
-            shape = <polygon key={`sh${i}`} points={`${x},${H} ${x+bw},${H-barH} ${x+bw},${H}`} fill={fill} opacity={isDragging ? 1 : 0.85} />;
+            shape = <polygon key={`sh${i}`} points={`${x},${H} ${x+bw},${H-barH} ${x+bw},${H}`} fill={fill} opacity={baseOpacity} />;
           } else if (s.isRamp && s.stepType === 'cooldown') {
-            shape = <polygon key={`sh${i}`} points={`${x},${H-barH} ${x},${H} ${x+bw},${H}`} fill={fill} opacity={isDragging ? 1 : 0.85} />;
+            shape = <polygon key={`sh${i}`} points={`${x},${H-barH} ${x},${H} ${x+bw},${H}`} fill={fill} opacity={baseOpacity} />;
           } else {
             shape = <rect key={`sh${i}`} x={x} y={H-barH} width={bw} height={barH} fill={fill} rx={2}
-              opacity={isBeingMoved ? 0.35 : (isDragging ? 1 : 0.85)}
-              stroke={isMoveTarget ? '#767EB5' : 'none'} strokeWidth={isMoveTarget ? 2 : 0} />;
+              opacity={isBeingMoved ? 0.35 : baseOpacity}
+              stroke={isDraft ? fill : (isMoveTarget ? '#767EB5' : 'none')}
+              strokeDasharray={isDraft ? '3 2' : undefined}
+              strokeWidth={isDraft ? 1.5 : (isMoveTarget ? 2 : 0)} />;
           }
 
           return (
@@ -2863,6 +2871,16 @@ function SessionRecipeForm({ sport, onBuild, onDraft }) {
  * + 10min CD". Both end as the same steps.
  */
 function SessionComposer({ context, sport, onAdd, onDraft, defaultOpen }) {
+  // React renders the children of a <details> whether or not it is open — the
+  // browser only hides them. So the recipe form stayed mounted while collapsed
+  // and kept pushing its DEFAULT recipe into the preview: a coach opened a
+  // saved 5×2 km session and the chart drew his five intervals followed by
+  // 15 min Z1, 4×10 min LT2 and 10 min Z1 that he had never asked for, while
+  // the lap list beside it showed the session he actually had. He reported it
+  // as "the graph displays four additional 2.2 km work blocks" — 10 min at his
+  // athlete's LT2 is 2.2 km. Mounting the body only while open means closing
+  // the composer unmounts the form, and its cleanup clears the draft.
+  const [open, setOpen] = useState(Boolean(defaultOpen));
   const [mode, setMode] = useState('form');
   const [text, setText] = useState('');
   const [warnings, setWarnings] = useState([]);
@@ -2894,11 +2912,13 @@ function SessionComposer({ context, sport, onAdd, onDraft, defaultOpen }) {
   );
   const unitsHint = sport === 'swim' ? '400m, 1.5km' : sport === 'run' ? '2km, 400m' : '2km';
   return (
-    <details open={defaultOpen} className="rounded-xl border border-slate-100 bg-slate-50/50 open:bg-white open:border-slate-200">
+    <details open={open} onToggle={(e) => setOpen(e.currentTarget.open)}
+      className="rounded-xl border border-slate-100 bg-slate-50/50 open:bg-white open:border-slate-200">
       <summary className="px-3 py-2.5 text-xs font-semibold text-slate-500 cursor-pointer list-none flex items-center justify-between">
         <span>Compose the session</span>
         <ChevronDownIcon className="w-4 h-4 text-slate-400" />
       </summary>
+      {open && (
       <div className="px-3 pb-3 flex flex-col gap-3 border-t border-slate-100 pt-2.5">
         <div className="inline-flex self-start items-center gap-0.5 p-0.5 rounded-lg bg-slate-100">
           {tab('form', 'Fill in')}
@@ -2931,6 +2951,7 @@ function SessionComposer({ context, sport, onAdd, onDraft, defaultOpen }) {
           </ul>
         )}
       </div>
+      )}
     </details>
   );
 }
@@ -3239,7 +3260,10 @@ export default function WorkoutBuilder({ initialSteps = [], context = {}, sport 
             <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">Workout Preview</span>
             <span className="text-[10px] text-slate-400">{previewTotalLabel}</span>
           </div>
-          <WorkoutChart steps={draftSteps?.length ? [...steps, ...draftSteps] : steps} context={ctx} onStepResize={handleStepResize}
+          {/* A draft is flagged, not merged: drawn as the same bars it would
+              become, but ghosted, so "what I am describing" can never be read
+              as "what this session is". */}
+          <WorkoutChart steps={draftSteps?.length ? [...steps, ...draftSteps.map((d) => ({ ...d, isDraft: true }))] : steps} context={ctx} onStepResize={handleStepResize}
             onStepClick={handleChartStepClick} onStepPower={handleStepPower}
             onStepMove={handleStepMove}/>
           <div className="flex flex-wrap gap-x-3 gap-y-1 mt-2">
