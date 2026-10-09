@@ -4846,6 +4846,95 @@ router.put('/garmin/auto-sync', verifyToken, async (req, res) => {
   }
 });
 
+/**
+ * GET /api/integrations/garmin/workout-inspect?workoutId=123
+ *
+ * What Garmin actually KEPT, as opposed to what we sent. Read-only, and scoped
+ * to the caller's own Garmin account by verifyToken — there is no parameter for
+ * reading somebody else's.
+ *
+ * It exists because Garmin accepts a workout body and silently ignores parts of
+ * it: nested `WorkoutRepeatStep.steps` were dropped once, with a 200 back and a
+ * main set missing on the watch, and nothing in the response said so. The only
+ * way to tell a successful write from an accepted-and-discarded one is to read
+ * the workout back, so a push is never again called verified on the strength of
+ * its status code.
+ *
+ * Note the asymmetry it is meant to settle: a workout is CREATED at
+ * /workoutportal/workout/v2 and UPDATED at /training-api/workout/v2/{id} — two
+ * different API families, one payload shape, and no test over the update path.
+ */
+router.get('/garmin/workout-inspect', verifyToken, async (req, res) => {
+  try {
+    const workoutId = String(req.query.workoutId || '').trim();
+    if (!/^\d+$/.test(workoutId)) {
+      return res.status(400).json({ error: 'workoutId must be the numeric Garmin id' });
+    }
+    const user = await User.findById(req.user.userId).select('garmin').lean();
+    if (!user?.garmin?.accessToken) return res.status(400).json({ error: 'Garmin not connected' });
+
+    let tokenData;
+    try {
+      tokenData = await getValidGarminToken(user);
+    } catch (e) {
+      return res.status(400).json({ error: `Token refresh failed: ${e.message}` });
+    }
+
+    const base = (process.env.GARMIN_API_BASE_URL || 'https://apis.garmin.com').replace(/\/$/, '');
+    let stored;
+    try {
+      const r = await axios.get(`${base}/training-api/workout/v2/${workoutId}`, {
+        headers: { Authorization: `${tokenData.tokenType} ${tokenData.accessToken}` },
+        timeout: 20000,
+      });
+      stored = r.data;
+    } catch (e) {
+      return res.status(e.response?.status || 502).json({
+        error: 'Garmin would not return the workout',
+        status: e.response?.status || null,
+        body: e.response?.data || e.message,
+      });
+    }
+
+    // Steps can sit on the workout (V1) or under a segment (V2). Which of the
+    // two came back is itself the answer to "did the update keep our steps".
+    const topLevel = Array.isArray(stored?.steps) ? stored.steps : [];
+    const segments = Array.isArray(stored?.segments) ? stored.segments : [];
+    const segmentSteps = segments.flatMap((sg) => (Array.isArray(sg?.steps) ? sg.steps : []));
+    const steps = segmentSteps.length ? segmentSteps : topLevel;
+
+    const timeSecs = steps
+      .filter((st) => st.durationType === 'TIME')
+      .reduce((a, st) => a + (Number(st.durationValue) || 0), 0);
+
+    res.json({
+      workoutId,
+      workoutName: stored?.workoutName ?? null,
+      sport: stored?.sport ?? null,
+      stepsLiveOn: segmentSteps.length ? 'segments[].steps' : (topLevel.length ? 'steps' : 'nowhere'),
+      stepCount: steps.length,
+      segmentCount: segments.length,
+      withoutATarget: steps.filter((st) => !st.targetType || st.targetType === 'OPEN').length,
+      distanceSteps: steps.filter((st) => st.durationType === 'DISTANCE').length,
+      timeStepSeconds: timeSecs,
+      steps: steps.map((st) => ({
+        stepOrder: st.stepOrder,
+        type: st.type,
+        intensity: st.intensity,
+        durationType: st.durationType,
+        durationValue: st.durationValue,
+        targetType: st.targetType,
+        targetValueLow: st.targetValueLow,
+        targetValueHigh: st.targetValueHigh,
+      })),
+      raw: req.query.raw === '1' ? stored : undefined,
+    });
+  } catch (error) {
+    console.error('[garmin/workout-inspect]', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // GET /api/integrations/garmin/status — connection + sync health for Settings card
 router.get('/garmin/status', verifyToken, async (req, res) => {
   try {
