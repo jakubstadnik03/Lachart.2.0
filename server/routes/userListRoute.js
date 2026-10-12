@@ -28,6 +28,7 @@ const { OAuth2Client } = require('google-auth-library');
 
 const { saveRegistrationLocation, saveLoginLocation } = require("../utils/geoip");
 const { resolveSignupMethodForProfile, publicRegistrationLocation } = require("../utils/signupMethod");
+const { parseProfileNumber, parseProfileDate, badInputResponse } = require("../utils/profileFieldInput");
 
 const userDao = new UserDao();
 const trainingDao = new TrainingDao();
@@ -853,11 +854,28 @@ router.put("/edit-profile", verifyToken, async (req, res) => {
         if (name) updateData.name = name;
         if (surname) updateData.surname = surname;
         if (role && ['coach', 'athlete'].includes(role)) updateData.role = role;
-        if (dateOfBirth) updateData.dateOfBirth = new Date(dateOfBirth);
+        // height, weight and dateOfBirth were converted and assigned without
+        // looking at the result: Number("70,5") is NaN and new Date("") is an
+        // Invalid Date, both of which throw a CastError at save() that nothing
+        // caught, so the route answered 500. Because this endpoint saves the
+        // whole form, one bad value made EVERY later save fail, whatever the
+        // person was editing — an athlete updating his LT2 got a 500 naming a
+        // weight he had not touched in months.
+        // The truthiness gate is the one these fields always had — a 0 or an
+        // empty string still means "not sent", so nothing that used to save
+        // starts failing. What is new is that a value which cannot become a
+        // number or a date is refused by name instead of reaching the cast.
+        const dob = dateOfBirth ? parseProfileDate(dateOfBirth, 'Date of birth') : { ok: true };
+        if (!dob.ok) return res.status(400).json({ error: dob.error, field: 'dateOfBirth' });
+        if (dob.value !== undefined) updateData.dateOfBirth = dob.value;
         if (address) updateData.address = address;
         if (phone) updateData.phone = phone;
-        if (height) updateData.height = Number(height);
-        if (weight) updateData.weight = Number(weight);
+        const h = height ? parseProfileNumber(height, 'Height', { min: 1, max: 300 }) : { ok: true };
+        if (!h.ok) return res.status(400).json({ error: h.error, field: 'height' });
+        if (h.value !== undefined) updateData.height = h.value;
+        const w = weight ? parseProfileNumber(weight, 'Weight', { min: 1, max: 500 }) : { ok: true };
+        if (!w.ok) return res.status(400).json({ error: w.error, field: 'weight' });
+        if (w.value !== undefined) updateData.weight = w.value;
         if (sport) updateData.sport = sport;
         if (specialization) updateData.specialization = specialization;
         if (gender) updateData.gender = gender;
@@ -1117,6 +1135,11 @@ router.put("/edit-profile", verifyToken, async (req, res) => {
         res.status(200).json(userResponse);
     } catch (error) {
         console.error("Error updating user profile:", error);
+        // A field the client sent that Mongoose will not store is the client's
+        // problem, not a server fault. Saying which path it was is the whole
+        // difference between "statuscode500" and a box the person can fix.
+        const badInput = badInputResponse(error);
+        if (badInput) return res.status(400).json(badInput);
         res.status(500).json({ error: error.message });
     }
 });
@@ -1196,11 +1219,28 @@ router.put("/coach/edit-athlete/:athleteId", verifyToken, async (req, res) => {
         const updateData = {};
         if (name) updateData.name = name;
         if (surname) updateData.surname = surname;
-        if (dateOfBirth) updateData.dateOfBirth = new Date(dateOfBirth);
+        // height, weight and dateOfBirth were converted and assigned without
+        // looking at the result: Number("70,5") is NaN and new Date("") is an
+        // Invalid Date, both of which throw a CastError at save() that nothing
+        // caught, so the route answered 500. Because this endpoint saves the
+        // whole form, one bad value made EVERY later save fail, whatever the
+        // person was editing — an athlete updating his LT2 got a 500 naming a
+        // weight he had not touched in months.
+        // The truthiness gate is the one these fields always had — a 0 or an
+        // empty string still means "not sent", so nothing that used to save
+        // starts failing. What is new is that a value which cannot become a
+        // number or a date is refused by name instead of reaching the cast.
+        const dob = dateOfBirth ? parseProfileDate(dateOfBirth, 'Date of birth') : { ok: true };
+        if (!dob.ok) return res.status(400).json({ error: dob.error, field: 'dateOfBirth' });
+        if (dob.value !== undefined) updateData.dateOfBirth = dob.value;
         if (address) updateData.address = address;
         if (phone) updateData.phone = phone;
-        if (height) updateData.height = Number(height);
-        if (weight) updateData.weight = Number(weight);
+        const h = height ? parseProfileNumber(height, 'Height', { min: 1, max: 300 }) : { ok: true };
+        if (!h.ok) return res.status(400).json({ error: h.error, field: 'height' });
+        if (h.value !== undefined) updateData.height = h.value;
+        const w = weight ? parseProfileNumber(weight, 'Weight', { min: 1, max: 500 }) : { ok: true };
+        if (!w.ok) return res.status(400).json({ error: w.error, field: 'weight' });
+        if (w.value !== undefined) updateData.weight = w.value;
         if (sport) updateData.sport = sport;
         if (specialization) updateData.specialization = specialization;
         if (gender) updateData.gender = gender;
