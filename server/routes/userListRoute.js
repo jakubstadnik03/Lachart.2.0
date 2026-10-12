@@ -1219,17 +1219,9 @@ router.put("/coach/edit-athlete/:athleteId", verifyToken, async (req, res) => {
         const updateData = {};
         if (name) updateData.name = name;
         if (surname) updateData.surname = surname;
-        // height, weight and dateOfBirth were converted and assigned without
-        // looking at the result: Number("70,5") is NaN and new Date("") is an
-        // Invalid Date, both of which throw a CastError at save() that nothing
-        // caught, so the route answered 500. Because this endpoint saves the
-        // whole form, one bad value made EVERY later save fail, whatever the
-        // person was editing — an athlete updating his LT2 got a 500 naming a
-        // weight he had not touched in months.
-        // The truthiness gate is the one these fields always had — a 0 or an
-        // empty string still means "not sent", so nothing that used to save
-        // starts failing. What is new is that a value which cannot become a
-        // number or a date is refused by name instead of reaching the cast.
+        // Same cast trap as /edit-profile, and the same consequence: a coach
+        // who had once saved an unreadable height or date for an athlete could
+        // not change anything on that athlete again, including their zones.
         const dob = dateOfBirth ? parseProfileDate(dateOfBirth, 'Date of birth') : { ok: true };
         if (!dob.ok) return res.status(400).json({ error: dob.error, field: 'dateOfBirth' });
         if (dob.value !== undefined) updateData.dateOfBirth = dob.value;
@@ -1313,6 +1305,11 @@ router.put("/coach/edit-athlete/:athleteId", verifyToken, async (req, res) => {
         });
     } catch (error) {
         console.error("Error updating athlete profile:", error);
+        // Same as /edit-profile: a field Mongoose will not store is the
+        // client's bad input, and saying which path it was is what lets a
+        // coach fix it instead of staring at a 500.
+        const badInput = badInputResponse(error);
+        if (badInput) return res.status(400).json(badInput);
         res.status(500).json({ error: error.message });
     }
 });
