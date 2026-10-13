@@ -23,6 +23,7 @@
  */
 
 const { zoneTargetFromThresholds, TOP_FACTOR } = require('./trainingZoneBounds');
+const { plainSteps } = require('./plainSteps');
 
 const STEP_TYPE_TO_INTENSITY = {
   warmup:   'Active',
@@ -226,22 +227,26 @@ function expandSteps(steps = []) {
     }
     group = null;
   };
-  for (const s of steps) {
+  // Plain objects first: a spread of a Mongoose subdocument copies its
+  // plumbing and none of its data. The export routes happen to pass .lean()
+  // documents today, which is why this has not bitten here — see plainSteps
+  // for what it did to the Garmin push, which did not.
+  for (const s of plainSteps(steps)) {
     if (s.isGroupHeader) {
       // Header opens a new group — it IS the first member of that group.
       flushGroup();
       group = {
         id: s.groupId,
         repeat: s.groupRepeat || 1,
-        members: [{ ...s }],
+        members: [s],
       };
       continue;
     }
     if (group && s.groupId && s.groupId === group.id) {
-      group.members.push({ ...s });
+      group.members.push(s);
     } else {
       flushGroup();
-      out.push({ ...s });
+      out.push(s);
     }
   }
   flushGroup();
