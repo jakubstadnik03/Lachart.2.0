@@ -268,7 +268,10 @@ async function resolveWorkoutContext(athleteId, user = null) {
   let latestTest = null;
   try {
     const Test = require('../models/test');
-    const tests = await Test.find({ userId: athleteId }).sort({ date: -1 }).limit(10).lean();
+    // athleteId, not userId: the tests collection has no userId field at all
+    // (0 of 837 documents), so this fallback silently found nothing and an
+    // athlete with no profile zones got no thresholds on their watch.
+    const tests = await Test.find({ athleteId: String(athleteId) }).sort({ date: -1 }).limit(10).lean();
     latestTest = tests.find((t) => t.lt2Power || t.ltPower || t.ftp) || null;
   } catch { /* profile zones may still carry everything */ }
 

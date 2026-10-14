@@ -93,6 +93,41 @@ const KNOWN_PLANS = ['free', 'pro', 'coach', 'team', 'enterprise'];
  * Resolve the plan tier we should evaluate gates against. Always falls back
  * to "free" rather than throwing — gates never crash the request pipeline.
  */
+/**
+ * Say out loud, once, whether the paywall is actually on.
+ *
+ * Two environment variables silently open every gate in the app for every
+ * user: SUBSCRIPTION_ENABLED anything other than 'true', and BETA_ALL_PREMIUM
+ * set to 'true'. Both make resolveUserPlan return the coach plan with a bypass,
+ * so quotas never fire and nothing is logged — the app simply behaves as though
+ * everyone had paid.
+ *
+ * That is how 32 athlete records came to be created between 18 September and
+ * 12 October by coaches with no plan at all, against a free cap of 1, with the
+ * gate sitting correctly on the route the whole time. One coach made ten in an
+ * afternoon. Nothing in the logs said anything was off, because from the code's
+ * point of view nothing was.
+ *
+ * A disabled paywall is a legitimate state — it is how the beta ran — but it
+ * must never again be a silent one.
+ */
+function logGateMode() {
+  const subs = process.env.SUBSCRIPTION_ENABLED === 'true';
+  const beta = process.env.BETA_ALL_PREMIUM === 'true';
+  if (subs && !beta) {
+    console.log('[featureGate] Paywall ON — plans and quotas are enforced.');
+    return { enforcing: true, reason: null };
+  }
+  const reason = !subs ? 'SUBSCRIPTION_ENABLED is not "true"' : 'BETA_ALL_PREMIUM=true';
+  console.warn(
+    `[featureGate] *** PAYWALL OFF *** ${reason}. Every user resolves to the coach `
+    + 'plan and every feature gate and quota is bypassed — unlimited athletes, '
+    + 'unlimited tests, everything. Set SUBSCRIPTION_ENABLED=true and unset '
+    + 'BETA_ALL_PREMIUM to enforce plans.',
+  );
+  return { enforcing: false, reason };
+}
+
 async function resolveUserPlan(req) {
   const userId = req.user?.userId;
   if (!userId) return { user: null, plan: 'free', bypass: 'unauthenticated' };
@@ -250,6 +285,7 @@ function requireQuotaSlot(quotaKey, countCurrentUsage) {
 }
 
 module.exports = {
+  logGateMode,
   FEATURE_MATRIX,
   QUOTA_LIMITS,
   resolveUserPlan,

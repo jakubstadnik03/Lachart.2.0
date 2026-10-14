@@ -449,7 +449,8 @@ router.get('/planned/:id/export', verifyToken, async (req, res) => {
       ctx.ftp = ftpOverride;
     } else {
       try {
-        const tests = await Test.find({ userId: pw.athleteId }).sort({ date: -1 }).limit(10).lean();
+        // athleteId, not userId — see garminWorkoutPush: the field does not exist.
+        const tests = await Test.find({ athleteId: String(pw.athleteId) }).sort({ date: -1 }).limit(10).lean();
         const latest = tests.find((t) => t.lt2Power || t.ltPower || t.ftp);
         if (latest) {
           ctx = {

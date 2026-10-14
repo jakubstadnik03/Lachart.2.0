@@ -349,6 +349,10 @@ app.use('/api/timeline',          timelineRoutes);
 app.use('/api/daily-metrics',     dailyMetricRoutes);
 
 // Weekly Strava summary emails (Mondays) - controlled by env
+// Says whether the paywall is actually enforced. A disabled one is a valid
+// state; a silent one is how 32 athletes got created against a cap of 1.
+require('./middleware/featureGate').logGateMode();
+
 startWeeklyReportsScheduler();
 
 // Strava auto-sync scheduler (periodic sync for all users with auto-sync enabled)
