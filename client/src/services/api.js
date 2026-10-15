@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { API_BASE_URL, API_ENDPOINTS } from '../config/api.config';
+import { isRetryableAuthPath } from '../utils/coldStartRetry';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -444,7 +445,19 @@ api.interceptors.response.use(
     const _isColdStart = _status === 502 || _status === 503 || _status === 504;
     const _isRateLimited = _status === 429;
     const _method = String(_cfg?.method || 'get').toLowerCase();
-    if (_cfg && _method === 'get' && !_isCanceled && !_cfg.noRetry && (_isTimeout || _isNetErr || _isColdStart || _isRateLimited)) {
+
+    // The sign-in POSTs get the same treatment, for connection-level failures
+    // only. A cold Render instance answers with a gateway 502 that carries no
+    // CORS header, so a visitor clicking "Sign in with Google" on a sleeping
+    // site saw a dead button. Safe to repeat: a network error or a gateway 5xx
+    // means our app never saw the request, and token verification plus
+    // find-or-create are idempotent anyway. Never on a 429 or any 4xx — those
+    // responses our app did produce.
+    const _isSleepingApiFailure = _isTimeout || _isNetErr || _isColdStart;
+    const _isRetryableAuthPost =
+      _method === 'post' && isRetryableAuthPath(_cfg?.url) && _isSleepingApiFailure;
+
+    if (_cfg && (_method === 'get' || _isRetryableAuthPost) && !_isCanceled && !_cfg.noRetry && (_isTimeout || _isNetErr || _isColdStart || _isRateLimited)) {
       const MAX_RETRIES = _isRateLimited ? 3 : 4;
       _cfg.__retryCount = (_cfg.__retryCount || 0) + 1;
       if (_cfg.__retryCount <= MAX_RETRIES) {
@@ -2590,3 +2603,16 @@ export const deleteDailyMetric = async (date, athleteId = null) => {
   const { data } = await api.delete(`/api/daily-metrics/${date}`, { params });
   return data;
 };
+
+/**
+ * Nudge the API awake.
+ *
+ * Render sleeps the instance when it is idle, and the first request lands
+ * before Express is listening — the gateway answers 502 and, because that
+ * response carries no CORS header, the browser calls it a CORS failure.
+ * Calling this when a sign-in screen mounts starts the boot while the visitor
+ * is still reading the page, so their click lands on a server that is already
+ * up. Failures are irrelevant: the point is the traffic, not the answer.
+ */
+export const warmUpApi = () =>
+  fetch(`${API_BASE_URL}/health`, { method: 'GET', mode: 'cors' }).catch(() => {});

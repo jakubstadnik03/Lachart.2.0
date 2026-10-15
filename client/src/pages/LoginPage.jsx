@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthProvider';
 import { motion } from 'framer-motion';
 import { useNotification } from '../context/NotificationContext';
 import { GoogleLogin } from '@react-oauth/google';
-import api from '../services/api';
+import api, { warmUpApi } from '../services/api';
 import { API_ENDPOINTS } from '../config/api.config';
 import { trackEvent, trackConversionFunnel } from '../utils/analytics';
 import { logUserLogin } from '../utils/eventLogger';
@@ -51,6 +51,17 @@ const LoginPage = () => {
 
   // Získáme původní cíl navigace, pokud existuje
   const from = location.state?.from?.pathname || "/dashboard";
+
+  // Wake the API while the visitor is still looking at the form.
+  //
+  // Render sleeps the instance when it is idle. Boot takes tens of seconds,
+  // and a request that arrives before Express is listening is answered by
+  // Render's gateway with a 502 — which, carrying no CORS header, surfaces in
+  // the console as a CORS failure on /user/google-auth. Pinging /health on
+  // mount means the click that follows lands on a server that is already up.
+  useEffect(() => {
+    warmUpApi();
+  }, []);
 
   // Check for invitation token in URL
   // Lock body scroll on native so WKWebView doesn't rubber-band
@@ -341,8 +352,15 @@ const LoginPage = () => {
           errorMessage = "Google login je teď na serveru vypnutý / špatně nakonfigurovaný. Zkus to později nebo se přihlas přes email+heslo (případně 'Forgot password').";
         }
       } else if (error.request) {
+        // No response body at all: either a real connectivity problem or the
+        // API still booting, in which case Render's gateway returned a 502
+        // with no CORS header and the browser called it a CORS error. The
+        // retries in the axios interceptor have already been exhausted by the
+        // time we get here, so say the server is the likely culprit rather
+        // than blaming the visitor's connection.
         console.log("No response received:", error.request);
-        errorMessage = "No response from server. Please check your internet connection.";
+        errorMessage =
+          "The server didn't respond — it may still be starting up. Please try again in a few seconds.";
       } else {
         console.log("Error setting up request:", error.message);
         errorMessage = "Error setting up Google login request.";

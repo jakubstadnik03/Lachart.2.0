@@ -36,6 +36,7 @@ import { cancelScheduledLactateTestNotifications } from '../utils/lactateTestLoc
 import { cancelRaceLocalNotifications } from '../utils/raceLocalNotifications';
 import { cancelDailyTrainingReminder } from '../utils/dailyTrainingReminder';
 import { clearFormFitnessCache, notifyTssDisplayModeChanged } from '../utils/uiPrefs';
+import { fetchWithColdStartRetry } from '../utils/coldStartRetry';
 
 const DEFAULT_NOTIFICATION_PREFS = {
   emailNotifications: true,
@@ -1934,7 +1935,7 @@ const SettingsPage = () => {
 
   const handleGoogleSuccess = async (response) => {
     try {
-      const authResult = await fetch(`${API_ENDPOINTS.AUTH}/google-auth`, {
+      const authResult = await fetchWithColdStartRetry(`${API_ENDPOINTS.AUTH}/google-auth`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

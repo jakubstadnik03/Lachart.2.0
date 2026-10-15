@@ -18,6 +18,7 @@ import { isCapacitorNative } from '../utils/isNativeApp';
 import { signInWithGoogleNative } from '../utils/nativeGoogleAuth';
 import { signInWithAppleNative } from '../utils/nativeAppleAuth';
 import { signInWithAppleWeb } from '../utils/webAppleAuth';
+import { fetchWithColdStartRetry } from '../utils/coldStartRetry';
 
 const SignUpPage = () => {
   const [showPassword, setShowPassword] = useState(false);
@@ -235,7 +236,7 @@ const SignUpPage = () => {
     }
 
     try {
-      const res = await fetch(`${API_ENDPOINTS.AUTH}/google-auth`, {
+      const res = await fetchWithColdStartRetry(`${API_ENDPOINTS.AUTH}/google-auth`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

@@ -613,4 +613,46 @@ app.use((err, req, res, next) => {
   });
 });
 
+// Why the process died.
+//
+// A Google sign-in failed on 2026-10-15 with a gateway 502 and no CORS header
+// — the request had landed on a booting process. /health reported 135s of
+// uptime on a 20-hour-old commit, so this was a restart, not a deploy. There
+// was no way to tell whether the restart was an idle spin-down, an OOM kill
+// (this file's heap note records one of those), or a stray rejection: nothing
+// here logged any of it, and since Node 15 an unhandled rejection kills the
+// process by default, silently.
+//
+// Log the reason before exiting so the next one has a fingerprint in Render's
+// logs. We still exit on an uncaught exception — the process state is no
+// longer trustworthy — but Render restarts it, which it would have done
+// anyway, only now with a cause attached.
+const logFatal = (kind, err) => {
+  const mem = process.memoryUsage();
+  console.error(`[Fatal] ${kind}:`, err?.stack || err?.message || err);
+  console.error('[Fatal] at uptime %ss, heap %sMB/%sMB, rss %sMB',
+    Math.round(process.uptime()),
+    Math.round(mem.heapUsed / 1048576),
+    Math.round(mem.heapTotal / 1048576),
+    Math.round(mem.rss / 1048576));
+};
+
+process.on('unhandledRejection', (reason) => {
+  // Deliberately not fatal: a fire-and-forget rejection somewhere in a
+  // background sync should not take sign-in down with it. Logged loudly so it
+  // gets fixed at the source.
+  logFatal('Unhandled promise rejection (process kept alive)', reason);
+});
+
+process.on('uncaughtException', (err) => {
+  logFatal('Uncaught exception — exiting', err);
+  // Give the log a tick to flush before Render recycles us.
+  setTimeout(() => process.exit(1), 100);
+});
+
+process.on('SIGTERM', () => {
+  console.log(`[Shutdown] SIGTERM after ${Math.round(process.uptime())}s of uptime (deploy or idle spin-down).`);
+  process.exit(0);
+});
+
 app.listen(PORT, () => console.log(`Server běží na portu ${PORT}`));

@@ -29,6 +29,7 @@ import {
 import TestSection from '../components/Testing-page/TestSection';
 import { PUBLIC_TOOLS } from '../constants/publicTools';
 import { CALCULATOR_GUIDES } from '../content/calculatorGuides';
+import { fetchWithColdStartRetry } from '../utils/coldStartRetry';
 
 // ─── Calculator helpers ────────────────────────────────────────────────────────
 const secsToHMS = (s) => {
@@ -764,7 +765,7 @@ const TestingWithoutLogin = () => {
     setIsSendingEmail(true); setEmailError(null);
     try {
       const chosenRole = emailFormData.role === 'coach' ? 'coach' : 'athlete';
-      const res = await fetch(`${API_BASE_URL}/user/google-auth`, {
+      const res = await fetchWithColdStartRetry(`${API_BASE_URL}/user/google-auth`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ credential: response.credential, role: chosenRole }),
