@@ -25,6 +25,10 @@ import LT2TrendSparkline from '../components/DashboardPage/LT2TrendSparkline';
 import { usePremium } from '../hooks/usePremium';
 import UpgradeModal from '../components/UpgradeModal';
 import { FREE_TEST_LIMIT } from '../constants/planLimits';
+import StravaConnectModal from '../components/NativeDashboard/StravaConnectModal';
+import { shouldPromptTrackerConnect, markTrackerPromptShown } from '../utils/trackerConnectPrompt';
+import { extractLactateThresholds, formatThresholdIntensity } from '../utils/extractLactateThresholds';
+import { trackEvent } from '../utils/analytics';
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -35,6 +39,52 @@ function fmtPace(secPerUnit, sport, user, test = null) {
 function fmtMmol(v) {
   if (v == null || !Number.isFinite(v)) return '—';
   return `${Number(v).toFixed(1)} mmol`;
+}
+
+/**
+ * LT1/LT2 read off a just-saved test, for the post-save tracker prompt. A test
+ * too sparse to fit a curve renders nothing, so the prompt still works without
+ * the numbers.
+ */
+function TrackerPromptThresholds({ test }) {
+  if (!test) return null;
+  let thresholds = null;
+  try {
+    thresholds = extractLactateThresholds(test);
+  } catch {
+    return null;
+  }
+  const sport = thresholds?.sport;
+  const lt1 = thresholds?.lt1 != null ? formatThresholdIntensity(thresholds.lt1, test, sport) : null;
+  const lt2 = thresholds?.lt2 != null ? formatThresholdIntensity(thresholds.lt2, test, sport) : null;
+  if (!lt1 && !lt2) return null;
+
+  const cell = (label, value, hr) => (
+    <div style={{ flex: 1, minWidth: 0 }}>
+      <div style={{ fontSize: 11, color: '#6b7280', marginBottom: 2 }}>{label}</div>
+      <div style={{ fontSize: 17, fontWeight: 700, color: '#111827', fontVariantNumeric: 'tabular-nums' }}>
+        {value}
+      </div>
+      {hr ? (
+        <div style={{ fontSize: 11, color: '#6b7280', fontVariantNumeric: 'tabular-nums' }}>{hr} bpm</div>
+      ) : null}
+    </div>
+  );
+
+  return (
+    <div style={{ background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: 14, padding: 14 }}>
+      <div style={{
+        fontSize: 10, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase',
+        color: '#9ca3af', marginBottom: 10,
+      }}>
+        From the test you just saved
+      </div>
+      <div style={{ display: 'flex', gap: 12 }}>
+        {lt1 ? cell('LT1 · aerobic', lt1, thresholds?.lt1Hr) : null}
+        {lt2 ? cell('LT2 · anaerobic', lt2, thresholds?.lt2Hr) : null}
+      </div>
+    </div>
+  );
 }
 
 function fmtRelativeDate(date) {
@@ -297,6 +347,9 @@ export default function NativeTestingPage({ user, athleteId: externalAthleteId }
   const athleteId = externalAthleteId || user?._id || user?.id;
 
   const [tests, setTests] = useState([]);
+  // Post-save "connect a tracker" prompt — holds the test it was raised for so
+  // the sheet can lead with that test's own thresholds.
+  const [trackerPromptTest, setTrackerPromptTest] = useState(null);
   /**
    * PDF export is offered on your own tests only.
    *
@@ -1431,7 +1484,37 @@ export default function NativeTestingPage({ user, athleteId: externalAthleteId }
             next.set('testId', String(newId));
             setSearchParams(next, { replace: true });
           }
+          // A saved test gives you LT1/LT2; without a tracker there is no
+          // training for them to govern. Ask once, here, where the numbers
+          // are on screen. See utils/trackerConnectPrompt.js.
+          try {
+            if (shouldPromptTrackerConnect({ user, testAthleteId: test?.athleteId })) {
+              markTrackerPromptShown();
+              trackEvent('tracker_connect_prompt_shown', {
+                source: 'post_save_native',
+                sport: test?.sport || null,
+              });
+              setTrackerPromptTest(test);
+            }
+          } catch { /* never let the nudge break a successful save */ }
         }}
+      />
+
+      {/* Post-save "connect a tracker" prompt, leading with this test's own
+          thresholds — the one moment where connecting a watch has obvious
+          value. */}
+      <StravaConnectModal
+        open={Boolean(trackerPromptTest)}
+        onClose={() => {
+          trackEvent('tracker_connect_prompt_dismissed', {
+            source: 'post_save_native',
+            sport: trackerPromptTest?.sport || null,
+          });
+          setTrackerPromptTest(null);
+        }}
+        title="Your zones are ready"
+        subtitle="This test gives you the intensities to train at. Connect your watch and every session gets measured against them automatically."
+        highlight={<TrackerPromptThresholds test={trackerPromptTest} />}
       />
     </>
   );

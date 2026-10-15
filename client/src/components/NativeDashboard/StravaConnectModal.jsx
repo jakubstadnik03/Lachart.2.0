@@ -11,8 +11,13 @@ const SWIPE_VEL_THRESHOLD = 400;
  * StravaConnectModal — bottom-sheet prompt in the native app when Strava
  * isn't connected yet. Portals into #app-modal-root (pointer-events:none
  * on the root — this overlay must set pointerEvents:auto).
+ *
+ * `title`, `subtitle` and `highlight` let a caller fit the ask to the moment
+ * it is raised in; the post-save prompt on the testing page uses them to lead
+ * with the thresholds the test just produced. All three are optional and the
+ * defaults are the generic dashboard copy.
  */
-export default function StravaConnectModal({ open, onClose }) {
+export default function StravaConnectModal({ open, onClose, title, subtitle, highlight }) {
   const [busy, setBusy] = useState(false);
   const [dragY, setDragY] = useState(0);
   const [closing, setClosing] = useState(false);
@@ -194,12 +199,18 @@ export default function StravaConnectModal({ open, onClose }) {
         </div>
 
         <h2 id="strava-connect-title" className="text-center text-lg font-bold text-gray-900 mb-1">
-          Connect your data
+          {title || 'Connect your data'}
         </h2>
         <p className="text-center text-sm text-gray-500 mb-5 leading-relaxed">
-          Sync activities and training history from Strava or Garmin — laps, pace, heart rate and more.
-          {appleHealthSupported ? ' Add Apple Health for sleep, resting HR and HRV recovery.' : ''}
+          {subtitle || (
+            <>
+              Sync activities and training history from Strava or Garmin — laps, pace, heart rate and more.
+              {appleHealthSupported ? ' Add Apple Health for sleep, resting HR and HRV recovery.' : ''}
+            </>
+          )}
         </p>
+
+        {highlight ? <div className="mb-5">{highlight}</div> : null}
 
         <button
           type="button"

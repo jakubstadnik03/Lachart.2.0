@@ -10,6 +10,8 @@ import { sanitizeLactateInput } from '../../utils/lactateInput';
 import { usePremium } from '../../hooks/usePremium';
 import UpgradeModal from '../UpgradeModal';
 import { getUserTests } from '../../services/api';
+import TrackerConnectPrompt from './TrackerConnectPrompt';
+import { shouldPromptTrackerConnect, markTrackerPromptShown } from '../../utils/trackerConnectPrompt';
 
 // Tutorial steps configuration
 const tutorialSteps = [
@@ -272,6 +274,9 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
     return 'rpe'; // Default to RPE scale
   });
   const [isSaving, setIsSaving] = useState(false);
+  // Post-save "connect a tracker" prompt — holds the test it was raised for so
+  // the modal can show that test's own thresholds.
+  const [trackerPromptTest, setTrackerPromptTest] = useState(null);
 
   const formatDate = (dateString) => {
     if (!dateString) return '';
@@ -932,6 +937,29 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
     } catch { /* non-fatal — never block a save on the nudge */ }
   }, [demoMode, isPremiumResolved, premiumGate]);
 
+  // Post-save "connect a tracker" prompt. Saving a test produces LT1/LT2, but
+  // without a tracker there is no training for those numbers to govern — which
+  // is the state most accounts are stuck in. Returns true when it opened, so
+  // the caller can keep the history nudge from stacking on top of it.
+  const maybeTrackerPrompt = useCallback((savedTest) => {
+    try {
+      if (!shouldPromptTrackerConnect({
+        user,
+        demoMode,
+        testAthleteId: savedTest?.athleteId,
+      })) return false;
+      markTrackerPromptShown();
+      trackEvent('tracker_connect_prompt_shown', {
+        source: 'post_save',
+        sport: savedTest?.sport || null,
+      });
+      setTrackerPromptTest(savedTest);
+      return true;
+    } catch {
+      return false; // never let the nudge break a successful save
+    }
+  }, [user, demoMode]);
+
   const handleSaveChanges = async () => {
     if (!validateForm()) {
       return;
@@ -1048,7 +1076,10 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
       });
       setIsEditMode(false);
       setOriginalTestData(null); // Clear original data after successful save
-      void maybeHistoryUpsell();
+      // One prompt at a time. For someone with no tracker, connecting one is
+      // worth more than unlocking a history they have nothing to compare
+      // against, so it wins and the upsell waits for the next milestone.
+      if (!maybeTrackerPrompt(updatedTest)) void maybeHistoryUpsell();
     } catch (error) {
       console.error('Error saving test data:', error);
       const apiMsg = error?.response?.data?.error || error?.response?.data?.message;
@@ -1597,6 +1628,13 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
 
       {/* Post-save "unlock your history" nudge for free athletes (see maybeHistoryUpsell). */}
       <UpgradeModal {...UpgradeModalProps} />
+
+      {/* Post-save "connect a tracker" prompt (see maybeTrackerPrompt). */}
+      <TrackerConnectPrompt
+        isOpen={Boolean(trackerPromptTest)}
+        test={trackerPromptTest}
+        onClose={() => setTrackerPromptTest(null)}
+      />
 
       {/* Single Tutorial Message Portal */}
       {demoMode && currentTutorialStep >= 0 && (
