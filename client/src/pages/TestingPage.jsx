@@ -25,6 +25,8 @@ import UpgradeModal from '../components/UpgradeModal';
 import PopulationInsights from '../components/Testing-page/PopulationInsights';
 import PremiumLock from '../components/PremiumLock';
 import ThresholdHistory from '../components/Testing-page/ThresholdHistory';
+import TrainingSinceTestPanel from '../components/Testing-page/TrainingSinceTestPanel';
+import { sportKind } from '../utils/hrPowerProfile';
 import TestRecommendationCard from '../components/Testing-page/TestRecommendationCard';
 import PredictedCurveCard from '../components/Testing-page/PredictedCurveCard';
 import { FREE_TEST_LIMIT, FREE_COACH_ATHLETE_LIMIT } from '../constants/planLimits';
@@ -78,6 +80,9 @@ const TestingPage = () => {
   const [hrTestPlanLoading, setHrTestPlanLoading] = useState(false);
   const [showAddAthleteModal, setShowAddAthleteModal] = useState(false);
   const [showStravaModal, setShowStravaModal] = useState(false);
+  /** 'page-load' | 'after-test' — after-test is the high-intent connect nudge. */
+  const [stravaModalVariant, setStravaModalVariant] = useState('page-load');
+  const suppressPageLoadStravaRef = useRef(false);
   const [coachAthleteCount, setCoachAthleteCount] = useState(0);
   const { isPremium, gate, UpgradeModalProps } = usePremium();
   const [mobileTab, setMobileTab] = useState('tests');
@@ -567,27 +572,33 @@ const TestingPage = () => {
 
   // Check Strava connection status and show modal if not connected
   useEffect(() => {
+    let timeoutId;
     const checkStravaConnection = async () => {
       if (!isAuthenticated || !user) return;
       if (isPendingSelectedAthlete) return;
       // Coaches test athletes — don't prompt them to connect their own Strava
       if (isCoachLikeRole) return;
-      
+      if (suppressPageLoadStravaRef.current) return;
+
       try {
         const status = await getIntegrationStatus();
-        const isConnected = Boolean(status.stravaConnected);
-        
+        const isConnected = Boolean(
+          status.stravaConnected || status.garminConnected || status.appleHealthConnected
+        );
+
         // Show modal if not connected and user hasn't dismissed it (or dismissal expired)
         if (!isConnected) {
           const dismissedKey = `strava_modal_dismissed_${user._id}`;
           const dismissedExpiry = localStorage.getItem(dismissedKey);
-          
+
           // Check if dismissal has expired (7 days)
           const shouldShow = !dismissedExpiry || (Date.now() > parseInt(dismissedExpiry, 10));
-          
+
           if (shouldShow) {
             // Small delay to let page load first
-            setTimeout(() => {
+            timeoutId = setTimeout(() => {
+              if (suppressPageLoadStravaRef.current) return;
+              setStravaModalVariant('page-load');
               setShowStravaModal(true);
             }, 1000);
           }
@@ -602,6 +613,9 @@ const TestingPage = () => {
     };
 
     checkStravaConnection();
+    return () => {
+      if (timeoutId) clearTimeout(timeoutId);
+    };
   }, [user, isAuthenticated, isPendingSelectedAthlete, isCoachLikeRole]);
 
   // Listen for Strava connection updates (e.g., after connecting)
@@ -1360,6 +1374,26 @@ const TestingPage = () => {
           console.warn('Could not fetch athlete profile for email:', profileError);
         }
       }
+
+      // Athlete saved their own test and has no tracker — prompt connect now.
+      // This is the high-intent moment the email campaign mirrors; don't wait
+      // for the soft page-load nudge (and skip coaches testing athletes).
+      const savedForSelf = String(athleteIdForSave) === String(user?._id);
+      if (savedForSelf && !isCoachLikeRole) {
+        try {
+          const status = await getIntegrationStatus();
+          const hasTracker = Boolean(
+            status.stravaConnected || status.garminConnected || status.appleHealthConnected
+          );
+          if (!hasTracker) {
+            suppressPageLoadStravaRef.current = true;
+            setStravaModalVariant('after-test');
+            setShowStravaModal(true);
+          }
+        } catch (e) {
+          console.warn('Could not check integrations after test save:', e);
+        }
+      }
     } catch (err) {
       console.error('Error adding test:', err);
       // Free-plan test cap. The middleware returns code 'QUOTA_EXCEEDED'; the
@@ -1679,6 +1713,29 @@ const TestingPage = () => {
                         />
                       </div>
 
+                      {(() => {
+                        const candidates = tests.filter((t) => {
+                          const kind = sportKind(t?.sport);
+                          if (kind !== 'bike' && kind !== 'run') return false;
+                          if (selectedSport !== 'all' && kind !== selectedSport) return false;
+                          return Array.isArray(t?.results) && t.results.length > 0;
+                        });
+                        if (candidates.length === 0) return null;
+                        const latest = candidates.reduce((a, b) => (
+                          new Date(b.date) > new Date(a.date) ? b : a
+                        ));
+                        return (
+                          <div style={sectionSnap}>
+                            <TrainingSinceTestPanel
+                              test={latest}
+                              tests={tests}
+                              athleteId={effectiveTargetAthleteId}
+                              onOpenTest={(id) => { handleUrlTestSelection(id); setActiveTab('tests'); }}
+                            />
+                          </div>
+                        );
+                      })()}
+
                       {/* Desktop: two-column for protocol + insights */}
                       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4" style={sectionSnap}>
                         {recommendationsEligible && (
@@ -1799,6 +1856,7 @@ const TestingPage = () => {
       <StravaIntegrationModal
         isOpen={showStravaModal}
         onClose={handleStravaModalClose}
+        variant={stravaModalVariant}
       />
     </motion.div>
   );

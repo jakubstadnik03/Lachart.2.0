@@ -129,6 +129,7 @@ router.post('/send-batch', verifyToken, async (req, res) => {
     if (!ids.length) return res.status(400).json({ error: 'No recipients selected' });
     const job = outreach.startBatch(segmentOf(req), ids, {
       gapMs: req.body?.gapMs ? Number(req.body.gapMs) : undefined,
+      force: req.body?.force === true,
     });
     if (job.error === 'already_running') {
       return res.status(409).json({ error: 'A batch is already running', ...job });

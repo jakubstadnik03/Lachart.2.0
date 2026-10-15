@@ -21,9 +21,11 @@ import { isCapacitorNative } from '../../utils/isNativeApp';
 import { motion, AnimatePresence, useDragControls } from 'framer-motion';
 import { XMarkIcon, TrashIcon, BookmarkIcon, MagnifyingGlassIcon, WrenchScrewdriverIcon, RectangleStackIcon, ArrowRightIcon, ArrowLeftIcon, BellIcon, CheckCircleIcon, PlayIcon, ChevronDownIcon, CheckIcon } from '@heroicons/react/24/outline';
 import { Bike, WavesLadder, Dumbbell, PersonStanding, Repeat2, Sparkles, Waves, TestTube2, MoreHorizontal, Mountain, Snowflake } from 'lucide-react';
+import { plannedTotals, stepTotalSecs } from './plannedTotals';
 import WorkoutBuilder, {
   PRESET_CATALOG, PRESET_CATEGORY_LABELS, buildPresetSteps, computeEstTSS,
   expandSteps, resolveTargetWatts, resolveTargetPace, resolveTargetSwimPace,
+  resolveStepDistanceMeters,
   fmtDuration as fmtStepDuration, fmtPace, fmtDistance,
 } from './WorkoutBuilder';
 import api from '../../services/api';
@@ -41,6 +43,10 @@ import {
   parseDistanceInputToMetres,
   resolveDistanceUnitSystem,
 } from '../../utils/unitsConverter';
+
+// Moved to ./plannedTotals so the totals can be tested without the modal;
+// re-exported because three other modules import it from here.
+export { stepTotalSecs };
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 export const SPORT_ICONS  = { bike: '/icon/bike.svg', run: '/icon/run.svg', swim: '/icon/swim.svg' };
@@ -157,20 +163,8 @@ export function SportOptIcon({ opt, size = 22, className = '' }) {
   return null;
 }
 
-export function stepTotalSecs(steps) {
-  if (!Array.isArray(steps)) return 0;
-  const visited = new Set();
-  let total = 0;
-  steps.forEach(s => {
-    if (!s.groupId) { total += s.durationSeconds || 0; return; }
-    if (visited.has(s.groupId)) return;
-    visited.add(s.groupId);
-    const group = steps.filter(x => x.groupId === s.groupId);
-    const reps = (group.find(x => x.isGroupHeader)?.groupRepeat) || 1;
-    group.forEach(gs => { total += (gs.durationSeconds || 0) * reps; });
-  });
-  return total;
-}
+
+
 
 export function fmtDuration(s) {
   if (!s) return '';
@@ -402,6 +396,13 @@ export function FieldSelect({ label, value, options, onChange, placeholder = 'Se
 export function WorkoutSummary({ steps, context, sport, estTss }) {
   const expanded = expandSteps(Array.isArray(steps) ? steps : []);
   if (!expanded.length) return null;
+  // The same distance the chart's own header reports. This row used to count
+  // only the steps programmed AS a distance, so a run of 5×2 km with jogged
+  // warm-up, recoveries and cool-down read "10 km" here and "15.5 km" six
+  // pixels away in the preview header — two distances for one session, and
+  // neither said which it meant. For bike the resolver still returns 0 on a
+  // timed step, so nothing is invented where there is no pace to invent it.
+  const distCtx = { ...(context || {}), sport: sport || context?.sport };
 
   let totalSecs = 0;
   let workSecs = 0;
@@ -412,7 +413,7 @@ export function WorkoutSummary({ steps, context, sport, estTss }) {
     const dur = Number(s.durationSeconds) || 0;
     totalSecs += dur;
     if (s.stepType === 'work') workSecs += dur;
-    if (s.durationType === 'distance' && Number(s.distanceMeters) > 0) distM += Number(s.distanceMeters);
+    distM += resolveStepDistanceMeters(s, distCtx) || 0;
     const w = resolveTargetWatts(s.powerTarget, context);
     if (w > 0) { wattSum += w * dur; wattSecs += dur; }
   }
@@ -672,8 +673,16 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
     if (!title.trim()) return;
     setSaving(true);
     setSaveError(null);
-    const stepsDur = steps.length > 0 ? stepTotalSecs(steps) : 0;
-    const estTss   = steps.length > 0 ? computeEstTSS(steps, { ...effContext, sport }) : null;
+    // What is saved has to be what the screen just showed. The TSS box prints
+    // the figure computed from the steps and the duration box printed whatever
+    // was stored, while the save took the stored TSS and the computed
+    // duration — so a session edited from 3h/120 down to 1:25/102 went back to
+    // the calendar as 1:25/120, and the card went on claiming a number the
+    // builder had already contradicted.
+    const totals = plannedTotals({
+      steps, context: effContext, sport,
+      typedTss: tss, typedDurationSecs: parseDurStr(plannedDurStr),
+    });
     try {
       await onSave({
         date: planDate,
@@ -682,10 +691,10 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
         title: title.trim(),
         description: desc,
         comment: comment.trim() || undefined,
-        targetTss:       tss ? Number(tss) : (estTss || undefined),
+        targetTss:       totals.tss,
         steps,
         category:        category || null,
-        plannedDuration: stepsDur || parseDurStr(plannedDurStr) || undefined,
+        plannedDuration: totals.durationSecs,
         plannedDistance: plannedDistStr
           ? (sport === 'swim'
             ? parseFloat(plannedDistStr)
@@ -1052,9 +1061,15 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
 
                 {/* Planned stats table */}
                 <div className="grid grid-cols-3 gap-2">
-                  {/* Duration — always editable; steps-derived value shown as placeholder */}
+                  {/* Duration — read from the steps while there are steps, the
+                      way the TSS box beside it already does. It used to show
+                      the stored figure and save the computed one, which is a
+                      field that tells you 3:00:00 and writes 1:25:00. */}
                   <div className="bg-slate-50 rounded-xl p-3 min-h-[70px]">
                     <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide block mb-1">Duration</span>
+                    {stepsDuration > 0 ? (
+                      <span className="block text-base font-bold text-primary">{secsToHMS(stepsDuration)}</span>
+                    ) : (
                     <input
                       type="text"
                       value={plannedDurStr}
@@ -1064,8 +1079,9 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
                       placeholder={stepsDuration > 0 ? secsToHMS(stepsDuration) : '35 or 1:30:00'}
                       className="w-full text-base font-bold text-slate-800 bg-transparent border-0 focus:outline-none placeholder:text-slate-400 placeholder:font-normal"
                     />
+                    )}
                     <span className="text-[10px] text-slate-400">
-                      {stepsDuration > 0 && !plannedDurStr ? 'from steps · click to edit' : 'h:mm:ss or minutes'}
+                      {stepsDuration > 0 ? 'from the steps below' : 'h:mm:ss or minutes'}
                     </span>
                   </div>
 

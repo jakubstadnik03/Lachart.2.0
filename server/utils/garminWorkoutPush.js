@@ -37,6 +37,7 @@ const {
   resolveTargetPaceSecPerKm,
   resolveTargetSwimPaceSecPer100m,
 } = require('./workoutExporters');
+const { plainSteps } = require('./plainSteps');
 
 /** Lazy — keeps the pure builders below testable with plain `node` (no deps). */
 function axios() {
@@ -192,6 +193,10 @@ function toGarminStep(step, ctx, order) {
  * Connect. Until something has actually been read back from Garmin, flat wins.
  */
 function buildGarminSteps(steps = [], ctx = {}) {
+  // Plain objects first: the members of a repeat block are copied below, and a
+  // spread of a Mongoose subdocument copies its plumbing and none of its data.
+  // See plainSteps — this sent whole main sets to watches as 1-second blanks.
+  const source = plainSteps(steps);
   const out = [];
   let group = null;
 
@@ -207,14 +212,14 @@ function buildGarminSteps(steps = [], ctx = {}) {
     group = null;
   };
 
-  for (const s of steps) {
+  for (const s of source) {
     if (s.isGroupHeader) {
       flushGroup();
-      group = { id: s.groupId, repeat: s.groupRepeat || 1, members: [{ ...s }] };
+      group = { id: s.groupId, repeat: s.groupRepeat || 1, members: [s] };
       continue;
     }
     if (group && s.groupId && s.groupId === group.id) {
-      group.members.push({ ...s });
+      group.members.push(s);
     } else {
       flushGroup();
       out.push(s);
@@ -263,7 +268,10 @@ async function resolveWorkoutContext(athleteId, user = null) {
   let latestTest = null;
   try {
     const Test = require('../models/test');
-    const tests = await Test.find({ userId: athleteId }).sort({ date: -1 }).limit(10).lean();
+    // athleteId, not userId: the tests collection has no userId field at all
+    // (0 of 837 documents), so this fallback silently found nothing and an
+    // athlete with no profile zones got no thresholds on their watch.
+    const tests = await Test.find({ athleteId: String(athleteId) }).sort({ date: -1 }).limit(10).lean();
     latestTest = tests.find((t) => t.lt2Power || t.ltPower || t.ftp) || null;
   } catch { /* profile zones may still carry everything */ }
 

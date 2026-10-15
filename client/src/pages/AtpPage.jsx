@@ -545,11 +545,11 @@ export default function AtpPage() {
       </div>
 
       {/* Chart */}
-      <div className="rounded-xl ring-1 ring-slate-200 bg-white p-2 mb-4">
+      <div className="bg-white mb-4 -mx-3 sm:mx-0 sm:rounded-xl sm:ring-1 sm:ring-slate-200 sm:p-2">
         {/* The same season, measured two ways. Load asks whether each week is
             the right size; volume asks what it is made of, which is the
             question a base block gets judged on. */}
-        <div className="flex justify-end px-1 pb-1">
+        <div className="flex justify-end px-2 sm:px-1 pt-2 sm:pt-0 pb-1">
           <div className="inline-flex rounded-lg bg-slate-100 p-0.5">
             {[['load', 'Load'], ['volume', 'Volume']].map(([id, label]) => (
               <button

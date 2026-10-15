@@ -51,10 +51,10 @@ export default function RunSplitsTable({
   };
 
   return (
-    <div className={`px-4 py-3 border-b border-gray-100 ${className}`}>
+    <div className={className || 'px-4 py-3 border-b border-gray-100'}>
       <h3 className="text-sm font-semibold text-gray-900 mb-2">Splits</h3>
 
-      <div className="w-full max-w-md">
+      <div className="w-full">
         <div className={`grid ${splitsGrid} gap-x-2 items-center mb-1`}>
           <div className="text-[10px] font-medium text-gray-400">{distColLabel}</div>
           <div className="text-[10px] font-medium text-gray-400">Pace</div>

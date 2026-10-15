@@ -625,7 +625,7 @@ const SEO_H1 = {
 const TestingWithoutLogin = () => {
   const navigate = useNavigate();
   const { addNotification } = useNotification();
-  const { login, isAuthenticated } = useAuth();
+  const { login, isAuthenticated, user } = useAuth();
   const menuRef = useRef(null);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const location = useLocation();
@@ -697,15 +697,82 @@ const TestingWithoutLogin = () => {
     setTestData({ ...newData, weight:typeof newData.weight==='string'?newData.weight:String(newData.weight||''), baseLa:typeof newData.baseLa==='string'?newData.baseLa:String(newData.baseLa||''), baseLactate:typeof newData.baseLa==='string'?newData.baseLa:String(newData.baseLa||''), results:(newData.results||[]).map(r=>({...r,power:String(r.power??''),heartRate:String(r.heartRate??''),lactate:String(r.lactate??''),glucose:String(r.glucose??''),RPE:String(r.RPE??'')})) });
   };
 
+  /** Persist the form snapshot from Save Test, then open the same signup gate
+   *  as "Unlock zones". After signup, Google/email handlers already POST /test. */
+  const handleDemoSave = async (updatedTest) => {
+    const next = {
+      ...updatedTest,
+      weight: updatedTest.weight == null ? '' : String(updatedTest.weight),
+      baseLa: updatedTest.baseLactate == null ? '' : String(updatedTest.baseLactate),
+      baseLactate: updatedTest.baseLactate == null ? '' : String(updatedTest.baseLactate),
+      results: (updatedTest.results || []).map((r) => ({
+        ...r,
+        power: String(r.power ?? ''),
+        heartRate: String(r.heartRate ?? ''),
+        lactate: String(r.lactate ?? ''),
+        glucose: String(r.glucose ?? ''),
+        RPE: String(r.RPE ?? ''),
+      })),
+    };
+    setTestData(next);
+    try { localStorage.setItem('testData', JSON.stringify(next)); } catch { /* ignore */ }
+    trackEvent('calc_unlock_click', { calc: 'lactate', source: 'save_test' });
+
+    // Already signed in on the public calculator — save straight to the account.
+    const userId = user?._id || user?.id || null;
+    if (isAuthenticated && userId) {
+      const td = {
+        ...next,
+        baseLactate: parseFloat(String(next.baseLactate || '0').replace(',', '.')) || 0,
+        results: (next.results || []).map((r, i) => ({
+          interval: r.interval || (i + 1),
+          power: parseFloat(String(r.power).replace(',', '.')) || 0,
+          heartRate: parseFloat(String(r.heartRate).replace(',', '.')) || 0,
+          lactate: parseFloat(String(r.lactate).replace(',', '.')) || 0,
+          glucose: parseFloat(String(r.glucose).replace(',', '.')) || 0,
+          RPE: parseFloat(String(r.RPE).replace(',', '.')) || 0,
+        })),
+      };
+      const testToSave = {
+        athleteId: String(userId),
+        sport: td.sport || 'bike',
+        title: td.title || `Lactate Test - ${td.sport} - ${new Date().toLocaleDateString()}`,
+        date: td.date?.includes('T') ? td.date : new Date(td.date || Date.now()).toISOString(),
+        description: td.description || '',
+        baseLactate: Number(td.baseLactate) || 0,
+        weight: parseFloat(String(td.weight).replace(',', '.')) || 0,
+        specifics: td.specifics || {},
+        comments: td.comments || '',
+        unitSystem: td.unitSystem || 'metric',
+        inputMode: td.inputMode || 'pace',
+        results: td.results,
+      };
+      const saved = await api.post('/test', testToSave);
+      if (saved?.data?._id) {
+        addNotification('Lactate test saved to your account!', 'success');
+        try { await logTestCreated(testToSave.sport, (testToSave.results || []).length, userId); } catch { /* ignore */ }
+        navigate('/testing');
+      }
+      return;
+    }
+
+    setShowRegister(true);
+  };
+
   // ── Google registration ──────────────────────────────────────────────────────
   const handleGoogleSuccess = async (response) => {
     setIsSendingEmail(true); setEmailError(null);
     try {
-      const res = await fetch(`${API_BASE_URL}/user/google-auth`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({credential:response.credential}) });
+      const chosenRole = emailFormData.role === 'coach' ? 'coach' : 'athlete';
+      const res = await fetch(`${API_BASE_URL}/user/google-auth`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ credential: response.credential, role: chosenRole }),
+      });
       const data = await res.json();
       if (data.token) {
-        trackUserRegistration('google','athlete');
-        trackConversionFunnel('signup_complete',{method:'google',role:'athlete',source:'calculator'});
+        trackUserRegistration('google', chosenRole);
+        trackConversionFunnel('signup_complete', { method: 'google', role: chosenRole, source: 'calculator' });
         await logUserRegistration('google', data.user?._id);
         const { token, user } = data;
         const userId = user?._id || user?.id || null;
@@ -892,8 +959,8 @@ const TestingWithoutLogin = () => {
                   <TestingForm
                     testData={testData}
                     onTestDataChange={handleTestDataChange}
-                    onSave={()=>{}}
-                    isDemo={true}
+                    onSave={handleDemoSave}
+                    demoMode
                     hideGlucoseColumn={false}
                     onGlucoseColumnChange={()=>{}}
                   />

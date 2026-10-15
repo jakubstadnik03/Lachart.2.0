@@ -1057,9 +1057,10 @@ export const sendCoachLeadTest = async (userId, segment = 'coach') => {
   return data;
 };
 
-/** Paced batch to an explicitly chosen list. Runs server-side; poll for progress. */
-export const startCoachLeadBatch = async (userIds, { segment = 'coach', gapMs } = {}) => {
-  const { data } = await api.post(`/api/admin/coach-outreach/send-batch?segment=${segment}`, { userIds, segment, gapMs });
+/** Paced batch to an explicitly chosen list. Runs server-side; poll for progress.
+ *  Pass force:true to re-contact people who already received this outreach. */
+export const startCoachLeadBatch = async (userIds, { segment = 'coach', gapMs, force = false } = {}) => {
+  const { data } = await api.post(`/api/admin/coach-outreach/send-batch?segment=${segment}`, { userIds, segment, gapMs, force });
   return data;
 };
 
@@ -1527,6 +1528,74 @@ export const startGarminAuth = async () => {
   return data.url;
 };
 
+/** Polar AccessLink or COROS Open API. `provider` is 'polar' or 'coros'. */
+export const startWatchAuth = async (provider) => {
+  const platform = typeof window !== 'undefined' && window.Capacitor?.isNativePlatform?.() ? 'ios' : 'web';
+  const { data } = await api.get(`/api/integrations/${provider}/auth-url`, { params: { platform } });
+  return data?.url;
+};
+
+export const syncWatchActivities = async (provider, days = null) => {
+  const { data } = await api.post(`/api/integrations/${provider}/sync`, days ? { days } : {}, { timeout: 180000 });
+  invalidateTrainingCaches();
+  return data;
+};
+
+export const autoSyncWatchActivities = async (provider) => {
+  const { data } = await api.post(`/api/integrations/${provider}/auto-sync`, {}, { timeout: 120000 });
+  return data;
+};
+
+export const setWatchAutoSync = async (provider, enabled) => {
+  const { data } = await api.put(`/api/integrations/${provider}/auto-sync`, { enabled });
+  return data;
+};
+
+export const disconnectWatch = async (provider) => {
+  const { data } = await api.post(`/api/integrations/${provider}/disconnect`);
+  return data;
+};
+
+export const fetchWatchStatus = async (provider) => {
+  try {
+    const { data } = await api.get(`/api/integrations/${provider}/status`, { timeout: 10000 });
+    return data;
+  } catch (e) {
+    console.warn(`[${provider} status] fetch failed:`, e?.response?.data || e?.message);
+    return null;
+  }
+};
+
+export const getWatchActivityDetail = async (provider, watchId, athleteId = null) => {
+  const params = athleteId ? { athleteId } : {};
+  const id = String(watchId).replace(new RegExp(`^${provider}-`, 'i'), '');
+  const { data } = await api.get(`/api/integrations/watch/activities/${provider}/${encodeURIComponent(id)}`, { params });
+  return data;
+};
+
+export const updateWatchActivity = async (provider, watchId, payload = {}, athleteId = null) => {
+  const params = athleteId ? { athleteId } : {};
+  const id = String(watchId).replace(new RegExp(`^${provider}-`, 'i'), '');
+  const { data } = await api.put(
+    `/api/integrations/watch/activities/${provider}/${encodeURIComponent(id)}`,
+    payload,
+    { params },
+  );
+  invalidateTrainingCaches();
+  return data;
+};
+
+export const deleteWatchActivity = async (provider, watchId, athleteId = null) => {
+  const params = athleteId ? { athleteId } : {};
+  const id = String(watchId).replace(new RegExp(`^${provider}-`, 'i'), '');
+  const { data } = await api.delete(
+    `/api/integrations/watch/activities/${provider}/${encodeURIComponent(id)}`,
+    { params },
+  );
+  invalidateTrainingCaches();
+  return data;
+};
+
 /** Build the Strava OAuth start URL.
  *
  * `platform`: 'ios' makes the server callback redirect to the iOS deep-link
@@ -1639,7 +1708,7 @@ export const importStravaActivity = async (activityId) => {
  * @param {{ days?: number, signal?: AbortSignal }} [opts]
  */
 export const getGarminActivityStatus = async (opts = {}) => {
-  const cfg = { params: {}, timeout: 60000, noRetry: true };
+  const cfg = { params: {}, timeout: 20000, noRetry: true };
   if (opts.days != null) cfg.params.days = opts.days;
   if (opts.cachedOnly) cfg.params.cachedOnly = 1;
   if (opts.signal) cfg.signal = opts.signal;

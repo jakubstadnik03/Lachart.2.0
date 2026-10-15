@@ -13,10 +13,9 @@ import { PageSkeleton } from '../components/common/Skeleton';
 import PredictedCurvePanel from '../components/Admin/PredictedCurvePanel';
 
 /**
- * Coach leads — existing users already coaching 2+ athletes, i.e. already past
- * what the free plan covers. One coach, one preview, one deliberate click:
- * there is no "send to all" here on purpose, because this is the most
- * qualified list in the database and a blast would waste it.
+ * Coach leads — existing users already coaching past the free plan, or other
+ * warm segments. Batch send with optional force re-contact for people who
+ * already got the first outreach.
  */
 function CoachLeadsPanel({ addNotification }) {
   const [segment, setSegment] = useState('coach');
@@ -38,22 +37,28 @@ function CoachLeadsPanel({ addNotification }) {
     return next;
   });
 
-  // Contacted and opted-out rows are never selectable — the server would skip
-  // them anyway, and showing them as queued would misreport what will happen.
-  const selectableIds = coaches.filter((c) => !c.alreadySentAt && !c.optedOut).map((c) => c.userId);
+  // Opted-out never selectable. Already-contacted are selectable when we want
+  // a deliberate re-send (batch goes out with force:true).
+  const selectableIds = coaches.filter((c) => !c.optedOut).map((c) => c.userId);
   const allChecked = selectableIds.length > 0 && selectableIds.every((id) => checkedIds.has(id));
+  const selectedAlreadySent = coaches.filter((c) => checkedIds.has(c.userId) && c.alreadySentAt).length;
 
   const startBatch = async () => {
     const ids = selectableIds.filter((id) => checkedIds.has(id));
     if (!ids.length) return;
+    const recontact = coaches.filter((c) => ids.includes(c.userId) && c.alreadySentAt).length;
     const ok = window.confirm(
-      `Send to ${ids.length} recipient${ids.length === 1 ? '' : 's'}?\n\n` +
-      'These are real emails to real customers. They go out spaced apart, ' +
-      'and anyone already contacted is skipped automatically.',
+      recontact > 0
+        ? `Send to ${ids.length} recipient${ids.length === 1 ? '' : 's'}?\n\n` +
+          `${recontact} of them already got this outreach — they will get it AGAIN.\n` +
+          'Emails go out spaced apart. Opted-out accounts stay skipped.'
+        : `Send to ${ids.length} recipient${ids.length === 1 ? '' : 's'}?\n\n` +
+          'These are real emails to real customers. They go out spaced apart, ' +
+          'and anyone opted out is skipped automatically.',
     );
     if (!ok) return;
     try {
-      const job = await startCoachLeadBatch(ids, { segment });
+      const job = await startCoachLeadBatch(ids, { segment, force: recontact > 0 });
       setBatch(job);
       setCheckedIds(new Set());
     } catch (e) {
@@ -124,13 +129,16 @@ function CoachLeadsPanel({ addNotification }) {
         ? `${(selected.sources || []).join(' + ') || 'A source'} connected, no test yet.`
         : `Strava connected, ${selected.testCount} lactate test(s).`;
     const ok = window.confirm(
-      `Send this email to ${selected.name || 'this person'} <${selected.email}>?\n\n` +
-      `${what} This is a real email to a real customer.`,
+      selected.alreadySentAt
+        ? `Send AGAIN to ${selected.name || 'this person'} <${selected.email}>?\n\n` +
+          `${what}\nThey already received this outreach on ${new Date(selected.alreadySentAt).toLocaleDateString()}.`
+        : `Send this email to ${selected.name || 'this person'} <${selected.email}>?\n\n` +
+          `${what} This is a real email to a real customer.`,
     );
     if (!ok) return;
     setSending(true);
     try {
-      const r = await sendCoachLeadEmail(selected.userId, { segment });
+      const r = await sendCoachLeadEmail(selected.userId, { segment, force: Boolean(selected.alreadySentAt) });
       addNotification?.(`Sent to ${r.to}`, 'success');
       await load();
       setSelected((s) => (s ? { ...s, alreadySentAt: new Date().toISOString() } : s));
@@ -246,7 +254,10 @@ function CoachLeadsPanel({ addNotification }) {
                 onChange={() => setCheckedIds(allChecked ? new Set() : new Set(selectableIds))}
                 className="rounded border-gray-300"
               />
-              Select all not contacted ({selectableIds.length})
+              Select all ({selectableIds.length})
+              {selectedAlreadySent > 0 && checkedIds.size > 0 && (
+                <span className="text-amber-600 font-normal">· {selectedAlreadySent} re-send</span>
+              )}
             </label>
             <button
               onClick={startBatch}
@@ -279,7 +290,7 @@ function CoachLeadsPanel({ addNotification }) {
                     type="checkbox"
                     className="mt-1 rounded border-gray-300 shrink-0"
                     checked={checkedIds.has(c.userId)}
-                    disabled={!!c.alreadySentAt || c.optedOut}
+                    disabled={c.optedOut}
                     onChange={() => toggleChecked(c.userId)}
                     onClick={(e) => e.stopPropagation()}
                   />
@@ -838,11 +849,11 @@ const AdminDashboard = () => {
         )
       );
       const sentAtText = new Date(nowIso).toLocaleString();
-      addNotification(`Strava reminder email sent to ${targetUser.email} at ${sentAtText}`, 'success');
+      addNotification(`Tracker reminder email sent to ${targetUser.email} at ${sentAtText}`, 'success');
     } catch (err) {
-      const message = err?.response?.data?.error || 'Failed to send Strava reminder email';
+      const message = err?.response?.data?.error || 'Failed to send tracker reminder email';
       addNotification(message, 'error');
-      console.error('Strava reminder email error:', err);
+      console.error('Tracker reminder email error:', err);
     } finally {
       setStravaReminderEmailLoadingUserId(null);
     }
@@ -2625,12 +2636,14 @@ const AdminDashboard = () => {
                     {(stravaFilter === 'notConnected' || stravaFilter === 'none') && (
                       <button
                         onClick={async () => {
-                          const notConnectedUsers = filteredUsers.filter(u => !u.stravaConnected && u.email);
+                          const notConnectedUsers = filteredUsers.filter(u =>
+                            !u.stravaConnected && !u.garminConnected && !u.appleHealthConnected && u.email
+                          );
                           if (notConnectedUsers.length === 0) {
-                            addNotification('No users without Strava connection found', 'warning');
+                            addNotification('No users without a tracker connection found', 'warning');
                             return;
                           }
-                          if (!window.confirm(`Send Strava reminder emails to ${notConnectedUsers.length} users?`)) {
+                          if (!window.confirm(`Send tracker reminder emails to ${notConnectedUsers.length} users?`)) {
                             return;
                           }
                           setBulkSending(true);
@@ -2646,7 +2659,7 @@ const AdminDashboard = () => {
                             }
                           }
                           setBulkSending(false);
-                          addNotification(`Strava reminder emails sent: ${successCount} successful, ${failCount} failed`, successCount > 0 ? 'success' : 'error');
+                          addNotification(`Tracker reminder emails sent: ${successCount} successful, ${failCount} failed`, successCount > 0 ? 'success' : 'error');
                         }}
                         disabled={bulkSending}
                         className={`px-3 py-1.5 text-xs sm:text-sm font-medium rounded-md transition-colors ${
@@ -2655,7 +2668,7 @@ const AdminDashboard = () => {
                             : 'bg-orange-600 text-white hover:bg-orange-700'
                         }`}
                       >
-                        {bulkSending ? 'Sending...' : `Send Reminders to All (${filteredUsers.filter(u => !u.stravaConnected && u.email).length})`}
+                        {bulkSending ? 'Sending...' : `Send Reminders to All (${filteredUsers.filter(u => !u.stravaConnected && !u.garminConnected && !u.appleHealthConnected && u.email).length})`}
                       </button>
                     )}
                     <div className="text-xs text-gray-500">
@@ -2992,7 +3005,7 @@ const AdminDashboard = () => {
                         </>
                       )}
                       <div className="mt-2 flex flex-col gap-2">
-                        {!user.stravaConnected && (
+                        {!user.stravaConnected && !user.garminConnected && !user.appleHealthConnected && (
                           <button
                             type="button"
                             disabled={stravaReminderEmailLoadingUserId === user._id || user.notifications?.emailNotifications === false}
@@ -3004,7 +3017,7 @@ const AdminDashboard = () => {
                             } ${stravaReminderEmailLoadingUserId === user._id ? 'opacity-60 cursor-wait' : ''}`}
                           >
                             <span>🔗</span>
-                            {stravaReminderEmailLoadingUserId === user._id ? 'Sending…' : `Send Strava reminder${user.stravaReminderEmail?.sent ? ` (${user.stravaReminderEmail.sentCount || 1}x)` : ''}`}
+                            {stravaReminderEmailLoadingUserId === user._id ? 'Sending…' : `Send tracker reminder${user.stravaReminderEmail?.sent ? ` (${user.stravaReminderEmail.sentCount || 1}x)` : ''}`}
                           </button>
                         )}
                         <button
@@ -3316,7 +3329,7 @@ const AdminDashboard = () => {
                                   )).toLocaleDateString()}
                                 </div>
                               )}
-                              {!user.stravaConnected && (
+                              {!user.stravaConnected && !user.garminConnected && !user.appleHealthConnected && (
                                 <>
                                   {user.stravaReminderEmail?.sent && user.stravaReminderEmail.lastSent && (
                                     <div className="text-[11px] text-gray-400">
@@ -3337,7 +3350,7 @@ const AdminDashboard = () => {
                                           ? 'text-gray-400 cursor-wait'
                                           : 'text-orange-600 hover:text-orange-700 hover:bg-orange-50'
                                       } transition-colors`}
-                                      title="Send Strava connection reminder email"
+                                      title="Send tracker connection reminder (Strava, Garmin or Apple Health)"
                                     >
                                       {stravaReminderEmailLoadingUserId === user._id ? 'Sending...' : 'Send reminder'}
                                     </button>

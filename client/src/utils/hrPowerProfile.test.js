@@ -1024,3 +1024,54 @@ describe('buildDriftHistory', () => {
     expect(retest).toBeNull();
   });
 });
+
+describe('timeAtThresholds — what was held in each band', () => {
+  // LT1 210 W, LT2 280 W. Bands: 203.7–216.3 and 271.6–288.4.
+  const bin = (demand, hr, sec = 30) => ({ demand, hr, sec, t: 0 });
+  const split = (bins) => timeAtThresholds(bins, { lt1Demand: 210, lt2Demand: 280 });
+
+  it('averages the demand and heart rate of each band over its own time', () => {
+    const r = split([bin(300, 170), bin(340, 178), bin(150, 120)]);
+    expect(r.bands.aboveLt2.demand).toBe(320);
+    expect(r.bands.aboveLt2.hr).toBe(174);
+    expect(r.bands.belowLt1.demand).toBe(150);
+    expect(r.bands.belowLt1.hr).toBe(120);
+  });
+
+  it('weights the average by time, not by sample count', () => {
+    // Ten minutes at 300 W says more about the session than one at 400 W.
+    const r = split([bin(300, 170, 600), bin(400, 180, 60)]);
+    expect(Math.round(r.bands.aboveLt2.demand)).toBe(309);
+  });
+
+  it('leaves a band empty rather than inventing a figure for it', () => {
+    const r = split([bin(300, 170)]);
+    expect(r.bands.belowLt1).toEqual({ sec: 0, demand: null, hr: null });
+  });
+
+  it('still reports a demand when the session carried no heart rate', () => {
+    const r = split([bin(300, 0), bin(320, null)]);
+    expect(r.bands.aboveLt2.demand).toBe(310);
+    expect(r.bands.aboveLt2.hr).toBeNull();
+  });
+
+  it('averages the heart rate over only the time that had one', () => {
+    const r = split([bin(300, 170), bin(300, 0)]);
+    expect(r.bands.aboveLt2.hr).toBe(170);
+    expect(r.bands.aboveLt2.sec).toBe(60);
+  });
+
+  it('hands back the boundaries it used', () => {
+    const r = split([bin(300, 170)]);
+    expect(r.edges.lt2Demand).toBe(280);
+    expect(r.edges.lt2Lo).toBeCloseTo(271.6, 1);
+    expect(r.edges.lt2Hi).toBeCloseTo(288.4, 1);
+    expect(r.edges.lt1Lo).toBeCloseTo(203.7, 1);
+  });
+
+  it('reports no LT1 boundary when LT1 has collapsed onto LT2', () => {
+    const r = timeAtThresholds([bin(150, 120)], { lt1Demand: 275, lt2Demand: 280 });
+    expect(r.edges.lt1Demand).toBeNull();
+    expect(r.edges.lt1Lo).toBeNull();
+  });
+});

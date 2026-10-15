@@ -11,6 +11,16 @@ describe('mapExternalActivitiesToCalendar', () => {
     { d: 180, m: 971, s: 5.39 },
   ];
 
+  it('gives a Polar workout a polar- id and a calendar sport name', () => {
+    const [mapped] = mapExternalActivitiesToCalendar(
+      [{ source: 'polar', watchId: '2AC312F', sport: 'running', startDate: '2026-09-02T10:00:00Z', sourceId: '2AC312F' }],
+      [],
+    );
+    expect(mapped.id).toBe('polar-2AC312F');
+    expect(mapped.type).toBe('polar');
+    expect(mapped.sport).toBe('Run');
+  });
+
   it('carries the lap profile through to the calendar', () => {
     const [mapped] = mapExternalActivitiesToCalendar(
       [{ id: 'strava-1', sport: 'Run', startDate: '2026-09-02T10:00:00Z', lapProfile }],

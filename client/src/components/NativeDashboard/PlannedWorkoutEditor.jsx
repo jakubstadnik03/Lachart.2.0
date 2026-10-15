@@ -42,6 +42,9 @@ function planStepSecs(steps) {
   return total;
 }
 
+/** How long the sheet waits for typing to stop before it writes. */
+const AUTOSAVE_QUIET_MS = 900;
+
 // Local keyframes — sheet slides up, scrim fades in
 const SHEET_KEYFRAMES = `
 @keyframes ndSheetIn  { from { transform: translateY(100%); } to { transform: translateY(0); } }
@@ -144,7 +147,15 @@ export default function PlannedWorkoutEditor({
   const [category, setCategory] = useState('');
   const { categories } = useCategories();
   const [saving, setSaving]     = useState(false);
+  const [savedAt, setSavedAt]   = useState(null);
   const [deleting, setDeleting] = useState(false);
+  // The payload as last written to the server. Null until the sheet has
+  // hydrated, which is how the first pass after a workout opens is told apart
+  // from an edit — otherwise opening a session would save it straight back.
+  const savedKeyRef = useRef(null);
+  const autosaveRef = useRef(null);
+  const persistRef = useRef(null);
+  const buildPayloadRef = useRef(null);
   const [error, setError]       = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [closing, setClosing]   = useState(false);
@@ -263,9 +274,20 @@ export default function PlannedWorkoutEditor({
     }).catch(() => {});
   }, [athleteId]);
 
-  // Hydrate fields whenever a new workout opens
+  // Hydrate fields whenever a new workout opens.
+  //
+  // Keyed on the workout's id rather than the object: saving now happens as
+  // the athlete types, and every save hands the parent a fresh object. Keyed
+  // on identity, that object came straight back down as a prop and overwrote
+  // the half-typed sentence that had just been saved.
+  const hydratedIdRef = useRef(null);
   useEffect(() => {
     if (!plannedWorkout) return;
+    const id = String(plannedWorkout._id || '');
+    if (hydratedIdRef.current === id && savedKeyRef.current !== null) return;
+    hydratedIdRef.current = id;
+    savedKeyRef.current = null;
+    setSavedAt(null);
     setTitle(plannedWorkout.title || plannedWorkout.name || '');
     // Keep the planner's own key when it is one — the picker now offers the
     // same twelve sports the other planner does, and normalising "brick" to
@@ -311,6 +333,13 @@ export default function PlannedWorkoutEditor({
   const doClose = useRef(null);
   doClose.current = () => {
     if (closing) return;
+    // A change made in the last second is still sitting in the debounce. The
+    // component is about to unmount and take it with it, so write it now.
+    if (autosaveRef.current) {
+      clearTimeout(autosaveRef.current);
+      autosaveRef.current = null;
+      persistRef.current && persistRef.current();
+    }
     setClosing(true);
     setTimeout(() => { onClose && onClose(); }, 300);
   };
@@ -368,6 +397,33 @@ export default function PlannedWorkoutEditor({
       sheet.removeEventListener('touchcancel', onEnd);
     };
   }, [isOpen]);
+
+  // Write what changed, once the athlete has stopped changing it. A keystroke
+  // is not a decision; a second of quiet after one is.
+  useEffect(() => {
+    if (!isOpen || !plannedWorkout?._id) return undefined;
+    const key = JSON.stringify(buildPayloadRef.current());
+    // First pass after hydration: this is the workout as it arrived, not an
+    // edit of it. Record it as the baseline and write nothing.
+    if (savedKeyRef.current === null) { savedKeyRef.current = key; return undefined; }
+    if (key === savedKeyRef.current) return undefined;
+    autosaveRef.current = setTimeout(() => {
+      autosaveRef.current = null;
+      persistRef.current && persistRef.current();
+    }, AUTOSAVE_QUIET_MS);
+    return () => { if (autosaveRef.current) { clearTimeout(autosaveRef.current); autosaveRef.current = null; } };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, plannedWorkout?._id, title, sport, date, durH, durM, plannedDist, targetTss, description, comment, category]);
+
+  // Unmounted without going through doClose — a parent that simply stopped
+  // rendering the sheet. Whatever was still in the debounce is written anyway.
+  useEffect(() => () => {
+    if (autosaveRef.current) {
+      clearTimeout(autosaveRef.current);
+      autosaveRef.current = null;
+      persistRef.current && persistRef.current();
+    }
+  }, []);
 
   if (!isOpen) return null;
 
@@ -459,23 +515,40 @@ export default function PlannedWorkoutEditor({
 
   const hasSteps = Array.isArray(plannedWorkout?.steps) && plannedWorkout.steps.length > 0;
 
-  // ── Save / Delete handlers ─────────────────────────────────────────────────
-  const handleSave = async () => {
-    if (!plannedWorkout?._id) return;
+  // ── Saving ────────────────────────────────────────────────────────────────
+  //
+  // The sheet writes as it is edited. Picking a category, changing the sport
+  // or typing a note used to be worth nothing until "Save changes" was found
+  // at the bottom of a long scroll — and a sheet that can be swiped away has
+  // no business holding an edit hostage behind a button below the fold.
+  //
+  // Edits are debounced rather than sent per keystroke, compared against the
+  // last thing written so a re-render cannot re-send it, and flushed on the
+  // way out. The button stays as the deliberate way to finish, and says so.
+
+  /** Exactly what the server is asked to store — also the comparison key. */
+  const buildPayload = () => ({
+    title: title.trim() || 'Planned workout',
+    sport,
+    date,                                    // YYYY-MM-DD
+    plannedDuration: hmToSecs(durH, durM),   // seconds
+    plannedDistance: parseDistanceInputToMetres(plannedDist, unitSystem, { isSwim: sport === 'swim' }),
+    targetTss: targetTss !== '' ? Number(targetTss) : null,
+    description: description.trim(),
+    comment: comment.trim() || undefined,
+    category: category || null,
+  });
+
+  const persist = async ({ close = false } = {}) => {
+    if (!plannedWorkout?._id) { if (close) doClose.current(); return; }
+    const payload = buildPayload();
+    const key = JSON.stringify(payload);
+    // Nothing moved since the last write — closing is then just closing.
+    if (key === savedKeyRef.current) { if (close) doClose.current(); return; }
     setSaving(true); setError(null);
     try {
-      const payload = {
-        title: title.trim() || 'Planned workout',
-        sport,
-        date,                                    // YYYY-MM-DD
-        plannedDuration: hmToSecs(durH, durM),   // seconds
-        plannedDistance: parseDistanceInputToMetres(plannedDist, unitSystem, { isSwim: sport === 'swim' }),
-        targetTss: targetTss !== '' ? Number(targetTss) : null,
-        description: description.trim(),
-        comment: comment.trim() || undefined,
-        category: category || null,
-      };
       const updated = await updatePlannedWorkout(plannedWorkout._id, payload, athleteId);
+      savedKeyRef.current = key;
 
       // If the plan is paired with a real activity, mirror the title and
       // category onto it too — the calendar pairs the two and the user
@@ -518,13 +591,16 @@ export default function PlannedWorkoutEditor({
 
       onSaved && onSaved(updated);
       notifyPlannedWorkoutUpdated(updated);
-      onClose && onClose();
+      setSavedAt(Date.now());
+      if (close) doClose.current();
     } catch (e) {
       setError(e?.response?.data?.error || e?.message || 'Failed to save');
     } finally {
       setSaving(false);
     }
   };
+  persistRef.current = persist;
+  buildPayloadRef.current = buildPayload;
 
   const handleDelete = async () => {
     if (!plannedWorkout?._id) return;
@@ -1132,7 +1208,7 @@ export default function PlannedWorkoutEditor({
             <button
               type="button"
               onClick={handleDelete}
-              disabled={saving || deleting}
+              disabled={deleting}
               style={{
                 flex: '0 0 auto',
                 padding: '11px 14px', borderRadius: 12,
@@ -1154,8 +1230,8 @@ export default function PlannedWorkoutEditor({
 
             <button
               type="button"
-              onClick={handleSave}
-              disabled={saving || deleting}
+              onClick={() => persist({ close: true })}
+              disabled={deleting}
               style={{
                 flex: 1,
                 padding: '11px 14px', borderRadius: 12,
@@ -1170,8 +1246,20 @@ export default function PlannedWorkoutEditor({
                 transition: 'opacity .2s ease, transform .12s ease',
               }}
             >
-              {saving ? 'Saving…' : 'Save changes'}
+              {saving ? 'Saving…' : 'Done'}
             </button>
+          </div>
+
+          {/* Said once, quietly: the button is a way out, not the thing that
+              commits the edit. Without this the sheet looks like it lost the
+              change it in fact already wrote. */}
+          <div style={{
+            marginTop: 6, textAlign: 'center',
+            fontSize: 11, fontWeight: 600,
+            color: saving ? '#8A8A8E' : savedAt ? '#34C759' : '#8A8A8E',
+            transition: 'color .2s ease',
+          }}>
+            {saving ? 'Saving…' : savedAt ? 'Saved' : 'Changes save as you make them'}
           </div>
         </div>
       </div>

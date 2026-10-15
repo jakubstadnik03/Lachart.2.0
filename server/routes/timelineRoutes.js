@@ -180,7 +180,7 @@ router.get('/routes', verifyToken, async (req, res) => {
 router.get('/weather', verifyToken, async (req, res) => {
   try {
     const activityKey = String(req.query.activityKey || '').trim();
-    if (!/^(strava|fit|regular)-[\w-]+$/.test(activityKey)) {
+    if (!/^(strava|fit|regular|garmin)-[\w-]+$/.test(activityKey)) {
       return res.status(400).json({ error: 'Invalid activityKey' });
     }
     const weather = await weatherForActivity(req.user.userId, activityKey);

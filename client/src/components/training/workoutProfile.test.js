@@ -32,24 +32,24 @@ describe('activityProfileBars', () => {
     expect(bars.reduce((s, b) => s + b.w, 0)).toBeCloseTo(1, 6);
   });
 
-  it('gives a run lap the width of its distance, not its duration', () => {
+  it('gives a run lap the width of its time, the way the opened lap chart does', () => {
     const bars = activityProfileBars(LUNCH_RUN);
 
-    // The two floats are 189m and 183m of a 9.47km run — 3.9% of it together.
-    // Measured in time they are 9.7%, which is what used to be drawn: every
-    // recovery came out twice the width it has on the lap chart below the card.
-    expect(widthIn(bars, 0, 0.1)).toBeGreaterThan(0.02);
-    expect(widthIn(bars, 0, 0.1)).toBeLessThan(0.06);
+    // The two slowest floats are 122s and 125s of a 42-minute run — about a
+    // tenth of it together. Measured in distance they were 3.9%, which is
+    // what the card used to draw, and the lap chart under the activity did not.
+    expect(widthIn(bars, 0, 0.1)).toBeGreaterThan(0.08);
+    expect(widthIn(bars, 0, 0.1)).toBeLessThan(0.14);
 
-    // The four reps are 4.91km of the 9.47km — about half the picture.
+    // The four reps are 936s of 2534s — a bit over a third, not half.
     const reps = widthIn(bars, 0.9, 1.01);
-    expect(reps).toBeGreaterThan(0.44);
-    expect(reps).toBeLessThan(0.58);
+    expect(reps).toBeGreaterThan(0.32);
+    expect(reps).toBeLessThan(0.42);
 
-    // The 2.99km jog home sits between the two and takes about a third.
+    // The 862s jog home is about a third of the clock.
     const jog = widthIn(bars, 0.45, 0.6);
     expect(jog).toBeGreaterThan(0.28);
-    expect(jog).toBeLessThan(0.36);
+    expect(jog).toBeLessThan(0.40);
   });
 
   it('keeps the reps tall and the floats short', () => {
@@ -134,7 +134,7 @@ describe('activityLactateMarks', () => {
     expect(marks[1].pos).toBeCloseTo(1530 / 2280, 3);
   });
 
-  it('measures a run in distance, the way its bars are', () => {
+  it('measures a run in time, the way its bars and the opened chart are', () => {
     const run = {
       sport: 'Run',
       lapProfile: [
@@ -144,9 +144,11 @@ describe('activityLactateMarks', () => {
       ],
     };
     const marks = activityLactateMarks(run);
-    // 2200m in total: the first km's midpoint is 500m in, the last km's 1700m.
-    expect(marks[0].pos).toBeCloseTo(500 / 2200, 3);
-    expect(marks[1].pos).toBeCloseTo(1700 / 2200, 3);
+    // 720s in total. The first km's midpoint is 150s in; the last km spans
+    // 420–720s, so its midpoint is 570s. Distance would have put them at
+    // 500m and 1700m of 2200m, which is not where the activity chart draws them.
+    expect(marks[0].pos).toBeCloseTo(150 / 720, 3);
+    expect(marks[1].pos).toBeCloseTo(570 / 720, 3);
   });
 
   it('reads the full lap shapes too, not only the list projection', () => {

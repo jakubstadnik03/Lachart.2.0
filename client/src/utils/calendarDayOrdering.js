@@ -155,6 +155,24 @@ export function activityMatchesClaimId(act, claimId) {
   return getActivityAppId(act) === target;
 }
 
+/**
+ * The laps a collapsed pair must not lose.
+ *
+ * Strava wins the row — it is the copy the calendar opens — but a Garmin
+ * file can be the one that actually has a lap shape. Replacing the whole
+ * document used to throw that shape away, so the card drew nothing while
+ * the same ride, opened as a Strava activity, showed every lap.
+ */
+function withLapShape(primary, secondary) {
+  if (!primary || !secondary) return primary || secondary;
+  const usable = (row, key) => Array.isArray(row?.[key]) && row[key].length >= 3;
+  const next = { ...primary };
+  for (const key of ['savedAutoLaps', 'lapProfile', 'laps']) {
+    if (!usable(next, key) && usable(secondary, key)) next[key] = secondary[key];
+  }
+  return next;
+}
+
 /** Prefer calendar entries with stable prefixed ids (strava-*) over raw Mongo duplicates. */
 function activityDedupeScore(act) {
   let score = 0;
@@ -215,7 +233,7 @@ function dupSource(a) {
  * files carry device local time the same way. When one record of a pair comes
  * from each kind, this is what says whose timestamp to believe.
  */
-const TRUE_UTC_SOURCES = new Set(['garmin', 'apple_health']);
+const TRUE_UTC_SOURCES = new Set(['garmin', 'apple_health', 'polar', 'coros']);
 
 function dupMetres(a) {
   return Number(a?.distance || a?.totalDistance || a?.total_distance || 0) || 0;
@@ -444,7 +462,9 @@ export function dedupeCalendarActivities(acts) {
       continue;
     }
     if (activityDedupeScore(act) > activityDedupeScore(kept[prevIdx])) {
-      kept[prevIdx] = act;
+      kept[prevIdx] = withLapShape(act, kept[prevIdx]);
+    } else {
+      kept[prevIdx] = withLapShape(kept[prevIdx], act);
     }
   }
 
@@ -483,7 +503,7 @@ export function dedupeCalendarActivities(acts) {
     }
 
     if (activityDedupeScore(act) > activityDedupeScore(twinSig.act)) {
-      merged[twinIdx] = withTrueStart(sig, twinSig);
+      merged[twinIdx] = withLapShape(withTrueStart(sig, twinSig), twinSig.act);
       twinSig.act = merged[twinIdx];
       twinSig.src = sig.src;
       twinSig.sport = isConfidentSport(sig.sport) ? sig.sport : twinSig.sport;
@@ -492,7 +512,7 @@ export function dedupeCalendarActivities(acts) {
       twinSig.hr = sig.hr || twinSig.hr;
       twinSig.watts = sig.watts || twinSig.watts;
     } else {
-      merged[twinIdx] = withTrueStart(twinSig, sig);
+      merged[twinIdx] = withLapShape(withTrueStart(twinSig, sig), sig.act);
       twinSig.act = merged[twinIdx];
     }
   }

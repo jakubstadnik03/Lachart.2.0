@@ -674,7 +674,7 @@ function batchSnapshot() {
   return rest;
 }
 
-function startBatch(segment, userIds, { gapMs = BATCH_GAP_MS } = {}) {
+function startBatch(segment, userIds, { gapMs = BATCH_GAP_MS, force = false } = {}) {
   if (batchJob?.running) return { error: 'already_running', ...batchSnapshot() };
   const ids = [...new Set((userIds || []).map(String))].filter(Boolean);
   if (!ids.length) return { error: 'empty_selection', ...batchSnapshot() };
@@ -682,6 +682,7 @@ function startBatch(segment, userIds, { gapMs = BATCH_GAP_MS } = {}) {
   batchJob = {
     running: true,
     segment,
+    force: !!force,
     total: ids.length,
     sent: 0,
     failed: 0,
@@ -698,7 +699,7 @@ function startBatch(segment, userIds, { gapMs = BATCH_GAP_MS } = {}) {
       const id = ids[i];
       batchJob.current = id;
       try {
-        const r = await sendOutreach(segment, id, {});
+        const r = await sendOutreach(segment, id, { force: !!force });
         if (r.sent) batchJob.sent += 1;
         else if (r.reason === 'send_failed') batchJob.failed += 1;
         else batchJob.skipped += 1;
@@ -716,7 +717,7 @@ function startBatch(segment, userIds, { gapMs = BATCH_GAP_MS } = {}) {
     batchJob.running = false;
     batchJob.current = null;
     batchJob.finishedAt = new Date();
-    console.log(`[CoachOutreach] batch done: sent=${batchJob.sent} skipped=${batchJob.skipped} failed=${batchJob.failed}`);
+    console.log(`[CoachOutreach] batch done: sent=${batchJob.sent} skipped=${batchJob.skipped} failed=${batchJob.failed} force=${!!force}`);
   })().catch((e) => {
     console.error('[CoachOutreach] batch crashed:', e);
     if (batchJob) { batchJob.running = false; batchJob.finishedAt = new Date(); }

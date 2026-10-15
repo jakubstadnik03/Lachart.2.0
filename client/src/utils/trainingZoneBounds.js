@@ -34,6 +34,12 @@ function enforceOrder(bounds, ascending) {
  * @param {number} [o.topFactor]    top of Z5 as a fraction of LT2
  * @param {number} [o.top]          explicit ceiling (e.g. a measured max HR).
  *                                  Only ever RAISES the top of Z5.
+ * @param {boolean}[o.round]        round the boundaries to whole units. Off
+ *                                  for pace, where a whole second per km is
+ *                                  not a whole second per mile: an edge typed
+ *                                  as 12:00/mi came back rounded as 11:59.
+ *                                  The server twin already defaults its pace
+ *                                  zones this way.
  * @returns {number[]|null} six boundaries b0..b5, or null if the thresholds
  *                          are missing or the wrong way round
  */
@@ -51,13 +57,49 @@ function enforceOrder(bounds, ascending) {
  * half again as fast as their threshold; heart rate least of all, because LT2
  * already sits at 88-92 % of maximum.
  */
+/**
+ * Where the five zones sit between the two measured thresholds.
+ *
+ * These were four numbers scattered across four call sites, and the call sites
+ * disagreed: the same test produced a different table depending on whether the
+ * zones came from the server, the testing page, the profile editor or the
+ * zones modal. One of them put the top of Z5 at 1.20x LT2 while the others
+ * used 1.30. A coach who regenerated their zones from a different screen got
+ * different zones, which is indistinguishable from the model being arbitrary.
+ *
+ * The shape itself changed with them, after a threshold coach compared his own
+ * reading of his own tests against ours and went back to doing it by hand:
+ *
+ *   Z4 was LT2 to 1.04x LT2 — four percent wide and sitting entirely ABOVE the
+ *   threshold. Running at exactly LT2 landed on the Z3/Z4 line and a second
+ *   slower was "tempo", so the zone a threshold session is built around was
+ *   both nearly impossible to land in and on the wrong side of the number it
+ *   is named after. It now straddles LT2 by THRESHOLD_BAND either way, which
+ *   is how a threshold session is actually prescribed.
+ *
+ *   Z1 ran to 0.90x LT1 and took forty percent of the axis while Z2 — the
+ *   endurance band most of the week is ridden in — got ten. The split moved to
+ *   0.80x LT1, which hands that volume to the zone it belongs to.
+ *
+ * Changing these changes everybody's generated zones, so they live in one
+ * place with the reasoning attached rather than as four magic numbers.
+ */
+const ZONE_SHAPE = {
+  /** Bottom of Z1, as a fraction of LT1. */
+  floor: 0.70,
+  /** Z1 / Z2 split, as a fraction of LT1. */
+  easySplit: 0.80,
+  /** Half-width of the threshold zone, as a fraction of LT2. */
+  thresholdBand: 0.03,
+};
+
 export const TOP_FACTOR = {
   power: 1.5,      // watts
   pace: 1.3,       // pace seconds are divided, so this reads as "faster by"
   heartRate: 1.12,
 };
 
-export function ltZoneBounds({ lt1, lt2, ascending, floorFactor = 0.5, topFactor = 1.1, top = null }) {
+export function ltZoneBounds({ lt1, lt2, ascending, floorFactor = ZONE_SHAPE.floor, topFactor = 1.1, top = null, round = true }) {
   const a = Number(lt1);
   const b = Number(lt2);
   if (!Number.isFinite(a) || !Number.isFinite(b) || a <= 0 || b <= 0) return null;
@@ -80,17 +122,37 @@ export function ltZoneBounds({ lt1, lt2, ascending, floorFactor = 0.5, topFactor
     ? (ascending ? Math.max(explicitTop, byFactor) : Math.min(explicitTop, byFactor))
     : byFactor;
 
-  return enforceOrder(
-    [
-      scale(a, floorFactor), // bottom of Z1
-      scale(a, 0.9), //         Z1 / Z2
-      a, //                     Z2 / Z3 — aerobic threshold
-      b, //                     Z3 / Z4 — anaerobic threshold
-      scale(b, 1.04), //        Z4 / Z5
-      ceiling, //               top of Z5
-    ].map(Math.round),
-    ascending
-  );
+  const raw = [
+    scale(a, floorFactor), // bottom of Z1
+    scale(a, ZONE_SHAPE.easySplit), //              Z1 / Z2
+    a, //                                          Z2 / Z3 — aerobic threshold
+    scale(b, 1 - ZONE_SHAPE.thresholdBand), //     Z3 / Z4 — just under LT2
+    scale(b, 1 + ZONE_SHAPE.thresholdBand), //     Z4 / Z5 — just over it
+    ceiling, //               top of Z5
+  ];
+  return enforceOrder(round ? raw.map(Math.round) : raw, ascending);
+}
+
+
+/**
+ * A representative value for one zone, derived from the thresholds.
+ *
+ * Used when an athlete has no zone table of their own and something still has
+ * to turn "Z2" into a pace or a wattage — exporting a planned session to a
+ * watch, mostly. It was a hardcoded array in four files, written against the
+ * zone shape as it stood years ago and never moved when the shape did: it put
+ * Z2 at LT1 exactly, so a session planned as an endurance run exported with
+ * the aerobic threshold as its target. That is not a rounding difference, it
+ * is a harder session than the one that was written.
+ *
+ * Deriving it from the same bounds means the fallback cannot drift from the
+ * table again.
+ */
+export function zoneTargetFromThresholds(zone, { lt1, lt2, ascending, topFactor }) {
+  const bounds = ltZoneBounds({ lt1, lt2, ascending, topFactor, round: false });
+  if (!bounds) return null;
+  const i = Math.max(0, Math.min(4, Math.round(Number(zone)) - 1));
+  return (bounds[i] + bounds[i + 1]) / 2;
 }
 
 /** Boundary list -> { zone1..zone5 } with shared min/max edges. */

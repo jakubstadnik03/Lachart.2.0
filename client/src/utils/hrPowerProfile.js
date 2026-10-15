@@ -807,11 +807,17 @@ const AT_THRESHOLD_BAND = 0.03;
  * of the threshold, wide enough that holding an effort steady lands in one
  * rather than flickering across the boundary.
  *
+ * Each bucket also carries what was actually held in it — the time-weighted
+ * mean demand and heart rate — because "30 minutes above LT2" is a different
+ * session depending on whether it was held a second or a minute past the
+ * threshold, and the split alone cannot say which.
+ *
  * @param {Array}  cloud   sessionCloud() output
  * @param {object} o
  * @param {number} o.lt1Demand
  * @param {number} o.lt2Demand
- * @returns {null | {belowLt1, atLt1, between, atLt2, aboveLt2, totalSec}}
+ * @returns {null | {belowLt1, atLt1, between, atLt2, aboveLt2, totalSec,
+ *   bands: Object<string, {sec, demand, hr}>, edges: object}}
  */
 export function timeAtThresholds(cloud, { lt1Demand, lt2Demand, band = AT_THRESHOLD_BAND } = {}) {
   if (!Array.isArray(cloud) || !cloud.length) return null;
@@ -824,6 +830,10 @@ export function timeAtThresholds(cloud, { lt1Demand, lt2Demand, band = AT_THRESH
   const lt1Hi = hasLt1 ? lt1Demand * (1 + band) : null;
 
   const out = { belowLt1: 0, atLt1: 0, between: 0, atLt2: 0, aboveLt2: 0, totalSec: 0 };
+  const KEYS = ['belowLt1', 'atLt1', 'between', 'atLt2', 'aboveLt2'];
+  // Sums carried alongside the seconds: demand over all of a bucket's time,
+  // heart rate over only the part of it that had a heart rate to average.
+  const acc = Object.fromEntries(KEYS.map((k) => [k, { dSum: 0, hSum: 0, hSec: 0 }]));
 
   for (const bin of cloud) {
     const sec = Number(bin.sec) || 0;
@@ -831,15 +841,32 @@ export function timeAtThresholds(cloud, { lt1Demand, lt2Demand, band = AT_THRESH
     if (!(sec > 0) || !Number.isFinite(d)) continue;
     out.totalSec += sec;
 
-    if (d > lt2Hi) out.aboveLt2 += sec;
-    else if (d >= lt2Lo) out.atLt2 += sec;
-    else if (!hasLt1) out.between += sec;
-    else if (d > lt1Hi) out.between += sec;
-    else if (d >= lt1Lo) out.atLt1 += sec;
-    else out.belowLt1 += sec;
+    let key;
+    if (d > lt2Hi) key = 'aboveLt2';
+    else if (d >= lt2Lo) key = 'atLt2';
+    else if (!hasLt1) key = 'between';
+    else if (d > lt1Hi) key = 'between';
+    else if (d >= lt1Lo) key = 'atLt1';
+    else key = 'belowLt1';
+
+    out[key] += sec;
+    acc[key].dSum += d * sec;
+    const hr = Number(bin.hr);
+    if (Number.isFinite(hr) && hr > 0) { acc[key].hSum += hr * sec; acc[key].hSec += sec; }
   }
 
-  return out.totalSec > 0 ? out : null;
+  if (!(out.totalSec > 0)) return null;
+
+  out.bands = Object.fromEntries(KEYS.map((k) => [k, {
+    sec: out[k],
+    demand: out[k] > 0 ? acc[k].dSum / out[k] : null,
+    hr: acc[k].hSec > 0 ? acc[k].hSum / acc[k].hSec : null,
+  }]));
+  // The boundaries themselves, so a reader can be told what the bucket meant
+  // rather than having to trust its name.
+  out.edges = { lt1Demand: hasLt1 ? lt1Demand : null, lt2Demand, lt1Lo, lt1Hi, lt2Lo, lt2Hi, band };
+
+  return out;
 }
 
 /**

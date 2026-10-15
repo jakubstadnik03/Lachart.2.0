@@ -52,7 +52,7 @@ function weekVolumeSecs(row) {
 }
 const fmtH = (sec) => (sec > 0 ? `${Math.floor(sec / 3600)}:${String(Math.round((sec % 3600) / 60)).padStart(2, '0')}` : '—');
 
-const M = { top: 18, right: 46, bottom: 0, left: 46 };
+const M = { top: 18, right: 26, bottom: 0, left: 30 };
 const PLOT_H = 300;
 const MONTH_H = 20;
 const BAND_H = 22;
@@ -238,7 +238,7 @@ export default function AtpChart({ rows = [], totals = {}, onWeekClick, mode = '
           return (
             <g key={f}>
               <line x1={M.left} y1={y} x2={M.left + geo.plotW} y2={y} stroke={COLORS.grid} strokeWidth="1" />
-              <text x={M.left - 6} y={y + 3} fontSize="9" fill={COLORS.axis} textAnchor="end">
+              <text x={M.left - 4} y={y + 3} fontSize="9" fill={COLORS.axis} textAnchor="end">
                 {volumeMode
                   ? `${Math.round((geo.volMax * f) / 3600)}h`
                   : Math.round(geo.tssMax * f)}
@@ -252,7 +252,7 @@ export default function AtpChart({ rows = [], totals = {}, onWeekClick, mode = '
           const val = metricMin + (geo.metricMax - metricMin) * f;
           const y = plotBottom - f * PLOT_H;
           return (
-            <text key={`r${f}`} x={M.left + geo.plotW + 6} y={y + 3} fontSize="9" fill={COLORS.axis}>
+            <text key={`r${f}`} x={M.left + geo.plotW + 4} y={y + 3} fontSize="9" fill={COLORS.axis}>
               {Math.round(val)}
             </text>
           );

@@ -305,7 +305,9 @@ const { startProductUpdateScheduler } = require('./services/productUpdateSchedul
 const { startGarminTokenRefreshScheduler } = require('./services/garminTokenRefreshScheduler');
 const { startStreamBackfillScheduler } = require('./services/streamBackfillScheduler');
 const { startWinBackScheduler } = require('./services/winBackScheduler');
+const { startCancelFeedbackScheduler } = require('./services/cancelFeedbackScheduler');
 const { startPredictedCurveScheduler } = require('./services/predictedCurveScheduler');
+const { startTrackerConnectScheduler } = require('./services/trackerConnectScheduler');
 const { startThresholdShiftScheduler } = require('./services/thresholdShiftScheduler');
 const { startRaceReminderScheduler } = require('./services/raceReminderScheduler');
 const { startTrainingAlertScheduler } = require('./services/trainingAlertScheduler');
@@ -325,6 +327,7 @@ app.use("/api/race-events", raceEventRoutes);
 app.use("/api/fit", fitUploadRoute);
 app.use("/api/lactate-session", lactateSessionRoutes);
 app.use("/api/integrations", integrationsRoutes);
+app.use("/api/integrations", require("./routes/watchIntegrationRoutes"));
 app.use("/api/workout-clustering", workoutClusteringRoutes);
 app.use("/api/subscription", subscriptionRoutes);
 app.use('/api/comments', commentRoutes);
@@ -346,6 +349,10 @@ app.use('/api/timeline',          timelineRoutes);
 app.use('/api/daily-metrics',     dailyMetricRoutes);
 
 // Weekly Strava summary emails (Mondays) - controlled by env
+// Says whether the paywall is actually enforced. A disabled one is a valid
+// state; a silent one is how 32 athletes got created against a cap of 1.
+require('./middleware/featureGate').logGateMode();
+
 startWeeklyReportsScheduler();
 
 // Strava auto-sync scheduler (periodic sync for all users with auto-sync enabled)
@@ -407,11 +414,16 @@ startStreamBackfillScheduler();
 // One-time win-back to lapsed free accounts. OFF unless ENABLE_WINBACK_SCHEDULER=true
 // — a 435-person campaign is a deliberate decision, not a deploy side effect.
 startWinBackScheduler();
+startCancelFeedbackScheduler();
 
 // "Here is the curve your training implies" — athletes who have never tested.
 // Off by default: it writes to most of the base, so it is switched on by hand
 // after previewing the email (ENABLE_PREDICTED_CURVE_SCHEDULER=true).
 startPredictedCurveScheduler();
+
+// "Zones ready — connect Strava/Garmin/Apple Health" for athletes with a test
+// and no tracker. Off by default (ENABLE_TRACKER_CONNECT_SCHEDULER=true after preview).
+startTrackerConnectScheduler();
 
 // "Your threshold has moved" — a push to an athlete about their own curve,
 // so on in production like the other notification schedulers. The service is

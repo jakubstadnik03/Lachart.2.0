@@ -17,7 +17,7 @@
 
 const User = require('../models/UserModel');
 
-const PROVIDERS = { strava: 'Strava', garmin: 'Garmin' };
+const PROVIDERS = { strava: 'Strava', garmin: 'Garmin', polar: 'Polar', coros: 'COROS' };
 
 /** Don't re-nag about the same dead token more than once every three days. */
 const NOTIFY_COOLDOWN_MS = 3 * 24 * 60 * 60 * 1000;

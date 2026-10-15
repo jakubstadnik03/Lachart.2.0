@@ -183,6 +183,26 @@ const userSchema = new mongoose.Schema({
     // Last time a Garmin Health API wellness summary (sleep/RHR/HRV) landed.
     lastWellnessSyncAt: { type: Date, default: null }
   },
+  // Polar Flow (AccessLink) and COROS (Open API). Tokens stay server-side;
+  // the profile payload only exposes connected / autoSync / lastSyncDate.
+  polar: {
+    athleteId: { type: String, default: null },
+    accessToken: { type: String, default: null },
+    refreshToken: { type: String, default: null },
+    expiresAt: { type: Number, default: null },
+    autoSync: { type: Boolean, default: false },
+    connected: { type: Boolean, default: false },
+    lastSyncDate: { type: Date, default: null },
+  },
+  coros: {
+    athleteId: { type: String, default: null },
+    accessToken: { type: String, default: null },
+    refreshToken: { type: String, default: null },
+    expiresAt: { type: Number, default: null },
+    autoSync: { type: Boolean, default: false },
+    connected: { type: Boolean, default: false },
+    lastSyncDate: { type: Date, default: null },
+  },
   /**
    * "We lost your watch" — set when a provider revokes us.
    *
@@ -197,6 +217,16 @@ const userSchema = new mongoose.Schema({
       notifiedAt: { type: Date, default: null },
     },
     garmin: {
+      needsReconnectAt: { type: Date, default: null },
+      reason: { type: String, default: null },
+      notifiedAt: { type: Date, default: null },
+    },
+    polar: {
+      needsReconnectAt: { type: Date, default: null },
+      reason: { type: String, default: null },
+      notifiedAt: { type: Date, default: null },
+    },
+    coros: {
       needsReconnectAt: { type: Date, default: null },
       reason: { type: String, default: null },
       notifiedAt: { type: Date, default: null },
@@ -481,6 +511,19 @@ const userSchema = new mongoose.Schema({
      *  dormant accounts). Sent once ever; segment recorded for analytics. */
     winBackSent:              { type: Date, default: null },
     winBackSegment:           { type: String, default: null },
+    /** One-time "what was missing" email. Two segments: `churned` for accounts
+     *  whose subscription ended, `never-started` for those that never began a
+     *  plan at all — the mail cannot tell the second group their subscription
+     *  ended, so the copy differs and the segment is recorded. Sent once ever.
+     *
+     *  These two keys have to be declared here or the subdocument is strict
+     *  enough to drop them silently: the send would never mark anyone, and the
+     *  scheduler would mail the same people on every tick. */
+    cancelFeedbackSent:       { type: Date, default: null },
+    cancelFeedbackSegment:    { type: String, default: null },
+    /** One-time "zones ready — connect Strava/Garmin/Apple Health" email for
+     *  athletes who have ≥1 test but no tracker. Sent once ever. */
+    trackerConnectSent:       { type: Date, default: null },
     /** One-time "here is the curve your training implies" email, for athletes
      *  who have never tested. Sent once ever; the sport it spoke about is
      *  recorded so a later run cannot repeat itself for the other one. */

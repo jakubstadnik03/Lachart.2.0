@@ -39,6 +39,7 @@ export function buildCalendarActivitiesFromTrainings(allTrainings, regTrainings)
       const source = inferExternalSource(t);
       const isExternal = Boolean(
         source === 'garmin' || source === 'apple_health' || source === 'strava'
+        || source === 'polar' || source === 'coros'
         || stravaId || garminId || t.startDate,
       );
       const isFit = Boolean(

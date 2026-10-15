@@ -140,6 +140,12 @@ export default function UpgradeModal({ isOpen, onClose, feature = 'This feature'
 
   if (!isOpen && !swipe.closing) return null;
 
+  const openWebsite = (e) => {
+    e?.preventDefault?.();
+    e?.stopPropagation?.();
+    window.open('https://lachart.net', '_blank', 'noopener,noreferrer');
+  };
+
   const handleUpgrade = async () => {
     if (!isAuthenticated) {
       onClose();
@@ -261,7 +267,11 @@ export default function UpgradeModal({ isOpen, onClose, feature = 'This feature'
           <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', WebkitOverflowScrolling: 'touch', padding: '0 20px' }}>
             <p style={{ margin: '0 0 16px', fontSize: 14, lineHeight: 1.5, color: '#4b5563' }}>
               This is included with <strong style={{ color: '#111827' }}>LaChart {plan.name}</strong>.
-              If you already have access from your account on lachart.net, make sure you&apos;re signed in here with the same email.
+              If you already have access from your account on{' '}
+              <button type="button" onClick={openWebsite} style={{ color: '#2563eb', fontWeight: 600, background: 'none', border: 'none', padding: 0, textDecoration: 'underline' }}>
+                lachart.net
+              </button>
+              , make sure you&apos;re signed in here with the same email.
             </p>
 
             {plan.valueLines.map((line) => (
@@ -293,6 +303,14 @@ export default function UpgradeModal({ isOpen, onClose, feature = 'This feature'
           </div>
 
           <div style={{ padding: '12px 20px 16px', flexShrink: 0, borderTop: '1px solid #f3f4f6' }}>
+            <button
+              type="button"
+              onClick={openWebsite}
+              className="w-full py-3 rounded-xl text-sm font-semibold text-white mb-2"
+              style={{ background: '#2563eb' }}
+            >
+              Open lachart.net
+            </button>
             <button
               type="button"
               onClick={swipe.triggerClose}

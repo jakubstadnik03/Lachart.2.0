@@ -26,6 +26,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { createCampaignTransporter, campaignSender } = require('../utils/createEmailTransporter');
 const User = require('../models/UserModel');
+const Subscription = require('../models/SubscriptionModel');
 
 const ROOT = path.join(__dirname, '..', 'templates', 'productUpdate');
 const IMG_EXT = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp']);
@@ -98,8 +99,11 @@ async function getScheduledIssueId(nowIso = new Date().toISOString().slice(0, 10
   if (env && issueExists(env)) return env;
   const due = listIssues()
     .filter((m) => !m.releaseDate || String(m.releaseDate) <= nowIso)
-    // listIssues() is newest-first; drain oldest-still-pending first.
-    .sort((a, b) => String(a.date).localeCompare(String(b.date)) || String(a.id).localeCompare(String(b.id)));
+    // listIssues() is newest-first; drain oldest-still-pending first, ordered
+    // by release rather than by the date printed in the letter — releaseDate is
+    // what decides when an issue joins the queue, so it is what decides its
+    // place in it. Re-dating a release therefore re-orders the queue.
+    .sort((a, b) => queueKey(a).localeCompare(queueKey(b)));
   for (const m of due) {
     if ((await getPendingCount(m.id)) > 0) return m.id;
   }
@@ -134,15 +138,51 @@ function loadIssueHtml(issueId) {
 }
 
 /**
+ * Does this account pay for LaChart right now? The newsletter goes to everyone,
+ * subscribers included — it is a "what's new", not an upgrade pitch — but its
+ * call to action is written for someone who has not started: "Two weeks free,
+ * no card charged today". 32 of the 616 queued for the training-loop issue are
+ * paying customers, one of them 30th in line, and that is the last sentence
+ * they should be reading from us.
+ */
+async function paysForLaChart(userId) {
+  if (!userId) return false;
+  const row = await Subscription.findOne({
+    userId: String(userId),
+    plan: { $nin: ['free', null] },
+    status: { $in: ['active', 'trialing'] },
+  }, { _id: 1 }).lean();
+  return !!row;
+}
+
+/**
+ * Keep the half of a two-sided block that applies to this reader and drop the
+ * other. A template marks them as
+ *
+ *   <!-- trial-only --> … <!-- /trial-only -->
+ *   <!-- subscriber-only --> … <!-- /subscriber-only -->
+ *
+ * An issue that marks neither reads the same for everybody, as before.
+ */
+function pickAudienceBlocks(html, subscriber) {
+  const drop = subscriber ? 'trial-only' : 'subscriber-only';
+  return html.replace(
+    new RegExp(`<!--\\s*${drop}\\s*-->[\\s\\S]*?<!--\\s*/${drop}\\s*-->`, 'g'),
+    '',
+  );
+}
+
+/**
  * Transform issue HTML for a single recipient:
  *   • strip the design-time mock mail-client chrome,
  *   • rewrite src="assets/foo.png" → src="cid:foo.png",
  *   • replace #unsub with the recipient's signed unsubscribe URL,
  *   • append UTM params to outbound lachart.net links.
  */
-function prepareHtmlForRecipient(rawHtml, { assets, unsubscribeUrl, utmCampaign }) {
+function prepareHtmlForRecipient(rawHtml, { assets, unsubscribeUrl, utmCampaign, subscriber = false }) {
   let html = rawHtml;
   html = html.replace(/<!--\s*Mock mail-client header[\s\S]*?<article class="email">/, '<article class="email">');
+  html = pickAudienceBlocks(html, subscriber);
   for (const file of assets) {
     html = html.replaceAll(`assets/${file}`, `cid:${file}`);
   }
@@ -190,6 +230,7 @@ async function sendOne(user, issueId, { dryRun = false } = {}) {
   const assets = listAssets(issueId);
   const html = prepareHtmlForRecipient(loadIssueHtml(issueId), {
     assets,
+    subscriber: await paysForLaChart(user._id),
     unsubscribeUrl: unsubscribeUrlFor(user._id),
     utmCampaign: meta.utmCampaign,
   });
@@ -244,16 +285,58 @@ async function sendOne(user, issueId, { dryRun = false } = {}) {
   }
 }
 
+/**
+ * Where an issue sits in the send queue: its release, then its id to break a tie.
+ */
+function queueKey(meta) {
+  return `${meta.releaseDate || meta.date || ''}|${meta.id}`;
+}
+
+/**
+ * The readership an issue was written for — everyone who already had an account
+ * when it was released — as an inclusive upper bound on `createdAt`. An issue
+ * with no release date keeps going to everybody.
+ *
+ * Without this bound the queue cannot move. `getScheduledIssueId` drains the
+ * oldest still-pending issue first, and every new registration re-opened the
+ * oldest one: in production the September newsletter was permanently "next",
+ * owed to 26 people who had all signed up in the days after it was sent, while
+ * the five finished issues queued behind it — the training-loop and measured-
+ * zones letters among them — could never start. Newcomers are covered by the
+ * three-step onboarding drip instead, and join the newsletter at the first
+ * issue released after they arrive.
+ */
+function releaseCutoff(meta) {
+  const day = meta && (meta.releaseDate || meta.date);
+  if (!day || !/^\d{4}-\d{2}-\d{2}$/.test(String(day))) return null;
+  return new Date(`${day}T23:59:59.999Z`);
+}
+
+/**
+ * Something shaped like an address. Two accounts carry an email of "s" and
+ * "x00199700", and they are why the newsletter went quiet: recipients are taken
+ * oldest-first, both were created in February, and a send that fails leaves no
+ * marker — so every tick picked the same two, failed, and stopped, and the last
+ * issue to reach anybody was the one sent on 28 September. A row that can never
+ * be delivered to must not be allowed to hold the head of the queue.
+ */
+const ADDRESS_SHAPE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+
 /** Mongo filter for users who still need this issue. */
 function pendingFilter(issueId) {
   const field = `${SENT_MAP}.${issueId}`;
-  return {
-    email: { $exists: true, $ne: null, $ne: '' },
+  const filter = {
+    // $nin, not two $ne keys: the second silently replaced the first, so an
+    // account with a null email read as sendable.
+    email: { $exists: true, $nin: [null, ''], $regex: ADDRESS_SHAPE },
     isActive: { $ne: false },
     'notifications.emailNotifications': { $ne: false },
     'notifications.marketingEmails': { $ne: false },
     $or: [{ [field]: { $exists: false } }, { [field]: null }],
   };
+  const cutoff = issueExists(issueId) ? releaseCutoff(loadMeta(issueId)) : null;
+  if (cutoff) filter.createdAt = { $lte: cutoff };
+  return filter;
 }
 
 async function findPendingUsers(issueId, limit) {
@@ -359,6 +442,12 @@ module.exports = {
   listAssets,
   getActiveIssueId,
   getScheduledIssueId,
+  pendingFilter,
+  pickAudienceBlocks,
+  paysForLaChart,
+  prepareHtmlForRecipient,
+  releaseCutoff,
+  queueKey,
   sendOne,
   findPendingUsers,
   getPendingCount,

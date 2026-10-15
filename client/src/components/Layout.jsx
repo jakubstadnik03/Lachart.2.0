@@ -4,7 +4,7 @@ import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import Header from "./Header/Header";
 import Menu from "./Menu";
 import Footer from "./Footer";
-import api, { autoSyncGarminActivities, autoSyncStravaActivities, invalidateTrainingCaches } from "../services/api";
+import api, { autoSyncGarminActivities, autoSyncStravaActivities, autoSyncWatchActivities, invalidateTrainingCaches } from "../services/api";
 import { useNotification } from "../context/NotificationContext";
 import { LAYOUT_DESKTOP_MIN_PX } from "../constants/layoutBreakpoints";
 import CoachAthleteBar from "./CoachAthleteBar";
@@ -23,6 +23,7 @@ import { formatProfileFullName } from '../utils/profileName';
 import { setupStravaOAuthReturnListener } from "../utils/stravaOAuthReturn";
 import { nudgeStravaHistoryImport } from "../utils/stravaHistoryCatchUp";
 import { setupGarminOAuthReturnListener } from "../utils/garminOAuthReturn";
+import { setupWatchOAuthReturnListener } from "../utils/watchOAuthReturn";
 import { hasSyncSource } from "../utils/syncSources";
 
 // Admin sees coach UI only when their role is not 'athlete'.
@@ -455,6 +456,62 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
     user?.garmin?.connected,
   ]);
 
+  // Polar and COROS have no push webhook in this app, so a quiet pull on
+  // open (and when the app comes back to the foreground) is what keeps the
+  // calendar current. Same cooldown idea as Garmin.
+  const polarWatchConnected = !!user?.polar?.connected;
+  const polarWatchAutoSync = !!user?.polar?.autoSync;
+  const corosWatchConnected = !!user?.coros?.connected;
+  const corosWatchAutoSync = !!user?.coros?.autoSync;
+  useEffect(() => {
+    if (!user?._id) return undefined;
+    const providers = [
+      polarWatchConnected && polarWatchAutoSync ? 'polar' : null,
+      corosWatchConnected && corosWatchAutoSync ? 'coros' : null,
+    ].filter(Boolean);
+    if (!providers.length) return undefined;
+    let cancelled = false;
+
+    const runOne = async (provider, cooldownMs) => {
+      const syncKey = `${provider}_auto_sync_${user._id}`;
+      const now = Date.now();
+      const lastSync = localStorage.getItem(syncKey);
+      if (lastSync && now - parseInt(lastSync, 10) < cooldownMs) return;
+      try {
+        const result = await autoSyncWatchActivities(provider);
+        localStorage.setItem(syncKey, now.toString());
+        if (result?.imported > 0 || result?.updated > 0) {
+          invalidateTrainingCaches();
+          window.dispatchEvent(new CustomEvent('watchSyncComplete', { detail: { provider, ...result } }));
+        }
+      } catch (error) {
+        console.error(`[${provider}] auto-sync failed:`, error?.response?.status, error?.response?.data || error);
+      }
+    };
+
+    const run = async (cooldownMs) => {
+      for (const provider of providers) {
+        if (cancelled) return;
+        await runOne(provider, cooldownMs);
+      }
+    };
+
+    const timer = setTimeout(() => { if (!cancelled) run(30 * 60 * 1000); }, 4000);
+    const onVisible = () => { if (document.visibilityState === 'visible') run(15 * 60 * 1000); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [
+    user?._id,
+    polarWatchConnected,
+    polarWatchAutoSync,
+    corosWatchConnected,
+    corosWatchAutoSync,
+  ]);
+
   // Continue progressive Strava history import (2-year backfill) on every session.
   // Server rate-limits nudges (~90s); safe to call on each app load.
   useEffect(() => {
@@ -549,6 +606,11 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
   useEffect(() => {
     if (!user?._id) return undefined;
     return setupGarminOAuthReturnListener({ onNotify: addNotification });
+  }, [user?._id, addNotification]);
+
+  useEffect(() => {
+    if (!user?._id) return undefined;
+    return setupWatchOAuthReturnListener({ onNotify: addNotification });
   }, [user?._id, addNotification]);
 
   // First-time product tour (after onboarding modals — delay so they don't stack)

@@ -22,6 +22,9 @@
  * fractional FTP, so we divide by `ctx.ftp` after resolving.
  */
 
+const { zoneTargetFromThresholds, TOP_FACTOR } = require('./trainingZoneBounds');
+const { plainSteps } = require('./plainSteps');
+
 const STEP_TYPE_TO_INTENSITY = {
   warmup:   'Active',
   work:     'Active',
@@ -77,6 +80,8 @@ function resolveTargetWatts(target, ctx = {}) {
   // recompute the zone and quietly send something else.
   const pinned = Number(target.override);
   if (Number.isFinite(pinned) && pinned > 0) return Math.round(pinned);
+  // A pace target says nothing about watts — it belongs to the pace branch.
+  if (target.type === 'pace') return null;
   if (target.type === 'watts') {
     return target.useRange
       ? Math.round((Number(target.rangeMin || 0) + Number(target.rangeMax || 0)) / 2)
@@ -94,7 +99,14 @@ function resolveTargetWatts(target, ctx = {}) {
     const z = Math.max(1, Math.min(5, Number(target.value) || 1));
     const profileMid = cyclingZones ? zoneMid(cyclingZones[`zone${z}`]) : null;
     if (profileMid != null && profileMid > 0) return Math.round(profileMid);
-    return Math.round([lt1 * 0.8, lt1, lt2 * 0.95, lt2, lt2 * 1.1][z - 1]);
+    // The bike was left on the frozen table when the pace resolvers moved to
+    // the zone bounds, so a watts target and a pace target for the same zone
+    // disagreed: Z2 came out at LT1 exactly, the threshold itself, for a
+    // session written as endurance.
+    const mid = zoneTargetFromThresholds(z, {
+      lt1, lt2, ascending: true, topFactor: TOP_FACTOR.power,
+    });
+    return mid != null ? Math.round(mid) : null;
   }
   return null;
 }
@@ -115,6 +127,10 @@ function resolveTargetPaceSecPerKm(target, ctx = {}) {
   const lt1p = lt1Pace || runningZones?.lt1 || lt2p * 1.12;
   const pinned = Number(target.override);
   if (Number.isFinite(pinned) && pinned > 0) return pinned;
+  // A pace typed outright is the answer; there is nothing to resolve it
+  // against. Without this the watch got a zone midpoint where the athlete had
+  // asked for a number.
+  if (target.type === 'pace') return mid(target) || null;
   if (target.type === 'lt1') return lt1p;
   if (target.type === 'lt2') return lt2p;
   // 100 % LT2 = lt2Pace; 105 % means 5 % faster (÷1.05).
@@ -128,7 +144,9 @@ function resolveTargetPaceSecPerKm(target, ctx = {}) {
       const max = (pz.max != null && pz.max !== Infinity && pz.max > 0) ? pz.max : pz.min * 1.08;
       return (pz.min + max) / 2;
     }
-    return [lt2p * 1.30, lt1p, lt2p * 1.04, lt2p, lt2p * 0.93][Math.min(z - 1, 4)];
+    return zoneTargetFromThresholds(z, {
+      lt1: lt1p, lt2: lt2p, ascending: false, topFactor: TOP_FACTOR.pace,
+    });
   }
   return null;
 }
@@ -143,6 +161,7 @@ function resolveTargetSwimPaceSecPer100m(target, ctx = {}) {
   const lt1p = lt1Swim || swimmingZones?.lt1 || lt2p * 1.10;
   const pinned = Number(target.override);
   if (Number.isFinite(pinned) && pinned > 0) return pinned;
+  if (target.type === 'pace') return mid(target) || null;
   if (target.type === 'lt1') return lt1p;
   if (target.type === 'lt2') return lt2p;
   if (target.type === 'percent_lt1') return mid(target) > 0 ? lt1p / (mid(target) / 100) : null;
@@ -155,7 +174,9 @@ function resolveTargetSwimPaceSecPer100m(target, ctx = {}) {
       const max = (pz.max != null && pz.max !== Infinity && pz.max > 0) ? pz.max : pz.min * 1.08;
       return (pz.min + max) / 2;
     }
-    return [lt2p * 1.25, lt1p, lt2p * 1.04, lt2p, lt2p * 0.92][Math.min(z - 1, 4)];
+    return zoneTargetFromThresholds(z, {
+      lt1: lt1p, lt2: lt2p, ascending: false, topFactor: TOP_FACTOR.pace,
+    });
   }
   return null;
 }
@@ -206,22 +227,26 @@ function expandSteps(steps = []) {
     }
     group = null;
   };
-  for (const s of steps) {
+  // Plain objects first: a spread of a Mongoose subdocument copies its
+  // plumbing and none of its data. The export routes happen to pass .lean()
+  // documents today, which is why this has not bitten here — see plainSteps
+  // for what it did to the Garmin push, which did not.
+  for (const s of plainSteps(steps)) {
     if (s.isGroupHeader) {
       // Header opens a new group — it IS the first member of that group.
       flushGroup();
       group = {
         id: s.groupId,
         repeat: s.groupRepeat || 1,
-        members: [{ ...s }],
+        members: [s],
       };
       continue;
     }
     if (group && s.groupId && s.groupId === group.id) {
-      group.members.push({ ...s });
+      group.members.push(s);
     } else {
       flushGroup();
-      out.push({ ...s });
+      out.push(s);
     }
   }
   flushGroup();

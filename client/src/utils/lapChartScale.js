@@ -1,86 +1,147 @@
 /**
- * The y-axis of the lap chart.
+ * The y-axis of the lap chart, shaped like Strava's workout chart.
  *
- * Lifted out of LapChart so it can be tested. Its comment history records three
- * rounds of tuning by eye — "nahoře byl nesmysl", then "chci větší range" — and
- * each round moved numbers no test was watching, so the next regression only
- * surfaced as another screenshot.
+ * Pace ticks land on the steps athletes say out loud — 5 s on a swim
+ * (1:20, 1:25, 1:30), 15 s on a run — with one tick of air past the fastest
+ * and slowest lap that still belongs to the session. A walk home does not
+ * move the bottom tick; it clamps to a stub. Power starts at 0 and climbs
+ * in round watts.
  *
- * Two sets of values go in, and the distinction is the whole design:
- *
- *   work       — the laps the scale is built from. Recovery and standing laps
- *                are excluded on purpose: a 12 min/km jog between reps would
- *                otherwise drag the slow edge down and squash every rep into
- *                the top quarter of the chart.
- *   plausible  — every lap that will actually be DRAWN, GPS junk already
- *                dropped by the caller. These do not define the slow edge, but
- *                they must not be clipped at the fast edge.
- *
- * That last point is the bug this file was extracted to fix. Bars outside the
- * axis are clamped to the frame, so a rep quicker than the top edge draws as a
- * full-height flat-topped bar — it reads as "this was the fastest" while being
- * the one lap whose value the chart is hiding, and it is the lap the athlete
- * looks at first. It happens whenever the two lap classifiers disagree: smart
- * detect runs k-means over a 20-second smoothed speed trace and can call a
- * genuine rep "recovery", while the table colours it as work from a different
- * classifier entirely.
+ *   work        — laps the scale is built from. A standing recovery is left
+ *                 out so it cannot squash the reps.
+ *   plausible   — every lap that will be drawn. The fastest of these must sit
+ *                 inside the axis, or it draws as a flat top and reads as
+ *                 "the fastest the scale allows".
+ *   significant — long blocks the interval classifier sometimes misses.
+ *                 They set the slow edge only while they stay within the
+ *                 allowance of the working pace.
  */
 
+/**
+ * Tick size, in the axis unit. Swim pace is spoken in 5-second steps
+ * (1:20, 1:25, 1:30), run pace in 15-second steps, power in round watts.
+ * Strava's workout chart labels those steps and nothing in between — an
+ * axis of 1:15, 1:28, 1:40 is the same range cut into five equal pieces,
+ * and it does not read as a pace.
+ */
+const PACE_STEP = { swim: 5, run: 15 };
+
+/** One tick of air past the fastest and slowest lap that belongs on the axis. */
+function pacePad(isSwim) {
+  return isSwim ? PACE_STEP.swim : PACE_STEP.run;
+}
+
+/**
+ * How far past the working laps a slower lap may still set the bottom edge.
+ *
+ * A 1:48 length in a set of 1:25s belongs on the chart — Strava shows it as
+ * a short bar, not by throwing the axis away. A walk home does not: it would
+ * pin every rep to the ceiling. The allowance is a fixed gap plus the spread
+ * the work already occupies, whichever is larger.
+ */
+function slowAllowance(isSwim, spread) {
+  const fixed = isSwim ? 40 : 90;
+  return Math.max(fixed, spread * 2);
+}
+
+function snapDown(value, step) {
+  return Math.floor(value / step) * step;
+}
+
+function snapUp(value, step) {
+  return Math.ceil(value / step) * step;
+}
+
 /** Pace axis (run, swim): lower value = faster = taller bar, so min is the top. */
-export function paceAxisBounds({ work, plausible = [], isSwim = false, avgForScale = null }) {
+export function paceAxisBounds({ work, plausible = [], significant = [], isSwim = false }) {
   const workVals = (work || []).filter((v) => Number.isFinite(v) && v > 0);
   if (!workVals.length) return null;
   const drawn = (plausible || []).filter((v) => Number.isFinite(v) && v > 0);
 
   const globalFast = Math.min(...workVals);
   const workSlow = Math.max(...workVals);
-  const avg = Number.isFinite(avgForScale)
-    ? avgForScale
-    : workVals.reduce((a, b) => a + b, 0) / workVals.length;
+  const step = isSwim ? PACE_STEP.swim : PACE_STEP.run;
+  const pad = pacePad(isSwim);
 
-  // The quickest lap that gets a bar, whichever set it came from.
+  // The quickest lap that gets a bar, whichever set it came from. It has to
+  // sit inside the axis or it draws as a flat top and reads as "the fastest
+  // the scale allows" rather than as its own pace.
   const drawnFast = drawn.length ? Math.min(globalFast, ...drawn) : globalFast;
 
-  // Padding proportional to the spread, with the old fixed value as a floor.
-  // Eight seconds on an axis spanning two minutes is six percent — no visible
-  // headroom at all, so the quickest rep drew against the frame even when it
-  // was inside the scale.
-  const spread = Math.max(workSlow - globalFast, isSwim ? 5 : 15);
-  const fastPad = Math.max(isSwim ? 3 : 8, spread * 0.15);
-  const slowPad = Math.max(isSwim ? 5 : 15, spread * 0.15);
+  const spread = Math.max(workSlow - globalFast, step);
+  const allowance = slowAllowance(isSwim, spread);
+  // Slower laps that are still the same session. A walk is past the allowance
+  // and stays a stub; it does not move the bottom tick.
+  const inSession = drawn.filter((v) => v <= workSlow + allowance);
+  const bigVals = (significant || []).filter((v) => Number.isFinite(v) && v > 0 && v <= workSlow + allowance);
+  const slow = Math.max(workSlow, ...(inSession.length ? inSession : [workSlow]), ...(bigVals.length ? bigVals : [workSlow]));
 
-  let min = drawnFast - fastPad;
+  // Snapping down to a tick already leaves air above the quickest lap — half
+  // a tick on average — so padding by a tick first and then snapping gave
+  // away a second one. On a run that is fifteen seconds of empty chart above
+  // the fastest rep, and the bar read as though the scale had lost its nerve.
+  // The only lap that needs the extra tick is one landing exactly on a tick,
+  // which would otherwise draw flat against the frame.
+  let min = snapDown(drawnFast, step);
+  if (min >= drawnFast) min -= step;
   min = Math.max(isSwim ? 25 : 60, min);
-  min = Math.floor(min / 5) * 5;
+  min = snapDown(min, step);
 
-  // Slow edge from WORK laps only, placed so the session average lands near the
-  // middle. Recovery laps clamp to a stub at the bottom instead of defining it.
-  let max = Math.max(workSlow + slowPad, 2 * avg - min);
+  let max = snapUp(slow + pad, step);
   max = Math.min(isSwim ? 600 : 720, max);
-  max = Math.ceil(max / 5) * 5;
-  max = Math.max(max, min + 30);
+  max = snapUp(max, step);
+  if (max < min + step * 4) max = min + step * 4;
 
-  return { min, max };
+  return { min, max, step };
+}
+
+/**
+ * Which of those ticks get a label.
+ *
+ * Every step is a real tick, but a run from 5:00 to 9:15 has one every
+ * 15 seconds and they paint on top of each other. Skip ahead by whole
+ * multiples of the step until a handful fit, still on the minute where
+ * the step allows it.
+ */
+export function axisLabelValues(min, max, step, { maxLabels = 5 } = {}) {
+  const ticks = axisTickValues(min, max, step);
+  if (ticks.length <= maxLabels) return ticks;
+  let stride = 1;
+  while (Math.ceil(ticks.length / stride) > maxLabels) stride *= 2;
+  const out = [];
+  for (let i = 0; i < ticks.length; i += stride) out.push(ticks[i]);
+  const last = ticks[ticks.length - 1];
+  if (out[out.length - 1] !== last) {
+    const prev = out[out.length - 1];
+    if (Math.abs(last - prev) < step * stride * 0.75) out[out.length - 1] = last;
+    else out.push(last);
+  }
+  return out;
+}
+
+/** Tick labels from `min` to `max` in `step`s. 1:20, 1:25, 1:30 — not five slices of an awkward range. */
+export function axisTickValues(min, max, step) {
+  if (!(step > 0) || !(max > min)) return [min, max];
+  const out = [];
+  const start = snapDown(min, step);
+  for (let v = start; v <= max + step * 0.001; v += step) {
+    const rounded = Math.round(v);
+    if (rounded + 0.001 >= min && rounded - 0.001 <= max) out.push(rounded);
+  }
+  return out.length ? out : [min, max];
 }
 
 /** Power axis (bike): higher value = taller bar, so max is the top. */
-export function powerAxisBounds({ work, plausible = [], avgForScale = null }) {
+export function powerAxisBounds({ work, plausible = [] }) {
   const workVals = (work || []).filter((v) => Number.isFinite(v) && v > 0);
   if (!workVals.length) return null;
   const drawn = (plausible || []).filter((v) => Number.isFinite(v) && v > 0);
 
-  const avg = Number.isFinite(avgForScale)
-    ? avgForScale
-    : workVals.reduce((a, b) => a + b, 0) / workVals.length;
+  const high = Math.max(...workVals, ...(drawn.length ? drawn : [0]));
+  // Strava's power chart starts at 0 and climbs in round watts, so a 180 W
+  // block and a 300 W set are different heights on the same ruler.
+  const step = high <= 200 ? 25 : high <= 500 ? 50 : 100;
+  const max = snapUp(high + step / 2, step);
 
-  const maxDev = Math.max(...workVals.map((v) => Math.abs(v - avg)), avg * 0.03);
-  const spread = maxDev * 1.1;
-  const min = Math.max(0, avg - spread);
-  let max = avg + spread;
-
-  // Same guarantee as the pace axis, at the end that means "hardest".
-  const drawnHigh = drawn.length ? Math.max(...drawn) : max;
-  if (drawnHigh > max) max = drawnHigh + (drawnHigh - min) * 0.08;
-
-  return { min, max };
+  return { min: 0, max, step };
 }

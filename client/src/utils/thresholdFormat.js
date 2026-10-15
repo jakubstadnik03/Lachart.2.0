@@ -75,6 +75,32 @@ export function axisTick(demand, kind, storageMode) {
   return fmtPaceSec(viewerPaceSec(1000 / demand));
 }
 
+/**
+ * A span between two intensities, printed with one unit rather than two:
+ * "271–288 W", "11:08–10:31/mi". `lo` and `hi` are demands, so for a pace
+ * sport the low end is the SLOWER pace — which is the order an athlete reads a
+ * zone table in anyway.
+ */
+export function fmtDemandRange(lo, hi, kind, storageMode) {
+  if (!Number.isFinite(lo) || !Number.isFinite(hi) || lo <= 0 || hi <= 0) return '—';
+  const span = `${axisTick(lo, kind, storageMode)}–${axisTick(hi, kind, storageMode)}`;
+  if (kind === 'bike') return `${span} W`;
+  if (storageMode === 'speed') return `${span} ${viewerUnitSystem() === 'imperial' ? 'mph' : 'km/h'}`;
+  return `${span}${viewerPaceSuffix('run')}`;
+}
+
+/** "faster than 10:31/mi" for a pace sport, "above 288 W" for the bike. */
+export function fmtDemandOver(demand, kind, storageMode) {
+  const word = kind === 'bike' ? 'above' : 'faster than';
+  return `${word} ${fmtDemand(demand, kind, storageMode)}`;
+}
+
+/** The other end of the same sentence. */
+export function fmtDemandUnder(demand, kind, storageMode) {
+  const word = kind === 'bike' ? 'below' : 'slower than';
+  return `${word} ${fmtDemand(demand, kind, storageMode)}`;
+}
+
 /** What the demand axis is measuring, for the axis label. */
 export function demandUnitLabel(kind, storageMode) {
   if (kind === 'bike') return 'Watts';
