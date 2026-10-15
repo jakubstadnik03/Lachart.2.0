@@ -56,6 +56,21 @@ const subscriptionSchema = new mongoose.Schema({
   canceledAt: {
     type: Date
   },
+  // Why they left, asked (optionally) in the cancel dialog. Null means they
+  // skipped the question — never that they had no reason.
+  cancelReason: {
+    type: String,
+    enum: [...require('../constants/cancelReasons').CANCEL_REASONS, null],
+    default: null
+  },
+  cancelNote: {
+    type: String,
+    default: null
+  },
+  cancelReasonAt: {
+    type: Date,
+    default: null
+  },
   // Billing
   billingCycleAnchor: {
     type: Date

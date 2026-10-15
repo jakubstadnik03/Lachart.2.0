@@ -3688,6 +3688,72 @@ router.post("/admin/subscriptions/reconcile", verifyToken, async (req, res) => {
     }
 });
 
+/**
+ * GET /api/user/admin/subscriptions/cancellations — why subscribers left.
+ *
+ * The cancel dialog asks, optionally, and this is where the answers are read.
+ * It reports the breakdown and the notes rather than a single churn number,
+ * because "too expensive", "something was missing" and "I never got it set up"
+ * are three different problems that a churn rate cannot tell apart.
+ *
+ * `skipped` counts people who cancelled without answering — that is a real
+ * category, not missing data, and it has to stay visible so the breakdown is
+ * never read as if everyone had replied.
+ */
+router.get("/admin/subscriptions/cancellations", verifyToken, async (req, res) => {
+    try {
+        const currentUser = await userDao.findById(req.user.userId);
+        if (!currentUser || !currentUser.admin) {
+            return res.status(403).json({ error: "Access denied. Admin privileges required." });
+        }
+        const Subscription = require("../models/SubscriptionModel");
+        const { CANCEL_REASONS } = require("../constants/cancelReasons");
+
+        const days = Math.min(Math.max(Number(req.query.days) || 180, 1), 1000);
+        const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+
+        // Anyone on their way out: already cancelled, or flagged to end.
+        const leaving = await Subscription.find({
+            plan: { $nin: ["free", null] },
+            $or: [{ status: "canceled" }, { cancelAtPeriodEnd: true }],
+            $and: [{ $or: [
+                { canceledAt: { $gte: since } },
+                { canceledAt: null, updatedAt: { $gte: since } },
+            ] }],
+        }).populate("userId", "email name surname").lean();
+
+        const byReason = Object.fromEntries(CANCEL_REASONS.map((r) => [r, 0]));
+        byReason.skipped = 0;
+        const notes = [];
+        for (const s of leaving) {
+            byReason[s.cancelReason || "skipped"] = (byReason[s.cancelReason || "skipped"] || 0) + 1;
+            if (s.cancelNote) {
+                notes.push({
+                    reason: s.cancelReason || null,
+                    note: s.cancelNote,
+                    plan: s.plan,
+                    at: s.cancelReasonAt || s.canceledAt || s.updatedAt,
+                    email: s.userId?.email || null,
+                });
+            }
+        }
+        notes.sort((a, b) => new Date(b.at) - new Date(a.at));
+
+        const answered = leaving.length - byReason.skipped;
+        res.json({
+            windowDays: days,
+            leaving: leaving.length,
+            answered,
+            answerRate: leaving.length ? Math.round((answered / leaving.length) * 100) : 0,
+            byReason,
+            notes: notes.slice(0, 100),
+        });
+    } catch (e) {
+        console.error("Error fetching cancellations:", e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
 // Admin health dashboard — system + Strava sync observability.
 /**
  * Peak heap since boot, not just the heap right now.

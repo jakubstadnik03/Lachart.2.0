@@ -2408,8 +2408,16 @@ export const getSubscriptionPortalUrl = async () => {
 };
 
 /** Cancel subscription at period end */
-export const cancelSubscription = async () => {
-  const { data } = await api.post('/api/subscription/cancel');
+/**
+ * Cancel at period end. `reason` / `note` are the optional answer to "why are
+ * you leaving" — the server drops anything it doesn't recognise rather than
+ * refusing, so the question can never block the cancellation.
+ */
+export const cancelSubscription = async ({ reason, note } = {}) => {
+  const { data } = await api.post('/api/subscription/cancel', {
+    ...(reason ? { reason } : {}),
+    ...(note ? { note } : {}),
+  });
   return data;
 };
 

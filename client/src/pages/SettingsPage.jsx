@@ -21,6 +21,8 @@ import CalendarFeedCard from '../components/Settings/CalendarFeedCard';
 import CategoryManager from '../components/Settings/CategoryManager';
 import ExternalActivityList from '../components/Settings/ExternalActivityList';
 import { RowButton, SettingsRow, SettingsSection, ToggleRow } from '../components/Settings/HealthSettingsRows';
+import { trackEvent } from '../utils/analytics';
+import CancelReasonPicker from '../components/Settings/CancelReasonPicker';
 import { getIntegrationStatus, invalidateCache, listExternalActivities, uploadFitFile, getStravaAuthUrl, startGarminAuth, syncStravaActivities, backfillStravaHistory, autoSyncStravaActivities, updateAvatarFromStrava, syncGarminActivities, syncGarminHistory, autoSyncGarminActivities, fetchGdprExportJson, getCurrentSubscription, createCheckoutSession, getSubscriptionPortalUrl, cancelSubscription, reactivateSubscription, resetStravaBudget, updateUserProfile, syncSubscriptionFromStripe, fetchUserProfile, fetchStravaStatus, fetchGarminStatus, startWatchAuth, syncWatchActivities, setWatchAutoSync, disconnectWatch, fetchWatchStatus } from '../services/api';
 import { saveUserToStorage } from '../utils/userStorage';
 import { isCapacitorNative } from '../utils/isNativeApp';
@@ -334,6 +336,9 @@ const SettingsPage = () => {
   // show the user exactly what cancelling does (access until period end,
   // reactivate any time, etc.) before we actually hit the Stripe API.
   const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
+  /** Optional answer to "why are you leaving" — never required to cancel. */
+  const [cancelReason, setCancelReason] = useState(null);
+  const [cancelNote, setCancelNote] = useState('');
 
   // Coach branding state
   const [coachBranding, setCoachBranding] = useState({
@@ -952,6 +957,8 @@ const SettingsPage = () => {
    * clear explanation of what cancelling actually does before we touch Stripe.
    */
   const handleCancelSub = () => {
+    setCancelReason(null);
+    setCancelNote('');
     setCancelConfirmOpen(true);
   };
 
@@ -961,7 +968,15 @@ const SettingsPage = () => {
       // cancelSubscription() POSTs /api/subscription/cancel which calls
       // stripe.subscriptions.update(..., { cancel_at_period_end: true }).
       // The server-side handler also sends the cancellation email.
-      await cancelSubscription();
+      // The reason rides along with the cancel so there is no second request
+      // that could fail and lose the answer — or worse, leave someone
+      // cancelled but stuck in a dialog.
+      await cancelSubscription({ reason: cancelReason, note: cancelNote.trim() || undefined });
+      trackEvent('subscription_cancelled', {
+        plan: subData?.subscription?.plan || null,
+        reason: cancelReason || 'skipped',
+        has_note: Boolean(cancelNote.trim()),
+      });
       addNotification('Subscription will be canceled at the end of the billing period.', 'success');
       const data = await getCurrentSubscription();
       setSubData(data);
@@ -3543,6 +3558,14 @@ const SettingsPage = () => {
                       You can reactivate any time before the period ends and continue uninterrupted.
                     </p>
                   </div>
+
+                  <CancelReasonPicker
+                    reason={cancelReason}
+                    onReason={setCancelReason}
+                    note={cancelNote}
+                    onNote={setCancelNote}
+                    disabled={subActionLoading}
+                  />
 
                   <div className="flex flex-col-reverse sm:flex-row gap-2 sm:justify-end">
                     <button

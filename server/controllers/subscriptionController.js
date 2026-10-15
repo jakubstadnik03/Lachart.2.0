@@ -7,6 +7,7 @@ const Subscription = require('../models/SubscriptionModel');
 const { resolvePremiumAccess } = require('../utils/premiumAccess');
 const { createEmailTransporter } = require('../utils/createEmailTransporter');
 const { sendPremiumActivationEmail } = require('../services/premiumActivationEmailService');
+const { normalizeCancelReason, normalizeCancelNote } = require('../constants/cancelReasons');
 const {
   sendTrialEndingEmail,
   sendPaymentReceiptEmail,
@@ -879,6 +880,19 @@ exports.cancelSubscription = async (req, res) => {
     const alreadyScheduled = subscription.cancelAtPeriodEnd === true;
 
     subscription.cancelAtPeriodEnd = true;
+
+    // Why they left, if they chose to say. The question is optional and must
+    // never stand between someone and cancelling: anything we don't recognise
+    // is dropped silently rather than rejected. A second click doesn't erase
+    // the answer the first one gave.
+    const reason = normalizeCancelReason(req.body?.reason);
+    const note = normalizeCancelNote(req.body?.note);
+    if (reason || note) {
+      if (reason) subscription.cancelReason = reason;
+      if (note) subscription.cancelNote = note;
+      subscription.cancelReasonAt = new Date();
+    }
+
     await subscription.save();
 
     if (!alreadyScheduled) {
