@@ -20,6 +20,8 @@ import RaceCountdownCard from '../components/DashboardPage/RaceCountdownCard';
 import PostRaceFeedbackCard from '../components/DashboardPage/PostRaceFeedbackCard';
 import PlannedWorkoutEditor from '../components/NativeDashboard/PlannedWorkoutEditor';
 import StravaConnectModal from '../components/NativeDashboard/StravaConnectModal';
+import TrackerPromptThresholds from '../components/native/TrackerPromptThresholds';
+import { hasTrackerConnected } from '../utils/trackerConnectPrompt';
 import { garminLinked } from '../utils/syncSources';
 import PremiumLock from '../components/PremiumLock';
 import { NATIVE_DASHBOARD_KEYFRAMES, cardEntry } from '../components/NativeDashboard/animations';
@@ -803,6 +805,21 @@ export default function NativeDashboardPage({
     })();
     return () => { cancelled = true; };
   }, [stravaConnected, user]);
+  // The viewer's own most recent test, used to frame the connect sheet above.
+  // `tests` is already on the page for the last-test card, so this costs
+  // nothing extra.
+  const trackerPromptTest = useMemo(() => {
+    if (hasTrackerConnected(user)) return null;
+    const mine = (Array.isArray(tests) ? tests : []).filter((t) => {
+      const owner = t?.athleteId ?? t?.userId;
+      return !owner || String(owner) === String(user?._id);
+    });
+    if (!mine.length) return null;
+    return [...mine].sort(
+      (a, b) => new Date(b.date || b.createdAt || 0) - new Date(a.date || a.createdAt || 0)
+    )[0];
+  }, [tests, user]);
+
   const dismissStravaConnect = useCallback(() => {
     try { localStorage.setItem('stravaConnectDismissedAt', String(Date.now())); } catch (_) {}
     setShowStravaConnect(false);
@@ -1641,7 +1658,19 @@ export default function NativeDashboardPage({
       )}
 
       {/* Strava connect prompt (shown when not connected) */}
-      <StravaConnectModal open={showStravaConnect} onClose={dismissStravaConnect} />
+      {/* The weekly connect sheet. When this athlete already has a lactate
+          test, lead with the thresholds it produced instead of the generic
+          pitch: they have the numbers and nothing is measuring against them,
+          which is the actual argument for connecting a watch. */}
+      <StravaConnectModal
+        open={showStravaConnect}
+        onClose={dismissStravaConnect}
+        {...(trackerPromptTest ? {
+          title: 'Your zones are waiting',
+          subtitle: 'You have thresholds from a lactate test, but nothing is being measured against them. Connect your watch and every session is.',
+          highlight: <TrackerPromptThresholds test={trackerPromptTest} caption="From your latest test" />,
+        } : {})}
+      />
 
       {/* Race detail — opened from the day-card race ribbon */}
       {selectedRace && (

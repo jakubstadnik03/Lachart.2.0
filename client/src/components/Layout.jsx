@@ -12,6 +12,8 @@ import { isCapacitorNative } from "../utils/isNativeApp";
 import { athleteIdInPath, useAthleteSelection } from "../context/AthleteSelectionContext";
 import NativeLayout from "./native/NativeLayout";
 import { shouldShowOnboarding } from "./Onboarding/OnboardingFlow";
+import TrackerConnectPrompt from "./Testing-page/TrackerConnectPrompt";
+import { shouldRaiseStandingTrackerPrompt, markStandingTrackerPromptShown } from "../utils/trackerConnectPrompt";
 import {
   OPEN_TRAINING_ZONES_MODAL_EVENT,
   profileNeedsTrainingZones,
@@ -61,11 +63,54 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
   /** Numbers to start the editor with — an estimate the athlete is reviewing. */
   const [zonesPrefill, setZonesPrefill] = useState(null);
   const [showStravaModal, setShowStravaModal] = useState(false);
+  /** A standing "connect a tracker" ask: the test it leads with, or null. */
+  const [standingTrackerTest, setStandingTrackerTest] = useState(null);
   const [showWalkthrough, setShowWalkthrough] = useState(false);
   const walkthroughTimerRef = useRef(null);
   const [hasCheckedProfile, setHasCheckedProfile] = useState(false);
   const [profileForModal, setProfileForModal] = useState(null); // fresh profile when showing BasicProfileModal
   const { addNotification } = useNotification();
+
+
+  // A standing "connect a tracker" ask for someone who has a lactate test and
+  // still nothing measuring against it.
+  //
+  // The onboarding chain above offers Strava exactly once and then sets
+  // `stravaConnectModalDone_<id>` forever, so an athlete who skipped it in
+  // their first week is never asked again — and most of the accounts in this
+  // state are exactly those people, with a curve and no training. This comes
+  // back for them, at a month's distance and three times at most, and leads
+  // with their own thresholds rather than a generic pitch.
+  //
+  // Requiring the onboarding flag keeps the two from ever stacking.
+  useEffect(() => {
+    if (!user?._id) return undefined;
+    if (isCapacitorNative()) return undefined; // the native dashboard has its own
+    let onboardingAskSpent = false;
+    try { onboardingAskSpent = localStorage.getItem(`stravaConnectModalDone_${user._id}`) === 'true'; } catch { /* storage blocked */ }
+    if (!onboardingAskSpent) return undefined;
+    // Everything except "do they have a test" is free to check, so check it
+    // first and only pay for the lookup when the answer could matter.
+    if (!shouldRaiseStandingTrackerPrompt({ user, hasTest: true })) return undefined;
+
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      api.get(`/test/list/${user._id}`)
+        .then((res) => {
+          if (cancelled) return;
+          const list = Array.isArray(res?.data) ? res.data : [];
+          if (!list.length) return;
+          const latest = [...list].sort(
+            (a, b) => new Date(b.date || b.createdAt || 0) - new Date(a.date || a.createdAt || 0)
+          )[0];
+          if (!shouldRaiseStandingTrackerPrompt({ user, hasTest: true })) return;
+          markStandingTrackerPromptShown();
+          setStandingTrackerTest(latest);
+        })
+        .catch(() => { /* no test list, no ask */ });
+    }, 4000); // after the onboarding chain has had its say
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [user]);
 
   // ── Native: athletes for coach athlete bar ──────────────────────────────────
   const [athletes, setAthletes] = useState([]);
@@ -790,6 +835,14 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
                 if (user?._id) localStorage.setItem(`stravaConnectModalDone_${user._id}`, 'true');
                 addNotification('Strava connected successfully', 'success');
               }}
+            />
+          )}
+          {user && (
+            <TrackerConnectPrompt
+              isOpen={Boolean(standingTrackerTest)}
+              test={standingTrackerTest}
+              variant="standing"
+              onClose={() => setStandingTrackerTest(null)}
             />
           )}
           {user && (

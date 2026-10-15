@@ -98,6 +98,20 @@ describe('TrackerConnectPrompt', () => {
     expect(html).not.toContain('LT2');
   });
 
+  it('the standing variant does not claim the test was just saved', () => {
+    // Layout raises this one weeks or months after the test, so the post-save
+    // wording would be a small lie every time.
+    const html = renderToStaticMarkup(
+      <TrackerConnectPrompt isOpen test={RUN_TEST} variant="standing" onClose={() => {}} />,
+    );
+    expect(html).toContain('Your zones are waiting');
+    expect(html).toContain('From your latest test');
+    expect(html).not.toContain('just saved');
+    expect(html).not.toContain('This test gives you');
+    // It still has to carry the numbers — that is the whole argument.
+    expect(html).toMatch(/\d:\d{2}/);
+  });
+
   it('renders nothing when closed', () => {
     expect(renderToStaticMarkup(
       <TrackerConnectPrompt isOpen={false} test={RUN_TEST} onClose={() => {}} />,

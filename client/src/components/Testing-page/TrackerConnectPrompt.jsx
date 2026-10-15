@@ -17,9 +17,23 @@ import {
  * and a great deal next to your own numbers. See utils/trackerConnectPrompt.js
  * for when it fires.
  */
-const TrackerConnectPrompt = ({ isOpen, onClose, test }) => {
+const COPY = {
+  post_save: {
+    title: 'Your zones are ready',
+    lead: 'This test gives you the intensities to train at. Connect your watch and every session gets measured against them automatically — time in each zone, training load, and whether your threshold is actually moving.',
+    caption: 'From the test you just saved',
+  },
+  standing: {
+    title: 'Your zones are waiting',
+    lead: 'You have thresholds from a lactate test, but nothing is being measured against them. Connect your watch and every session is — time in each zone, training load, and whether your threshold is actually moving.',
+    caption: 'From your latest test',
+  },
+};
+
+const TrackerConnectPrompt = ({ isOpen, onClose, test, variant = 'post_save' }) => {
   const { addNotification } = useNotification();
   const [busy, setBusy] = useState(null);
+  const copy = COPY[variant] || COPY.post_save;
 
   useEffect(() => {
     if (!isOpen) setBusy(null);
@@ -42,7 +56,7 @@ const TrackerConnectPrompt = ({ isOpen, onClose, test }) => {
 
   const handleConnect = async (provider) => {
     setBusy(provider);
-    trackEvent('tracker_connect_prompt_click', { provider, source: 'post_save', sport: sport || null });
+    trackEvent('tracker_connect_prompt_click', { provider, source: variant, sport: sport || null });
     try {
       if (provider === 'strava') {
         const started = await connectStrava();
@@ -65,23 +79,19 @@ const TrackerConnectPrompt = ({ isOpen, onClose, test }) => {
   };
 
   const handleDismiss = () => {
-    trackEvent('tracker_connect_prompt_dismissed', { source: 'post_save', sport: sport || null });
+    trackEvent('tracker_connect_prompt_dismissed', { source: variant, sport: sport || null });
     onClose?.();
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={handleDismiss} title="Your zones are ready">
+    <Modal isOpen={isOpen} onClose={handleDismiss} title={copy.title}>
       <div className="space-y-5">
-        <p className="text-sm text-gray-600 leading-relaxed">
-          This test gives you the intensities to train at. Connect your watch and every
-          session gets measured against them automatically — time in each zone, training
-          load, and whether your threshold is actually moving.
-        </p>
+        <p className="text-sm text-gray-600 leading-relaxed">{copy.lead}</p>
 
         {hasNumbers && (
           <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
             <div className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-3">
-              From the test you just saved
+              {copy.caption}
             </div>
             <div className="grid grid-cols-2 gap-3">
               {lt1 && (

@@ -27,7 +27,7 @@ import UpgradeModal from '../components/UpgradeModal';
 import { FREE_TEST_LIMIT } from '../constants/planLimits';
 import StravaConnectModal from '../components/NativeDashboard/StravaConnectModal';
 import { shouldPromptTrackerConnect, markTrackerPromptShown } from '../utils/trackerConnectPrompt';
-import { extractLactateThresholds, formatThresholdIntensity } from '../utils/extractLactateThresholds';
+import TrackerPromptThresholds from '../components/native/TrackerPromptThresholds';
 import { trackEvent } from '../utils/analytics';
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
@@ -39,52 +39,6 @@ function fmtPace(secPerUnit, sport, user, test = null) {
 function fmtMmol(v) {
   if (v == null || !Number.isFinite(v)) return '—';
   return `${Number(v).toFixed(1)} mmol`;
-}
-
-/**
- * LT1/LT2 read off a just-saved test, for the post-save tracker prompt. A test
- * too sparse to fit a curve renders nothing, so the prompt still works without
- * the numbers.
- */
-function TrackerPromptThresholds({ test }) {
-  if (!test) return null;
-  let thresholds = null;
-  try {
-    thresholds = extractLactateThresholds(test);
-  } catch {
-    return null;
-  }
-  const sport = thresholds?.sport;
-  const lt1 = thresholds?.lt1 != null ? formatThresholdIntensity(thresholds.lt1, test, sport) : null;
-  const lt2 = thresholds?.lt2 != null ? formatThresholdIntensity(thresholds.lt2, test, sport) : null;
-  if (!lt1 && !lt2) return null;
-
-  const cell = (label, value, hr) => (
-    <div style={{ flex: 1, minWidth: 0 }}>
-      <div style={{ fontSize: 11, color: '#6b7280', marginBottom: 2 }}>{label}</div>
-      <div style={{ fontSize: 17, fontWeight: 700, color: '#111827', fontVariantNumeric: 'tabular-nums' }}>
-        {value}
-      </div>
-      {hr ? (
-        <div style={{ fontSize: 11, color: '#6b7280', fontVariantNumeric: 'tabular-nums' }}>{hr} bpm</div>
-      ) : null}
-    </div>
-  );
-
-  return (
-    <div style={{ background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: 14, padding: 14 }}>
-      <div style={{
-        fontSize: 10, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase',
-        color: '#9ca3af', marginBottom: 10,
-      }}>
-        From the test you just saved
-      </div>
-      <div style={{ display: 'flex', gap: 12 }}>
-        {lt1 ? cell('LT1 · aerobic', lt1, thresholds?.lt1Hr) : null}
-        {lt2 ? cell('LT2 · anaerobic', lt2, thresholds?.lt2Hr) : null}
-      </div>
-    </div>
-  );
 }
 
 function fmtRelativeDate(date) {
@@ -1510,6 +1464,10 @@ export default function NativeTestingPage({ user, athleteId: externalAthleteId }
             source: 'post_save_native',
             sport: trackerPromptTest?.sport || null,
           });
+          // The dashboard raises its own connect sheet weekly; share its
+          // dismissal stamp so saving a test here does not produce a second
+          // ask on the next dashboard visit.
+          try { localStorage.setItem('stravaConnectDismissedAt', String(Date.now())); } catch { /* storage blocked */ }
           setTrackerPromptTest(null);
         }}
         title="Your zones are ready"
