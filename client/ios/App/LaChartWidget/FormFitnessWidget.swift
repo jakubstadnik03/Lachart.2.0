@@ -297,6 +297,10 @@ struct SmallTodayView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 12)
+        // Claim the whole tile and pin to the top, as Medium and Large already
+        // do. Without this the VStack sized itself to its content and sat
+        // centred, so rows truncated with empty tile left beside them.
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     @ViewBuilder
@@ -553,6 +557,12 @@ struct FormFitnessWidget: Widget {
         .configurationDisplayName("Today's Training")
         .description("Form / Fitness / Fatigue plus today's completed & planned workouts.")
         .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
+        // Each view below sets its own margins per family (12pt small, 16pt
+        // the rest). iOS 17 adds a ~16pt content margin of its own to any
+        // widget with a containerBackground, and the two were stacking: a
+        // small tile lost 28pt a side instead of 12, leaving roughly a third
+        // of its width to padding and truncating every workout title.
+        .contentMarginsDisabled()
     }
 }
 
