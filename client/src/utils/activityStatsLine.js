@@ -9,11 +9,10 @@
  */
 import {
   formatDistance,
-  formatPaceFromDistanceAndDuration,
-  formatPaceFromSpeedMps,
   resolveDistanceUnitSystem,
   getUserUnits,
 } from './unitsConverter';
+import { resolveAvgPace } from './activityAvgPace';
 import { resolveActivityTss } from './computeTss';
 import { completedSecs } from './completedSessionStats';
 
@@ -62,11 +61,11 @@ export function activityCompletedStats(activity, profile = null) {
     const paceSecs = Number(
       activity.movingTime || activity.moving_time || activity.totalTimerTime || dur,
     );
-    if (avgSpeed > 0) {
-      paceOrPower = formatPaceFromSpeedMps(avgSpeed, unitSystem, sport);
-    } else if (dist > 0 && paceSecs > 0) {
-      paceOrPower = formatPaceFromDistanceAndDuration(dist, paceSecs, unitSystem, sport);
-    }
+    // Distance ÷ the moving clock first: a hand-corrected distance has to move
+    // the pace with it, and for an untouched activity the two agree anyway.
+    paceOrPower = resolveAvgPace({
+      sport, avgSpeed, distance: dist, durationSec: paceSecs, unitSystem,
+    });
   }
 
   const tssVal = profile

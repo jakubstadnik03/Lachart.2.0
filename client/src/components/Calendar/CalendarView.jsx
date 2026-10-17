@@ -59,6 +59,7 @@ import {
   paceSecondsToDisplaySeconds,
   paceUnitShort,
 } from '../../utils/unitsConverter';
+import { resolveAvgPace, avgSpeedFrom } from '../../utils/activityAvgPace';
 import { distinctiveTitleTokens, isGenericTitle } from '../../utils/compareSimilarity';
 import { buildStructureTitle } from '../../utils/workoutStructureTitle';
 import { plannedWorkoutDurationSecs } from '../../utils/planCompliance';
@@ -4059,16 +4060,11 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
   };
   const fmtDist = (d) => (d > 0 ? formatDistance(d, unitSystem).formatted : '—');
   const fmtElev = (e) => (e > 0 ? formatElevation(e, unitSystem).formatted : '—');
-  let paceStr = null;
-  if (isRun && avgSpeed > 0) {
-    paceStr = formatPaceFromSpeedMps(avgSpeed, unitSystem, 'run');
-  } else if (isSwim && avgSpeed > 0) {
-    paceStr = formatPaceFromSpeedMps(avgSpeed, unitSystem, 'swim');
-  } else if (isRun && dist > 0 && dur > 0) {
-    paceStr = formatPaceFromDistanceAndDuration(dist, dur, unitSystem, 'run');
-  } else if (isSwim && dist > 0 && dur > 0) {
-    paceStr = formatPaceFromDistanceAndDuration(dist, dur, unitSystem, 'swim');
-  }
+  // Distance ÷ duration first, so an edited distance moves the pace with it.
+  const paceStr = resolveAvgPace({
+    sport: isRun ? 'run' : (isSwim ? 'swim' : null),
+    avgSpeed, distance: dist, durationSec: dur, unitSystem,
+  });
 
   // Laps. Memoized so the empty fallback is not a new array every render —
   // CI treats that as an error in the split memo below.
@@ -4465,6 +4461,17 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
         extraFields.distance = Math.round(metres);
       }
 
+      // A hand-edited distance or duration makes the stored avgSpeed describe
+      // numbers that are no longer there, and avgSpeed is read in more places
+      // than this card. Recompute it from whichever values the activity ends
+      // up with, so nothing downstream is left contradicting itself.
+      if (extraFields.distance != null || extraFields.movingTime != null) {
+        const effDist = extraFields.distance ?? dist;
+        const effSecs = extraFields.movingTime ?? dur;
+        const speed = avgSpeedFrom(effDist, effSecs);
+        if (speed != null) extraFields.avgSpeed = speed;
+      }
+
       // Date/time — sent only when the user changed either field. The string
       // is local wall-clock; new Date() interprets it in the local timezone.
       const whenChanged = completedForm.whenDate
@@ -4494,6 +4501,11 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
         if (fields.distance != null) {
           patch.distance = fields.distance;
           patch.totalDistance = fields.distance;
+        }
+        if (fields.avgSpeed != null) {
+          patch.avgSpeed = fields.avgSpeed;
+          patch.averageSpeed = fields.avgSpeed;
+          patch.average_speed = fields.avgSpeed;
         }
         if (fields.calories != null) {
           patch.calories = fields.calories;
@@ -6874,16 +6886,11 @@ function ActivityDetailPopup({ activity, anchorRect, onClose, onSelectActivity, 
 
   // Average pace for run/swim
   const avgSpeed = Number(a.avgSpeed || a.average_speed || 0); // m/s
-  let paceStr = null;
-  if (isRun && avgSpeed > 0) {
-    paceStr = formatPaceFromSpeedMps(avgSpeed, unitSystem, 'run');
-  } else if (isSwim && avgSpeed > 0) {
-    paceStr = formatPaceFromSpeedMps(avgSpeed, unitSystem, 'swim');
-  } else if (isRun && dist > 0 && dur > 0) {
-    paceStr = formatPaceFromDistanceAndDuration(dist, dur, unitSystem, 'run');
-  } else if (isSwim && dist > 0 && dur > 0) {
-    paceStr = formatPaceFromDistanceAndDuration(dist, dur, unitSystem, 'swim');
-  }
+  // Distance ÷ duration first, so an edited distance moves the pace with it.
+  const paceStr = resolveAvgPace({
+    sport: isRun ? 'run' : (isSwim ? 'swim' : null),
+    avgSpeed, distance: dist, durationSec: dur, unitSystem,
+  });
 
   const actDate = a.date || a.timestamp || a.startDate || a.start_time;
   const dateStr = actDate
