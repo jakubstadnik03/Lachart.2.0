@@ -8397,6 +8397,8 @@ export default function CalendarView({
   // (or via the "+" menu when no theme is set yet). Holds the date string
   // that's being edited; null means closed.
   const [dayPlanEditDate, setDayPlanEditDate] = useState(null);
+  /** Title to open the day-theme editor with, when a shortcut named one. */
+  const [dayPlanPreset, setDayPlanPreset] = useState(null);
   // Lookup: dateStr (YYYY-MM-DD) → dayPlan object. Built once per dayPlans
   // change so each day-header render is O(1).
   const dayPlanByDate = useMemo(() => {
@@ -11190,7 +11192,7 @@ export default function CalendarView({
           athleteId={athleteId}
           user={user}
           onPlanWorkout={onPlanWorkout}
-          onAddDayTheme={onDayPlanSave ? (d) => { setAddCompletedDate(null); setDayPlanEditDate(d); } : null}
+          onAddDayTheme={onDayPlanSave ? (d, preset) => { setAddCompletedDate(null); setDayPlanPreset(preset || null); setDayPlanEditDate(d); } : null}
           onAddPeriod={onPeriodSave ? (d) => { setAddCompletedDate(null); setPeriodEdit({ defaultDate: d }); } : null}
           onClose={() => setAddCompletedDate(null)}
           onSaved={() => {
@@ -11218,8 +11220,8 @@ export default function CalendarView({
       {dayPlanEditDate && onDayPlanSave && (
         <DayPlanEditSheet
           date={dayPlanEditDate}
-          plan={dayPlanByDate.get(dayPlanEditDate)}
-          onClose={() => setDayPlanEditDate(null)}
+          plan={dayPlanByDate.get(dayPlanEditDate) || (dayPlanPreset ? { title: dayPlanPreset } : undefined)}
+          onClose={() => { setDayPlanEditDate(null); setDayPlanPreset(null); }}
           onSave={async (payload, dates) => {
             // `dates` includes the base day plus any weekly-repeat occurrences.
             const list = Array.isArray(dates) && dates.length ? dates : [dayPlanEditDate];
@@ -11228,6 +11230,7 @@ export default function CalendarView({
               result = await onDayPlanSave(d, payload);
             }
             setDayPlanEditDate(null);
+            setDayPlanPreset(null);
             return result;
           }}
           onDelete={async () => {

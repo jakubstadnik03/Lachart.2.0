@@ -922,6 +922,21 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
                         <span className="text-[11px] font-semibold text-slate-600 leading-tight text-center">Day theme</span>
                       </button>
                     )}
+                    {onAddDayTheme && (
+                      <button
+                        onClick={() => { onAddDayTheme(toLocalISO(date), 'Recovery'); onClose(); }}
+                        className="flex flex-col items-center gap-1.5 p-3 rounded-2xl border-2 border-slate-100 bg-white hover:border-teal-300 hover:bg-teal-50/40 active:scale-95 transition-all min-h-[72px] justify-center"
+                      >
+                        {/* Moon — a recovery day. This is a day theme with the
+                            title filled in: Recovery is already one of the
+                            presets, with its own colour, and reaching it took
+                            opening the theme editor and picking it. */}
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0d9488" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M20.5 14.5A8.5 8.5 0 1 1 9.5 3.5a6.8 6.8 0 0 0 11 11Z" />
+                        </svg>
+                        <span className="text-[11px] font-semibold text-slate-600 leading-tight text-center">Recovery</span>
+                      </button>
+                    )}
                     <button
                       onClick={() => setRaceOpen(true)}
                       className="flex flex-col items-center gap-1.5 p-3 rounded-2xl border-2 border-slate-100 bg-white hover:border-red-300 hover:bg-red-50/40 active:scale-95 transition-all min-h-[72px] justify-center"
