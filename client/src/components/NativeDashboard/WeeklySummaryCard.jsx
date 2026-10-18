@@ -6,6 +6,7 @@ import { activityCalendarDateKey, activityOnLocalDay, computePmcFromActivities }
 import { plannedDistanceMetres } from '../../utils/plannedWorkoutDistance';
 import { useAuth } from '../../context/AuthProvider';
 import { formatDistance, resolveDistanceUnitSystem } from '../../utils/unitsConverter';
+import { resolveWeekEndValues } from '../../utils/weekFormFitness';
 import { TSS_DISPLAY_MODE_EVENT } from '../../utils/uiPrefs';
 import { completedSecs, completedTss } from '../../utils/completedSessionStats';
 
@@ -209,13 +210,18 @@ export default function WeeklySummaryCard({ activities = [], plannedWorkouts = [
     const s = sparkByDate[dateKey(p)];
     if (s) { startSnap = s; break; }
   }
-  const ffStats = endSnap ? {
-    fitness: Math.round(endSnap.Fitness || 0),
-    fatigue: Math.round(endSnap.Fatigue || 0),
-    form:    Math.round(endSnap.Form    || 0),
-    dFitness: startSnap ? Math.round((endSnap.Fitness || 0) - (startSnap.Fitness || 0)) : 0,
-    dFatigue: startSnap ? Math.round((endSnap.Fatigue || 0) - (startSnap.Fatigue || 0)) : 0,
-    dForm:    startSnap ? Math.round((endSnap.Form    || 0) - (startSnap.Form    || 0)) : 0,
+  // For the current week these tiles describe today, and the status card above
+  // describes the same day — so they come from the same source. See
+  // utils/weekFormFitness.js for the rule and why.
+  const endValues = resolveWeekEndValues({ monday, sunday, today, todayMetrics, endSnap });
+
+  const ffStats = endValues ? {
+    fitness: Math.round(endValues.Fitness || 0),
+    fatigue: Math.round(endValues.Fatigue || 0),
+    form:    Math.round(endValues.Form    || 0),
+    dFitness: startSnap ? Math.round((endValues.Fitness || 0) - (startSnap.Fitness || 0)) : 0,
+    dFatigue: startSnap ? Math.round((endValues.Fatigue || 0) - (startSnap.Fatigue || 0)) : 0,
+    dForm:    startSnap ? Math.round((endValues.Form    || 0) - (startSnap.Form    || 0)) : 0,
   } : null;
 
   // ── totals ─────────────────────────────────────────────────────────────────

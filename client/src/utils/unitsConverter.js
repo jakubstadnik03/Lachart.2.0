@@ -531,8 +531,12 @@ export const activityPaceOrPowerDisplay = (act, user) => {
 
   if (isBike && power > 0) return `${Math.round(power)} W`;
   if (isSwim || isRun) {
-    if (avgSpeed > 0) return formatPaceFromSpeedMps(avgSpeed, unitSystem, sport);
+    // Distance ÷ duration first. These two are what the card prints beside the
+    // pace, and a hand-corrected distance leaves the recorded avgSpeed
+    // describing the old one. See utils/activityAvgPace.js — the rule lives
+    // there too, but this file cannot import it without a cycle.
     if (dist > 0 && dur > 0) return formatPaceFromDistanceAndDuration(dist, dur, unitSystem, sport);
+    if (avgSpeed > 0) return formatPaceFromSpeedMps(avgSpeed, unitSystem, sport);
   }
   return null;
 };

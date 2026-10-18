@@ -1,4 +1,5 @@
 import { resolveAvgPace, avgSpeedFrom } from './activityAvgPace';
+import { activityPaceOrPowerDisplay } from './unitsConverter';
 
 /**
  * The card shows duration, distance and pace together, so the three have to
@@ -75,5 +76,32 @@ describe('avgSpeedFrom', () => {
     const speed = avgSpeedFrom(16000, 3738);
     expect(resolveAvgPace({ sport: 'run', avgSpeed: speed, distance: 0, durationSec: 0 }))
       .toBe(resolveAvgPace({ sport: 'run', distance: 16000, durationSec: 3738 }));
+  });
+});
+
+describe('activityPaceOrPowerDisplay', () => {
+  // The native home screen's session line goes through this one, not the
+  // resolver, because unitsConverter cannot import it without a cycle. It has
+  // to reach the same answer.
+  test('an edited distance moves the pace here too', () => {
+    const act = {
+      sport: 'Run', distance: 16000, movingTime: 3738,
+      avgSpeed: 13700 / 3738, // left behind by the watch, from before the edit
+    };
+    expect(activityPaceOrPowerDisplay(act, { units: { distance: 'km' } })).toBe('3:54/km');
+  });
+
+  test('still reads power for a ride', () => {
+    expect(activityPaceOrPowerDisplay(
+      { sport: 'Ride', distance: 152950, movingTime: 14580, normalizedPower: 317 },
+      { units: { distance: 'km' } },
+    )).toBe('317 W');
+  });
+
+  test('falls back to recorded speed with no distance', () => {
+    expect(activityPaceOrPowerDisplay(
+      { sport: 'Run', distance: 0, movingTime: 2400, avgSpeed: 10000 / 2400 },
+      { units: { distance: 'km' } },
+    )).toBe('4:00/km');
   });
 });
