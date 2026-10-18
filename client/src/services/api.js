@@ -901,6 +901,27 @@ export const getAdminBilling = async () => {
   }
 };
 
+/**
+ * Why subscribers left — the read side of the question the cancel dialog asks.
+ * Only cancellations since that shipped carry a reason; everything older
+ * counts as `skipped`, which the endpoint reports as its own category.
+ */
+export const getAdminCancellations = async (days = 180) => {
+  const { data } = await api.get('/user/admin/subscriptions/cancellations', { params: { days } });
+  return data;
+};
+
+/** Compare local subscription rows against Stripe. GET reports, POST writes. */
+export const getSubscriptionReconcile = async (all = false) => {
+  const { data } = await api.get('/user/admin/subscriptions/reconcile', { params: all ? { all: 'true' } : {} });
+  return data;
+};
+
+export const applySubscriptionReconcile = async (all = false) => {
+  const { data } = await api.post('/user/admin/subscriptions/reconcile', all ? { all: true } : {});
+  return data;
+};
+
 export const getAdminHealth = async () => {
   try {
     const response = await api.get('/user/admin/health');

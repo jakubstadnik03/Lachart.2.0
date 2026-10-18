@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getEventStats } from '../utils/eventLogger';
+import CancellationsCard from '../components/Admin/CancellationsCard';
 import { fetchCoachLeads, fetchCoachLeadPreview, sendCoachLeadTest, sendCoachLeadEmail, startCoachLeadBatch, fetchCoachLeadBatchStatus } from '../services/api';
 import { lastOutreachSentAt, formatOutreachSentAt } from '../utils/lastOutreachSentAt';
 import { rememberAdminSession } from '../utils/impersonation';
@@ -2322,6 +2323,10 @@ const AdminDashboard = () => {
                 </div>
               </CollapsibleSection>
             )}
+
+            {/* Why subscribers left + Stripe reconcile. Both were endpoints
+                only, which meant nobody was ever going to look at them. */}
+            <CancellationsCard addNotification={addNotification} />
           </motion.div>
         )}
 
