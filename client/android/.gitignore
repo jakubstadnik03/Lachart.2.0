@@ -99,3 +99,7 @@ app/src/main/assets/public
 app/src/main/assets/capacitor.config.json
 app/src/main/assets/capacitor.plugins.json
 app/src/main/res/xml/config.xml
+
+# Finder duplicates of the generated config.xml ("config 9.xml") — a space is
+# not a legal resource filename, so a single one of these fails the build.
+app/src/main/res/xml/config[ ]*.xml
