@@ -20,6 +20,10 @@ import RaceCountdownCard from '../components/DashboardPage/RaceCountdownCard';
 import PostRaceFeedbackCard from '../components/DashboardPage/PostRaceFeedbackCard';
 import PlannedWorkoutEditor from '../components/NativeDashboard/PlannedWorkoutEditor';
 import StravaConnectModal from '../components/NativeDashboard/StravaConnectModal';
+import { trackEvent } from '../utils/analytics';
+import TrialOfferCard from '../components/NativeDashboard/TrialOfferCard';
+import { shouldOfferTrial, markTrialOfferShown } from '../utils/trialOfferPrompt';
+import { usePremium } from '../hooks/usePremium';
 import TrackerPromptThresholds from '../components/native/TrackerPromptThresholds';
 import { hasTrackerConnected } from '../utils/trackerConnectPrompt';
 import { garminLinked } from '../utils/syncSources';
@@ -805,6 +809,31 @@ export default function NativeDashboardPage({
     })();
     return () => { cancelled = true; };
   }, [stravaConnected, user]);
+  // The free trial offer. It only reaches someone whose zones are already
+  // measuring real training — anyone without a tracker gets the connect sheet
+  // instead, so the two never ask the same person at once.
+  //
+  // `everSubscribed` is false here because the client user object carries only
+  // isPremium; there is no "has ever held a paid plan" flag on it yet. Until
+  // the server sends one, somebody who cancelled can see this up to three
+  // times over three months, which is the known rough edge.
+  const { isPremium, premiumResolved } = usePremium();
+  const [trialOfferOpen, setTrialOfferOpen] = useState(false);
+  useEffect(() => {
+    const eligible = shouldOfferTrial({
+      user,
+      isPremium,
+      premiumResolved,
+      hasTest: Array.isArray(tests) && tests.length > 0,
+      hasTracker: hasTrackerConnected(user),
+      everSubscribed: false,
+    });
+    if (!eligible) return;
+    markTrialOfferShown();
+    trackEvent('trial_offer_shown', { source: 'native_dashboard' });
+    setTrialOfferOpen(true);
+  }, [user, isPremium, premiumResolved, tests]);
+
   // The viewer's own most recent test, used to frame the connect sheet above.
   // `tests` is already on the page for the last-test card, so this costs
   // nothing extra.
@@ -1510,6 +1539,12 @@ export default function NativeDashboardPage({
           </div>
 
           {/* 5 · Weekly summary */}
+          {trialOfferOpen && (
+            <div style={{ ...cardEntry(5), ...snapStyle }}>
+              <TrialOfferCard user={user} onDismiss={() => setTrialOfferOpen(false)} />
+            </div>
+          )}
+
           <div style={{ ...cardEntry(5), ...snapStyle }}>
             <PremiumLock feature="This Week & Daily TSS" plan="pro" minHeight={180}>
               <WeeklySummaryCard

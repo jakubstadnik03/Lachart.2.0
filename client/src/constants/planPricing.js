@@ -13,3 +13,11 @@ export const COACH_PLAN_PRICE_LABEL = formatEurPrice(COACH_PLAN_PRICE_EUR);
 
 /** Stripe / API plan id for the athlete tier (legacy key: pro). */
 export const ATHLETE_PLAN_ID = 'pro';
+
+/**
+ * Free trial length, in days. Matches the server default in
+ * subscriptionController (`STRIPE_TRIAL_DAYS` overrides it per deploy), and is
+ * stated wherever the trial is offered — Apple requires a free trial to show
+ * what it costs once it ends, and so does anyone being honest about it.
+ */
+export const TRIAL_DAYS = 14;
