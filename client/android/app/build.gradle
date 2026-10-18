@@ -1,5 +1,14 @@
 apply plugin: 'com.android.application'
 
+// The upload key lives outside the repository so that a worktree, a clean
+// checkout or a `git clean` can never take it with them. keystore.properties
+// holds the absolute path and the passwords; back that folder up.
+def keystorePropertiesFile = file(System.getProperty('user.home') + '/Documents/LaChart/android-signing/keystore.properties')
+def keystoreProperties = new Properties()
+if (keystorePropertiesFile.exists()) {
+    keystorePropertiesFile.withInputStream { keystoreProperties.load(it) }
+}
+
 android {
     namespace "com.lachart.app"
     compileSdk rootProject.ext.compileSdkVersion
@@ -7,8 +16,10 @@ android {
         applicationId "com.lachart.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
+        // Keep in step with the iOS release. versionCode must rise with every
+        // upload to Play; versionName is what a person reads.
         versionCode 1
-        versionName "1.0"
+        versionName "1.2.4"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -16,8 +27,22 @@ android {
             ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        release {
+            if (keystoreProperties['storeFile']) {
+                storeFile file(keystoreProperties['storeFile'])
+                storePassword keystoreProperties['storePassword']
+                keyAlias keystoreProperties['keyAlias']
+                keyPassword keystoreProperties['keyPassword']
+            }
+        }
+    }
     buildTypes {
         release {
+            // Unsigned if the properties file is missing, so a checkout without
+            // the key still builds and fails loudly at upload rather than
+            // silently shipping a debug-signed bundle.
+            signingConfig keystoreProperties['storeFile'] ? signingConfigs.release : null
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
