@@ -15,10 +15,19 @@
  */
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import { getTodayMetrics, getFormFitnessData, getRaceEvents } from '../services/api';
+import { resolveWidgetWorkoutLists } from './widgetWorkoutLists';
 
 // Single shared plugin proxy — re-exported so other modules don't call
 // registerPlugin('LaChartShared') again (Capacitor warns "registered twice").
 export const LaChartShared = registerPlugin('LaChartShared');
+
+/**
+ * The last workout lists anybody actually looked up, and the day they describe.
+ * The native side replaces the whole cache on every write, so a writer that
+ * did not fetch the calendar has to repeat them or they are erased. See
+ * utils/widgetWorkoutLists.
+ */
+let rememberedWorkoutLists = null;
 
 /**
  * @param {{
@@ -45,6 +54,11 @@ export async function writeFormFitnessToWidget(metrics) {
     );
     return;
   }
+  // An omitted list means "I did not look"; an empty array means "empty".
+  const resolved = resolveWidgetWorkoutLists(rememberedWorkoutLists, metrics);
+  rememberedWorkoutLists = resolved.remembered;
+  const workoutLists = resolved.lists;
+
   const payload = {
     fitness:   Math.round(Number(metrics.fitness)   || 0),
     fatigue:   Math.round(Number(metrics.fatigue)   || 0),
@@ -53,9 +67,9 @@ export async function writeFormFitnessToWidget(metrics) {
     sparkline: Array.isArray(metrics.sparkline)
       ? metrics.sparkline.map(v => Math.round(Number(v) || 0)).slice(-14)
       : [],
-    todayCompleted:  sanitiseWorkouts(metrics.todayCompleted),
-    todayPlanned:    sanitiseWorkouts(metrics.todayPlanned),
-    tomorrowPlanned: sanitiseWorkouts(metrics.tomorrowPlanned),
+    todayCompleted:  sanitiseWorkouts(workoutLists.todayCompleted),
+    todayPlanned:    sanitiseWorkouts(workoutLists.todayPlanned),
+    tomorrowPlanned: sanitiseWorkouts(workoutLists.tomorrowPlanned),
     raceDaysUntil: metrics.raceDaysUntil != null ? Math.round(Number(metrics.raceDaysUntil)) : null,
     raceName: metrics.raceName ? String(metrics.raceName).slice(0, 40) : null,
   };
@@ -133,10 +147,10 @@ export async function syncWidgetFromApi(athleteId) {
       sparkline,
       raceDaysUntil,
       raceName: nextRace?.name || null,
-      // Workout lists are filled by the dashboard's richer write; keep empty
-      // here so this insurance path stays cheap (no calendar/plan fetch).
-      todayCompleted: [],
-      todayPlanned:   [],
+      // Deliberately omitted, not emptied: this path does not fetch the
+      // calendar, so it has nothing to say about today's workouts and must
+      // not claim there are none. writeFormFitnessToWidget repeats whatever
+      // the dashboard last looked up today.
     });
   } catch (e) {
     console.warn('[widgetCache] syncWidgetFromApi failed:', e?.message || e);
