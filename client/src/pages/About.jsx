@@ -326,7 +326,7 @@ export default function About() {
             you scroll a Mac trackpad. Bumped the background opacity from
             .95 → .92 and dropped to a much cheaper 8 px blur with no
             saturate — visually almost identical, ~3× cheaper on the GPU. */}
-        <nav style={{
+        <nav className="lc-stickynav" style={{
           position: 'sticky', top: 0, zIndex: 100,
           background: 'rgba(255,255,255,.92)',
           backdropFilter: 'blur(8px)',

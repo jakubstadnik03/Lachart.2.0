@@ -48,6 +48,7 @@ const SiteNav = ({ links = DEFAULT_LINKS, ctaHref = '/signup', showBanner = true
     </div>
   )}
   <nav
+    className="lc-stickynav"
     style={{
       position: 'sticky', top: 0, zIndex: 100,
       background: 'rgba(255,255,255,.92)',

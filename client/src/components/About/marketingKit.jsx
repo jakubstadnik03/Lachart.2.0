@@ -396,6 +396,19 @@ export const STYLE = `
   .lc-navdd-item:hover { background: ${LC.primaryTint}; }
   .lc-navdd-item span { display: block; font-weight: 500; font-size: 12px; color: ${LC.muted}; margin-top: 1px; }
 
+  /* The sticky bar's backdrop blur is the other half of the pair blamed above.
+     Safari re-rasterises it on every frame that content slides underneath; on a
+     phone the scroll itself runs on the compositor and the blur does not, so it
+     is the bar that falls behind. Over a background already at 92% white the
+     blur is barely visible, so touch devices get an opaque bar instead. */
+  @media (pointer: coarse) {
+    .lc-stickynav {
+      backdrop-filter: none !important;
+      -webkit-backdrop-filter: none !important;
+      background: #fff !important;
+    }
+  }
+
   /* Scroll progress bar — pinned under the nav, fills as you scroll. */
   .lc-progress {
     position: fixed; top: 0; left: 0; right: 0;
@@ -406,8 +419,23 @@ export const STYLE = `
     transition: transform .15s linear;
   }
 
-  /* Page entrance — fade the whole page in from 0.96 scale on mount. */
-  @keyframes lc-page-in { from { opacity: 0; transform: scale(.985); } to { opacity: 1; transform: none; } }
+  /* Page entrance — fades in on mount. Opacity ONLY: it must never animate a
+     transform.
+
+     It used to go from scale(.985) to 'transform: none', with fill-mode
+     'both'. 'both' keeps the final keyframe applied for ever, and a final
+     keyframe of 'transform: none' computes to the identity matrix, not to
+     'none' — so .lc-page carried a transform for the whole life of the page
+     and became the containing block for every position: fixed descendant.
+
+     Three things that are meant to be pinned to the viewport were therefore
+     pinned to a 19,000 px document instead: .lc-page::before (the background
+     gradients), .lc-progress and .lc-mobile-scrim. The gradient pseudo is the
+     one that hurt — stretched over the full document it reinstated exactly
+     the full-viewport repaint per scroll frame that dropping
+     background-attachment: fixed was meant to remove, which is the
+     "stuttering scroll + jumping nav" the note above describes. */
+  @keyframes lc-page-in { from { opacity: 0; } to { opacity: 1; } }
   .lc-page-in { animation: lc-page-in .6s cubic-bezier(.2,.7,.2,1) both; }
 
   /* Audience cards — extra hover: image grows + slight tilt */
