@@ -1,5 +1,7 @@
 ext {
-    minSdkVersion = 22
+    // 26 (Android 8.0), because @capgo/capacitor-health needs it. Overriding
+    // instead would put the app on devices where that plugin crashes.
+    minSdkVersion = 26
     compileSdkVersion = 36
     targetSdkVersion = 36
     androidxActivityVersion = '1.8.0'
