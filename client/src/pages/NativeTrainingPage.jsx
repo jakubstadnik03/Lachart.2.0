@@ -28,6 +28,7 @@ import { buildActivityMatcher, metricsPatchFromDetail } from '../utils/activityE
 import { addTraining, updateTraining, getStravaActivityDetail, getGarminActivityDetail, createFieldLactateMeasurement, getFieldLactateMeasurements, deleteFieldLactateMeasurement, assignFieldLactateMeasurement } from '../services/api';
 import { useCategories, hexToRgba } from '../context/CategoryContext';
 import { normalizeCategoryKey } from '../utils/trainingCategory';
+import { avgPaceSecOf, sessionWidthWeights } from '../utils/trainingCardSummary';
 import { resultsByLapIndex } from '../utils/trainingChartIntervals';
 import {
   formatActivityDistance,
@@ -829,11 +830,11 @@ function SessionBarChart({ sessions, metric, sport, user = null, unitSystem = 'm
   const innerW = W - padLeft - padRight;
   const sessionGap = 8;
   const totalGaps = sessionGap * (data.length - 1);
-  // Total duration per session — fall back to lap-count if no durations available
-  const sessionTotals = data.map(s => {
-    const sumDur = s.laps.reduce((a, l) => a + (l.durationSec || 0), 0);
-    return sumDur > 0 ? sumDur : s.laps.length; // 1-second-per-lap fallback
-  });
+  // Duration per session, or lap count for every session when any one of them
+  // is untimed — never the two mixed, which handed an untimed 10-lap session
+  // a weight of 10 against a timed one's 3000 and squashed it to a few pixels.
+  // See utils/trainingCardSummary.
+  const sessionTotals = sessionWidthWeights(data);
   const grandTotal = sessionTotals.reduce((a, b) => a + b, 0) || 1;
   // Each session gets width proportional to its total duration
   const sessionWs = sessionTotals.map(d => (innerW - totalGaps) * (d / grandTotal));
@@ -3871,9 +3872,15 @@ function ExpandableLactateRow({ activity, user = null, delay = 0, expanded, onTo
     return workOnly.length > 0 ? workOnly : all;
   })();
 
-  // Average power of the FULL training (all laps, not just WORK).
-  // Prefer the activity-level avgPower field; fall back to mean of all intervals.
+  // Headline number for the collapsed card: watts on a bike, pace on a run.
+  //
+  // These must not share a code path. A run or swim written in TrainingForm
+  // keeps its PACE in the `power` field — intervalPaceSec is the decoder, and
+  // the lap table below already switches its column header on isPaceSport.
+  // This line did not, so it read `avgPower` straight out and stuck "W" on
+  // it: a 3:59/km LT2 run displayed as "239 W".
   const avgW = (() => {
+    if (isPaceSport) return null;
     if (t.avgPower != null && Number(t.avgPower) > 0) return Math.round(Number(t.avgPower));
     if (t.averagePower != null && Number(t.averagePower) > 0) return Math.round(Number(t.averagePower));
     const ps = intervalsAll
@@ -3881,6 +3888,11 @@ function ExpandableLactateRow({ activity, user = null, delay = 0, expanded, onTo
       .filter(v => v != null && v > 0);
     return ps.length ? Math.round(ps.reduce((a, b) => a + b, 0) / ps.length) : null;
   })();
+
+  // Weighted by time, so the recoveries do not outvote the work.
+  const avgPaceSec = isPaceSport
+    ? avgPaceSecOf(intervalsAll, (iv) => intervalPaceSec(iv, sport), parseResultDurationSec)
+    : null;
 
   return (
     <div
@@ -3924,6 +3936,7 @@ function ExpandableLactateRow({ activity, user = null, delay = 0, expanded, onTo
             {distStr ? ` · ${distStr}` : ''}
             {lapsCount > 1 ? ` · ${lapsCount} laps` : ''}
             {avgW != null ? ` · ${avgW} W` : ''}
+            {avgPaceSec != null ? ` · ${fmtPace(avgPaceSec, unitSystem, sport)}` : ''}
           </div>
         </div>
 
