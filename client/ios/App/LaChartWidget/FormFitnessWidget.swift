@@ -330,17 +330,30 @@ struct SmallTodayView: View {
                 }
             }
         } else {
+            // Two rows fit. This used to draw one completed and one planned and
+            // stop, so a day with two planned sessions showed one of them with
+            // a third of the tile left blank underneath and no sign that
+            // anything had been left out.
+            let doneShown = Array(completed.prefix(1))
+            let doneTitles = Set(doneShown.map { $0.title })
+            let planCandidates = planned.filter { !doneTitles.contains($0.title) }
+            let planShown = Array(planCandidates.prefix(2 - doneShown.count))
+            let hidden = (completed.count - doneShown.count)
+                       + (planCandidates.count - planShown.count)
+
             VStack(alignment: .leading, spacing: 4) {
-                // One completed (if any), then one planned that isn't already
-                // covered by the completed list (matched by title).
-                if let first = completed.first {
-                    WorkoutRow(workout: first, done: true, compact: true)
+                ForEach(doneShown) { w in
+                    WorkoutRow(workout: w, done: true, compact: true)
                 }
-                let doneTitles = Set(completed.map { $0.title })
-                let nextPlanned = planned.first(where: { !doneTitles.contains($0.title) })
-                                  ?? planned.first
-                if let plan = nextPlanned {
-                    WorkoutRow(workout: plan, done: false, compact: true)
+                ForEach(planShown) { w in
+                    WorkoutRow(workout: w, done: false, compact: true)
+                }
+                // Say so rather than silently dropping them — the small tile
+                // cannot grow, but it can admit there is more.
+                if hidden > 0 {
+                    Text("+\(hidden) more")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundColor(LaChartColor.muted(colorScheme))
                 }
             }
         }
