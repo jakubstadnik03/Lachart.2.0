@@ -29,6 +29,7 @@ import { addTraining, updateTraining, getStravaActivityDetail, getGarminActivity
 import { useCategories, hexToRgba } from '../context/CategoryContext';
 import { normalizeCategoryKey } from '../utils/trainingCategory';
 import { avgPaceSecOf, sessionWidthWeights } from '../utils/trainingCardSummary';
+import { sessionGroup } from '../utils/sessionMatching';
 import { resultsByLapIndex } from '../utils/trainingChartIntervals';
 import {
   formatActivityDistance,
@@ -1852,12 +1853,39 @@ export default function NativeTrainingPage({
   );
 
   const grouped = useMemo(() => {
+    // "The same training" is not the same string. A name the athlete chose
+    // identifies the session and is compared loosely enough to survive being
+    // retyped; a name Strava chose identifies nothing, so those are matched on
+    // the shape of the session instead. See utils/sessionMatching — this was an
+    // exact match on the raw title, which both split "10x1km LT2" from
+    // "10×1km LT2" and charted every "Evening Run" against every other one.
     const m = {};
+    const labels = {};
     for (const t of categoryFilteredTrainings) {
-      const key = (t.title || t.name || 'Untitled').trim();
+      const { key, label } = sessionGroup(t, {
+        sport: normSport(t.sport),
+        intervals: getIntervalsForChart(t, stravaLapsCache, garminLapsCache),
+      });
       if (!m[key]) m[key] = [];
       m[key].push(t);
+      // The newest spelling wins the label, since the list is read by recency.
+      const at = getDate(t).getTime();
+      if (!labels[key] || at >= labels[key].at) labels[key] = { at, label };
     }
+    // Downstream code — the dropdown, the chevrons, the session list — treats
+    // the group's first element as both identity and display text, so the key
+    // becomes the label. Labels are unique per group by construction: a chosen
+    // title keys on itself, a shape keys on the shape that is printed in it.
+    Object.keys(m).forEach((k) => {
+      let label = labels[k].label;
+      if (label === k) return;
+      // Only reachable if somebody titles a workout exactly like a shape label
+      // ("Evening Run (10×1km)"). Rare, but a silent merge of two groups is
+      // worse than a slightly odd name.
+      while (m[label] !== undefined) label = `${label} `;
+      m[label] = m[k];
+      delete m[k];
+    });
     // Sort each group chronologically (oldest → newest), then pick groups with ≥2 sessions
     Object.keys(m).forEach(k => {
       m[k].sort((a, b) => getDate(a) - getDate(b));
@@ -1881,7 +1909,7 @@ export default function NativeTrainingPage({
         const bLatest = Math.max(...b[1].map(getDate).map(d => d.getTime()));
         return bLatest - aLatest;
       });
-  }, [categoryFilteredTrainings]);
+  }, [categoryFilteredTrainings, stravaLapsCache, garminLapsCache]);
 
   // Open on the session you just did, not the one with the most history.
   //
@@ -2683,7 +2711,14 @@ export default function NativeTrainingPage({
           {/* ─── Training History — the visual comparison card ─── */}
           {intervalTrainingsBase.length > 0 && (() => {
             // Workout title navigation (prev/next chevrons)
+            // findIndex returns -1 when the selected title is no longer in the
+            // list — a filter changed, or the grouping key did. An effect
+            // re-selects on the next tick, but until it runs this index is
+            // clamped to 0, so everything below must read the title back out
+            // of the group it actually landed on. Printing `selectedTitle`
+            // instead showed group 0's chart under the old group's name.
             const titleIdx = Math.max(0, grouped.findIndex(([t]) => t === selectedTitle));
+            const currentTitle = grouped[titleIdx]?.[0] ?? null;
             const goPrev = () => { const i = (titleIdx - 1 + grouped.length) % grouped.length; setSelectedTitle(grouped[i][0]); };
             const goNext = () => { const i = (titleIdx + 1) % grouped.length; setSelectedTitle(grouped[i][0]); };
             const totalTitles = grouped.length;
@@ -2758,7 +2793,7 @@ export default function NativeTrainingPage({
                     <select> hit the iOS picker which couldn't filter. */}
                 <div style={{ marginBottom: 10 }}>
                   <SearchableSelect
-                    value={selectedTitle || ''}
+                    value={currentTitle || ''}
                     onChange={(val) => setSelectedTitle(val)}
                     // The date of the most recent one in each group. With the
                     // list ordered by recency, the repeat count alone gave no
@@ -3198,7 +3233,7 @@ export default function NativeTrainingPage({
                                   textDecoration: isHidden ? 'line-through' : 'none',
                                 }}
                               >
-                                {selectedTitle}
+                                {currentTitle}
                               </button>
 
                               <button
