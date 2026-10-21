@@ -6,6 +6,8 @@ import {
   COACH_PLAN_PRICE_LABEL,
   TRIAL_DAYS,
 } from '../../constants/planPricing';
+import { useStorePurchase } from '../../hooks/useStorePurchase';
+import StorePurchaseFooter, { storeButtonLabel } from '../StorePurchaseFooter';
 
 const WEB_URL = 'https://lachart.net/settings?tab=subscription';
 
@@ -15,20 +17,24 @@ const WEB_URL = 'https://lachart.net/settings?tab=subscription';
  * It states the terms in full — how long the trial runs, what it costs
  * afterwards, and that it can be cancelled — because a trial that hides its
  * price is a trick, and because Apple requires it of anything that mentions
- * one. The trial is started on the website: there is no StoreKit purchase in
- * this app, so the button opens a browser, exactly as UpgradeModal already
- * does here.
+ * one. The trial is an App Store subscription (useStorePurchase); a build
+ * without in-app purchases configured still opens the website instead.
  *
  * When it appears is decided in utils/trialOfferPrompt.js.
  */
 export default function TrialOfferCard({ user, onDismiss }) {
   const plan = planForUser('pro', user);
   const isCoach = plan === 'coach';
-  const price = isCoach ? COACH_PLAN_PRICE_LABEL : ATHLETE_PLAN_PRICE_LABEL;
   const planName = isCoach ? 'Coach' : 'Athlete';
+  const store = useStorePurchase(plan, 'native_dashboard');
+  const price = store.priceLabel || (isCoach ? COACH_PLAN_PRICE_LABEL : ATHLETE_PLAN_PRICE_LABEL);
 
   const open = () => {
     trackEvent('trial_offer_click', { source: 'native_dashboard', plan });
+    if (store.available) {
+      store.buy();
+      return;
+    }
     window.open(WEB_URL, '_blank', 'noopener,noreferrer');
   };
 
@@ -83,19 +89,24 @@ export default function TrialOfferCard({ user, onDismiss }) {
       <button
         type="button"
         onClick={open}
+        disabled={Boolean(store.busy)}
         style={{
           width: '100%', padding: '12px 14px', borderRadius: 14, border: 'none',
           background: '#5E6590', color: '#fff', fontSize: 14, fontWeight: 700,
-          cursor: 'pointer',
+          cursor: 'pointer', opacity: store.busy ? 0.7 : 1,
         }}
       >
-        Start {TRIAL_DAYS} days free
+        {store.available ? storeButtonLabel(store, store.trialEligible) : `Start ${TRIAL_DAYS} days free`}
       </button>
 
-      <p style={{ margin: 0, fontSize: 11, color: '#9CA3AF', lineHeight: 1.5, textAlign: 'center' }}>
-        {TRIAL_DAYS} days free, then {price} a month. Cancel any time before it ends
-        and you are not charged. The trial starts on lachart.net in your browser.
-      </p>
+      {store.available ? (
+        <StorePurchaseFooter store={store} price={price} trialEligible={store.trialEligible} />
+      ) : (
+        <p style={{ margin: 0, fontSize: 11, color: '#9CA3AF', lineHeight: 1.5, textAlign: 'center' }}>
+          {TRIAL_DAYS} days free, then {price} a month. Cancel any time before it ends
+          and you are not charged. The trial starts on lachart.net in your browser.
+        </p>
+      )}
     </div>
   );
 }

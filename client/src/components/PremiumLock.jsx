@@ -6,6 +6,8 @@ import { useAuth } from '../context/AuthProvider';
 import { planForUser } from '../utils/planForUser';
 import { trackEvent } from '../utils/analytics';
 import { ATHLETE_PLAN_PRICE_LABEL, COACH_PLAN_PRICE_LABEL, TRIAL_DAYS } from '../constants/planPricing';
+import { useStorePurchase } from '../hooks/useStorePurchase';
+import StorePurchaseFooter, { storeButtonLabel } from './StorePurchaseFooter';
 
 /**
  * Gate a feature behind premium with a "locked" preview.
@@ -119,18 +121,25 @@ const SUBSCRIBE_URL = 'https://lachart.net/settings?tab=subscription';
  * what Premium adds to it, the price, and one button.
  *
  * The terms (trial length, price after it, cancel any time) are stated in full,
- * as TrialOfferCard does. On native the button opens the website, because
- * there is no StoreKit purchase in this app; on web it opens the Stripe flow.
+ * as TrialOfferCard does. On iOS the button opens the App Store sheet
+ * (useStorePurchase); on web it opens the Stripe flow. A native build without
+ * in-app purchases configured still falls back to the website.
  */
 function PersonalPreviewLock({
   title, teaser, unlocks, feature, plan, unknown, isNative, gate, UpgradeModalProps, className,
 }) {
   const { user } = useAuth();
   const effectivePlan = planForUser(plan, user);
-  const price = effectivePlan === 'coach' ? COACH_PLAN_PRICE_LABEL : ATHLETE_PLAN_PRICE_LABEL;
+  const store = useStorePurchase(effectivePlan, 'premium_preview', { loadOffer: isNative && !unknown });
+  const useStore = isNative && store.available;
+  const price = store.priceLabel || (effectivePlan === 'coach' ? COACH_PLAN_PRICE_LABEL : ATHLETE_PLAN_PRICE_LABEL);
 
   const onUnlock = () => {
     trackEvent('premium_preview_click', { feature, plan: effectivePlan, native: isNative });
+    if (useStore) {
+      store.buy();
+      return;
+    }
     if (isNative) {
       window.open(SUBSCRIBE_URL, '_blank', 'noopener,noreferrer');
       return;
@@ -187,19 +196,25 @@ function PersonalPreviewLock({
             <button
               type="button"
               onClick={onUnlock}
+              disabled={Boolean(store.busy)}
               className="touch-manipulation"
               style={{
                 width: '100%', padding: '12px 14px', borderRadius: 14, border: 'none',
                 background: '#5E6590', color: '#fff', fontSize: 14, fontWeight: 700,
                 cursor: 'pointer', WebkitTapHighlightColor: 'transparent',
+                opacity: store.busy ? 0.7 : 1,
               }}
             >
-              Try it {TRIAL_DAYS} days free
+              {useStore ? storeButtonLabel(store, store.trialEligible) : `Try it ${TRIAL_DAYS} days free`}
             </button>
-            <p style={{ margin: 0, fontSize: 11, color: '#9CA3AF', lineHeight: 1.5, textAlign: 'center' }}>
-              Then {price} a month. Cancel any time before the trial ends and you are not charged.
-              {isNative ? ' Opens lachart.net in your browser.' : ''}
-            </p>
+            {useStore ? (
+              <StorePurchaseFooter store={store} price={price} trialEligible={store.trialEligible} />
+            ) : (
+              <p style={{ margin: 0, fontSize: 11, color: '#9CA3AF', lineHeight: 1.5, textAlign: 'center' }}>
+                Then {price} a month. Cancel any time before the trial ends and you are not charged.
+                {isNative ? ' Opens lachart.net in your browser.' : ''}
+              </p>
+            )}
           </>
         )}
       </div>

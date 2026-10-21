@@ -21,6 +21,9 @@ jest.mock('../hooks/usePremium', () => ({ usePremium: () => mockPremium }));
 const mockAuth = { user: { role: 'athlete' } };
 jest.mock('../context/AuthProvider', () => ({ useAuth: () => mockAuth }));
 jest.mock('../utils/analytics', () => ({ trackEvent: () => {} }));
+jest.mock('../hooks/useStorePurchase', () => ({
+  useStorePurchase: () => ({ available: false, priceLabel: null, trialEligible: true, busy: null, message: null }),
+}));
 jest.mock('../utils/isNativeApp', () => ({ isCapacitorNative: () => true }));
 
 // eslint-disable-next-line import/first
