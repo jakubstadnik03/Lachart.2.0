@@ -3233,6 +3233,11 @@ const SettingsPage = () => {
         const cancelAtPeriodEnd = subData?.subscription?.cancelAtPeriodEnd;
         const periodEnd = subData?.subscription?.currentPeriodEnd;
         const systemEnabled = subData?.subscription?.systemEnabled;
+        // Bought in the iPhone app: Apple bills it, and only Apple can cancel
+        // it. A cancel button here would say "cancelled" while Apple kept
+        // charging, so these subscribers get a pointer to their iPhone instead.
+        const storeProvider = subData?.subscription?.selfServe === false ? subData.subscription.provider : null;
+        const storeManageUrl = subData?.subscription?.manageUrl || 'https://apps.apple.com/account/subscriptions';
         const premiumSource = subData?.premiumSource || user?.premiumSource;
         const isManualPremium = premiumSource === 'manual';
         // User already used a trial if they have a trialStart date in their subscription
@@ -3322,7 +3327,24 @@ const SettingsPage = () => {
                 <div className="flex flex-col gap-2 items-end">
                   {/* Manage billing portal — web only. App Store 3.1.1
                       bans linking to Stripe customer portal from iOS apps. */}
-                  {!isManualPremium && currentPlan !== 'free' && systemEnabled && !isNativeIos && (
+                  {!isManualPremium && currentPlan !== 'free' && storeProvider && (
+                    <div className="max-w-xs text-right">
+                      <p className="text-xs text-gray-500">
+                        {storeProvider === 'google'
+                          ? 'You pay through Google Play. Manage or cancel it in the Play Store.'
+                          : 'You pay through the App Store. Manage or cancel it on your iPhone: Settings → your name → Subscriptions.'}
+                      </p>
+                      <a
+                        href={storeManageUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="mt-1 inline-block text-xs font-medium text-primary hover:underline"
+                      >
+                        {storeProvider === 'google' ? 'Open Play Store subscriptions' : 'Open App Store subscriptions'}
+                      </a>
+                    </div>
+                  )}
+                  {!isManualPremium && currentPlan !== 'free' && systemEnabled && !isNativeIos && !storeProvider && (
                     <>
                       {cancelAtPeriodEnd ? (
                         <button
@@ -3352,9 +3374,9 @@ const SettingsPage = () => {
                       )}
                     </>
                   )}
-                  {isNativeIos && !isManualPremium && currentPlan !== 'free' && (
+                  {isNativeIos && !isManualPremium && currentPlan !== 'free' && !storeProvider && (
                     <p className="text-xs text-gray-500">
-                      Manage your subscription at lachart.net in a web browser. Apple billing isn't available in this app version.
+                      Manage your subscription at lachart.net in a web browser.
                     </p>
                   )}
                 </div>

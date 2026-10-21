@@ -4,7 +4,7 @@ const stripe = process.env.SUBSCRIPTION_ENABLED === 'true' && process.env.STRIPE
   : null;
 const User = require('../models/UserModel');
 const Subscription = require('../models/SubscriptionModel');
-const { canStartCheckout, manageBilling, STRIPE } = require('../utils/billingProvider');
+const { canStartCheckout, manageBilling, providerOf, STRIPE } = require('../utils/billingProvider');
 const { canBindStoreTransaction, APPLE } = require('../utils/billingProvider');
 const { mapRevenueCatEvent } = require('../utils/revenueCatEvent');
 const crypto = require('crypto');
@@ -156,6 +156,28 @@ exports.getPlans = async (req, res) => {
  * Get current user's subscription
  * NOTE: Works even when subscription system is inactive (for UI display)
  */
+/**
+ * Apple and Google subscriptions can only be cancelled or changed in the
+ * store's own UI. Marking one cancelled here would tell the subscriber they
+ * are done while the store keeps charging them, so refuse and say where to go.
+ * Returns true when it has answered.
+ */
+function refuseStoreBilled(subscription, res) {
+  const where = manageBilling(subscription);
+  if (where.selfServe) return false;
+  const provider = providerOf(subscription);
+  res.status(409).json({
+    error: 'Managed by the store',
+    reason: 'managed_by_store',
+    provider,
+    manageUrl: where.url,
+    message: provider === 'apple'
+      ? 'This subscription is billed through the App Store. Manage or cancel it on your iPhone: Settings → your name → Subscriptions.'
+      : 'This subscription is billed through Google Play. Manage or cancel it in the Play Store.',
+  });
+  return true;
+}
+
 exports.getCurrentSubscription = async (req, res) => {
   try {
     const user = await User.findById(req.user.userId).populate('subscriptionId');
@@ -184,6 +206,7 @@ exports.getCurrentSubscription = async (req, res) => {
         ? subscription.toObject()
         : subscription;
     const premiumState = resolvePremiumAccess(user, subPlain);
+    const billing = manageBilling(subPlain);
 
     res.json({
       subscription: {
@@ -195,7 +218,11 @@ exports.getCurrentSubscription = async (req, res) => {
         cancelAtPeriodEnd: subscription.cancelAtPeriodEnd,
         isActive: subscription.isActive(),
         planDetails: plan,
-        systemEnabled: process.env.SUBSCRIPTION_ENABLED === 'true'
+        systemEnabled: process.env.SUBSCRIPTION_ENABLED === 'true',
+        // Where it is billed, and where to manage it when that is not us.
+        provider: providerOf(subPlain),
+        manageUrl: billing.url,
+        selfServe: billing.selfServe,
       },
       premium: user.premium === true,
       isPremium: premiumState.isPremium,
@@ -890,6 +917,7 @@ exports.cancelSubscription = async (req, res) => {
     }
 
     const subscription = user.subscriptionId;
+    if (refuseStoreBilled(subscription, res)) return;
 
     if (subscription.stripeSubscriptionId && stripe) {
       await stripe.subscriptions.update(subscription.stripeSubscriptionId, {
@@ -944,6 +972,7 @@ exports.reactivateSubscription = async (req, res) => {
     }
 
     const subscription = user.subscriptionId;
+    if (refuseStoreBilled(subscription, res)) return;
 
     // Only email if there was actually a pending cancel to undo. Clicking
     // 'Reactivate' on an already-active subscription shouldn't trigger spam.
@@ -985,6 +1014,7 @@ exports.getPortalUrl = async (req, res) => {
     }
 
     const user = await User.findById(req.user.userId).populate('subscriptionId');
+    if (user?.subscriptionId && refuseStoreBilled(user.subscriptionId, res)) return;
     
     if (!user || !user.subscriptionId?.stripeCustomerId) {
       return res.status(404).json({ error: 'No subscription found' });
