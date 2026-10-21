@@ -13,6 +13,9 @@ const setUpStore = () => Object.assign(mockPurchases, {
   checkTrialOrIntroductoryPriceEligibility: jest.fn(async () => ({})),
   purchaseStoreProduct: jest.fn(async () => ({ customerInfo: {} })),
   restorePurchases: jest.fn(async () => ({ customerInfo: { entitlements: { active: {} } } })),
+  // Like the real Capacitor proxy, which answers `then` too: awaiting the
+  // plugin itself never settles. Build 146 hung on exactly this.
+  then: jest.fn(() => {}),
 });
 
 jest.mock('@revenuecat/purchases-capacitor', () => ({ Purchases: mockPurchases }));
@@ -32,9 +35,17 @@ const load = () => {
 };
 
 // CRA resets mock implementations before every test, so build them here.
-beforeEach(setUpStore);
+beforeEach(() => { setUpStore(); }); // not returned: the mock is thenable
 
 describe('storePurchases', () => {
+  it('never awaits the plugin itself, which a Capacitor proxy turns into a hang', async () => {
+    const s = load();
+    const offer = await s.getStoreOffer('pro', 'u1');
+    expect(offer.priceString).toBe('€6.99');
+    await expect(s.purchasePlan('pro', 'u1', offer)).resolves.toBe('purchased');
+    expect(mockPurchases.then).not.toHaveBeenCalled();
+  });
+
   it('configures once with the LaChart id, even when asked concurrently', async () => {
     const s = load();
     await Promise.all([s.ensureStoreUser('u1'), s.ensureStoreUser('u1'), s.getStoreOffer('pro', 'u1')]);

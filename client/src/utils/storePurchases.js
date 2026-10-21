@@ -36,9 +36,15 @@ let pluginPromise = null;
 let configuredFor = null; // the app user id RevenueCat is currently identified as
 const offerCache = new Map(); // `${userId}:${productId}` → Promise of the offer
 
+// A Capacitor plugin is a Proxy that answers every property — `then`
+// included — with a native call. Resolve a promise with it and the promise
+// takes it for a thenable, calls `Purchases.then(...)` and waits for ever,
+// with no error and nothing sent to StoreKit. That is exactly how build 146
+// sat on "Opening the App Store…". So the plugin only ever travels inside a
+// plain box, and nothing here returns it bare from an async function.
 function loadPlugin() {
   if (!pluginPromise) {
-    pluginPromise = import('@revenuecat/purchases-capacitor').then((m) => m.Purchases);
+    pluginPromise = import('@revenuecat/purchases-capacitor').then((m) => ({ plugin: m.Purchases }));
   }
   return pluginPromise;
 }
@@ -56,15 +62,16 @@ export function ensureStoreUser(userId) {
   // One at a time: AuthProvider and every lock on the page ask at once, and
   // configure must run exactly once.
   const run = identifyChain.then(async () => {
-    const Purchases = await loadPlugin();
-    if (configuredFor === id) return Purchases;
+    const box = await loadPlugin();
+    const Purchases = box.plugin;
+    if (configuredFor === id) return box;
     if (configuredFor === null) {
       await Purchases.configure({ apiKey: IOS_API_KEY, appUserID: id });
     } else {
       await Purchases.logIn({ appUserID: id });
     }
     configuredFor = id;
-    return Purchases;
+    return box;
   });
   identifyChain = run.catch(() => {});
   return run;
@@ -75,7 +82,7 @@ export function resetStoreUser() {
   const run = identifyChain.then(async () => {
     if (configuredFor === null) return;
     try {
-      const Purchases = await loadPlugin();
+      const { plugin: Purchases } = await loadPlugin();
       await Purchases.logOut();
     } catch {
       // logOut rejects for an anonymous user; there is nothing to undo then.
@@ -109,7 +116,7 @@ export function getStoreOffer(plan, userId) {
 }
 
 async function loadStoreOffer(plan, userId) {
-  const Purchases = await ensureStoreUser(userId);
+  const { plugin: Purchases } = await ensureStoreUser(userId);
   const productId = productIdFor(plan);
   const { products } = await Purchases.getProducts({ productIdentifiers: [productId] });
   const product = (products || []).find((p) => p.identifier === productId) || null;
@@ -133,7 +140,7 @@ const isCancelled = (err) => err?.userCancelled === true || String(err?.code) ==
  * @returns {Promise<'purchased'|'cancelled'>} — throws on a real failure.
  */
 export async function purchasePlan(plan, userId, offer = null) {
-  const Purchases = await ensureStoreUser(userId);
+  const { plugin: Purchases } = await ensureStoreUser(userId);
   const product = offer?.product || (await getStoreOffer(plan, userId)).product;
   try {
     await Purchases.purchaseStoreProduct({ product });
@@ -152,7 +159,7 @@ export async function purchasePlan(plan, userId, offer = null) {
  * @returns {Promise<boolean>} whether an active LaChart subscription was found
  */
 export async function restoreStorePurchases(userId) {
-  const Purchases = await ensureStoreUser(userId);
+  const { plugin: Purchases } = await ensureStoreUser(userId);
   const { customerInfo } = await Purchases.restorePurchases();
   return Object.keys(customerInfo?.entitlements?.active || {}).length > 0;
 }

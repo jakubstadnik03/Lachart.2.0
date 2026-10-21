@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthProvider';
 import { trackEvent } from '../utils/analytics';
+import { getReturnSession } from '../utils/impersonation';
 import {
   getStoreOffer,
   purchasePlan,
@@ -53,6 +54,12 @@ export function useStorePurchase(plan = 'pro', source = 'unknown', { loadOffer =
 
   const buy = useCallback(async () => {
     if (!available || busy) return;
+    // An admin looking through someone's account would put that person's
+    // subscription on the admin's Apple ID. Buy as yourself or not at all.
+    if (getReturnSession()) {
+      setMessage('You are signed in as someone else. Switch back to your own account to buy.');
+      return;
+    }
     setMessage(null);
     setBusy('buying');
     trackEvent('store_purchase_started', { plan, source });
