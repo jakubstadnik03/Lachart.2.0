@@ -1562,6 +1562,7 @@ export default function NativeDashboardPage({
                   userProfile={fitnessProfile}
                   loading={metricsLoading}
                   compact
+                    variant="slide"
                   onOpenActivity={(act, pw) => openActivity(act, pw || null)}
                   onOpenPlanned={(pw) => openPlanned(pw, null)}
                 />

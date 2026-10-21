@@ -339,8 +339,8 @@ export default function WeeklySummaryCarousel({
         }}
       >
         {leadingSlide && (
-          <div style={{ ...SLIDE, alignSelf: 'flex-start', flexDirection: 'column', paddingBottom: 18 }}>
-            {leadingSlide}
+          <div style={SLIDE}>
+            <div style={{ width: '100%' }}>{leadingSlide}</div>
           </div>
         )}
 
