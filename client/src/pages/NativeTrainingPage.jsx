@@ -30,6 +30,10 @@ import { useCategories, hexToRgba } from '../context/CategoryContext';
 import { normalizeCategoryKey } from '../utils/trainingCategory';
 import { avgPaceSecOf, sessionWidthWeights } from '../utils/trainingCardSummary';
 import { sessionGroup } from '../utils/sessionMatching';
+import { summariseSession, workLaps, isAutoLapped } from '../utils/trainingTrends';
+import TrainingHub from '../components/training/TrainingHub';
+import { resolveActivityTss } from '../utils/computeTss';
+import { mergeProfileZones } from '../utils/inferThresholdsFromActivities';
 import { resultsByLapIndex } from '../utils/trainingChartIntervals';
 import {
   formatActivityDistance,
@@ -1659,9 +1663,89 @@ function MultiLineChart({ sessions, metric, sport = 'bike', user = null, unitSys
 
 // ─── component ────────────────────────────────────────────────────────────────
 
+
+// ─── Training hub data ────────────────────────────────────────────────────────
+// The hub (components/training/TrainingHub) works on plain laps:
+// { secs, num, hr, la, type, dist } — num is pace in seconds for run/swim and
+// watts for bike, read with the same helpers the comparison charts use.
+function hubLaps(t, sport, stravaLapsCache, garminLapsCache) {
+  const ivs = getIntervalsForChart(t, stravaLapsCache, garminLapsCache);
+  const laps = ivs.map((iv) => {
+    const num = sport === 'bike' ? getIntervalMetric(iv, 'power') : intervalPaceSec(iv, sport);
+    return {
+      secs: parseResultDurationSec(iv) || Number(iv?.duration) || 0,
+      dist: Number(iv?.distanceMeters ?? iv?.distance ?? 0) || 0,
+      num: Number.isFinite(num) && num > 0 ? num : null,
+      hr: getIntervalMetric(iv, 'heartRate'),
+      la: intervalLactate(iv),
+      type: iv?.intervalType ? String(iv.intervalType) : null,
+      isRecovery: iv?.isRecovery === true,
+    };
+  });
+  if (laps.some((l) => l.num != null)) return laps;
+  // No usable laps: the session as one lap, from its own averages.
+  const secs = getSecs(t);
+  const dist = getDist(t);
+  let num = null;
+  if (sport === 'bike') num = Number(t.avgPower ?? t.average_watts ?? t.averagePower) || null;
+  else if (secs > 0 && dist > 0) num = sport === 'swim' ? (secs / dist) * 100 : (secs / dist) * 1000;
+  if (!num) return [];
+  return [{ secs, dist, num, hr: Number(t.avgHeartRate ?? t.average_heartrate ?? t.averageHeartRate) || null, la: null, type: null, whole: true }];
+}
+
+/** "6 × 1 km", "3 × 12 min" — from the work laps of a session. */
+function hubShape(laps, sport) {
+  if (isAutoLapped(laps)) return null;
+  const work = workLaps(laps, sport);
+  if (work.length < 2) return null;
+  const med = (ns) => { const a = [...ns].sort((x, y) => x - y); return a[Math.floor(a.length / 2)]; };
+  if (work.every((l) => l.dist > 0)) {
+    const raw = med(work.map((l) => l.dist));
+    // 25 m steps for pool lengths, 100 m above a kilometre.
+    const m = raw < 1000 ? Math.round(raw / 25) * 25 : Math.round(raw / 100) * 100;
+    if (m > 0) return `${work.length} × ${m >= 1000 ? `${Number((m / 1000).toFixed(1))} km` : `${m} m`}`;
+  }
+  if (work.every((l) => l.secs > 0)) {
+    const m = Math.round(med(work.map((l) => l.secs)) / 30) * 30;
+    if (m > 0) return `${work.length} × ${m >= 60 ? `${Number((m / 60).toFixed(1))} min` : `${m} s`}`;
+  }
+  return null;
+}
+
+/**
+ * The session's TSS, the way the rest of the app works it out
+ * (utils/computeTss): what the training stores, else what its own record or
+ * its Strava/Garmin twin says, else from the laps — duration, a normalised
+ * power over lap averages for bike, distance for run and swim, heart rate.
+ */
+function hubTss(t, full, laps, sport, profile, user) {
+  const stored = Number(t.tss ?? t.trainingStressScore ?? t.TSS);
+  if (stored > 0) return Math.round(stored);
+  for (const a of [t, full]) {
+    if (!a) continue;
+    const v = resolveActivityTss(a, profile, { user });
+    if (v > 0) return Math.round(v);
+  }
+  const rows = (laps || []).filter((l) => l.secs > 0);
+  const secs = rows.reduce((a, l) => a + l.secs, 0);
+  if (!secs) return null;
+  const synthetic = { sport, moving_time: secs };
+  const dist = rows.reduce((a, l) => a + (l.dist || 0), 0);
+  if (dist > 0) synthetic.distance = dist;
+  if (sport === 'bike') {
+    const p4 = rows.filter((l) => l.num > 0).reduce((a, l) => a + l.secs * l.num ** 4, 0);
+    if (p4 > 0) synthetic.weighted_average_watts = (p4 / secs) ** 0.25;
+  }
+  const hrRows = rows.filter((l) => l.hr > 0);
+  if (hrRows.length) synthetic.average_heartrate = hrRows.reduce((a, l) => a + l.hr * l.secs, 0) / hrRows.reduce((a, l) => a + l.secs, 0);
+  const v = resolveActivityTss(synthetic, profile, { user });
+  return v > 0 ? Math.round(v) : null;
+}
+
 export default function NativeTrainingPage({
   user,
   trainings = [],
+  trainingsLoaded = true,
   athleteId = null,
   onPlannedWorkoutChanged,
   onTrainingsChanged,
@@ -1959,51 +2043,101 @@ export default function NativeTrainingPage({
     return g[1].slice().sort((a, b) => getDate(a) - getDate(b));
   }, [grouped, selectedTitle]);
 
-  // Lazy-fetch full Strava laps for Training History — the activities list only
-  // carries lactate stubs, so the bar/line charts would otherwise show "No pace data".
-  useEffect(() => {
-    const needed = intervalTrainingsBase.filter(t => needsStravaLapFetch(t, stravaLapsCache));
-    if (!needed.length) return;
-    let cancelled = false;
-    const isCoachViewing = athleteId && user && String(athleteId) !== String(user._id || user.id || '');
-    const integAthleteId = isCoachViewing ? String(athleteId) : null;
-    needed.forEach(t => {
-      const rawId = resolveStravaNumericId(t);
-      if (!rawId) return;
-      getStravaActivityDetail(rawId, integAthleteId).then(data => {
-        if (cancelled) return;
-        const laps = Array.isArray(data?.laps) ? data.laps : [];
-        setStravaLapsCache(prev => ({ ...prev, [rawId]: laps }));
-      }).catch(() => {
-        if (!cancelled) setStravaLapsCache(prev => ({ ...prev, [rawId]: [] }));
-      });
-    });
-    return () => { cancelled = true; };
-  }, [intervalTrainingsBase, stravaLapsCache, athleteId, user]);
+  // Laps to fetch: every listed session, plus the Strava/Garmin record behind
+  // a saved training — the record is where its recoveries are (fullLapSource).
+  const lapFetchTargets = useMemo(() => {
+    const extra = intervalTrainingsBase.map(fullLapSource).filter(Boolean);
+    return [...intervalTrainingsBase, ...extra];
+  }, [intervalTrainingsBase, trainings]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // The same for Garmin. Its rides carry real laps on the server — 18 of this
-  // account's 24 have more than one — but the list ships the same lactate-only
-  // stubs Strava does, so without a detail fetch the charts had nothing to draw.
+  // Lazy-fetch full Strava/Garmin laps — the activities list only carries
+  // lactate stubs, so the charts would otherwise have nothing to draw.
+  //
+  // One queue for both, four requests at a time. It used to fire every fetch
+  // at once from an effect that re-ran on each answer and cancelled the rest:
+  // hundreds of requests, answers thrown away and re-asked, and any failure
+  // cached as "no laps" for good — a run with fifteen laps on Strava opened
+  // with none. Now a failure is retried twice before it counts as a miss, and
+  // opening a session puts it at the front of the queue (prioritiseLaps).
+  const lapQueue = useRef({ queue: [], inFlight: new Set(), tries: {}, running: 0 });
+  const lapCtx = useRef({});
+  const isCoachViewingLaps = athleteId && user && String(athleteId) !== String(user._id || user.id || '');
+  lapCtx.current = { integAthleteId: isCoachViewingLaps ? String(athleteId) : null };
+
+  const pumpLapQueue = useCallback(() => {
+    const q = lapQueue.current;
+    // Two background fetches at a time; a session the athlete just opened
+    // (job.now) starts immediately rather than waiting behind them.
+    while (q.queue.length && (q.running < 2 || q.queue[0].now)) {
+      const job = q.queue.shift();
+      const key = `${job.kind}:${job.id}`;
+      if (q.inFlight.has(key)) continue;
+      q.inFlight.add(key);
+      q.running += 1;
+      const fetcher = job.kind === 'strava' ? getStravaActivityDetail : getGarminActivityDetail;
+      const setCache = job.kind === 'strava' ? setStravaLapsCache : setGarminLapsCache;
+      fetcher(job.id, lapCtx.current.integAthleteId)
+        .then((data) => {
+          const laps = Array.isArray(data?.laps) ? data.laps : [];
+          setCache((prev) => ({ ...prev, [job.id]: laps }));
+        })
+        .catch(() => {
+          q.tries[key] = (q.tries[key] || 0) + 1;
+          if (q.tries[key] < 3) q.queue.push(job);
+          else setCache((prev) => ({ ...prev, [job.id]: [] }));
+        })
+        .finally(() => {
+          q.inFlight.delete(key);
+          q.running -= 1;
+          pumpLapQueue();
+        });
+    }
+  }, []);
+
+  const lapJobFor = (t) => {
+    if (needsStravaLapFetch(t, stravaLapsCache)) {
+      const id = resolveStravaNumericId(t);
+      return id ? { kind: 'strava', id } : null;
+    }
+    if (needsGarminLapFetch(t, garminLapsCache)) {
+      const id = resolveGarminActivityId(t);
+      return id ? { kind: 'garmin', id } : null;
+    }
+    return null;
+  };
+
   useEffect(() => {
-    const needed = intervalTrainingsBase.filter(t => needsGarminLapFetch(t, garminLapsCache));
-    if (!needed.length) return;
-    let cancelled = false;
-    const isCoachViewing = athleteId && user && String(athleteId) !== String(user._id || user.id || '');
-    const integAthleteId = isCoachViewing ? String(athleteId) : null;
-    needed.forEach(t => {
-      const rawId = resolveGarminActivityId(t);
-      if (!rawId) return;
-      getGarminActivityDetail(rawId, integAthleteId).then(data => {
-        if (cancelled) return;
-        const laps = Array.isArray(data?.laps) ? data.laps : [];
-        setGarminLapsCache(prev => ({ ...prev, [rawId]: laps }));
-      }).catch(() => {
-        // Cache the miss too, so a ride Garmin cannot detail is asked about once.
-        if (!cancelled) setGarminLapsCache(prev => ({ ...prev, [rawId]: [] }));
-      });
+    const q = lapQueue.current;
+    const queued = new Set(q.queue.map((j) => `${j.kind}:${j.id}`));
+    // Background fetching covers the last four months — what the trends and
+    // lists are read from. Each fetch can reach Strava for streams, and the
+    // whole archive at once ran into its rate limit. Older sessions load
+    // when opened.
+    const since = Date.now() - 120 * 86400000;
+    lapFetchTargets.filter((t) => getDate(t).getTime() >= since).forEach((t) => {
+      const job = lapJobFor(t);
+      if (!job) return;
+      const key = `${job.kind}:${job.id}`;
+      if (queued.has(key) || q.inFlight.has(key)) return;
+      queued.add(key);
+      q.queue.push(job);
     });
-    return () => { cancelled = true; };
-  }, [intervalTrainingsBase, garminLapsCache, athleteId, user]);
+    pumpLapQueue();
+  }, [lapFetchTargets, stravaLapsCache, garminLapsCache, pumpLapQueue]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /** Fetch this session's laps next — called when its sheet opens. */
+  const prioritiseLaps = (t) => {
+    const q = lapQueue.current;
+    [t, fullLapSource(t)].filter(Boolean).forEach((x) => {
+      const job = lapJobFor(x);
+      if (!job) return;
+      const key = `${job.kind}:${job.id}`;
+      q.queue = q.queue.filter((j) => `${j.kind}:${j.id}` !== key);
+      q.tries[key] = 0;
+      if (!q.inFlight.has(key)) q.queue.unshift({ ...job, now: true });
+    });
+    pumpLapQueue();
+  };
 
   const intervalTrainingsAll = categoryFilteredTrainings;
 
@@ -2358,6 +2492,28 @@ export default function NativeTrainingPage({
   // the matching Strava/FIT activity (which has GPS/streams/laps from the actual
   // ride) over the bare regular training (which only has the manually logged
   // intervals). Match by SAME DAY + SAME SPORT.
+  // Where a training's full lap list lives. A training saved from the lap form
+  // keeps only the laps it was given — usually the reps, recoveries left out —
+  // while its Strava/Garmin record has every lap. Returns that record with the
+  // training's results attached (they carry lactate and interval marks, laid
+  // onto the laps by lap index), or null when the training is the record.
+  function fullLapSource(t) {
+    if (!t) return null;
+    // Results are laid onto laps only when they say which lap they came from;
+    // by position, a reading after the eighth rep would land on the fifth lap.
+    const results = resultsByLapIndex(t.results) ? t.results : undefined;
+    const src = resolveActivitySource(t);
+    if (src.kind === 'regular') {
+      const rich = findRelatedRichActivity(t);
+      return rich ? { ...rich, results } : null;
+    }
+    if (!src.linked) return null;
+    const base = { sport: t.sport, date: t.date, laps: [], results };
+    if (src.kind === 'strava') return { ...base, stravaId: src.id };
+    if (src.kind === 'garmin') return { ...base, garminId: src.id };
+    return null;
+  }
+
   function findRelatedRichActivity(t) {
     if (!t) return null;
     const tDate = getDate(t);
@@ -2428,6 +2584,99 @@ export default function NativeTrainingPage({
   };
   const closeActivityModal = () => setActivityModal(null);
 
+
+  // ── Training hub: groups with trends, search, session sheet ──────────────
+  const [showClassic, setShowClassic] = useState(false);
+  const tssProfile = useMemo(() => mergeProfileZones(user, user) || user, [user]);
+  const hubSession = useCallback((t) => {
+    const sport = normSport(t.sport);
+    // Chart the full lap list (recoveries included) when the training has a
+    // Strava/Garmin record behind it; its own laps otherwise.
+    const full = fullLapSource(t);
+    let laps = full ? hubLaps(full, sport, stravaLapsCache, garminLapsCache) : [];
+    const ownLaps = hubLaps(t, sport, stravaLapsCache, garminLapsCache);
+    if (!laps.some((l) => l.num != null) || laps.length < 2) laps = ownLaps;
+    const summary = summariseSession(laps, sport);
+    // Lactate the training holds but could not be placed on a lap.
+    if (summary.lactate == null) {
+      const own = ownLaps.map((l) => l.la).filter((v) => Number.isFinite(v) && v > 0);
+      if (own.length) summary.lactate = Math.max(...own);
+    }
+    return {
+      id: String(t._id || t.id || t.stravaId || `${t.date}-${t.title}`),
+      raw: t,
+      sport,
+      title: t.title || t.name || t.titleManual || 'Training',
+      date: getDate(t),
+      // A training saved from the lap form carries laps but no totals.
+      secs: getSecs(t) || laps.reduce((a, l) => a + (l.secs || 0), 0),
+      dist: getDist(t) || laps.reduce((a, l) => a + (l.dist || 0), 0),
+      tss: hubTss(t, full, laps, sport, tssProfile, user),
+      avgHr: Number(t.avgHeartRate ?? t.average_heartrate ?? t.averageHeartRate) || null,
+      laps,
+      lapsPending: [t, full].filter(Boolean).some((x) => needsStravaLapFetch(x, stravaLapsCache) || needsGarminLapFetch(x, garminLapsCache)),
+      summary,
+      // Measured from the session's own averages, not its laps — not comparable with lap-based ones.
+      wholeOnly: laps.length === 1 && laps[0].whole === true,
+    };
+  }, [stravaLapsCache, garminLapsCache, trainings, tssProfile, user]); // eslint-disable-line react-hooks/exhaustive-deps -- findRelatedRichActivity reads only `trainings`
+
+  const hub = useMemo(() => {
+    const groups = grouped.map(([label, arr]) => {
+      const sessionsInGroup = arr.map(hubSession);
+      const last = sessionsInGroup[sessionsInGroup.length - 1];
+      // Shape-matched groups already print it in their label; a named one gets it here.
+      const shape = /\(.+\)$/.test(label.trim()) ? null : hubShape(last.laps, last.sport);
+      return { key: label, label: label.trim(), shape, sport: last.sport, sessions: sessionsInGroup };
+    });
+    const inGroup = new Map();
+    groups.forEach((g) => g.sessions.forEach((x) => inGroup.set(x.raw, x)));
+    const all = dedupBySession(filtered).map((t) => inGroup.get(t) || hubSession(t));
+    const weekAgo = Date.now() - 7 * 86400000;
+    const lactateReady = annotateQueueAll
+      .filter((t) => getDate(t).getTime() >= weekAgo)
+      .map((t) => inGroup.get(t) || hubSession(t))
+      // Interval sessions only — an easy run has no lap worth a finger prick.
+      .filter((x) => hubShape(x.laps, x.sport) != null);
+    // A picked category compared as one: every LT2 run against every other,
+    // whatever each was called. One group per sport, oldest first.
+    const categoryGroups = [];
+    if (categoryFilterId !== INTERVAL_CAT_ALL && categoryFilterId !== INTERVAL_CAT_UNCATEGORIZED) {
+      const cat = categories.find((c) => c.id === categoryFilterId);
+      const bySport = {};
+      categoryFilteredTrainings.forEach((t) => {
+        const x = inGroup.get(t) || hubSession(t);
+        (bySport[x.sport] = bySport[x.sport] || []).push(x);
+      });
+      const noun = { run: 'runs', bike: 'rides', swim: 'swims' };
+      Object.entries(bySport).forEach(([sport, list]) => {
+        list.sort((a, b) => a.date - b.date);
+        categoryGroups.push({
+          key: `cat:${categoryFilterId}:${sport}`,
+          label: `All ${cat?.label || 'category'} ${noun[sport] || 'sessions'}`,
+          shape: null,
+          sport,
+          sessions: list,
+        });
+      });
+    }
+    return { groups, all, lactateReady, categoryGroups };
+  }, [grouped, filtered, annotateQueueAll, hubSession, categoryFilterId, categoryFilteredTrainings, categories]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const hubCategories = useMemo(() => [
+    { id: INTERVAL_CAT_ALL, label: 'All', color: '#6b7280', count: categoryCounts[INTERVAL_CAT_ALL] || 0 },
+    ...categories
+      .filter((c) => (categoryCounts[c.id] || 0) > 0)
+      .map((c) => ({ id: c.id, label: c.label, color: c.color, count: categoryCounts[c.id] })),
+  ], [categories, categoryCounts]);
+
+  const hubFmt = useCallback((num, sport, bare = false) => {
+    if (!Number.isFinite(num)) return '–';
+    if (sport === 'bike') return bare ? `${Math.round(num)}` : `${Math.round(num)} W`;
+    const txt = fmtPace(num, unitSystem, sport);
+    return bare ? txt.replace(/\/.*$/, '') : txt;
+  }, [unitSystem]);
+
   // (Pagination state moved above — declared before slicing logic uses it)
 
   // ── Scroll-snap ────────────────────────────────────────────────────────────
@@ -2447,7 +2696,9 @@ export default function NativeTrainingPage({
       sp: node.style.scrollPaddingTop,
       sb: node.style.scrollBehavior,
     };
-    node.style.scrollSnapType   = 'y proximity';
+    // No snapping: the hub is a list you read and tap through, and snapping
+    // moved rows out from under the finger as a scroll settled.
+    node.style.scrollSnapType   = 'none';
     node.style.scrollPaddingTop = '8px';
     node.style.scrollBehavior   = 'smooth';
     node.scrollTop = 0;
@@ -2532,6 +2783,27 @@ export default function NativeTrainingPage({
         )}
 
         <div style={styles.body}>
+          <TrainingHub
+            loading={!trainingsLoaded && trainings.length === 0}
+            groups={hub.groups}
+            sessions={hub.all}
+            lactateReady={hub.lactateReady}
+            sport={selectedSport}
+            onSport={setSelectedSport}
+            fmt={hubFmt}
+            fmtDur={fmtDuration}
+            fmtDist={(m) => fmtDist(m, user)}
+            unitSystem={unitSystem}
+            categories={hubCategories}
+            categoryId={categoryFilterId}
+            onCategory={setCategoryFilterId}
+            categoryGroups={hub.categoryGroups}
+            onOpenFull={openActivity}
+            onSessionOpen={(raw) => prioritiseLaps(raw)}
+            onAddLactate={openTrainingForm}
+            onOpenClassic={() => setShowClassic((v) => !v)}
+          />
+          {showClassic && (<>
           {/* ─── Fresh field-lactate hero (<24h old) ──────────────────────── */}
           {(() => {
             if (!fieldLactates.length) return null;
@@ -3541,6 +3813,7 @@ export default function NativeTrainingPage({
             </PremiumLock>
           </div>
 
+          </>)}
           <div style={{ height: 16 }} />
         </div>
       </div>
