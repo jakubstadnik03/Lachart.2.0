@@ -15,6 +15,9 @@ jest.mock('../../hooks/usePremium', () => ({ usePremium: () => mockPremium }));
 jest.mock('../../context/AuthProvider', () => ({ useAuth: () => ({ user: { role: 'athlete' } }) }));
 jest.mock('../../utils/analytics', () => ({ trackEvent: () => {} }));
 jest.mock('../../utils/isNativeApp', () => ({ isCapacitorNative: () => true }));
+jest.mock('../../hooks/useStorePurchase', () => ({
+  useStorePurchase: () => ({ available: false, priceLabel: null, trialEligible: true, busy: null, message: null }),
+}));
 
 /* eslint-disable import/first */
 import PremiumLock from '../PremiumLock';
