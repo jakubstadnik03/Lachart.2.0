@@ -24,6 +24,8 @@ import NativePredictedCurveCard from '../components/native/NativePredictedCurveC
 import LT2TrendSparkline from '../components/DashboardPage/LT2TrendSparkline';
 import { usePremium } from '../hooks/usePremium';
 import UpgradeModal from '../components/UpgradeModal';
+import PremiumLock from '../components/PremiumLock';
+import { TestLimitTeaser, SinceTestTeaser, BenchmarkTeaser } from '../components/native/PremiumTeasers';
 import { FREE_TEST_LIMIT } from '../constants/planLimits';
 import StravaConnectModal from '../components/NativeDashboard/StravaConnectModal';
 import { shouldPromptTrackerConnect, markTrackerPromptShown } from '../utils/trackerConnectPrompt';
@@ -285,6 +287,47 @@ function LactateCurve({ thresholds }) {
 
 // ─── component ────────────────────────────────────────────────────────────────
 
+/**
+ * Bottom sheet for the free test quota. Holds the personal-preview lock — the
+ * athlete's own latest LT2, what Premium adds, the price — so hitting the limit
+ * reads as "here is what your tests say, and what the next one would show"
+ * rather than a bare paywall.
+ */
+function TestLimitSheet({ onClose, children }) {
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 200 }} role="dialog" aria-modal="true">
+      <div
+        onClick={onClose}
+        style={{ position: 'absolute', inset: 0, background: 'rgba(10,14,26,.35)' }}
+      />
+      <div style={{
+        position: 'absolute', left: 0, right: 0, bottom: 0,
+        background: '#EEF0F4',
+        borderTopLeftRadius: 22, borderTopRightRadius: 22,
+        boxShadow: '0 -10px 32px -8px rgba(10,14,26,.18)',
+        padding: '10px 14px calc(16px + env(safe-area-inset-bottom))',
+        maxHeight: '88vh', overflowY: 'auto',
+        animation: 'ndFadeIn .25s cubic-bezier(.22,1,.36,1) both',
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 6 }}>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            style={{
+              border: 'none', background: 'rgba(118,126,181,.12)', color: '#5E6590',
+              borderRadius: 999, padding: '6px 12px', fontSize: 13, fontWeight: 700,
+            }}
+          >
+            Not now
+          </button>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
 export default function NativeTestingPage({ user, athleteId: externalAthleteId }) {
   const navigate = useNavigate();
   useNativeTabScrollToTop('testing');
@@ -318,7 +361,7 @@ export default function NativeTestingPage({ user, athleteId: externalAthleteId }
   // never checked, so the app let a free account add as many as it liked. The
   // server rejects them anyway — the gate is what turns a silent failure into
   // the upgrade prompt the web has always shown.
-  const { isPremium, gate, UpgradeModalProps } = usePremium();
+  const { isPremium, UpgradeModalProps } = usePremium();
   const [loading, setLoading] = useState(true);
   const [selectedSport, setSelectedSport] = useState(sportFromUrl || 'bike');
   const [selectedTestId, setSelectedTestId] = useState(testIdFromUrl || null);
@@ -328,6 +371,17 @@ export default function NativeTestingPage({ user, athleteId: externalAthleteId }
 
   // New-test bottom sheet — opens when user taps "+ New"
   const [newSheetOpen, setNewSheetOpen] = useState(false);
+  // The free plan's test quota, reached: a sheet with the athlete's own latest
+  // threshold and what Premium adds, instead of a bare upgrade modal.
+  const [limitSheetOpen, setLimitSheetOpen] = useState(false);
+  const openNewTest = () => {
+    if (!isPremium && tests.length >= FREE_TEST_LIMIT) {
+      trackEvent('test_limit_reached', { tests: tests.length, native: true });
+      setLimitSheetOpen(true);
+      return;
+    }
+    setNewSheetOpen(true);
+  };
 
   const toggleCompare = (id) => {
     setCompareIds(prev => {
@@ -464,6 +518,14 @@ export default function NativeTestingPage({ user, athleteId: externalAthleteId }
 
   const selectedTh = selected ? extractThresholds(selected) : null;
 
+  // The newest test of any sport — what the test-limit sheet quotes back.
+  const newestTest = useMemo(() => tests.slice().sort((a, b) =>
+    new Date(b.date || b.testDate || 0) - new Date(a.date || a.testDate || 0))[0] || null, [tests]);
+  const newestTh = newestTest ? extractThresholds(newestTest) : null;
+
+  // The benchmark compares the latest test of the selected sport.
+  const sportLatestTh = filtered[0] ? extractThresholds(filtered[0]) : null;
+
   const onSelectTest = (testId) => {
     setSelectedTestId(testId);
     const next = new URLSearchParams(searchParams);
@@ -526,11 +588,7 @@ export default function NativeTestingPage({ user, athleteId: externalAthleteId }
           </div>
           <button
             onClick={() => {
-              if (!isPremium && tests.length >= FREE_TEST_LIMIT) {
-                gate('Unlimited tests — upgrade to add more', 'pro');
-                return;
-              }
-              setNewSheetOpen(true);
+              openNewTest();
             }}
             onMouseDown={(e) => { e.currentTarget.style.transform = 'scale(.94)'; }}
             onMouseUp={(e)   => { e.currentTarget.style.transform = ''; }}
@@ -605,11 +663,7 @@ export default function NativeTestingPage({ user, athleteId: externalAthleteId }
                 profile={user}
                 athleteId={athleteId}
                 onAddTest={() => {
-                  if (!isPremium && tests.length >= FREE_TEST_LIMIT) {
-                    gate('Unlimited tests — upgrade to add more', 'pro');
-                    return;
-                  }
-                  setNewSheetOpen(true);
+                  openNewTest();
                 }}
                 onOpenFull={() => navigate('/testing?full=1')}
               />
@@ -915,42 +969,29 @@ export default function NativeTestingPage({ user, athleteId: externalAthleteId }
               season chart — is on the web testing page. ─── */}
           {selected && selectedTh && (
             <div style={{ ...cardEntry(2), ...snap }}>
-              {isPremium ? (
+              <PremiumLock
+                feature="Training Since Test"
+                plan="pro"
+                title="Since your test"
+                teaser={(
+                  <SinceTestTeaser
+                    testDate={selected.date || selected.testDate}
+                    lt2Label={fmtThreshold(selectedTh.lt2, selectedTh.sport, user, selected)}
+                  />
+                )}
+                unlocks={[
+                  'Where LT1 and LT2 have likely moved since test day',
+                  'Read from every session synced since, against this test’s own curve',
+                  'Whether your training zones still fit',
+                ]}
+              >
                 <NativeSinceTestCard
                   test={selected}
                   tests={tests}
                   athleteId={athleteId}
                   onOpenFull={() => navigate(`/testing?testId=${encodeURIComponent(selected._id || selected.id)}&full=1`)}
                 />
-              ) : (
-                <GlassCard>
-                  <SectionTitle>Since your test</SectionTitle>
-                  <div style={{ position: 'relative', marginTop: 8 }}>
-                    <div style={{ filter: 'blur(5px)', opacity: 0.45, pointerEvents: 'none' }} aria-hidden="true">
-                      <div style={{ height: 10, width: '55%', borderRadius: 999, background: '#E5E7EB', marginBottom: 8 }} />
-                      <div style={{ height: 40, borderRadius: 10, background: 'linear-gradient(90deg,#EEF0F7,#DDE1EF,#EEF0F7)', marginBottom: 8 }} />
-                      <div style={{ height: 40, borderRadius: 10, background: 'linear-gradient(90deg,#EEF0F7,#DDE1EF,#EEF0F7)' }} />
-                    </div>
-                    <div style={{
-                      position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column',
-                      alignItems: 'center', justifyContent: 'center', gap: 6,
-                    }}>
-                      <div style={{ fontSize: 11, fontWeight: 600, color: '#6B7280', textAlign: 'center', padding: '0 16px' }}>
-                        See where your thresholds have moved since test day
-                      </div>
-                      <button
-                        onClick={() => gate('Training Since Test')}
-                        style={{
-                          padding: '7px 14px', borderRadius: 999, border: 'none',
-                          background: '#767EB5', color: '#fff', fontSize: 11.5, fontWeight: 700,
-                        }}
-                      >
-                        Unlock with Premium
-                      </button>
-                    </div>
-                  </div>
-                </GlassCard>
-              )}
+              </PremiumLock>
             </div>
           )}
 
@@ -1376,41 +1417,29 @@ export default function NativeTestingPage({ user, athleteId: externalAthleteId }
               a locked teaser that opens the shared UpgradeModal. ─── */}
           {selectedSport !== 'all' && (
             <div style={{ ...cardEntry(5), ...snap }}>
-              {isPremium ? (
+              <PremiumLock
+                feature="Community Benchmark"
+                plan="pro"
+                title="Community benchmark"
+                teaser={(
+                  <BenchmarkTeaser
+                    sport={selectedSport}
+                    lt1Label={sportLatestTh ? fmtThreshold(sportLatestTh.lt1, sportLatestTh.sport, user, filtered[0]) : null}
+                    lt2Label={sportLatestTh ? fmtThreshold(sportLatestTh.lt2, sportLatestTh.sport, user, filtered[0]) : null}
+                  />
+                )}
+                unlocks={[
+                  'Your LT1 and LT2 percentile among LaChart athletes',
+                  'Compared with real lactate tests, one per athlete',
+                  selectedSport === 'bike' ? 'Per kilogram, so body weight is taken into account' : 'Split by gender, or across everyone',
+                ]}
+              >
                 <NativeBenchmarkCard
                   athleteId={athleteId}
                   sport={selectedSport}
                   user={user}
                 />
-              ) : (
-                <GlassCard>
-                  <SectionTitle>Community Benchmark</SectionTitle>
-                  <div style={{ position: 'relative', marginTop: 8 }}>
-                    <div style={{ filter: 'blur(5px)', opacity: 0.45, pointerEvents: 'none' }} aria-hidden="true">
-                      <div style={{ height: 10, width: '40%', borderRadius: 999, background: '#E5E7EB', marginBottom: 8 }} />
-                      <div style={{ height: 44, borderRadius: 10, background: 'linear-gradient(90deg,#EEF0F7,#DDE1EF,#EEF0F7)', marginBottom: 8 }} />
-                      <div style={{ height: 44, borderRadius: 10, background: 'linear-gradient(90deg,#EEF0F7,#DDE1EF,#EEF0F7)' }} />
-                    </div>
-                    <div style={{
-                      position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column',
-                      alignItems: 'center', justifyContent: 'center', gap: 6,
-                    }}>
-                      <div style={{ fontSize: 11, fontWeight: 600, color: '#6B7280', textAlign: 'center' }}>
-                        See how your LT1/LT2 compares to the community
-                      </div>
-                      <button
-                        onClick={() => gate('Community Benchmark')}
-                        style={{
-                          padding: '7px 14px', borderRadius: 999, border: 'none',
-                          background: '#767EB5', color: '#fff', fontSize: 11.5, fontWeight: 700,
-                        }}
-                      >
-                        Unlock with Premium
-                      </button>
-                    </div>
-                  </div>
-                </GlassCard>
-              )}
+              </PremiumLock>
             </div>
           )}
 
@@ -1421,6 +1450,30 @@ export default function NativeTestingPage({ user, athleteId: externalAthleteId }
       {/* New-test bottom sheet — wraps NewTestingComponent so the user can fill
           in stages, see live curve preview, and save without leaving the app. */}
       <UpgradeModal {...UpgradeModalProps} />
+
+      {limitSheetOpen && (
+        <TestLimitSheet onClose={() => setLimitSheetOpen(false)}>
+          <PremiumLock
+            feature="Unlimited tests"
+            plan="pro"
+            title={`You have used your ${FREE_TEST_LIMIT} free tests`}
+            teaser={(
+              <TestLimitTeaser
+                testCount={tests.length}
+                limit={FREE_TEST_LIMIT}
+                sport={newestTh?.sport}
+                testDate={newestTest?.date || newestTest?.testDate}
+                lt2Label={newestTh ? fmtThreshold(newestTh.lt2, newestTh.sport, user, newestTest) : null}
+              />
+            )}
+            unlocks={[
+              'Unlimited lactate tests, so your trend keeps going',
+              'Where your thresholds have moved since each test',
+              'How your LT1 and LT2 compare with other athletes',
+            ]}
+          />
+        </TestLimitSheet>
+      )}
 
       <NewTestSheet
         open={newSheetOpen}
