@@ -1,9 +1,9 @@
 /**
  * When the iOS app shows the full-screen Premium offer to a free user.
  *
- * Regular but not nagging: never in the first days, when someone is still
- * finding out what the app does; then at most once every few days, once per
- * app session, and never to anyone who pays or whose status is not known yet.
+ * Right after someone signs in (a new account on this phone, or a different
+ * one than last time), then at most once every few days and once per app
+ * session — never to anyone who pays or whose status is not known yet.
  * The schedule lives on the device, which is fine for something whose only
  * job is to not show up too often.
  */
@@ -11,8 +11,6 @@
 const STORAGE_KEY = 'premiumPaywallPrompt';
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-/** Days after first opening the app before the first offer. */
-export const FIRST_AFTER_DAYS = 2;
 /** Days between offers after that. */
 export const EVERY_DAYS = 3;
 
@@ -21,9 +19,9 @@ let shownThisSession = false;
 function readState() {
   try {
     const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
-    return { firstSeenAt: Number(parsed?.firstSeenAt) || 0, lastAt: Number(parsed?.lastAt) || 0, count: Number(parsed?.count) || 0 };
+    return { userId: parsed?.userId ? String(parsed.userId) : null, lastAt: Number(parsed?.lastAt) || 0, count: Number(parsed?.count) || 0 };
   } catch {
-    return { firstSeenAt: 0, lastAt: 0, count: 0 };
+    return { userId: null, lastAt: 0, count: 0 };
   }
 }
 
@@ -48,20 +46,17 @@ export function shouldShowPaywall({ user, isPremium, premiumResolved, canBuy, im
   if (shownThisSession) return false;
 
   const state = readState();
-  if (!state.firstSeenAt) {
-    writeState({ ...state, firstSeenAt: now });
-    return false;
-  }
-  if (now - state.firstSeenAt < FIRST_AFTER_DAYS * DAY_MS) return false;
+  // Signed in as someone this phone has not offered it to yet: now.
+  if (state.userId !== String(user._id)) return true;
   if (state.lastAt && now - state.lastAt < EVERY_DAYS * DAY_MS) return false;
   return true;
 }
 
 /** Record the offer as it appears, not on a tap. */
-export function markPaywallShown(now = Date.now()) {
+export function markPaywallShown(userId, now = Date.now()) {
   shownThisSession = true;
   const state = readState();
-  writeState({ ...state, firstSeenAt: state.firstSeenAt || now, lastAt: now, count: state.count + 1 });
+  writeState({ userId: userId ? String(userId) : state.userId, lastAt: now, count: state.count + 1 });
 }
 
 /** Tests only. */

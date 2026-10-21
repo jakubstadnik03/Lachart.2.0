@@ -8,6 +8,7 @@ import { trackEvent } from '../utils/analytics';
 import { ATHLETE_PLAN_PRICE_LABEL, COACH_PLAN_PRICE_LABEL, TRIAL_DAYS } from '../constants/planPricing';
 import { useStorePurchase } from '../hooks/useStorePurchase';
 import StorePurchaseFooter, { storeButtonLabel } from './StorePurchaseFooter';
+import { PremiumButton, PremiumBadge, PREMIUM_GRADIENT } from './PremiumButton';
 
 /**
  * Gate a feature behind premium with a "locked" preview.
@@ -152,38 +153,39 @@ function PersonalPreviewLock({
       <div
         className={className}
         style={{
-          background: '#fff',
-          border: '1px solid #E5E7EB',
-          borderRadius: 18,
+          position: 'relative',
+          overflow: 'hidden',
+          // Gradient hairline border: white fill on the padding box, the
+          // Premium gradient on the border box.
+          background: `linear-gradient(#fff, #fff) padding-box, ${PREMIUM_GRADIENT} border-box`,
+          border: '1.5px solid transparent',
+          borderRadius: 20,
           padding: 16,
           display: 'flex',
           flexDirection: 'column',
           gap: 12,
+          boxShadow: '0 14px 30px -20px rgba(76,79,168,.55)',
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-          <div style={{ fontSize: 15, fontWeight: 700, color: '#0A0E1A' }}>{title}</div>
-          <span style={{
-            display: 'inline-flex', alignItems: 'center', gap: 4,
-            fontSize: 10, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase',
-            color: '#5E6590', background: 'rgba(94,101,144,.1)', borderRadius: 999, padding: '3px 8px',
-          }}>
-            <LockClosedIcon style={{ width: 11, height: 11 }} />
-            Premium
-          </span>
+          <div style={{ fontSize: 16, fontWeight: 800, color: '#0A0E1A', letterSpacing: '-0.01em' }}>{title}</div>
+          <PremiumBadge />
         </div>
 
         {teaser && <div>{teaser}</div>}
 
         {Array.isArray(unlocks) && unlocks.length > 0 && (
           <div>
-            <div style={{ fontSize: 12, fontWeight: 600, color: '#6B7280', marginBottom: 6 }}>
-              Premium adds:
+            <div style={{ fontSize: 11, fontWeight: 800, color: '#6C6FD6', letterSpacing: '.06em', textTransform: 'uppercase', marginBottom: 8 }}>
+              Premium adds
             </div>
-            <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 8 }}>
               {unlocks.map((u) => (
-                <li key={u} style={{ display: 'flex', gap: 8, fontSize: 13, color: '#374151', lineHeight: 1.4 }}>
-                  <span aria-hidden="true" style={{ color: '#4BA87D', fontWeight: 700 }}>✓</span>
+                <li key={u} style={{ display: 'flex', gap: 10, fontSize: 13.5, color: '#1F2738', lineHeight: 1.4, alignItems: 'flex-start' }}>
+                  <span aria-hidden="true" style={{
+                    flexShrink: 0, width: 18, height: 18, borderRadius: 9, marginTop: 1, background: PREMIUM_GRADIENT,
+                    color: '#fff', fontSize: 11, fontWeight: 900, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                  }}>✓</span>
                   <span>{u}</span>
                 </li>
               ))}
@@ -193,20 +195,9 @@ function PersonalPreviewLock({
 
         {!unknown && (
           <>
-            <button
-              type="button"
-              onClick={onUnlock}
-              disabled={Boolean(store.busy)}
-              className="touch-manipulation"
-              style={{
-                width: '100%', padding: '12px 14px', borderRadius: 14, border: 'none',
-                background: '#5E6590', color: '#fff', fontSize: 14, fontWeight: 700,
-                cursor: 'pointer', WebkitTapHighlightColor: 'transparent',
-                opacity: store.busy ? 0.7 : 1,
-              }}
-            >
+            <PremiumButton onClick={onUnlock} disabled={Boolean(store.busy)}>
               {useStore ? storeButtonLabel(store, store.trialEligible) : `Try it ${TRIAL_DAYS} days free`}
-            </button>
+            </PremiumButton>
             {useStore ? (
               <StorePurchaseFooter store={store} price={price} trialEligible={store.trialEligible} />
             ) : (
