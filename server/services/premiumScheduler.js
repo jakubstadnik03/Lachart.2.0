@@ -74,6 +74,12 @@ async function tick() {
     if (stats.sent || stats.failed) {
       console.log(`[PremiumScheduler] tick: sent=${stats.sent} skipped=${stats.skipped} ` +
         `failed=${stats.failed} today=${emailsSentToday}/${dailyCap}`);
+    } else if (stats.skipped) {
+      // A tick that only skips used to say nothing at all, which is exactly
+      // how a queue headed by undeliverable addresses looked like a scheduler
+      // that was never started.
+      console.log(`[PremiumScheduler] tick: nothing sent, ${stats.skipped} skipped ` +
+        `(candidates were refused at send time)`);
     }
   } catch (e) {
     console.error('[PremiumScheduler] tick error:', e);

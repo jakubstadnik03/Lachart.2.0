@@ -30,6 +30,7 @@ const { emailLinkBase } = require('../utils/emailLinkBase');
 const { createCampaignTransporter, campaignSender } = require('../utils/createEmailTransporter');
 const { getClientUrl } = require('../utils/emailTemplate');
 const { shouldPitchPremium, pitchState, STATE_KEY } = require('../utils/premiumPitchEligibility');
+const { emailReachability } = require('../utils/emailReachability');
 
 const UTM_CAMPAIGN = 'premium-recurring';
 const SENT_KEY = `${STATE_KEY}.lastAt`;
@@ -151,6 +152,22 @@ async function hasSavedTest(userId) {
   return (await Test.countDocuments({ athleteId: userId }).limit(1)) > 0;
 }
 
+/**
+ * Is this address worth a slot?
+ *
+ * An address the transporter's reachability guard will refuse is a wasted
+ * one: the send throws, the tick counts it as skipped, and at two an hour a
+ * queue headed by Apple relay forwarders never reaches anybody real. It was —
+ * the first two candidates in production were an Apple Hide My Email
+ * forwarder and a string with no @ in it. The guard still has the final say at
+ * send time; this only stops the queue filling with addresses it will reject.
+ */
+function deliverable(email) {
+  const e = String(email || '').trim();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(e)) return false;
+  return emailReachability(e).reachable;
+}
+
 /** Everyone who has ever saved a test. One query instead of one per user. */
 async function testerIds() {
   const ids = await Test.distinct('athleteId');
@@ -182,12 +199,18 @@ async function findReadyCandidates(limit = 20) {
   // those accounts first, so the campaign would have spent its first two
   // months talking to the people least likely to answer. Testers go first;
   // the rest follow once that queue runs dry.
+  // An address the transporter's reachability guard will refuse is a wasted
+  // slot: the send throws, the tick counts it as skipped, and at two per hour
+  // a queue headed by Apple relay forwarders never reaches anybody real. The
+  // guard still has the final say at send time — this only stops the queue
+  // being filled with addresses it is going to reject.
   const testers = await testerIds();
   const ready = [];
   for (const hasTest of [true, false]) {
     for (const user of pool) {
       if (ready.length >= limit) break;
       if (testers.has(String(user._id)) !== hasTest) continue;
+      if (!deliverable(user.email)) continue;
       const verdict = shouldPitchPremium({ user, isPaying: paying.has(String(user._id)) });
       if (!verdict.ok) continue;
       ready.push({ user, hasTest });
@@ -269,6 +292,6 @@ function renderPreview(user = {}, { hasTest = true } = {}) {
 }
 
 module.exports = {
-  sendPremiumPitch, findReadyCandidates, getCampaignStats, renderPreview,
+  sendPremiumPitch, findReadyCandidates, getCampaignStats, renderPreview, deliverable,
   unsubscribeUrlFor, payingUserIds, COPY, STATE_KEY, SENT_KEY, UTM_CAMPAIGN,
 };
