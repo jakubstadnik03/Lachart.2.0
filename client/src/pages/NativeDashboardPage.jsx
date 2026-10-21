@@ -1510,7 +1510,9 @@ export default function NativeDashboardPage({
         ) : (
           <>
           {/* Getting-started checklist — self-hides once complete/dismissed */}
-          <div style={{ ...cardEntry(0), ...snapStyle }}>
+          {/* Hidden when the checklist renders nothing, so an empty slot does
+              not add a gap above Today. */}
+          <div className="nd-empty-slot" style={{ ...cardEntry(0), ...snapStyle }}>
             <OnboardingChecklist
               user={user}
               tests={tests}
@@ -1534,8 +1536,9 @@ export default function NativeDashboardPage({
             style={{ ...cardEntry(0), ...snapStyle }}
           />
 
-          {/* ── 1 · Today: the suggestion, the week, the selected day ── */}
-          <div style={styles.sectionLabel}>Today</div>
+          {/* ── 1 · Today: the suggestion, the week, the selected day ──
+              No section label: the card itself says Today. */}
+          <style>{'.nd-empty-slot:empty { display: none; }'}</style>
           {/* Today's coaching card is the first page of the insights carousel:
               swipe on for Performance Insights, the week, sports and load.
               Without Premium it stands alone and the carousel waits, locked,
@@ -1986,7 +1989,7 @@ const styles = {
   },
   body: {
     flex: 1,
-    padding: '8px 14px 0',
+    padding: '4px 14px 0',
     display: 'flex',
     flexDirection: 'column',
     gap: 10,
