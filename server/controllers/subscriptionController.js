@@ -5,6 +5,9 @@ const stripe = process.env.SUBSCRIPTION_ENABLED === 'true' && process.env.STRIPE
 const User = require('../models/UserModel');
 const Subscription = require('../models/SubscriptionModel');
 const { canStartCheckout, manageBilling, STRIPE } = require('../utils/billingProvider');
+const { canBindStoreTransaction, APPLE } = require('../utils/billingProvider');
+const { mapRevenueCatEvent } = require('../utils/revenueCatEvent');
+const crypto = require('crypto');
 const { resolvePremiumAccess } = require('../utils/premiumAccess');
 const { createEmailTransporter } = require('../utils/createEmailTransporter');
 const { sendPremiumActivationEmail } = require('../services/premiumActivationEmailService');
@@ -1120,3 +1123,97 @@ exports.sendPromoEmail = async (req, res) => {
   }
 };
 
+
+/**
+ * POST /api/subscription/revenuecat/webhook
+ *
+ * The store side of billing, for App Store and Play Store subscriptions that
+ * RevenueCat relays to us in one shape. The decisions all live in
+ * utils/revenueCatEvent, which is pure and tested; this is the part that
+ * touches the database.
+ *
+ * Always answers 200 once the caller is authenticated, including for events
+ * we decline to act on. RevenueCat retries a non-2xx for hours, and retrying
+ * an unmappable product or a transfer that needs a human will not make either
+ * of them mappable — so those are logged loudly instead.
+ */
+exports.revenueCatWebhook = async (req, res) => {
+  const secret = process.env.REVENUECAT_WEBHOOK_SECRET;
+  if (!secret) {
+    console.error('[revenuecat] REVENUECAT_WEBHOOK_SECRET is not set — refusing every delivery');
+    return res.status(503).json({ error: 'Webhook not configured' });
+  }
+
+  // RevenueCat sends whatever Authorization value is configured on the
+  // integration, verbatim. Accept it with or without a Bearer prefix, and
+  // compare in constant time so the endpoint cannot be used as an oracle.
+  const header = String(req.get('authorization') || '').replace(/^Bearer\s+/i, '');
+  const a = Buffer.from(header);
+  const b = Buffer.from(secret);
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+    console.warn('[revenuecat] rejected a delivery with a bad Authorization header');
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  try {
+    const event = req.body?.event;
+    const mapped = mapRevenueCatEvent(event, {
+      planMapRaw: process.env.REVENUECAT_PLAN_MAP,
+      allowSandbox: process.env.REVENUECAT_ALLOW_SANDBOX === 'true',
+    });
+
+    if (mapped.action === 'ignore') {
+      console.log('[revenuecat] ignored:', mapped.reason, '| event', event?.type, event?.id);
+      return res.json({ received: true, applied: false, reason: mapped.reason });
+    }
+    if (mapped.action === 'reject') {
+      // Worth a look by a person: a product that is not mapped, a transfer
+      // between accounts, or a purchase made before anybody logged in.
+      console.error('[revenuecat] REJECTED:', mapped.reason, '| event', event?.type, event?.id,
+        '| app_user_id', event?.app_user_id);
+      return res.json({ received: true, applied: false, reason: mapped.reason });
+    }
+
+    const { userId, patch, provider } = mapped;
+    const user = await User.findById(userId);
+    if (!user) {
+      console.error('[revenuecat] no such user', userId, '| event', event?.id);
+      return res.json({ received: true, applied: false, reason: 'unknown_user' });
+    }
+
+    // One store purchase pays for one account. Check before writing, because
+    // the unique index would otherwise reject the save with a duplicate-key
+    // error that says nothing about why.
+    const storeKey = provider === APPLE
+      ? { appleOriginalTransactionId: patch.appleOriginalTransactionId }
+      : { googlePurchaseToken: patch.googlePurchaseToken };
+    const storeId = Object.values(storeKey)[0];
+    if (storeId) {
+      const owner = await Subscription.findOne(storeKey).select('userId').lean();
+      const bind = canBindStoreTransaction({ existingUserId: owner?.userId, userId });
+      if (!bind.allowed) {
+        console.error('[revenuecat] REFUSED to bind', storeId, 'to', userId,
+          '— already owned by', String(owner?.userId), '| event', event?.id);
+        return res.json({ received: true, applied: false, reason: bind.reason });
+      }
+    }
+
+    const subscription = await Subscription.findOneAndUpdate(
+      { userId: user._id },
+      { $set: { userId: user._id, ...patch } },
+      { new: true, upsert: true, setDefaultsOnInsert: true },
+    );
+
+    // Same role sync the Stripe path does — buying the Coach plan is how
+    // somebody becomes a coach, whichever till the money went through.
+    await syncRoleWithPlan(user, patch.plan);
+
+    console.log('[revenuecat] applied', event?.type, '→', patch.plan, patch.status,
+      'for', userId, '| until', patch.currentPeriodEnd);
+    return res.json({ received: true, applied: true, plan: subscription.plan, status: subscription.status });
+  } catch (error) {
+    console.error('[revenuecat] handler threw:', error);
+    // A 500 here does earn a retry — this one might genuinely be transient.
+    return res.status(500).json({ error: 'Webhook handler failed' });
+  }
+};

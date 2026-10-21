@@ -71,6 +71,14 @@ router.post('/create-checkout-session', verifyToken, subscriptionController.crea
  * from Stripe and writes it onto the user's MongoDB record. Client calls
  * this right after returning from Stripe Checkout (?success=1).
  */
+/**
+ * POST /api/subscription/revenuecat/webhook
+ * App Store and Play Store subscription events, relayed by RevenueCat.
+ * Authenticated by the Authorization value configured on the RevenueCat
+ * integration — no verifyToken, the caller is RevenueCat, not a user.
+ */
+router.post('/revenuecat/webhook', subscriptionController.revenueCatWebhook);
+
 router.post('/sync', verifyToken, subscriptionController.syncSubscriptionFromStripe);
 
 /**
