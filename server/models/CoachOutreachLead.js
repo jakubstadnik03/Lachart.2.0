@@ -19,6 +19,14 @@ const coachOutreachLeadSchema = new mongoose.Schema(
     source: { type: String, default: "manual" }, // 'manual' | 'csv'
     bulkCampaignId: { type: String, default: null },
     unsubscribed: { type: Boolean, default: false },
+    /** The second letter, to leads who opened the first and said nothing.
+     *  sentCount cannot stand in for this — thirteen leads already carry 2 or
+     *  more from the 2026 campaign, so it cannot tell a follow-up from a
+     *  repeat. Declared rather than written ad hoc because this schema is
+     *  strict: an undeclared path is dropped from the write as silently as
+     *  from the query, and the send would mark nobody. */
+    followUpSentAt: { type: Date, default: null },
+    followUpCount:  { type: Number, default: 0 },
     // Engagement. Clicks are the honest number here: opens depend on the client
     // loading a remote image, which Apple Mail Privacy Protection fakes for
     // everyone and Outlook blocks by default, so `opens` runs both high and
