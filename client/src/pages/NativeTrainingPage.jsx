@@ -13,7 +13,9 @@ import React, { useState, useEffect, useMemo, useRef, useCallback, lazy, Suspens
 import ReactDOM from 'react-dom';
 import useNativeTabScrollToTop from '../hooks/useNativeTabScrollToTop';
 import PremiumLock from '../components/PremiumLock';
-import { hasRadar } from '../utils/radarSport';
+import { hasRadar, dominantRadarSport } from '../utils/radarSport';
+import { PerformanceProfileTeaser, bestSessionFor } from '../components/native/PremiumTeasers';
+import { fmtViewerPace } from '../utils/viewerUnits';
 import { resolveActivitySource, seedForLinkedSource } from '../utils/activitySourceId';
 
 import {
@@ -3799,7 +3801,32 @@ export default function NativeTrainingPage({
                  bike or run the listed sessions are mostly made of, so the
                  chart never needs a sport switch of its own. ─── */}
           <div style={{ ...cardEntry(3), ...snap }}>
-            <PremiumLock feature="Performance Profile" plan="pro" minHeight={280}>
+            <PremiumLock
+              feature="Performance Profile"
+              plan="pro"
+              title="Performance profile"
+              teaser={(() => {
+                // The sport the radar would draw, and one real number from it.
+                const sp = hasRadar(selectedSport) ? selectedSport : dominantRadarSport(filtered, 'bike');
+                const { count, best } = bestSessionFor(filtered, sp, { getSecs, getDist });
+                const bestLabel = best
+                  ? (sp === 'run' ? fmtViewerPace(best.value, 'run') : `${Math.round(best.value)} W`)
+                  : null;
+                return (
+                  <PerformanceProfileTeaser
+                    sport={sp}
+                    count={count}
+                    bestLabel={bestLabel}
+                    bestDate={best ? getDate(best.training) : null}
+                  />
+                );
+              })()}
+              unlocks={[
+                'Your best efforts from sprint to an hour, on one chart',
+                'Month against month, to see which end is growing',
+                'Each point links to the session it came from',
+              ]}
+            >
               <Suspense fallback={<div style={{ height: 280 }} />}>
                 <SpiderChart
                   trainings={filtered}
