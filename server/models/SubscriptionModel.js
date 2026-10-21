@@ -18,6 +18,34 @@ const subscriptionSchema = new mongoose.Schema({
     enum: ['active', 'canceled', 'past_due', 'trialing', 'incomplete', 'incomplete_expired'],
     default: 'active'
   },
+  // Who bills this user. Absent on every row written before the App Store and
+  // Google Play were sold through, and those are all Stripe — see
+  // utils/billingProvider.providerOf, which defaults rather than making this
+  // required, so no migration has to run across live billing data.
+  provider: {
+    type: String,
+    enum: ['stripe', 'apple', 'google'],
+    default: 'stripe'
+  },
+  // The store's own identity for this subscription. Apple's
+  // originalTransactionId survives renewals, upgrades and restores, which is
+  // what makes it the thing to key on rather than the per-renewal id.
+  // Unique because one store purchase may pay for exactly one account.
+  appleOriginalTransactionId: {
+    type: String,
+    sparse: true,
+    unique: true
+  },
+  googlePurchaseToken: {
+    type: String,
+    sparse: true,
+    unique: true
+  },
+  // The product id inside the store — Apple's and Google's answer to
+  // stripePriceId, and the only place the in-app price is named.
+  storeProductId: {
+    type: String
+  },
   // Stripe subscription ID
   stripeSubscriptionId: {
     type: String,
@@ -87,6 +115,8 @@ const subscriptionSchema = new mongoose.Schema({
 // Index for finding active subscriptions
 subscriptionSchema.index({ status: 1, currentPeriodEnd: 1 });
 subscriptionSchema.index({ stripeCustomerId: 1 });
+// Store notifications arrive knowing only the store's own id, never ours.
+subscriptionSchema.index({ provider: 1, status: 1 });
 
 // Helper method to check if subscription is active
 subscriptionSchema.methods.isActive = function() {
