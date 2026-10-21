@@ -368,6 +368,18 @@ export const AuthProvider = ({ children }) => {
     }
   }, [removeToken, saveToken, navigate]);
 
+  // Tell RevenueCat who this is as soon as we know, so a store purchase (and
+  // its webhook) is tied to this LaChart account and not an anonymous id.
+  const storeUserId = user?._id || user?.id || null;
+  useEffect(() => {
+    if (!storeUserId) return;
+    import('../utils/storePurchases')
+      .then(({ storePurchasesAvailable, ensureStoreUser }) => (
+        storePurchasesAvailable() ? ensureStoreUser(storeUserId) : null
+      ))
+      .catch((e) => console.warn('RevenueCat identify failed:', e?.message || e));
+  }, [storeUserId]);
+
   const userForUi = useMemo(
     () => userWithPremiumPreviewApplied(user, premiumPreviewNoAccess),
     [user, premiumPreviewNoAccess]
@@ -381,11 +393,14 @@ export const AuthProvider = ({ children }) => {
       // reminders, the morning read — are cancelled, because those live on the
       // device and would otherwise fire for whoever signs in next.
       try {
-        const [{ detachPushTokenFromAccount }, { cancelAllLocalNotifications }] = await Promise.all([
+        const [{ detachPushTokenFromAccount }, { cancelAllLocalNotifications }, { resetStoreUser }] = await Promise.all([
           import('../utils/pushTokenSync'),
           import('../utils/localNotificationsHelper'),
+          import('../utils/storePurchases'),
         ]);
-        await Promise.allSettled([detachPushTokenFromAccount(), cancelAllLocalNotifications()]);
+        // resetStoreUser: the next App Store purchase on this phone must not
+        // land on the previous athlete's account.
+        await Promise.allSettled([detachPushTokenFromAccount(), cancelAllLocalNotifications(), resetStoreUser()]);
       } catch (e) {
         console.warn('Could not clear notifications on logout:', e?.message || e);
       }

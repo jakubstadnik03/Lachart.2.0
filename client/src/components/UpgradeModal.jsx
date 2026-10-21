@@ -12,6 +12,8 @@ import { PLAN_FEATURES, trackLabel } from '../constants/planFeatures';
 import { createCheckoutSession } from '../services/api';
 import { useAuth } from '../context/AuthProvider';
 import { planForUser } from '../utils/planForUser';
+import { useStorePurchase } from '../hooks/useStorePurchase';
+import StorePurchaseFooter, { storeButtonLabel } from './StorePurchaseFooter';
 
 const SWIPE_THRESHOLD = 80;
 const SWIPE_VEL_THRESHOLD = 400;
@@ -132,6 +134,18 @@ export default function UpgradeModal({ isOpen, onClose, feature = 'This feature'
 
   const swipe = useSwipeDismiss(onClose);
   useNativeModalScrollLock(isOpen);
+
+  // iOS sells in-app; without the RevenueCat key the sheet points at the website.
+  const store = useStorePurchase(requiredPlan, 'upgrade_modal', { loadOffer: isNative && isOpen });
+  const useStore = isNative && store.available;
+  const nativePrice = store.priceLabel || plan.price;
+
+  // Bought (or restored) from inside the sheet: the server now says premium,
+  // so the reason for the sheet is gone.
+  const nowPremium = user?.isPremium === true;
+  useEffect(() => {
+    if (isOpen && nowPremium && useStore) onClose?.();
+  }, [isOpen, nowPremium, useStore, onClose]);
 
   useEffect(() => {
     if (isOpen) swipe.reset();
@@ -267,7 +281,7 @@ export default function UpgradeModal({ isOpen, onClose, feature = 'This feature'
           <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', WebkitOverflowScrolling: 'touch', padding: '0 20px' }}>
             <p style={{ margin: '0 0 16px', fontSize: 14, lineHeight: 1.5, color: '#4b5563' }}>
               This is included with <strong style={{ color: '#111827' }}>LaChart {plan.name}</strong>.
-              If you already have access from your account on{' '}
+              {useStore ? ' Already subscribed on' : ' If you already have access from your account on'}{' '}
               <button type="button" onClick={openWebsite} style={{ color: '#2563eb', fontWeight: 600, background: 'none', border: 'none', padding: 0, textDecoration: 'underline' }}>
                 lachart.net
               </button>
@@ -297,20 +311,39 @@ export default function UpgradeModal({ isOpen, onClose, feature = 'This feature'
             ))}
             <div style={{ height: 20 }} />
 
-            <p style={{ margin: 0, fontSize: 12, lineHeight: 1.5, color: '#9ca3af' }}>
-              Subscriptions are managed outside the iOS app. Apple In-App Purchase is not used for LaChart plans.
-            </p>
+            {!useStore && (
+              <p style={{ margin: 0, fontSize: 12, lineHeight: 1.5, color: '#9ca3af' }}>
+                Subscriptions are managed on lachart.net.
+              </p>
+            )}
           </div>
 
           <div style={{ padding: '12px 20px 16px', flexShrink: 0, borderTop: '1px solid #f3f4f6' }}>
-            <button
-              type="button"
-              onClick={openWebsite}
-              className="w-full py-3 rounded-xl text-sm font-semibold text-white mb-2"
-              style={{ background: '#2563eb' }}
-            >
-              Open lachart.net
-            </button>
+            {useStore ? (
+              <>
+                <button
+                  type="button"
+                  onClick={store.buy}
+                  disabled={Boolean(store.busy)}
+                  className="w-full py-3 rounded-xl text-sm font-semibold text-white mb-2"
+                  style={{ background: '#5E6590', opacity: store.busy ? 0.7 : 1 }}
+                >
+                  {storeButtonLabel(store, store.trialEligible)}
+                </button>
+                <div style={{ marginBottom: 10 }}>
+                  <StorePurchaseFooter store={store} price={nativePrice} trialEligible={store.trialEligible} />
+                </div>
+              </>
+            ) : (
+              <button
+                type="button"
+                onClick={openWebsite}
+                className="w-full py-3 rounded-xl text-sm font-semibold text-white mb-2"
+                style={{ background: '#2563eb' }}
+              >
+                Open lachart.net
+              </button>
+            )}
             <button
               type="button"
               onClick={swipe.triggerClose}
