@@ -4,6 +4,7 @@ const stripe = process.env.SUBSCRIPTION_ENABLED === 'true' && process.env.STRIPE
   : null;
 const User = require('../models/UserModel');
 const Subscription = require('../models/SubscriptionModel');
+const { canStartCheckout, manageBilling, STRIPE } = require('../utils/billingProvider');
 const { resolvePremiumAccess } = require('../utils/premiumAccess');
 const { createEmailTransporter } = require('../utils/createEmailTransporter');
 const { sendPremiumActivationEmail } = require('../services/premiumActivationEmailService');
@@ -251,6 +252,24 @@ exports.createCheckoutSession = async (req, res) => {
     // so users never see the error.
     let customerId = null;
     let subscription = await Subscription.findOne({ userId: user._id });
+
+    // Refuse to sell a second subscription to somebody already paying through
+    // a store. Rows are one per user, so going ahead would overwrite theirs
+    // and leave them billed by two systems that cannot see each other — and
+    // we cannot cancel the store's side for them. See utils/billingProvider.
+    const gate = canStartCheckout({ subscription, provider: STRIPE });
+    if (!gate.allowed && gate.reason === 'active_elsewhere') {
+      const where = manageBilling(subscription);
+      return res.status(409).json({
+        error: 'Subscription active elsewhere',
+        reason: gate.reason,
+        activeProvider: gate.activeProvider,
+        manageUrl: where.url,
+        message: gate.activeProvider === 'apple'
+          ? 'Your LaChart subscription is billed through the App Store. Cancel it in iPhone Settings before subscribing here, or manage it from your iPhone.'
+          : 'Your LaChart subscription is billed through Google Play. Cancel it in the Play Store before subscribing here, or manage it from your phone.',
+      });
+    }
 
     if (subscription?.stripeCustomerId) {
       try {
