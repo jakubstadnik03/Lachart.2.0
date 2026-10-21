@@ -58,9 +58,13 @@ export const getAvatarBySportAndGender = (user) => {
  * @returns {String} Avatar URL
  */
 export const getAthleteAvatar = (athlete) => {
-  // If athlete has a Strava avatar (URL starting with http/https), use it
-  if (athlete?.avatar && (athlete.avatar.startsWith('http://') || athlete.avatar.startsWith('https://'))) {
-    return athlete.avatar;
+  // A photo of their own — Strava/CDN URL, a file path, or an uploaded data:
+  // URL. Only http(s) used to count here, so an uploaded photo showed in the
+  // coach's athlete bar (which goes through getAvatarBySportAndGender) and a
+  // cartoon on the Athletes list for the same person.
+  const av = typeof athlete?.avatar === 'string' ? athlete.avatar.trim() : '';
+  if (av && (av.startsWith('http://') || av.startsWith('https://') || av.startsWith('/') || av.startsWith('data:image/'))) {
+    return av;
   }
 
   // Default gender to 'male' if not specified

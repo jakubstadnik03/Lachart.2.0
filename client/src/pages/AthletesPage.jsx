@@ -4,7 +4,7 @@ import { MagnifyingGlassIcon, EllipsisVerticalIcon, UserPlusIcon, UsersIcon } fr
 import { useNavigate } from 'react-router-dom';
 import api from '../services/api';
 import { useNotification } from '../context/NotificationContext';
-import { getAthleteAvatar, onAvatarError } from '../utils/avatarUtils';
+import { getAthleteAvatar, getAvatarBySportAndGender, onAvatarError } from '../utils/avatarUtils';
 import CoachAthleteOverview from '../components/Athletes/CoachAthleteOverview';
 import Modal from '../components/Modal';
 import { useAthleteSelection } from '../context/AthleteSelectionContext';
@@ -453,6 +453,31 @@ const AthletesPage = () => {
                 <CoachAthleteOverview athletes={filteredAthletes} />
               ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {/* You — the coach's own profile, first, so it is one tap away
+                    from the same list as everyone you coach. */}
+                {user && !searchTerm && (
+                  <button
+                    type="button"
+                    onClick={() => { setSelectedAthleteId(String(user._id)); navigate('/profile'); }}
+                    className="bg-white rounded-2xl border border-primary/20 shadow-sm overflow-hidden flex items-center gap-3 px-4 py-3 text-left"
+                    style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
+                  >
+                    <div className="w-14 h-14 rounded-2xl bg-purple-50 overflow-hidden shrink-0 border border-purple-100">
+                      <img src={getAvatarBySportAndGender(user)} onError={onAvatarError(user)} alt="" className="w-full h-full object-cover" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-semibold text-gray-900 text-sm leading-tight truncate">{user.name} {user.surname}</div>
+                      <div className="text-xs text-gray-400 truncate mt-0.5">{user.email}</div>
+                      <span className="inline-block mt-1.5 text-[11px] font-semibold text-primary bg-primary/10 rounded-full px-2 py-0.5">You · coach</span>
+                    </div>
+                    <span className="text-xs font-semibold text-primary flex items-center gap-0.5 shrink-0">
+                      Profile
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
+                        <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
+                      </svg>
+                    </span>
+                  </button>
+                )}
                 {filteredAthletes.length === 0 && (
                   <div className="col-span-full py-12 text-center text-gray-400 text-sm">
                     No athletes found. <button onClick={() => { if (gateAthleteCreation()) setIsModalOpen(true); }} className="text-primary underline">Add one</button>

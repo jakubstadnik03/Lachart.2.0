@@ -1182,7 +1182,7 @@ function solidBarColor(hex) {
   return `#${[tone(n(0)), tone(n(2)), tone(n(4))].map((c) => c.toString(16).padStart(2, '0')).join('')}`;
 }
 
-function LapChart({ laps, color, isBike, isRun, isSwim, unitSystem = 'metric', selectedLap, onSelectLap, chartScrollRef, onScrollCenter, scaleOverride = null, records = null, sport = '', isStravaActivity = false }) {
+export function LapChart({ laps, color, isBike, isRun, isSwim, unitSystem = 'metric', selectedLap, onSelectLap, chartScrollRef, onScrollCenter, scaleOverride = null, records = null, sport = '', isStravaActivity = false }) {
   const CHART_H   = 200;
   const Y_AXIS_W  = 54;
   const X_LABEL_H = 16;

@@ -18,6 +18,10 @@ jest.mock('./UpgradeModal', () => () => null);
 // `mock`-prefixed so jest allows the factory to close over it.
 const mockPremium = { isPremium: false, premiumResolved: true, gate: jest.fn(), UpgradeModalProps: {} };
 jest.mock('../hooks/usePremium', () => ({ usePremium: () => mockPremium }));
+const mockAuth = { user: { role: 'athlete' } };
+jest.mock('../context/AuthProvider', () => ({ useAuth: () => mockAuth }));
+jest.mock('../utils/analytics', () => ({ trackEvent: () => {} }));
+jest.mock('../utils/isNativeApp', () => ({ isCapacitorNative: () => true }));
 
 // eslint-disable-next-line import/first
 import PremiumLock from './PremiumLock';
@@ -52,5 +56,47 @@ describe('PremiumLock', () => {
     expect(html).not.toContain('Learn more');
     // Content stays unmounted so nothing fetches on a guess either way.
     expect(html).not.toContain('the real content');
+  });
+
+  describe('personal preview', () => {
+    const renderPreview = (state, role = 'athlete') => {
+      Object.assign(mockPremium, state);
+      mockAuth.user = { role };
+      return renderToStaticMarkup(
+        <PremiumLock
+          feature="Form"
+          title="Form &amp; fitness"
+          teaser={<div>your form is +8</div>}
+          unlocks={['Your 90-day trend']}
+        >
+          <div>the real content</div>
+        </PremiumLock>,
+      );
+    };
+
+    it('shows the user their own number, what unlocks, and the price', () => {
+      const html = renderPreview({ isPremium: false, premiumResolved: true });
+      expect(html).toContain('your form is +8');
+      expect(html).toContain('Your 90-day trend');
+      expect(html).toContain('€6.99 a month');
+      expect(html).toContain('14 days free');
+      expect(html).not.toContain('the real content');
+    });
+
+    it('prices the coach plan for a coach', () => {
+      const html = renderPreview({ isPremium: false, premiumResolved: true }, 'coach');
+      expect(html).toContain('€14.99 a month');
+    });
+
+    it('offers nothing while the profile is still resolving', () => {
+      const html = renderPreview({ isPremium: false, premiumResolved: false });
+      expect(html).not.toContain('days free');
+    });
+
+    it('renders the content for a premium user', () => {
+      const html = renderPreview({ isPremium: true, premiumResolved: true });
+      expect(html).toContain('the real content');
+      expect(html).not.toContain('your form is +8');
+    });
   });
 });

@@ -28,6 +28,7 @@ import TrackerPromptThresholds from '../components/native/TrackerPromptThreshold
 import { hasTrackerConnected } from '../utils/trackerConnectPrompt';
 import { garminLinked } from '../utils/syncSources';
 import PremiumLock from '../components/PremiumLock';
+import FormTeaser from '../components/NativeDashboard/FormTeaser';
 import { NATIVE_DASHBOARD_KEYFRAMES, cardEntry } from '../components/NativeDashboard/animations';
 import TrainingForm from '../components/TrainingForm';
 import { getStravaActivityDetail, addTraining, updateTraining, getTrainingCommentCounts } from '../services/api';
@@ -900,6 +901,12 @@ export default function NativeDashboardPage({
   useEffect(() => {
     const onReclicked = (e) => {
       if (e.detail?.key !== 'dashboard') return;
+      // Tapping Home on the overview goes back to Home itself.
+      if (new URLSearchParams(window.location.search).get('view') === 'overview') {
+        const next = new URLSearchParams(window.location.search);
+        next.delete('view');
+        setSearchParams(next);
+      }
       const node = scrollContainerRef.current;
       if (node) {
         node.scrollTo({ top: 0, behavior: 'smooth' });
@@ -907,7 +914,7 @@ export default function NativeDashboardPage({
     };
     window.addEventListener('nl-tab-reclicked', onReclicked);
     return () => window.removeEventListener('nl-tab-reclicked', onReclicked);
-  }, []);
+  }, [setSearchParams]);
 
   // Snap style applied to each card so it stops at viewport top
   const snapStyle = {
@@ -1057,8 +1064,33 @@ export default function NativeDashboardPage({
     setRaceFocusId(param);
     const next = new URLSearchParams(searchParams);
     next.delete('openRace');
+    // The race card lives on the overview, not on Home.
+    next.set('view', 'overview');
     setSearchParams(next, { replace: true });
   }, [searchParams, setSearchParams]);
+
+  // Home answers three questions — what do I do today, how fresh am I, what
+  // are my zones. Everything else (weekly load, time in zones, the block's
+  // timeline, races, Apple Health) is one tap away on ?view=overview, which
+  // is the same page with the same data, so nothing has to be fetched twice.
+  const showOverview = searchParams.get('view') === 'overview';
+  const setOverview = useCallback((open) => {
+    const next = new URLSearchParams(searchParams);
+    if (open) next.set('view', 'overview');
+    else next.delete('view');
+    setSearchParams(next);
+  }, [searchParams, setSearchParams]);
+  // Switching between Home and the overview starts at the top. Instant, not
+  // the container's smooth scroll: the content swaps under a smooth scroll and
+  // scroll-snap then parks it halfway down the new page.
+  // The overview also scrolls freely: with snapping on, the first card snapped
+  // up under the top bar and took the back button with it.
+  useEffect(() => {
+    const node = scrollContainerRef.current;
+    if (!node) return;
+    node.style.scrollSnapType = showOverview ? 'none' : 'y proximity';
+    node.scrollTo({ top: 0, behavior: 'instant' });
+  }, [showOverview]);
 
   // Races (incl. past ones) — shown as flags in the WeekStrip and as a card
   // in the day view, with the saved post-race reflection. getRaceEvents has a
@@ -1357,7 +1389,126 @@ export default function NativeDashboardPage({
 
         {/* ── Cards (staggered fade-in) ── */}
         <div style={{ ...styles.body, ...bodyResponsive }}>
+        {showOverview ? (
+          <>
+            {/* ── Overview: everything that is not "today" ── */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <button
+                type="button"
+                onClick={() => setOverview(false)}
+                style={styles.backBtn}
+                aria-label="Back to Home"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                     strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M15 18l-6-6 6-6" />
+                </svg>
+                Home
+              </button>
+            </div>
+            <div style={styles.overviewTitle}>Training overview</div>
 
+            {!isPremium && (
+            <div style={{ ...cardEntry(0), ...snapStyle }}>
+              <PremiumLock
+                feature="Performance Insights"
+                plan="pro"
+                title="Your week, in numbers"
+                unlocks={[
+                  'Planned vs. done, for every week',
+                  'Load by sport and training stress',
+                  'A weekly story you can share',
+                ]}
+              >
+                <WeeklySummaryCarousel
+                  activities={activities}
+                  plannedWorkouts={plannedWorkouts}
+                  sparklineData={sparklineData}
+                  tests={tests}
+                  todayMetrics={todayMetrics}
+                  loading={metricsLoading}
+                  userProfile={fitnessProfile}
+                  kpis={{ fitness: todayMetrics?.fitness, form: todayMetrics?.form, fatigue: todayMetrics?.fatigue }}
+                />
+              </PremiumLock>
+            </div>
+            )}
+
+            {/* Time in zones — free, and the clearest proof the zones are working */}
+            <div style={{ ...cardEntry(1), ...snapStyle }}>
+              {/* The trace reader is the primary source; these let it fall back
+                  to the laps of what the page already holds when a back
+                  catalogue's traces have not arrived from Strava yet. */}
+              <ZoneDistCard
+                athleteId={athleteId || null}
+                activities={activities}
+                userProfile={fitnessProfile}
+              />
+            </div>
+
+            <div style={{ ...cardEntry(2), ...snapStyle }}>
+              <PremiumLock
+                feature="Upcoming Races"
+                plan="pro"
+                title="Race countdown"
+                unlocks={[
+                  'Fitness on race day vs. today',
+                  'A taper built into your plan in one tap',
+                ]}
+              >
+                <RaceCountdownCard
+                  athleteId={athleteId || user?._id || user?.id}
+                  currentCTL={todayMetrics?.fitness}
+                  currentForm={todayMetrics?.form}
+                  plannedWorkouts={plannedWorkouts}
+                  activities={activities}
+                  userProfile={fitnessProfile}
+                  onTaperApplied={onTaperApplied}
+                  focusRaceId={raceFocusId}
+                  onFocusHandled={() => setRaceFocusId(null)}
+                  compact
+                />
+              </PremiumLock>
+            </div>
+
+            {/* Training Timeline — the shape of the block behind today */}
+            <div style={{ ...cardEntry(3), ...snapStyle }}>
+              <TrainingTimeline
+                key={`nttl-${athleteId || user?._id || user?.id || 'self'}`}
+                athleteId={athleteId || user?._id || user?.id}
+                activities={activities}
+                plannedWorkouts={plannedWorkouts}
+                userProfile={fitnessProfile}
+                user={user}
+                loading={metricsLoading}
+              />
+            </div>
+
+            <div style={{ ...cardEntry(4), ...snapStyle }}>
+              <PremiumLock
+                feature="This Week & Daily TSS"
+                plan="pro"
+                title="Daily training stress"
+                unlocks={['Training stress for every day of the week, against your plan']}
+              >
+                <WeeklySummaryCard
+                  activities={activities}
+                  plannedWorkouts={plannedWorkouts}
+                  sparklineData={sparklineData}
+                  tests={tests}
+                  userProfile={fitnessProfile}
+                  todayMetrics={todayMetrics}
+                />
+              </PremiumLock>
+            </div>
+
+            {/* Apple Health wellness (iOS, when connected) */}
+            <div style={{ ...cardEntry(5) }}>
+              <AppleHealthWellnessCard loading={loading} />
+            </div>
+          </>
+        ) : (
+          <>
           {/* Getting-started checklist — self-hides once complete/dismissed */}
           <div style={{ ...cardEntry(0), ...snapStyle }}>
             <OnboardingChecklist
@@ -1371,7 +1522,7 @@ export default function NativeDashboardPage({
             />
           </div>
 
-          {/* 0a · Open injury or illness, self-hiding when nothing is open.
+          {/* Open injury or illness, self-hiding when nothing is open.
               It sits above everything else because an athlete with something
               open needs today's ceiling before they read today's suggestion.
               No wrapper div: the card renders nothing at all when healthy, and
@@ -1383,9 +1534,40 @@ export default function NativeDashboardPage({
             style={{ ...cardEntry(0), ...snapStyle }}
           />
 
-          {/* 0a2 · The day's coaching card. First thing on the phone, because on
-              mobile the athlete is usually checking one thing: today. */}
+          {/* ── 1 · Today: the suggestion, the week, the selected day ── */}
+          <div style={styles.sectionLabel}>Today</div>
+          {/* Today's coaching card is the first page of the insights carousel:
+              swipe on for Performance Insights, the week, sports and load.
+              Without Premium it stands alone and the carousel waits, locked,
+              on the overview. */}
           <div style={{ ...cardEntry(0), ...snapStyle }}>
+            {isPremium ? (
+              <WeeklySummaryCarousel
+                activities={activities}
+                plannedWorkouts={plannedWorkouts}
+                sparklineData={sparklineData}
+                tests={tests}
+                todayMetrics={todayMetrics}
+                loading={metricsLoading}
+                userProfile={fitnessProfile}
+                kpis={{ fitness: todayMetrics?.fitness, form: todayMetrics?.form, fatigue: todayMetrics?.fatigue }}
+                leadingSlide={(
+                <DailyCoachCard
+                  key={`ndcc-${athleteId || user?._id || user?.id || 'self'}`}
+                  athleteId={athleteId || user?._id || user?.id}
+                  user={user}
+                  todayMetrics={todayMetrics}
+                  plannedWorkouts={plannedWorkouts}
+                  activities={activities}
+                  userProfile={fitnessProfile}
+                  loading={metricsLoading}
+                  compact
+                  onOpenActivity={(act, pw) => openActivity(act, pw || null)}
+                  onOpenPlanned={(pw) => openPlanned(pw, null)}
+                />
+                )}
+              />
+            ) : (
             <DailyCoachCard
               key={`ndcc-${athleteId || user?._id || user?.id || 'self'}`}
               athleteId={athleteId || user?._id || user?.id}
@@ -1399,29 +1581,9 @@ export default function NativeDashboardPage({
               onOpenActivity={(act, pw) => openActivity(act, pw || null)}
               onOpenPlanned={(pw) => openPlanned(pw, null)}
             />
+            )}
           </div>
 
-          {/* 0 · Weekly summary carousel (swipeable) */}
-          <div style={{ ...cardEntry(0), ...snapStyle }}>
-            <PremiumLock feature="Performance Insights" plan="pro" minHeight={180}>
-              <WeeklySummaryCarousel
-                activities={activities}
-                plannedWorkouts={plannedWorkouts}
-                sparklineData={sparklineData}
-                tests={tests}
-                todayMetrics={todayMetrics}
-                loading={metricsLoading}
-                userProfile={fitnessProfile}
-                kpis={{ fitness: todayMetrics?.fitness, form: todayMetrics?.form, fatigue: todayMetrics?.fatigue }}
-              />
-            </PremiumLock>
-          </div>
-
-          {/* Routes you repeat is taken out of the dashboard for now. The
-              component and its /api/timeline/routes endpoint are still here —
-              put the card back to restore it. */}
-
-          {/* 1 · Week strip */}
           <div style={{ ...cardEntry(1), ...snapStyle }}>
             <WeekStrip
               activities={activities}
@@ -1436,8 +1598,7 @@ export default function NativeDashboardPage({
             />
           </div>
 
-
-          {/* 2 · Day activities — re-animates on date change */}
+          {/* Day activities — re-animates on date change */}
           <div style={snapStyle}>
             <AnimatedCard animKey={animKey}>
               <DayActivitiesCard
@@ -1467,60 +1628,8 @@ export default function NativeDashboardPage({
             </AnimatedCard>
           </div>
 
-          {/* 3 · Status hero */}
-          <div ref={statusHeroRef} style={{ ...cardEntry(3), ...snapStyle }}>
-            <PremiumLock feature="Form & Fitness (Status)" plan="pro" minHeight={180}>
-              <StatusHeroCard
-                activities={activities}
-                userProfile={fitnessProfile}
-                todayMetrics={todayMetrics}
-                sparklineData={sparklineData}
-                loading={metricsLoading}
-              />
-            </PremiumLock>
-          </div>
-
-          {/* 3b · Apple Health wellness (iOS, when connected) */}
-          <div style={{ ...cardEntry(3), ...snapStyle }}>
-            <AppleHealthWellnessCard loading={loading} />
-          </div>
-
-          {/* 3b² · Training Timeline — same three views as the web. Sits below
-              the week strip and Apple Health: those answer "what am I doing
-              today", this one is the shape of the block behind it, which is a
-              question you ask after the day's, not before. */}
-          <div style={{ ...cardEntry(3), ...snapStyle }}>
-            <TrainingTimeline
-              key={`nttl-${athleteId || user?._id || user?.id || 'self'}`}
-              athleteId={athleteId || user?._id || user?.id}
-              activities={activities}
-              plannedWorkouts={plannedWorkouts}
-              userProfile={fitnessProfile}
-              user={user}
-              loading={metricsLoading}
-            />
-          </div>
-
-          {/* 3c · Race countdown */}
-          <div style={{ ...cardEntry(4), ...snapStyle }}>
-            <PremiumLock feature="Upcoming Races" plan="pro" minHeight={110}>
-              <RaceCountdownCard
-                athleteId={athleteId || user?._id || user?.id}
-                currentCTL={todayMetrics?.fitness}
-                currentForm={todayMetrics?.form}
-                plannedWorkouts={plannedWorkouts}
-                activities={activities}
-                userProfile={fitnessProfile}
-                onTaperApplied={onTaperApplied}
-                focusRaceId={raceFocusId}
-                onFocusHandled={() => setRaceFocusId(null)}
-                compact
-              />
-            </PremiumLock>
-          </div>
-
-          {/* 3d · Post-race feedback */}
-          <div style={{ ...cardEntry(4), ...snapStyle }}>
+          {/* Post-race feedback — self-hides unless a race is waiting for one */}
+          <div style={{ ...cardEntry(2), ...snapStyle }}>
             <PostRaceFeedbackCard
               athleteId={athleteId || user?._id || user?.id}
               focusRaceId={raceFeedbackFocusId}
@@ -1538,45 +1647,69 @@ export default function NativeDashboardPage({
             />
           </div>
 
-          {/* 5 · Weekly summary */}
-          {trialOfferOpen && (
-            <div style={{ ...cardEntry(5), ...snapStyle }}>
-              <TrialOfferCard user={user} onDismiss={() => setTrialOfferOpen(false)} />
-            </div>
-          )}
-
-          <div style={{ ...cardEntry(5), ...snapStyle }}>
-            <PremiumLock feature="This Week & Daily TSS" plan="pro" minHeight={180}>
-              <WeeklySummaryCard
+          {/* ── 2 · Form: how fresh am I ── */}
+          <div style={styles.sectionLabel}>Your form</div>
+          <div ref={statusHeroRef} style={{ ...cardEntry(3), ...snapStyle }}>
+            <PremiumLock
+              feature="Form & Fitness (Status)"
+              plan="pro"
+              title="Form & fitness"
+              teaser={<FormTeaser todayMetrics={todayMetrics} loading={metricsLoading} />}
+              unlocks={[
+                'Fitness and fatigue, updated after every session',
+                'Your 90-day trend, so you can see a peak coming',
+                'Any past day, to compare one block with another',
+              ]}
+            >
+              <StatusHeroCard
                 activities={activities}
-                plannedWorkouts={plannedWorkouts}
-                sparklineData={sparklineData}
-                tests={tests}
                 userProfile={fitnessProfile}
                 todayMetrics={todayMetrics}
+                sparklineData={sparklineData}
+                loading={metricsLoading}
               />
             </PremiumLock>
           </div>
 
-          {/* 6 · Zone distribution */}
-          <div style={{ ...cardEntry(6), ...snapStyle }}>
-            {/* The trace reader is the primary source; these let it fall back
-                to the laps of what the page already holds when a back
-                catalogue's traces have not arrived from Strava yet. */}
-            <ZoneDistCard
-              athleteId={athleteId || null}
-              activities={activities}
-              userProfile={fitnessProfile}
-            />
+          {trialOfferOpen && (
+            <div style={{ ...cardEntry(4), ...snapStyle }}>
+              <TrialOfferCard user={user} onDismiss={() => setTrialOfferOpen(false)} />
+            </div>
+          )}
+
+          {/* Everything else lives one tap away */}
+          <button type="button" onClick={() => setOverview(true)} style={styles.overviewLink}>
+            <div style={{ minWidth: 0, textAlign: 'left' }}>
+              <div style={{ fontSize: 15, fontWeight: 700, color: '#0A0E1A' }}>Training overview</div>
+              <div style={{ fontSize: 12, color: '#6B7280', marginTop: 2 }}>
+                Weekly load, time in zones, races, timeline
+              </div>
+            </div>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF"
+                 strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+              <path d="M9 18l6-6-6-6" />
+            </svg>
+          </button>
+
+          {/* ── 3 · Zones from the last test — drop snap-align so a tall
+              zones table isn't clipped by scroll-snap on small phones ── */}
+          <div style={styles.sectionLabel}>Your zones</div>
+          <div style={{ ...cardEntry(5) }}>
+            {Array.isArray(tests) && tests.length > 0 ? (
+              <LastTestCard tests={tests} />
+            ) : !loading && (
+              <button type="button" onClick={() => navigate('/testing')} style={styles.emptyZones}>
+                <div style={{ fontSize: 15, fontWeight: 700, color: '#0A0E1A' }}>No lactate test yet</div>
+                <div style={{ fontSize: 13, color: '#6B7280', marginTop: 4, lineHeight: 1.4 }}>
+                  Add your first test and LaChart works out your LT1, LT2 and training zones.
+                </div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: '#5E6590', marginTop: 10 }}>Add a test →</div>
+              </button>
+            )}
           </div>
 
-          {/* 7 · Last lab test — drop snap-align on the last card so its tail
-              isn't clipped by scroll-snap when the content is tall (zones table
-              pushes the card past one viewport on smaller phones). */}
-          <div style={{ ...cardEntry(7) }}>
-            <LastTestCard tests={tests} />
-          </div>
-
+          </>
+        )}
           {/* Generous bottom spacer so the very last row isn't hidden behind
               the bottom tab bar + iOS home-indicator on tall layouts. */}
           <div style={{ height: 48 }} />
@@ -1856,5 +1989,30 @@ const styles = {
     display: 'flex',
     flexDirection: 'column',
     gap: 10,
+  },
+  sectionLabel: {
+    fontSize: 13, fontWeight: 700, color: '#6B7280',
+    letterSpacing: '.02em', margin: '10px 4px -2px',
+  },
+  overviewLink: {
+    ...cardStyle,
+    display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+    width: '100%', padding: '14px 16px', marginTop: 4,
+    cursor: 'pointer', WebkitTapHighlightColor: 'transparent',
+  },
+  emptyZones: {
+    ...cardStyle,
+    display: 'block', width: '100%', textAlign: 'left', padding: 16,
+    cursor: 'pointer', WebkitTapHighlightColor: 'transparent',
+  },
+  backBtn: {
+    display: 'inline-flex', alignItems: 'center', gap: 2,
+    border: 'none', background: 'transparent', padding: '4px 4px 4px 0',
+    fontSize: 15, fontWeight: 600, color: '#5E6590', cursor: 'pointer',
+    WebkitTapHighlightColor: 'transparent',
+  },
+  overviewTitle: {
+    fontSize: 24, fontWeight: 800, color: '#0A0E1A',
+    letterSpacing: '-0.02em', margin: '0 2px 4px',
   },
 };

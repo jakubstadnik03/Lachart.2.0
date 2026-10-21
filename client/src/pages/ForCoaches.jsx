@@ -8,6 +8,7 @@ import {
   ProgressCard, IntervalTrainingsCard, ThresholdTrendCard,
 } from '../components/About/appCards';
 import SiteNav from '../components/About/SiteNav';
+import AppDemoCarousel from '../components/guide/AppDemoCarousel';
 import SiteFooter from '../components/About/SiteFooter';
 
 /**
@@ -177,6 +178,18 @@ const ForCoaches = () => {
 
       {/* The workspace over the work — the calendar and the day that came back
           from it, laid on the photograph rather than beside it. */}
+      {/* The iPhone app from the coach's side, recorded. */}
+      <section id="app" className="lc-sectpad" style={{ paddingTop: 24 }}>
+        <div ref={pushRef} className="lc-reveal" style={{ marginBottom: 26, textAlign: 'center' }}>
+          <Eyebrow>On your phone</Eyebrow>
+          <h2 className="lc-big" style={{ margin: '14px 0 8px' }}>Your whole team in your pocket</h2>
+          <p className="lc-lead" style={{ margin: '0 auto', maxWidth: 640 }}>
+            Switch athletes, read their zones and plan their week from the iPhone app. Swipe the phone to see more.
+          </p>
+        </div>
+        <AppDemoCarousel audience="coach" />
+      </section>
+
       <section className="lc-sectpad" style={{ paddingTop: 8, paddingBottom: 8 }}>
         <div ref={pushRef} className="lc-reveal">
           <PhotoShowcase

@@ -171,6 +171,8 @@ export default function WeeklySummaryCarousel({
   todayMetrics = {},
   loading = false,
   userProfile = null,
+  /** Optional first card (Home puts today's coaching card here), swiped past like the rest. */
+  leadingSlide = null,
 }) {
   const [shareOpen, setShareOpen] = useState(false);
   const scrollRef = useRef(null);
@@ -270,7 +272,7 @@ export default function WeeklySummaryCarousel({
   // Re-keyed + re-animated whenever the week changes, so the figures slide in.
   const contentAnim = { animation: `${dir >= 0 ? 'ndWkInR' : 'ndWkInL'} .3s cubic-bezier(.22,1,.36,1) both` };
 
-  const PAGES = 4;
+  const PAGES = 4 + (leadingSlide ? 1 : 0);
 
   // Build the shareable weekly-summary payload (IG-story card) from the
   // currently-selected week. KPIs (Fitness/Form/Fatigue) come from the parent.
@@ -336,6 +338,12 @@ export default function WeeklySummaryCarousel({
           gap: 10,
         }}
       >
+        {leadingSlide && (
+          <div style={{ ...SLIDE, alignSelf: 'flex-start', flexDirection: 'column', paddingBottom: 18 }}>
+            {leadingSlide}
+          </div>
+        )}
+
         {/* ── Card 0: Performance Insights (Fitness / Form / Fatigue) ─── */}
         <div style={{ ...SLIDE, alignSelf: 'flex-start' }}>
           <PerformanceInsightsSlide
