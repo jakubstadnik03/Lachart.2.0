@@ -64,6 +64,24 @@ export const APP_DEMOS = [
     points: ['Open an athlete for their zones from the last test', 'Switch athletes from the bar at the top', 'Home, calendar and training follow whoever is selected'],
   },
   {
+    id: 'coach-calendar', audience: 'coach', src: '/videos/app/app-coach-calendar',
+    title: "An athlete's calendar and charts",
+    lead: 'Pick an athlete and their month opens: every session against its plan, then the charts behind it.',
+    points: ['Each day shows the session and whether it hit the target', 'Charts: totals, form & fitness over 2 months to 2 years', 'Sport split, intensity distribution and daily load'],
+  },
+  {
+    id: 'coach-testing', audience: 'coach', src: '/videos/app/app-coach-testing',
+    title: 'Lactate tests for your athletes',
+    lead: "Enter a test straight into the athlete's account. Their zones update from it.",
+    points: ['Select the athlete, then + New', 'Stage by stage: power or pace, heart rate, lactate', 'The curve, LT1, LT2 and zones appear as you type', 'Every past test and the LT2 trend in one place'],
+  },
+  {
+    id: 'coach-training', audience: 'coach', src: '/videos/app/app-coach-training',
+    title: 'Is the athlete getting better?',
+    lead: "Compare every session of one kind — all of an athlete's LT2 rides, whatever they were called.",
+    points: ['Pick a category such as LT2', 'One trend per sport, with heart rate', 'Tap a point to find the session', 'Open it for laps, TSS and lactate'],
+  },
+  {
     id: 'coach-plan', audience: 'coach', src: '/videos/app/app-coach-plan',
     title: 'Planning for an athlete',
     lead: 'Pick the athlete, pick the day, drop in a session. Targets come from their thresholds, not yours.',

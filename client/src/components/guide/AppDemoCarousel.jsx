@@ -18,7 +18,7 @@ const C = {
 const SHORT = {
   home: 'Today', form: 'Form & zones', testing: 'Lactate curve', plan: 'Planning',
   training: 'Repeated sessions', compare: 'Compare LT2', search: 'Search',
-  'coach-roster': 'Athletes', 'coach-plan': 'Plan for an athlete',
+  'coach-roster': 'Athletes', 'coach-calendar': 'Calendar & charts', 'coach-testing': 'Lactate tests', 'coach-training': 'Compare sessions', 'coach-plan': 'Plan from templates',
 };
 
 export default function AppDemoCarousel({ audience = 'athlete', demos = APP_DEMOS.filter((x) => x.audience === audience) }) {
