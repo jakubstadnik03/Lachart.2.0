@@ -306,6 +306,7 @@ const { startGarminTokenRefreshScheduler } = require('./services/garminTokenRefr
 const { startStreamBackfillScheduler } = require('./services/streamBackfillScheduler');
 const { startWinBackScheduler } = require('./services/winBackScheduler');
 const { startPremiumScheduler } = require('./services/premiumScheduler');
+const { startCoachFollowUpScheduler } = require('./services/coachFollowUpScheduler');
 const { startCancelFeedbackScheduler } = require('./services/cancelFeedbackScheduler');
 const { startPredictedCurveScheduler } = require('./services/predictedCurveScheduler');
 const { startTrackerConnectScheduler } = require('./services/trackerConnectScheduler');
@@ -416,6 +417,7 @@ startStreamBackfillScheduler();
 // — a 435-person campaign is a deliberate decision, not a deploy side effect.
 startWinBackScheduler();
 startPremiumScheduler();
+startCoachFollowUpScheduler();
 startCancelFeedbackScheduler();
 
 // "Here is the curve your training implies" — athletes who have never tested.
