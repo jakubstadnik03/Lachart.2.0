@@ -305,6 +305,7 @@ const { startProductUpdateScheduler } = require('./services/productUpdateSchedul
 const { startGarminTokenRefreshScheduler } = require('./services/garminTokenRefreshScheduler');
 const { startStreamBackfillScheduler } = require('./services/streamBackfillScheduler');
 const { startWinBackScheduler } = require('./services/winBackScheduler');
+const { startPremiumScheduler } = require('./services/premiumScheduler');
 const { startCancelFeedbackScheduler } = require('./services/cancelFeedbackScheduler');
 const { startPredictedCurveScheduler } = require('./services/predictedCurveScheduler');
 const { startTrackerConnectScheduler } = require('./services/trackerConnectScheduler');
@@ -414,6 +415,7 @@ startStreamBackfillScheduler();
 // One-time win-back to lapsed free accounts. OFF unless ENABLE_WINBACK_SCHEDULER=true
 // — a 435-person campaign is a deliberate decision, not a deploy side effect.
 startWinBackScheduler();
+startPremiumScheduler();
 startCancelFeedbackScheduler();
 
 // "Here is the curve your training implies" — athletes who have never tested.

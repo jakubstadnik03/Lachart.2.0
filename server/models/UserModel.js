@@ -521,6 +521,16 @@ const userSchema = new mongoose.Schema({
      *  scheduler would mail the same people on every tick. */
     cancelFeedbackSent:       { type: Date, default: null },
     cancelFeedbackSegment:    { type: String, default: null },
+    /** The recurring premium letter — the only campaign here that comes back.
+     *  Three sends, two months apart, then never again, so it needs a count
+     *  as well as a date. Declared for the same reason the two keys above say
+     *  they are: this subdocument is strict, and an undeclared path is dropped
+     *  from writes as silently as from queries — the send would mark nobody
+     *  and the scheduler would mail the same people on every tick. */
+    premiumPitch: {
+      count:  { type: Number, default: 0 },
+      lastAt: { type: Date,   default: null },
+    },
     /** One-time "zones ready — connect Strava/Garmin/Apple Health" email for
      *  athletes who have ≥1 test but no tracker. Sent once ever. */
     trackerConnectSent:       { type: Date, default: null },
