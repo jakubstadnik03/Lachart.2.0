@@ -86,7 +86,10 @@ export const getEventStats = async (type = null, startDate = null, endDate = nul
     if (startDate) params.append('startDate', startDate);
     if (endDate) params.append('endDate', endDate);
 
-    const response = await fetch(`${API_BASE_URL}/api/events/stats?${params}`);
+    const token = localStorage.getItem('token') || localStorage.getItem('authToken');
+    const response = await fetch(`${API_BASE_URL}/api/events/stats?${params}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
     const data = await response.json();
     
     if (data.success) {

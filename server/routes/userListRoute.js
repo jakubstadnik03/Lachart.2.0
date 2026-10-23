@@ -52,6 +52,7 @@ const {
   coachLinkFields,
   removeCoachFromAthleteIds,
   athleteCoachIdSet,
+  mayActForAthlete,
 } = require("../utils/athleteCoachAccess");
 const { linkAthleteToCoach, clearStalePendingFlags, claimPreRegisteredStub } = require("../services/coachAthleteLinkService");
 const { requireQuotaSlot } = require("../middleware/featureGate");
@@ -1738,7 +1739,12 @@ router.post('/coach/resend-invitation/:athleteId', verifyToken, async (req, res)
     if (pending || athlete.isPreRegistered) {
       const invitationToken = crypto.randomBytes(32).toString('hex');
       const invitationTokenExpires = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-      await userDao.updateUser(athlete._id, { invitationToken, invitationTokenExpires });
+      // One invitation slot per athlete: if another coach invited them since,
+      // the slot names that coach, and the fresh token would link the athlete
+      // to them from an e-mail that says it is from this coach. Claim it back.
+      const update = { invitationToken, invitationTokenExpires };
+      if (pending) update.pendingCoachId = coach._id;
+      await userDao.updateUser(athlete._id, update);
       const isNewUser = !athleteHasOwnAccount(athlete);
       const sent = await sendTeamInvitationEmail({ coach, athlete, invitationToken, isNewUser, again: true });
       return respond(isNewUser ? 'create-account' : 'team-invitation', sent);
@@ -2246,17 +2252,17 @@ router.get("/user/:userId", verifyToken, async (req, res) => {
         const { userId } = req.params;
         const requesterId  = String(req.user.userId);
         const requesterDoc = await userDao.findById(requesterId);
-        const role         = String(requesterDoc?.role || '').toLowerCase();
-        const isPrivileged = ['admin', 'coach', 'tester', 'testing'].includes(role) || requesterDoc?.admin === true;
-
-        if (!isPrivileged && requesterId !== String(userId)) {
-            return res.status(403).json({ error: 'Access denied' });
-        }
 
         const user = await userDao.findById(userId);
 
         if (!user) {
             return res.status(404).json({ error: "User not found" });
+        }
+
+        // Contact details and date of birth: the user, a linked coach or an
+        // admin — a coach role alone is not a link.
+        if (!mayActForAthlete(requesterDoc, user)) {
+            return res.status(403).json({ error: 'Access denied' });
         }
 
         // Return data without sensitive information
@@ -5761,6 +5767,16 @@ router.delete("/admin/athlete/:athleteId/delete-with-tests", verifyToken, async 
         // Check permissions (coach/tester/testing + multi-coach)
         if (!isAdmin && (!isCoachLikeRole(currentUser.role) || !athleteHasCoachUser(athlete, currentUser._id))) {
             return res.status(403).json({ error: "Access denied. You can only delete your own athletes." });
+        }
+
+        // A coach may delete only a record they created that nobody logs into.
+        // An athlete with their own account (perhaps paying, perhaps with
+        // other coaches) is unlinked, never deleted, by a coach.
+        if (!isAdmin && athleteHasOwnAccount(athlete)) {
+            return res.status(403).json({
+                error: "This athlete has their own LaChart account. Remove them from your team instead.",
+                code: "ATHLETE_HAS_OWN_ACCOUNT",
+            });
         }
 
         // Prevent self-deletion

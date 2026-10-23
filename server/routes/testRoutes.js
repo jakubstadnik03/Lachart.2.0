@@ -11,6 +11,7 @@ const { requireQuotaSlot } = require('../middleware/featureGate');
 const { countCurrentTests } = require('../utils/testQuota');
 const { requirePremium } = require('../middleware/requirePremium');
 const { getPopulationStats, getAthleteValues, MIN_SAMPLE_SIZE } = require('../services/lactateBenchmarkService');
+const { canActForAthleteId } = require('../utils/athleteCoachAccess');
 
 // H4 — 3 demo emails per hour per IP
 const demoEmailLimiter = rateLimit({
@@ -72,10 +73,7 @@ router.get("/population-stats", verifyToken, requirePremium, async (req, res) =>
 
         const athleteId = req.query.athleteId;
         if (athleteId) {
-            const { userId, role, admin } = req.user;
-            const allowed = String(userId) === String(athleteId)
-                || admin === true
-                || ['admin', 'coach', 'tester', 'testing'].includes(role);
+            const allowed = await canActForAthleteId(req.user.userId, athleteId);
             result.athlete = allowed
                 ? await getAthleteValues(athleteId, sports[0])
                 : null;
@@ -169,9 +167,8 @@ router.get('/list/:athleteId', verifyToken, async (req, res) => {
             const { athleteHasCoachUser } = require('../utils/athleteCoachAccess');
             const athlete = await User.findById(targetAthleteId).select('coachId coachIds pendingCoachId');
             if (!athlete) return res.status(404).json({ error: 'Athlete not found' });
-            const hasPendingInviteFromRequester =
-                String(athlete.pendingCoachId || '') === String(requesterUserId);
-            if (!athleteHasCoachUser(athlete, requesterUserId) && !hasPendingInviteFromRequester) {
+            // An invitation the athlete has not accepted opens nothing yet.
+            if (!athleteHasCoachUser(athlete, requesterUserId)) {
                 return res.status(403).json({ error: 'You do not have permission to view these tests' });
             }
         }
@@ -258,9 +255,8 @@ router.post(
                 const { athleteHasCoachUser } = require('../utils/athleteCoachAccess');
                 const athlete = await User.findById(requestedAthleteId).select('coachId coachIds pendingCoachId');
                 if (!athlete) return res.status(404).json({ error: 'Athlete not found' });
-                const hasPendingInviteFromRequester =
-                    String(athlete.pendingCoachId || '') === String(requesterId);
-                if (!athleteHasCoachUser(athlete, requesterId) && !hasPendingInviteFromRequester) {
+                // An invitation the athlete has not accepted opens nothing yet.
+                if (!athleteHasCoachUser(athlete, requesterId)) {
                     return res.status(403).json({ error: 'You do not have permission to create tests for this athlete' });
                 }
             }
@@ -347,10 +343,13 @@ router.put("/:id", verifyToken, async (req, res) => {
         const role        = String(requester?.role || '').toLowerCase();
         const isPrivileged = ['admin', 'coach', 'tester', 'testing'].includes(role) || requester?.admin === true;
 
-        if (!isPrivileged && requesterId !== ownerId) {
+        // The owner, a linked coach or an admin — a coach role is not a link.
+        if (!(await canActForAthleteId(requesterId, ownerId))) {
             return res.status(403).json({ error: 'Nemáte oprávnění upravit tento test' });
         }
 
+        // A test stays with its athlete; moving it is not an edit.
+        if (req.body && typeof req.body === 'object') delete req.body.athleteId;
         const updatedTest = await testAbl.updateTest(req.params.id, req.body);
         if (!updatedTest) {
             return res.status(404).json({ error: 'Test nenalezen' });
@@ -427,11 +426,8 @@ router.delete("/:id", verifyToken, async (req, res) => {
 
         const requesterId = String(req.user.userId);
         const ownerId     = String(test.athleteId);
-        const requester   = await User.findById(requesterId).lean();
-        const role        = String(requester?.role || '').toLowerCase();
-        const isPrivileged = ['admin', 'coach', 'tester', 'testing'].includes(role) || requester?.admin === true;
-
-        if (!isPrivileged && requesterId !== ownerId) {
+        // The owner, a linked coach or an admin — a coach role is not a link.
+        if (!(await canActForAthleteId(requesterId, ownerId))) {
             return res.status(403).json({ error: 'Nemáte oprávnění smazat tento test' });
         }
 
@@ -489,8 +485,6 @@ router.post('/:testId/ai-coach', verifyToken, async (req, res) => {
     if (!authorised && isCoachLike) {
       const athlete = await User.findById(athleteId).select('coachId coachIds pendingCoachId').lean();
       if (athlete && athleteHasCoachUser(athlete, requester._id)) {
-        authorised = true;
-      } else if (athlete && String(athlete.pendingCoachId || '') === String(requester._id)) {
         authorised = true;
       } else if (role === 'admin' || requester.admin === true) {
         authorised = true;
