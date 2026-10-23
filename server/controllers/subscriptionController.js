@@ -1234,9 +1234,15 @@ exports.revenueCatWebhook = async (req, res) => {
       { new: true, upsert: true, setDefaultsOnInsert: true },
     );
 
-    // Same role sync the Stripe path does — buying the Coach plan is how
+    // Premium is read through user.subscriptionId (premiumAccess), so the row
+    // must be linked to the account — most accounts have never had one. And
+    // the same role sync the Stripe path does: buying the Coach plan is how
     // somebody becomes a coach, whichever till the money went through.
-    await syncRoleWithPlan(user, patch.plan);
+    const roleChanged = await syncRoleWithPlan(user, patch.plan);
+    if (roleChanged || String(user.subscriptionId || '') !== String(subscription._id)) {
+      user.subscriptionId = subscription._id;
+      await user.save();
+    }
 
     console.log('[revenuecat] applied', event?.type, '→', patch.plan, patch.status,
       'for', userId, '| until', patch.currentPeriodEnd);
