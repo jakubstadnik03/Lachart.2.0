@@ -11,6 +11,7 @@ const StravaStream = require('../models/StravaStream');
 const GarminActivity = require('../models/GarminActivity');
 const WatchActivity = require('../models/WatchActivity');
 const { stravaAvatarUrlFrom } = require('../utils/stravaAvatar');
+const { classifyStravaAuthError } = require('../utils/stravaAuthError');
 const {
   SIMILAR_SELECT,
   buildStructureFilter,
@@ -1475,7 +1476,10 @@ async function requestGarminToken({
 // their saved cursor — so a Render redeploy mid-backfill no longer silently
 // drops the rest of someone's history.
 async function startStravaHistoricalBackfill(userId, initialBefore = null, opts = {}) {
-  const { force = false, immediate = false } = opts;
+  // `authRetry` counts the one retry an unclear 401 is allowed. Without it,
+  // the retry below restarts this function, which schedules another retry,
+  // for ever — see the else branch in runBatch's catch.
+  const { force = false, immediate = false, authRetry = 0 } = opts;
   const lockKey = String(userId);
   if (stravaBackfillLocks.has(lockKey)) {
     // `force` means "this looked stale, take it over" — but a chain that is
@@ -1706,10 +1710,49 @@ async function startStravaHistoricalBackfill(userId, initialBefore = null, opts 
         // Network timeout — retry, keep backfill running
         shouldContinue = true;
       } else {
-        // Auth errors, 400s, etc. — pause and retry once; only stop if we truly can't continue
-        console.warn(`[StravaBackfill] Non-retryable-looking error for user ${userId}; will retry once in 5 min`);
+        const auth = classifyStravaAuthError(error);
+
+        // The athlete withdrew the scope, or disconnected the app. Nothing
+        // here can undo that and every attempt spends calls from a rate limit
+        // the whole app shares. This branch used to say "will retry once" and
+        // then call startStravaHistoricalBackfill, which schedules the same
+        // retry again — one user failed every five minutes, indefinitely.
+        if (auth.permanent) {
+          console.warn(`[StravaBackfill] stopping for user ${userId}: ${auth.reason} — needs reconnecting`);
+          try {
+            await User.findByIdAndUpdate(userId, {
+              'strava.backfillState': 'needs_reauth',
+              'strava.backfillLastError': auth.reason,
+              'strava.backfillLastProgressAt': new Date(),
+            });
+          } catch (e) {
+            console.error('[StravaBackfill] could not record needs_reauth:', e?.message || e);
+          }
+          stravaBackfillRelease(lockKey);
+          return;
+        }
+
+        // An unclear 401 is usually an expired access token, which a refresh
+        // fixes — worth exactly one more go, and counted so it cannot become
+        // the loop above by another route.
+        if (authRetry >= 1) {
+          console.warn(`[StravaBackfill] giving up for user ${userId} after a retry (${auth.reason || status || 'unknown'})`);
+          try {
+            await User.findByIdAndUpdate(userId, {
+              'strava.backfillState': 'stopped',
+              'strava.backfillLastError': auth.reason || String(status || 'unknown'),
+              'strava.backfillLastProgressAt': new Date(),
+            });
+          } catch (e) {
+            console.error('[StravaBackfill] could not record stop:', e?.message || e);
+          }
+          stravaBackfillRelease(lockKey);
+          return;
+        }
+
+        console.warn(`[StravaBackfill] retrying once in 5 min for user ${userId} (${auth.reason || status || 'unknown'})`);
         stravaBackfillRelease(lockKey);
-        setTimeout(() => startStravaHistoricalBackfill(userId, nextCursor), 5 * 60 * 1000);
+        setTimeout(() => startStravaHistoricalBackfill(userId, nextCursor, { authRetry: authRetry + 1 }), 5 * 60 * 1000);
         return;
       }
     }
