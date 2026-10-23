@@ -105,7 +105,8 @@ class UserDao {
 
   async createUser(userData) {
     try {
-      console.log("Creating user with data:", { ...userData, password: '[HIDDEN]' });
+      // Never the whole object: it carries the verification and registration tokens.
+      console.log("Creating user:", { email: userData?.email, role: userData?.role, signupMethod: userData?.signupMethod });
       const user = new UserModel(userData);
       const savedUser = await user.save();
       console.log("User created with ID:", savedUser._id);

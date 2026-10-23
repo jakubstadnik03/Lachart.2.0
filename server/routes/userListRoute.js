@@ -488,7 +488,7 @@ router.post(
   ),
   async (req, res) => {
     try {
-        console.log("Received add-athlete request:", req.body);
+        console.log("Received add-athlete request from", req.user?.userId);
         const { 
             name, 
             surname, 
@@ -516,7 +516,7 @@ router.post(
         const isCoachLikeAdd = ['coach', 'tester', 'testing', 'admin'].includes(addAthleteRole) ||
           (coach?.admin === true && addAthleteRole !== 'athlete');
         if (!coach || !isCoachLikeAdd) {
-            console.log("User is not in coach-like role:", coach);
+            console.log("User is not in coach-like role:", coach?._id, coach?.role);
             return res.status(403).json({ error: "Access allowed only for coach/tester roles" });
         }
 
@@ -1658,7 +1658,7 @@ router.get("/athlete/:athleteId/tests", verifyToken, async (req, res) => {
         console.log('Fetching tests for athlete:', athleteId); // Debug log
 
         const tests = await userDao.getAthleteTests(athleteId);
-        console.log('Found tests:', tests); // Debug log
+        console.log('Found tests:', Array.isArray(tests) ? tests.length : tests); // Debug log
 
         res.status(200).json(tests);
     } catch (error) {
@@ -2323,7 +2323,7 @@ router.post('/athlete/invite-coach', verifyToken, async (req, res) => {
 
         // The requester, whatever their role — a coach may be coached too.
         const athlete = await userDao.findById(athleteId);
-        console.log('Found athlete:', athlete);
+        console.log('Found athlete:', athlete?._id);
 
         if (!athlete) {
             console.log('Athlete not found for ID:', athleteId);
@@ -2332,7 +2332,7 @@ router.post('/athlete/invite-coach', verifyToken, async (req, res) => {
 
         // Find coach by email
         const coach = await userDao.findByEmail(email);
-        console.log('Found coach:', coach);
+        console.log('Found coach:', coach?._id);
 
         if (!coach) {
             console.log('Coach not found for email:', email);
@@ -2376,7 +2376,6 @@ router.post('/athlete/invite-coach', verifyToken, async (req, res) => {
         // Save token and athlete ID to database
         console.log('Saving invitation data:', {
             coachId: coach._id,
-            invitationToken,
             invitationTokenExpires,
             pendingAthleteId: athleteId
         });
@@ -2616,6 +2615,16 @@ router.post("/google-auth", async (req, res) => {
 
         // Find or create user
         let user = await userDao.findByEmail(email);
+
+        // Signing in to an existing LaChart account by its e-mail needs Google
+        // to vouch for that address. A Google account can carry an address it
+        // never proved; without this, it would open whoever owns it here.
+        if (user && payload.email_verified !== true) {
+            return res.status(401).json({
+                error: "Google has not verified this e-mail address. Verify it with Google, or sign in with your password.",
+                code: "GOOGLE_EMAIL_UNVERIFIED",
+            });
+        }
         
         if (!user) {
             const emailVerificationToken = crypto.randomBytes(32).toString('hex');
