@@ -298,9 +298,11 @@ async function updateClusterTitle(req, res) {
     }
     await cluster.save();
 
-    // Update all workouts in cluster
+    // Update this athlete's workouts in the cluster. A clusterId comes from
+    // the workout's pattern, not its owner, so other athletes' workouts can
+    // share it — renaming must not reach them.
     await FitTraining.updateMany(
-      { clusterId },
+      { clusterId, athleteId: userId },
       { titleManual: title, trainingRouteId }
     );
 

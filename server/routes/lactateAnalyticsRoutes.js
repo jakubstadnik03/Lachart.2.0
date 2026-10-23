@@ -21,15 +21,13 @@ const Training = require('../models/training');
 const FitTraining = require('../models/fitTraining');
 const LactateSession = require('../models/lactateSession');
 const { analyzeLactateProgression } = require('../utils/lactateAnalytics');
+const { canActForAthleteId } = require('../utils/athleteCoachAccess');
 
 // ─── auth helper ─────────────────────────────────────────────────────────────
 
+// Self, a linked coach or an admin — a coach role on the token is not a link.
 function canAccessAthlete(req, targetId) {
-  const { userId, role, admin } = req.user;
-  if (String(userId) === String(targetId)) return true;
-  if (admin === true) return true;
-  if (['admin', 'coach', 'tester', 'testing'].includes(role)) return true;
-  return false;
+  return canActForAthleteId(req.user.userId, targetId);
 }
 
 // ─── route ───────────────────────────────────────────────────────────────────
@@ -37,7 +35,7 @@ function canAccessAthlete(req, targetId) {
 router.get('/:athleteId', verifyToken, async (req, res) => {
   try {
     const { athleteId } = req.params;
-    if (!canAccessAthlete(req, athleteId)) {
+    if (!(await canAccessAthlete(req, athleteId))) {
       return res.status(403).json({ error: 'Forbidden' });
     }
 

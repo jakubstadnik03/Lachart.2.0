@@ -64,17 +64,11 @@ router.get("/title/:title", verifyToken, async (req, res) => {
 });
 
 // Get all trainings for an athlete - MUST be before /:id route
-// H3 — only self, coach, or admin may fetch another user's trainings
+// H3 — only self, a linked coach, or admin may fetch another user's trainings
 router.get("/athlete/:athleteId", verifyToken, async (req, res) => {
   try {
-    const requesterId  = String(req.user.userId);
-    const targetId     = String(req.params.athleteId);
-    const User         = require('../models/UserModel');
-    const requester    = await User.findById(requesterId).lean();
-    const role         = String(requester?.role || '').toLowerCase();
-    const isPrivileged = ['admin', 'coach', 'tester', 'testing'].includes(role) || requester?.admin === true;
-
-    if (!isPrivileged && requesterId !== targetId) {
+    const { canActForAthleteId } = require('../utils/athleteCoachAccess');
+    if (!(await canActForAthleteId(req.user.userId, req.params.athleteId))) {
       return res.status(403).json({ error: 'Access denied' });
     }
 

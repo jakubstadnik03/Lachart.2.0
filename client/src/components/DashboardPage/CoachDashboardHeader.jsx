@@ -69,7 +69,8 @@ export default function CoachDashboardHeader({ selectedAthleteId, onSelectAthlet
       // Load test dates for all athletes in background
       if (list.length > 0) {
         Promise.allSettled(
-          list.slice(0, 20).map(a =>
+          // An athlete who has not accepted the invitation shares no tests yet.
+          list.filter(a => a.coachLinkStatus !== 'pending').slice(0, 20).map(a =>
             api.get(`/test/list/${a._id}`).then(r => ({ id: a._id, tests: r.data || [] }))
           )
         ).then(results => {

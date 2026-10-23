@@ -35,6 +35,7 @@ const { findExternalDuplicate } = require('../utils/appleHealthDuplicate');
 const { mapGarminSportType, garminSportOf } = require('../utils/garminSport');
 const { garminHeadline } = require('../utils/garminHeadline');
 const { isAdminUser } = require('../utils/isAdminUser');
+const { isGarminCallbackUrl } = require('../utils/garminCallbackUrl');
 // Every Strava read goes through this so the shared budget sees it — see
 // utils/stravaRequest for why hand-rolled axios.get calls were a problem.
 const { stravaGetInteractive } = require('../utils/stravaRequest');
@@ -1322,6 +1323,10 @@ async function processGarminWebhookPayload(payload) {
       if (GARMIN_WELLNESS_TYPES.has(summaryType)) {
         try {
           if (entry.callbackURL) {
+            if (!isGarminCallbackUrl(entry.callbackURL)) {
+              console.warn(`[Garmin webhook] wellness ${summaryType} ping REFUSED — callbackURL is not a Garmin host`);
+              continue;
+            }
             if (!garminPullToken()) {
               console.warn(`[Garmin webhook] wellness ${summaryType} ping skipped — push delivers this without a pull token`);
               continue;
@@ -1374,6 +1379,10 @@ async function processGarminWebhookPayload(payload) {
       // without a portal token there is nothing to fetch. Push sends the
       // activity in the body and never reaches this branch.
       if (entry.callbackURL) {
+        if (!isGarminCallbackUrl(entry.callbackURL)) {
+          console.warn(`[Garmin webhook] ${summaryType} ping REFUSED — callbackURL is not a Garmin host`);
+          continue;
+        }
         if (!garminPullToken()) {
           console.warn(`[Garmin webhook] ${summaryType} ping skipped — no pull token; push delivers the same data`);
           continue;
@@ -6339,6 +6348,13 @@ router.get('/strava/activities/:id', verifyToken, async (req, res) => {
       savedActivity = await StravaActivity.findOne({ _id: id });
       
       if (!savedActivity) {
+        return res.status(404).json({ error: 'Strava activity not found' });
+      }
+
+      // The coach branch below checks the link; everyone else may open only
+      // their own activity — someone else's answers like a missing one.
+      if (!isCoachLikeDetail && !isAdminUser(user)
+          && savedActivity.userId.toString() !== user._id.toString()) {
         return res.status(404).json({ error: 'Strava activity not found' });
       }
       

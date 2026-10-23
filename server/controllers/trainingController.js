@@ -3,6 +3,7 @@ const mongoose    = require('mongoose');
 const User        = require('../models/UserModel');
 const Notification = require('../models/Notification');
 const { notifyAthlete, notifyCoachesOfAthlete } = require('../utils/notificationHelper');
+const { canActForAthleteId } = require('../utils/athleteCoachAccess');
 // Use the already-compiled model (loaded by trainingDao via ../models/training)
 // Avoids Mongoose OverwriteModelError from case-mismatch on macOS module cache
 const getTraining = () => mongoose.models.Training || require('../models/training');
@@ -22,7 +23,8 @@ const trainingController = {
     getTrainingById: async (req, res) => {
         try {
             const training = await TrainingAbl.getTrainingById(req.params.id);
-            if (!training) {
+            // Someone else's training answers like a missing one.
+            if (!training || !(await canActForAthleteId(req.user.userId, training.athleteId))) {
                 return res.status(404).json({ error: 'Training not found' });
             }
             res.json(training);
@@ -46,6 +48,10 @@ const trainingController = {
                 return res.status(400).json({
                     error: `Missing required fields: ${missingFields.join(', ')}`
                 });
+            }
+
+            if (!(await canActForAthleteId(req.user.userId, req.body.athleteId))) {
+                return res.status(403).json({ error: 'You can only add trainings for yourself or your athletes' });
             }
 
             // Format date
@@ -102,16 +108,12 @@ const trainingController = {
             const training = await Training.findById(req.params.id).lean();
             if (!training) return res.status(404).json({ error: 'Training not found' });
 
-            const requesterId  = String(req.user.userId);
-            const ownerId      = String(training.athleteId);
-            const requester    = await User.findById(requesterId).lean();
-            const role         = String(requester?.role || '').toLowerCase();
-            const isPrivileged = ['admin', 'coach', 'tester', 'testing'].includes(role) || requester?.admin === true;
-
-            if (!isPrivileged && requesterId !== ownerId) {
+            if (!(await canActForAthleteId(req.user.userId, training.athleteId))) {
                 return res.status(403).json({ error: 'Access denied' });
             }
 
+            // A training stays with its athlete; moving it is not an edit.
+            if (req.body && typeof req.body === 'object') delete req.body.athleteId;
             const updatedTraining = await TrainingAbl.updateTraining(req.params.id, req.body);
             if (!updatedTraining) {
                 return res.status(404).json({ error: 'Training not found' });
@@ -141,13 +143,7 @@ const trainingController = {
             const training = await Training.findById(req.params.id).lean();
             if (!training) return res.status(404).json({ error: 'Training not found' });
 
-            const requesterId  = String(req.user.userId);
-            const ownerId      = String(training.athleteId);
-            const requester    = await User.findById(requesterId).lean();
-            const role         = String(requester?.role || '').toLowerCase();
-            const isPrivileged = ['admin', 'coach', 'tester', 'testing'].includes(role) || requester?.admin === true;
-
-            if (!isPrivileged && requesterId !== ownerId) {
+            if (!(await canActForAthleteId(req.user.userId, training.athleteId))) {
                 return res.status(403).json({ error: 'Access denied' });
             }
 

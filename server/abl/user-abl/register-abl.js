@@ -7,6 +7,7 @@ const { sendEmailVerificationEmail } = require("../../services/emailVerification
 const { saveRegistrationLocation } = require("../../utils/geoip");
 const { notifyAdminNewUserRegistered } = require("../../utils/expoPushNotifications");
 const { claimPreRegisteredStub } = require("../../services/coachAthleteLinkService");
+const { normalizeSignupRole } = require("../../utils/signupRole");
 
 class RegisterAbl {
     constructor() {
@@ -61,14 +62,15 @@ class RegisterAbl {
             emailVerificationTokenExpires.setHours(emailVerificationTokenExpires.getHours() + 24); // 24 hours
 
             // Vytvoření nového uživatele
+            const signupRole = normalizeSignupRole(role);
             const userData = {
                 email: email.toLowerCase(),
                 password: hashedPassword,
                 signupMethod: 'email',
                 name,
                 surname,
-                role: ['athlete', 'coach', 'tester', 'testing'].includes(role) ? role : 'athlete',
-                athletes: (role === 'coach' || role === 'tester' || role === 'testing') ? [] : undefined,
+                role: signupRole,
+                athletes: (signupRole === 'coach' || signupRole === 'tester') ? [] : undefined,
                 emailVerified: false,
                 emailVerificationToken: emailVerificationToken,
                 emailVerificationTokenExpires: emailVerificationTokenExpires,

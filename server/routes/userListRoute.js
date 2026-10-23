@@ -20,6 +20,8 @@ const { blacklistToken } = require("../middleware/authManager");
 const UserDao = require("../dao/userDao");
 const TrainingDao = require("../dao/trainingDao");
 const forgotPasswordAbl = require("../abl/user-abl/forgot-password-abl");
+const { toCoachSafeAthlete } = require("../utils/coachSafeAthlete");
+const { normalizeSignupRole } = require("../utils/signupRole");
 const bcrypt = require("bcrypt");
 const crypto = require("crypto");
 const jwt = require("jsonwebtoken");
@@ -50,6 +52,7 @@ const {
   coachLinkFields,
   removeCoachFromAthleteIds,
   athleteCoachIdSet,
+  mayActForAthlete,
 } = require("../utils/athleteCoachAccess");
 const { linkAthleteToCoach, clearStalePendingFlags, claimPreRegisteredStub } = require("../services/coachAthleteLinkService");
 const { requireQuotaSlot } = require("../middleware/featureGate");
@@ -455,7 +458,7 @@ router.get("/coach/athletes", verifyToken, async (req, res) => {
             if (!athlete?._id) return;
             const key = String(athlete._id);
             byId.set(key, {
-                ...athlete.toObject?.() || athlete,
+                ...toCoachSafeAthlete(athlete),
                 ...displayNameForCoach(athlete),
                 ...coachLinkFields(athlete, coach),
             });
@@ -485,7 +488,7 @@ router.post(
   ),
   async (req, res) => {
     try {
-        console.log("Received add-athlete request:", req.body);
+        console.log("Received add-athlete request from", req.user?.userId);
         const { 
             name, 
             surname, 
@@ -513,7 +516,7 @@ router.post(
         const isCoachLikeAdd = ['coach', 'tester', 'testing', 'admin'].includes(addAthleteRole) ||
           (coach?.admin === true && addAthleteRole !== 'athlete');
         if (!coach || !isCoachLikeAdd) {
-            console.log("User is not in coach-like role:", coach);
+            console.log("User is not in coach-like role:", coach?._id, coach?.role);
             return res.status(403).json({ error: "Access allowed only for coach/tester roles" });
         }
 
@@ -1655,7 +1658,7 @@ router.get("/athlete/:athleteId/tests", verifyToken, async (req, res) => {
         console.log('Fetching tests for athlete:', athleteId); // Debug log
 
         const tests = await userDao.getAthleteTests(athleteId);
-        console.log('Found tests:', tests); // Debug log
+        console.log('Found tests:', Array.isArray(tests) ? tests.length : tests); // Debug log
 
         res.status(200).json(tests);
     } catch (error) {
@@ -1736,7 +1739,12 @@ router.post('/coach/resend-invitation/:athleteId', verifyToken, async (req, res)
     if (pending || athlete.isPreRegistered) {
       const invitationToken = crypto.randomBytes(32).toString('hex');
       const invitationTokenExpires = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-      await userDao.updateUser(athlete._id, { invitationToken, invitationTokenExpires });
+      // One invitation slot per athlete: if another coach invited them since,
+      // the slot names that coach, and the fresh token would link the athlete
+      // to them from an e-mail that says it is from this coach. Claim it back.
+      const update = { invitationToken, invitationTokenExpires };
+      if (pending) update.pendingCoachId = coach._id;
+      await userDao.updateUser(athlete._id, update);
       const isNewUser = !athleteHasOwnAccount(athlete);
       const sent = await sendTeamInvitationEmail({ coach, athlete, invitationToken, isNewUser, again: true });
       return respond(isNewUser ? 'create-account' : 'team-invitation', sent);
@@ -2244,17 +2252,17 @@ router.get("/user/:userId", verifyToken, async (req, res) => {
         const { userId } = req.params;
         const requesterId  = String(req.user.userId);
         const requesterDoc = await userDao.findById(requesterId);
-        const role         = String(requesterDoc?.role || '').toLowerCase();
-        const isPrivileged = ['admin', 'coach', 'tester', 'testing'].includes(role) || requesterDoc?.admin === true;
-
-        if (!isPrivileged && requesterId !== String(userId)) {
-            return res.status(403).json({ error: 'Access denied' });
-        }
 
         const user = await userDao.findById(userId);
 
         if (!user) {
             return res.status(404).json({ error: "User not found" });
+        }
+
+        // Contact details and date of birth: the user, a linked coach or an
+        // admin — a coach role alone is not a link.
+        if (!mayActForAthlete(requesterDoc, user)) {
+            return res.status(403).json({ error: 'Access denied' });
         }
 
         // Return data without sensitive information
@@ -2315,7 +2323,7 @@ router.post('/athlete/invite-coach', verifyToken, async (req, res) => {
 
         // The requester, whatever their role — a coach may be coached too.
         const athlete = await userDao.findById(athleteId);
-        console.log('Found athlete:', athlete);
+        console.log('Found athlete:', athlete?._id);
 
         if (!athlete) {
             console.log('Athlete not found for ID:', athleteId);
@@ -2324,7 +2332,7 @@ router.post('/athlete/invite-coach', verifyToken, async (req, res) => {
 
         // Find coach by email
         const coach = await userDao.findByEmail(email);
-        console.log('Found coach:', coach);
+        console.log('Found coach:', coach?._id);
 
         if (!coach) {
             console.log('Coach not found for email:', email);
@@ -2368,7 +2376,6 @@ router.post('/athlete/invite-coach', verifyToken, async (req, res) => {
         // Save token and athlete ID to database
         console.log('Saving invitation data:', {
             coachId: coach._id,
-            invitationToken,
             invitationTokenExpires,
             pendingAthleteId: athleteId
         });
@@ -2577,7 +2584,7 @@ router.post("/google-auth", async (req, res) => {
             return res.status(400).json({ error: "Missing Google credential" });
         }
 
-        const normalizedRole = role && ['coach', 'athlete', 'tester', 'testing'].includes(role) ? role : 'athlete';
+        const normalizedRole = normalizeSignupRole(role);
 
         // Accept both web and iOS client IDs as valid audiences
         // iOS native sign-in produces tokens with the iOS client ID as `aud`
@@ -2608,6 +2615,18 @@ router.post("/google-auth", async (req, res) => {
 
         // Find or create user
         let user = await userDao.findByEmail(email);
+
+        // Signing in to an existing LaChart account by its e-mail needs Google
+        // to vouch for that address (an account already linked to this Google
+        // identity is proven by the link). A Google account can carry an address it
+        // never proved; without this, it would open whoever owns it here.
+        const alreadyLinked = !!user && String(user.googleId || '') === String(googleId);
+        if (user && !alreadyLinked && payload.email_verified !== true) {
+            return res.status(401).json({
+                error: "Google has not verified this e-mail address. Verify it with Google, or sign in with your password.",
+                code: "GOOGLE_EMAIL_UNVERIFIED",
+            });
+        }
         
         if (!user) {
             const emailVerificationToken = crypto.randomBytes(32).toString('hex');
@@ -2780,7 +2799,7 @@ router.post("/apple-auth", async (req, res) => {
             return res.status(400).json({ error: 'Apple token missing subject (user ID)' });
         }
 
-        const normalizedRole = role && ['coach', 'athlete', 'tester', 'testing'].includes(role) ? role : 'athlete';
+        const normalizedRole = normalizeSignupRole(role);
 
         // Apple only provides email on first sign-in. After that, look up by appleId.
         let user;
@@ -5759,6 +5778,20 @@ router.delete("/admin/athlete/:athleteId/delete-with-tests", verifyToken, async 
         // Check permissions (coach/tester/testing + multi-coach)
         if (!isAdmin && (!isCoachLikeRole(currentUser.role) || !athleteHasCoachUser(athlete, currentUser._id))) {
             return res.status(403).json({ error: "Access denied. You can only delete your own athletes." });
+        }
+
+        // A coach may delete only a record they created that nobody logs into.
+        // An athlete with their own account (perhaps paying, perhaps with
+        // other coaches) is unlinked, never deleted, by a coach.
+        // add-athlete only started marking its records coach_invite in March
+        // 2026; an older one has no sign-up method and nobody ever logged in.
+        const legacyCoachRecord = !athlete.signupMethod && athlete.isRegistrationComplete !== true
+            && !athlete.lastLogin && !athlete.googleId && !athlete.appleId;
+        if (!isAdmin && athleteHasOwnAccount(athlete) && !legacyCoachRecord) {
+            return res.status(403).json({
+                error: "This athlete has their own LaChart account. Remove them from your team instead.",
+                code: "ATHLETE_HAS_OWN_ACCOUNT",
+            });
         }
 
         // Prevent self-deletion

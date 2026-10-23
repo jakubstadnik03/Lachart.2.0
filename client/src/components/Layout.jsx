@@ -124,7 +124,8 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
       setAthletes(list);
       if (list.length > 0) {
         Promise.allSettled(
-          list.slice(0, 15).map(a =>
+          // An athlete who has not accepted the invitation shares no tests yet.
+          list.filter(a => a.coachLinkStatus !== 'pending').slice(0, 15).map(a =>
             api.get(`/test/list/${a._id}`).then(r => ({ id: a._id, tests: r.data || [] }))
           )
         ).then(results => {

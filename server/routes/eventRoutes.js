@@ -1,6 +1,21 @@
 const express = require('express');
 const Event = require('../models/Event');
+const verifyToken = require('../middleware/verifyToken');
+const { isAdminUser } = require('../utils/isAdminUser');
 const router = express.Router();
+
+// Reading events is for the admin dashboard only: they carry user ids, IP
+// addresses, user agents and per-test metadata. Logging (POST) stays open.
+async function requireAdmin(req, res, next) {
+  try {
+    const User = require('../models/UserModel');
+    const user = await User.findById(req.user.userId).select('admin role').lean();
+    if (!isAdminUser(user)) return res.status(403).json({ success: false, message: 'Admin only' });
+    return next();
+  } catch (e) {
+    return res.status(500).json({ success: false, message: 'Could not check access' });
+  }
+}
 
 // POST /api/events - Log new event
 router.post('/', async (req, res) => {
@@ -40,7 +55,7 @@ router.post('/', async (req, res) => {
 });
 
 // GET /api/events - Get events with filters
-router.get('/', async (req, res) => {
+router.get('/', verifyToken, requireAdmin, async (req, res) => {
   try {
     const { type, userId, startDate, endDate, limit = 100 } = req.query;
     
@@ -75,7 +90,7 @@ router.get('/', async (req, res) => {
 });
 
 // GET /api/events/stats - Get event statistics
-router.get('/stats', async (req, res) => {
+router.get('/stats', verifyToken, requireAdmin, async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
     

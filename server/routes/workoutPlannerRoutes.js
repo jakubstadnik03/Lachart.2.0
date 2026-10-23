@@ -13,6 +13,7 @@ const DayPlan         = require('../models/DayPlan');
 const CalendarPeriod  = require('../models/CalendarPeriod');
 const User       = require('../models/UserModel');
 const { requireFeature } = require('../middleware/featureGate');
+const { canActForAthleteId } = require('../utils/athleteCoachAccess');
 const { isPlanProgressUpdate } = require('../utils/planProgress');
 const { maybeNotifyCoachPlanUpdate } = require('../utils/coachPlanNotifications');
 const {
@@ -81,6 +82,29 @@ async function resolveAthleteId(req) {
   }
   return { athleteId: String(req.user.userId), me };
 }
+
+// Every handler below that reads ?athleteId goes through resolveAthleteId,
+// which only asks whether the requester has a coach role — and anyone can
+// sign up as a coach. So before any of them runs, an ?athleteId other than
+// the requester's own must belong to an athlete linked to them (or the
+// requester is an admin).
+router.use((req, res, next) => {
+  const requested = String(req.query?.athleteId || '').trim();
+  if (!requested) return next();
+  return verifyToken(req, res, async () => {
+    try {
+      // resolveAthleteId ignores ?athleteId for everyone without a coach
+      // role (they get their own plan), so only those requests need the check.
+      const me = await User.findById(req.user.userId).select('role admin').lean();
+      if (!isCoachLike(me)) return next();
+      if (await canActForAthleteId(req.user.userId, requested)) return next();
+      return res.status(403).json({ error: 'This athlete is not in your team' });
+    } catch (e) {
+      console.error('[WorkoutPlanner] athlete access check failed:', e);
+      return res.status(500).json({ error: 'Could not check access to this athlete' });
+    }
+  });
+});
 
 // ═══════════════════════════════════════════════════════════════════════════
 // WORKOUT TEMPLATES

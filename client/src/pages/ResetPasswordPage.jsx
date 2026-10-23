@@ -1,51 +1,31 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useEffect, useRef, useState } from 'react';
+import { Link, useNavigate, useParams } from 'react-router-dom';
+import axios from 'axios';
+import { API_BASE_URL } from '../config/api.config';
+import { submitPasswordReset, RESET_LINK_INVALID } from '../utils/passwordReset';
 
 const ResetPasswordPage = () => {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [status, setStatus] = useState({ type: '', message: '' });
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const { token } = useParams();
   const navigate = useNavigate();
+  const redirectTimer = useRef(null);
+
+  useEffect(() => () => clearTimeout(redirectTimer.current), []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
-    if (password !== confirmPassword) {
-      setStatus({
-        type: 'error',
-        message: 'Hesla se neshodují'
-      });
-      return;
-    }
-
-    if (password.length < 6) {
-      setStatus({
-        type: 'error',
-        message: 'Heslo musí mít alespoň 6 znaků'
-      });
-      return;
-    }
-
     setIsSubmitting(true);
-    try {
-      setStatus({
-        type: 'success',
-        message: 'Heslo bylo úspěšně změněno'
-      });
-
-      // Přesměrování na login po 2 sekundách
-      setTimeout(() => {
-        navigate('/login');
-      }, 2000);
-
-    } catch (error) {
-      setStatus({
-        type: 'error',
-        message: error.response?.data?.error || 'Chyba při resetu hesla'
-      });
-    } finally {
-      setIsSubmitting(false);
+    const result = await submitPasswordReset(
+      { apiBaseUrl: API_BASE_URL, token, password, confirmPassword },
+      axios.post
+    );
+    setStatus(result);
+    setIsSubmitting(false);
+    if (result.type === 'success') {
+      redirectTimer.current = setTimeout(() => navigate('/login'), 2000);
     }
   };
 
@@ -77,21 +57,27 @@ const ResetPasswordPage = () => {
                 }`}
               >
                 {status.message}
+                {status.message === RESET_LINK_INVALID && (
+                  <Link to="/forgot-password" className="block mt-2 font-medium underline">
+                    Send me a new link
+                  </Link>
+                )}
               </div>
             )}
 
             <div className="space-y-4">
               <div>
                 <label htmlFor="password" className="sr-only">
-                  Nové heslo
+                  New password
                 </label>
                 <input
                   id="password"
                   name="password"
                   type="password"
+                  autoComplete="new-password"
                   required
                   className="appearance-none rounded-lg relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                  placeholder="Nové heslo"
+                  placeholder="New password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                 />
@@ -99,15 +85,16 @@ const ResetPasswordPage = () => {
 
               <div>
                 <label htmlFor="confirmPassword" className="sr-only">
-                  Potvrďte heslo
+                  Confirm new password
                 </label>
                 <input
                   id="confirmPassword"
                   name="confirmPassword"
                   type="password"
+                  autoComplete="new-password"
                   required
                   className="appearance-none rounded-lg relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                  placeholder="Potvrďte heslo"
+                  placeholder="Confirm new password"
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                 />
@@ -116,12 +103,12 @@ const ResetPasswordPage = () => {
 
             <button
               type="submit"
-              disabled={isSubmitting}
+              disabled={isSubmitting || status.type === 'success'}
               className={`w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 ${
                 isSubmitting ? 'opacity-50 cursor-not-allowed' : ''
               }`}
             >
-              {isSubmitting ? 'Probíhá změna...' : 'Změnit heslo'}
+              {isSubmitting ? 'Changing password…' : 'Change password'}
             </button>
           </form>
         </div>

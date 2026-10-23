@@ -14,6 +14,18 @@ const { createEmailTransporter } = require('../utils/createEmailTransporter');
 const { getClientUrl } = require('../utils/emailTemplate');
 const { sendNotification } = require('../utils/notificationHelper');
 const { normalizeSportForNotif } = require('../utils/sportNotif');
+const { mayActForAthlete } = require('../utils/athleteCoachAccess');
+const { canUseTrainingComments, escapeHtml } = require('../utils/commentTargetAccess');
+
+// A test's comments belong to its athlete, their linked coaches and admins.
+// A coach role alone opens nothing: anyone can sign up as a coach.
+async function mayUseTestComments(user, test) {
+  if (!user || !test) return false;
+  const owner = mongoose.Types.ObjectId.isValid(String(test.athleteId))
+    ? await User.findById(test.athleteId).select('coachId coachIds').lean()
+    : null;
+  return mayActForAthlete(user, owner || { _id: String(test.athleteId) });
+}
 
 // GET /api/comments/test/:testId
 // Get all comments for a test (auth required, only coach or the athlete who owns the test)
@@ -28,15 +40,12 @@ router.get('/test/:testId', verifyToken, async (req, res) => {
     }
 
     // Check permission: allow if user is the athlete who owns the test OR a coach/admin
-    const user = await User.findById(userId).select('role');
+    const user = await User.findById(userId).select('role admin');
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    const isOwner = String(test.athleteId) === String(userId);
-    const isCoachOrAdmin = user.role === 'coach' || user.role === 'admin';
-
-    if (!isOwner && !isCoachOrAdmin) {
+    if (!(await mayUseTestComments(user, test))) {
       return res.status(403).json({ error: 'Access denied' });
     }
 
@@ -65,14 +74,14 @@ router.post('/test/:testId', verifyToken, async (req, res) => {
       return res.status(404).json({ error: 'Test not found' });
     }
 
-    const user = await User.findById(userId).select('name surname role');
+    const user = await User.findById(userId).select('name surname role admin');
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
 
     // Only coach, athlete, and admin roles are allowed
     const allowedRoles = ['coach', 'athlete', 'admin'];
-    if (!allowedRoles.includes(user.role)) {
+    if (!allowedRoles.includes(user.role) || !(await mayUseTestComments(user, test))) {
       return res.status(403).json({ error: 'Access denied' });
     }
 
@@ -151,15 +160,19 @@ router.delete('/:commentId', verifyToken, async (req, res) => {
       return res.status(404).json({ error: 'Comment not found' });
     }
 
-    const user = await User.findById(userId).select('role');
+    const user = await User.findById(userId).select('role admin');
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
 
     const isAuthor = String(comment.authorId) === String(userId);
-    const isCoachOrAdmin = user.role === 'coach' || user.role === 'admin';
+    const isCoachOrAdmin = user.role === 'coach' || user.role === 'admin' || user.admin === true;
+    const test = !isAuthor && isCoachOrAdmin
+      ? await Test.findById(comment.testId).select('athleteId').lean()
+      : null;
 
-    if (!isAuthor && !isCoachOrAdmin) {
+    // Someone else's comment: only a coach of this athlete, or an admin.
+    if (!isAuthor && !(isCoachOrAdmin && await mayUseTestComments(user, test))) {
       return res.status(403).json({ error: 'Access denied' });
     }
 
@@ -202,11 +215,10 @@ router.get('/training/:trainingId', verifyToken, async (req, res) => {
     const { trainingId } = req.params;
     const userId = req.user.userId;
 
-    const user = await User.findById(userId).select('role');
+    const user = await User.findById(userId).select('role admin');
     if (!user) return res.status(404).json({ error: 'User not found' });
 
-    // Allow owner athlete OR any coach/admin — we just check role here; owner check done on write
-    if (!['coach', 'admin', 'athlete'].includes(user.role)) {
+    if (!(await canUseTrainingComments(user, trainingId))) {
       return res.status(403).json({ error: 'Access denied' });
     }
 
@@ -229,11 +241,11 @@ router.post('/training/:trainingId', verifyToken, async (req, res) => {
       return res.status(400).json({ error: 'Comment text is required' });
     }
 
-    const user = await User.findById(userId).select('name surname role coachIds avatar');
+    const user = await User.findById(userId).select('name surname role admin coachIds avatar');
     if (!user) return res.status(404).json({ error: 'User not found' });
 
     const allowedRoles = ['coach', 'athlete', 'admin'];
-    if (!allowedRoles.includes(user.role)) {
+    if (!allowedRoles.includes(user.role) || !(await canUseTrainingComments(user, trainingId))) {
       return res.status(403).json({ error: 'Access denied' });
     }
 
@@ -380,10 +392,10 @@ router.post('/training/:trainingId', verifyToken, async (req, res) => {
                 <div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:24px;background:#f9fafb;border-radius:12px;">
                   <h2 style="color:#767EB5;margin-bottom:8px;">New comment on your training</h2>
                   <p style="color:#374151;margin-bottom:16px;">
-                    <strong>${authorName}</strong> left a comment:
+                    <strong>${escapeHtml(authorName)}</strong> left a comment:
                   </p>
                   <blockquote style="background:#fff;border-left:4px solid #767EB5;padding:12px 16px;border-radius:0 8px 8px 0;color:#1f2937;margin:0 0 24px;">
-                    ${text.trim().slice(0, 300)}
+                    ${escapeHtml(text.trim().slice(0, 300))}
                   </blockquote>
                   <a href="${CLIENT_URL}/training-calendar"
                      style="display:inline-block;background:#767EB5;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;">
@@ -421,13 +433,14 @@ router.delete('/training-comment/:commentId', verifyToken, async (req, res) => {
     const comment = await TrainingComment.findById(commentId);
     if (!comment) return res.status(404).json({ error: 'Comment not found' });
 
-    const user = await User.findById(userId).select('role');
+    const user = await User.findById(userId).select('role admin');
     if (!user) return res.status(404).json({ error: 'User not found' });
 
     const isAuthor = String(comment.authorId) === String(userId);
-    const isCoachOrAdmin = user.role === 'coach' || user.role === 'admin';
+    const isCoachOrAdmin = user.role === 'coach' || user.role === 'admin' || user.admin === true;
 
-    if (!isAuthor && !isCoachOrAdmin) {
+    // Someone else's comment: only a coach of this athlete, or an admin.
+    if (!isAuthor && !(isCoachOrAdmin && await canUseTrainingComments(user, comment.trainingId))) {
       return res.status(403).json({ error: 'Access denied' });
     }
 
