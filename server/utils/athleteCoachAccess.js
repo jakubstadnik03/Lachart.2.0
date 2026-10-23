@@ -4,6 +4,7 @@
  */
 
 const mongoose = require('mongoose');
+const { isAdminUser } = require('./isAdminUser');
 
 const COACH_LIKE_ROLES = ['coach', 'tester', 'testing'];
 
@@ -119,6 +120,37 @@ function removeCoachFromAthleteIds(athlete, coachUserId) {
   };
 }
 
+/**
+ * May this requester read or change this athlete's data? Themselves, an
+ * administrator, or a coach the athlete is actually linked to. A coach role
+ * alone is not enough — anyone can sign up as a coach — and neither is an
+ * invitation the athlete has not accepted.
+ *
+ * @param {{ _id, admin?, role? }} requester
+ * @param {{ _id, coachId?, coachIds? }} athlete
+ */
+function mayActForAthlete(requester, athlete) {
+  if (!requester || !athlete) return false;
+  const requesterId = String(requester._id || '');
+  if (!requesterId) return false;
+  if (requesterId === String(athlete._id || '')) return true;
+  if (isAdminUser(requester)) return true;
+  return athleteHasCoachUser(athlete, requesterId);
+}
+
+/** mayActForAthlete for two ids, loading only the fields it needs. */
+async function canActForAthleteId(requesterId, athleteId) {
+  if (!requesterId || !athleteId) return false;
+  if (String(requesterId) === String(athleteId)) return true;
+  const User = mongoose.models.User || require('../models/UserModel');
+  const requester = await User.findById(requesterId).select('admin role').lean();
+  if (!requester) return false;
+  if (isAdminUser(requester)) return true;
+  if (!mongoose.Types.ObjectId.isValid(String(athleteId))) return false;
+  const athlete = await User.findById(athleteId).select('coachId coachIds').lean();
+  return mayActForAthlete(requester, athlete);
+}
+
 module.exports = {
   isCoachLikeRole,
   athleteCoachIdSet,
@@ -129,5 +161,7 @@ module.exports = {
   athletesLinkedToCoachQuery,
   mergeCoachIds,
   removeCoachFromAthleteIds,
+  mayActForAthlete,
+  canActForAthleteId,
   COACH_LIKE_ROLES,
 };
