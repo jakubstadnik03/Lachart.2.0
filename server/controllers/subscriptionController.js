@@ -660,7 +660,7 @@ async function handleSubscriptionUpdate(stripeSubscription) {
 }
 
 async function handlePaymentSucceeded(invoice) {
-  const subscriptionId = invoice.subscription;
+  const subscriptionId = invoiceSubscriptionId(invoice);
   if (!subscriptionId) return;
 
   const subscription = await Subscription.findOne({ stripeSubscriptionId: subscriptionId });
@@ -675,6 +675,18 @@ async function handlePaymentSucceeded(invoice) {
     }
     await subscription.save();
   }
+}
+
+/**
+ * The subscription an invoice belongs to. Stripe API 2025-03-31 (basil) moved
+ * it from invoice.subscription to invoice.parent.subscription_details; on the
+ * newer shape every invoice handler here silently found nothing — no
+ * past_due, no receipt, no payment-failed e-mail.
+ */
+function invoiceSubscriptionId(invoice) {
+  const v = invoice?.subscription || invoice?.parent?.subscription_details?.subscription;
+  if (!v) return null;
+  return typeof v === 'string' ? v : v.id || null;
 }
 
 /** Paid after at least one failed attempt: a recovered payment. */
@@ -724,7 +736,7 @@ async function handleInvoicePaidEmail(invoice) {
   try {
     // Skip zero-amount invoices (the trial-activation $0 invoice).
     if (!invoice.amount_paid || invoice.amount_paid === 0) return;
-    const { user, plan } = await resolveUserAndPlanFromStripeSub(invoice.subscription);
+    const { user, plan } = await resolveUserAndPlanFromStripeSub(invoiceSubscriptionId(invoice));
     if (!user) return;
     await sendPaymentReceiptEmail(user, {
       plan,
@@ -749,7 +761,7 @@ async function handleInvoicePaidEmail(invoice) {
  */
 async function handleInvoiceFailedEmail(invoice) {
   try {
-    const { user, plan } = await resolveUserAndPlanFromStripeSub(invoice.subscription);
+    const { user, plan } = await resolveUserAndPlanFromStripeSub(invoiceSubscriptionId(invoice));
     if (!user) return;
     await sendPaymentFailedEmail(user, {
       plan,
@@ -783,7 +795,7 @@ async function handleSubscriptionCanceledEmail(stripeSubscription) {
 }
 
 async function handlePaymentFailed(invoice) {
-  const subscriptionId = invoice.subscription;
+  const subscriptionId = invoiceSubscriptionId(invoice);
   if (!subscriptionId) return;
 
   const subscription = await Subscription.findOne({ stripeSubscriptionId: subscriptionId });
@@ -1275,3 +1287,6 @@ exports.revenueCatWebhook = async (req, res) => {
     return res.status(500).json({ error: 'Webhook handler failed' });
   }
 };
+
+// Exposed for tests.
+exports.invoiceSubscriptionId = invoiceSubscriptionId;
