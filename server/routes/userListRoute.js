@@ -20,6 +20,8 @@ const { blacklistToken } = require("../middleware/authManager");
 const UserDao = require("../dao/userDao");
 const TrainingDao = require("../dao/trainingDao");
 const forgotPasswordAbl = require("../abl/user-abl/forgot-password-abl");
+const { toCoachSafeAthlete } = require("../utils/coachSafeAthlete");
+const { normalizeSignupRole } = require("../utils/signupRole");
 const bcrypt = require("bcrypt");
 const crypto = require("crypto");
 const jwt = require("jsonwebtoken");
@@ -455,7 +457,7 @@ router.get("/coach/athletes", verifyToken, async (req, res) => {
             if (!athlete?._id) return;
             const key = String(athlete._id);
             byId.set(key, {
-                ...athlete.toObject?.() || athlete,
+                ...toCoachSafeAthlete(athlete),
                 ...displayNameForCoach(athlete),
                 ...coachLinkFields(athlete, coach),
             });
@@ -2577,7 +2579,7 @@ router.post("/google-auth", async (req, res) => {
             return res.status(400).json({ error: "Missing Google credential" });
         }
 
-        const normalizedRole = role && ['coach', 'athlete', 'tester', 'testing'].includes(role) ? role : 'athlete';
+        const normalizedRole = normalizeSignupRole(role);
 
         // Accept both web and iOS client IDs as valid audiences
         // iOS native sign-in produces tokens with the iOS client ID as `aud`
@@ -2780,7 +2782,7 @@ router.post("/apple-auth", async (req, res) => {
             return res.status(400).json({ error: 'Apple token missing subject (user ID)' });
         }
 
-        const normalizedRole = role && ['coach', 'athlete', 'tester', 'testing'].includes(role) ? role : 'athlete';
+        const normalizedRole = normalizeSignupRole(role);
 
         // Apple only provides email on first sign-in. After that, look up by appleId.
         let user;
