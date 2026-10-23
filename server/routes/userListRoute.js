@@ -2617,9 +2617,11 @@ router.post("/google-auth", async (req, res) => {
         let user = await userDao.findByEmail(email);
 
         // Signing in to an existing LaChart account by its e-mail needs Google
-        // to vouch for that address. A Google account can carry an address it
+        // to vouch for that address (an account already linked to this Google
+        // identity is proven by the link). A Google account can carry an address it
         // never proved; without this, it would open whoever owns it here.
-        if (user && payload.email_verified !== true) {
+        const alreadyLinked = !!user && String(user.googleId || '') === String(googleId);
+        if (user && !alreadyLinked && payload.email_verified !== true) {
             return res.status(401).json({
                 error: "Google has not verified this e-mail address. Verify it with Google, or sign in with your password.",
                 code: "GOOGLE_EMAIL_UNVERIFIED",
@@ -5781,7 +5783,11 @@ router.delete("/admin/athlete/:athleteId/delete-with-tests", verifyToken, async 
         // A coach may delete only a record they created that nobody logs into.
         // An athlete with their own account (perhaps paying, perhaps with
         // other coaches) is unlinked, never deleted, by a coach.
-        if (!isAdmin && athleteHasOwnAccount(athlete)) {
+        // add-athlete only started marking its records coach_invite in March
+        // 2026; an older one has no sign-up method and nobody ever logged in.
+        const legacyCoachRecord = !athlete.signupMethod && athlete.isRegistrationComplete !== true
+            && !athlete.lastLogin && !athlete.googleId && !athlete.appleId;
+        if (!isAdmin && athleteHasOwnAccount(athlete) && !legacyCoachRecord) {
             return res.status(403).json({
                 error: "This athlete has their own LaChart account. Remove them from your team instead.",
                 code: "ATHLETE_HAS_OWN_ACCOUNT",

@@ -19,20 +19,32 @@ function model(_name, path) {
   return require(path);
 }
 
-/** Athlete ids that own the activity this trainingId names (usually one). */
+const isObjectId = (v) => /^[a-f0-9]{24}$/i.test(v);
+
+/**
+ * Athlete ids that own the activity this trainingId names (usually one).
+ * The calendar sends its own ids for some activities — `regular-<oid>`,
+ * `garmin-<garminId>`, `apple-<healthKitId>`, `polar-<watchId>`,
+ * `coros-<watchId>` — and comments are stored under that exact string, so the
+ * prefix is read here rather than stripped by the client.
+ */
 async function ownersOfTrainingTarget(trainingId) {
   const id = String(trainingId || '').trim();
   if (!id) return [];
   const owners = new Set();
   const add = (doc, field) => { if (doc && doc[field]) owners.add(String(doc[field])); };
 
-  if (mongoose.Types.ObjectId.isValid(id) && id.length === 24) {
+  const m = /^(regular|training|fit|strava|garmin|apple|polar|coros)-(.+)$/i.exec(id);
+  const prefix = m ? m[1].toLowerCase() : null;
+  const rest = m ? m[2] : id;
+
+  if (isObjectId(rest) && (!prefix || ['regular', 'training', 'fit', 'strava'].includes(prefix))) {
     const [training, fit, planned, race, strava] = await Promise.all([
-      model('Training', '../models/training').findById(id).select('athleteId').lean(),
-      model('FitTraining', '../models/fitTraining').findById(id).select('athleteId').lean(),
-      model('PlannedWorkout', '../models/PlannedWorkout').findById(id).select('athleteId').lean(),
-      model('RaceEvent', '../models/RaceEvent').findById(id).select('athleteId').lean(),
-      model('StravaActivity', '../models/StravaActivity').findById(id).select('userId').lean(),
+      model('Training', '../models/training').findById(rest).select('athleteId').lean(),
+      model('FitTraining', '../models/fitTraining').findById(rest).select('athleteId').lean(),
+      model('PlannedWorkout', '../models/PlannedWorkout').findById(rest).select('athleteId').lean(),
+      model('RaceEvent', '../models/RaceEvent').findById(rest).select('athleteId').lean(),
+      model('StravaActivity', '../models/StravaActivity').findById(rest).select('userId').lean(),
     ]);
     add(training, 'athleteId');
     add(fit, 'athleteId');
@@ -41,11 +53,24 @@ async function ownersOfTrainingTarget(trainingId) {
     add(strava, 'userId');
   }
 
-  const numeric = id.replace(/^strava-/i, '');
-  if (/^\d+$/.test(numeric)) {
+  if ((!prefix || prefix === 'strava') && /^\d+$/.test(rest)) {
     const rows = await model('StravaActivity', '../models/StravaActivity')
-      .find({ stravaId: Number(numeric) }).select('userId').limit(5).lean();
+      .find({ stravaId: Number(rest) }).select('userId').limit(5).lean();
     rows.forEach((r) => add(r, 'userId'));
+  }
+
+  // Watch and health sources: by their own id, or (a calendar fallback) by _id.
+  const bySource = {
+    garmin: () => [model('GarminActivity', '../models/GarminActivity'), { garminId: rest }],
+    apple: () => [model('AppleHealthActivity', '../models/AppleHealthActivity'), { healthKitId: rest }],
+    polar: () => [model('WatchActivity', '../models/WatchActivity'), { source: 'polar', watchId: rest }],
+    coros: () => [model('WatchActivity', '../models/WatchActivity'), { source: 'coros', watchId: rest }],
+  };
+  if (prefix && bySource[prefix]) {
+    const [Model, query] = bySource[prefix]();
+    const rows = await Model.find(query).select('userId').limit(5).lean();
+    rows.forEach((r) => add(r, 'userId'));
+    if (isObjectId(rest)) add(await Model.findById(rest).select('userId').lean(), 'userId');
   }
   return Array.from(owners);
 }

@@ -93,6 +93,10 @@ router.use((req, res, next) => {
   if (!requested) return next();
   return verifyToken(req, res, async () => {
     try {
+      // resolveAthleteId ignores ?athleteId for everyone without a coach
+      // role (they get their own plan), so only those requests need the check.
+      const me = await User.findById(req.user.userId).select('role admin').lean();
+      if (!isCoachLike(me)) return next();
       if (await canActForAthleteId(req.user.userId, requested)) return next();
       return res.status(403).json({ error: 'This athlete is not in your team' });
     } catch (e) {

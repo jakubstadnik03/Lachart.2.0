@@ -92,7 +92,8 @@ export default function CoachAthleteOverview({ athletes }) {
     if (!athletes || athletes.length === 0) return;
 
     // Batch: limit to 20 at a time to avoid flooding
-    const batch = athletes.slice(0, 20);
+    // An athlete who has not accepted the invitation shares no tests yet.
+    const batch = athletes.filter((a) => a.coachLinkStatus !== 'pending').slice(0, 20);
 
     const results = await Promise.allSettled(
       batch.map((athlete) =>
