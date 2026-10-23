@@ -5,6 +5,7 @@ const stripe = process.env.SUBSCRIPTION_ENABLED === 'true' && process.env.STRIPE
 const User = require('../models/UserModel');
 const Subscription = require('../models/SubscriptionModel');
 const { canStartCheckout, manageBilling, providerOf, STRIPE } = require('../utils/billingProvider');
+const { planForStripePrice } = require('../utils/stripePlan');
 const { canBindStoreTransaction, APPLE } = require('../utils/billingProvider');
 const { mapRevenueCatEvent } = require('../utils/revenueCatEvent');
 const crypto = require('crypto');
@@ -644,9 +645,15 @@ async function handleSubscriptionUpdate(stripeSubscription) {
     subscription.canceledAt = new Date(stripeSubscription.canceled_at * 1000);
   }
 
-  // If subscription is canceled or past_due, downgrade to free
-  if (stripeSubscription.status === 'canceled' || stripeSubscription.status === 'past_due') {
+  // Only a canceled subscription goes back to free. past_due is Stripe still
+  // retrying the card: the plan stays (premiumAccess gives that grace), so a
+  // payment that goes through later restores everything by itself. Setting
+  // it to free here left paying customers on free for good.
+  if (stripeSubscription.status === 'canceled') {
     subscription.plan = 'free';
+  } else {
+    const plan = planForStripePrice(stripeSubscription.items?.data?.[0]?.price);
+    if (plan) subscription.plan = plan;
   }
 
   await subscription.save();
@@ -659,8 +666,20 @@ async function handlePaymentSucceeded(invoice) {
   const subscription = await Subscription.findOne({ stripeSubscriptionId: subscriptionId });
   if (subscription) {
     subscription.status = 'active';
+    // A plan lost to the old past_due → free downgrade comes back with the
+    // money. The invoice line says what was paid for.
+    if (!subscription.plan || subscription.plan === 'free') {
+      const line = invoice.lines?.data?.find((l) => l.price) || invoice.lines?.data?.[0];
+      const plan = planForStripePrice(line?.price || line?.pricing?.price_details?.price);
+      if (plan) subscription.plan = plan;
+    }
     await subscription.save();
   }
+}
+
+/** Paid after at least one failed attempt: a recovered payment. */
+function isRecoveredPayment(invoice) {
+  return Number(invoice?.attempt_count) > 1;
 }
 
 /**
@@ -709,6 +728,9 @@ async function handleInvoicePaidEmail(invoice) {
     if (!user) return;
     await sendPaymentReceiptEmail(user, {
       plan,
+      // After failed attempts this is the "it went through, Premium is back"
+      // note rather than a plain receipt.
+      recovered: isRecoveredPayment(invoice),
       amount: invoice.amount_paid, // minor units
       currency: invoice.currency,
       periodEnd: invoice.lines?.data?.[0]?.period?.end

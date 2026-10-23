@@ -3,10 +3,17 @@ const Subscription = require('../models/SubscriptionModel');
 /**
  * Same rules as SubscriptionModel.methods.isActive, for lean/plain objects.
  */
+/**
+ * past_due counts: the card failed and the store is retrying it. The
+ * payment-failed email promises access stays on meanwhile, and taking it away
+ * on the first decline punished people for a bank hiccup. When retries run
+ * out the subscription is canceled, and that ends it.
+ */
+const LIVE_STATUSES = new Set(['active', 'trialing', 'past_due']);
+
 function subscriptionRecordIsActive(sub) {
   if (!sub || typeof sub !== 'object') return false;
-  const st = sub.status;
-  if (st !== 'active' && st !== 'trialing') return false;
+  if (!LIVE_STATUSES.has(sub.status)) return false;
   if (sub.currentPeriodEnd && new Date() > new Date(sub.currentPeriodEnd)) return false;
   return true;
 }

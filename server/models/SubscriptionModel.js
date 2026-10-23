@@ -120,7 +120,8 @@ subscriptionSchema.index({ provider: 1, status: 1 });
 
 // Helper method to check if subscription is active
 subscriptionSchema.methods.isActive = function() {
-  if (this.status !== 'active' && this.status !== 'trialing') {
+  // past_due too: the card is being retried (same rule as utils/premiumAccess).
+  if (this.status !== 'active' && this.status !== 'trialing' && this.status !== 'past_due') {
     return false;
   }
   if (this.currentPeriodEnd && new Date() > this.currentPeriodEnd) {
