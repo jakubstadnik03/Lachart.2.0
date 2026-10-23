@@ -801,7 +801,7 @@ const LoginPage = () => {
               Sign In to your Account
             </h2>
             <p className="mt-2 text-center text-sm text-gray-600">
-              Welcome back! please enter your detail
+              Welcome back! Please enter your details.
             </p>
           </motion.div>
 
