@@ -7,7 +7,7 @@ import {
   TRIAL_DAYS,
 } from '../../constants/planPricing';
 import { useStorePurchase } from '../../hooks/useStorePurchase';
-import StorePurchaseFooter, { storeButtonLabel } from '../StorePurchaseFooter';
+import StorePurchaseFooter, { StorePriceBlock, storeButtonLabel } from '../StorePurchaseFooter';
 
 const WEB_URL = 'https://lachart.net/settings?tab=subscription';
 
@@ -86,6 +86,8 @@ export default function TrialOfferCard({ user, onDismiss }) {
         {isCoach && <li>Unlimited athletes on one roster</li>}
       </ul>
 
+      {store.available && <StorePriceBlock price={price} trialEligible={store.trialEligible} />}
+
       <button
         type="button"
         onClick={open}
@@ -96,7 +98,7 @@ export default function TrialOfferCard({ user, onDismiss }) {
           cursor: 'pointer', opacity: store.busy ? 0.7 : 1,
         }}
       >
-        {store.available ? storeButtonLabel(store, store.trialEligible) : `Start ${TRIAL_DAYS} days free`}
+        {store.available ? storeButtonLabel(store) : `Start ${TRIAL_DAYS} days free`}
       </button>
 
       {store.available ? (

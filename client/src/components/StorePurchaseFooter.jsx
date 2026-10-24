@@ -25,8 +25,8 @@ export default function StorePurchaseFooter({ store, price, trialEligible = true
         </p>
       )}
       <p style={{ margin: 0, fontSize: 11, color: '#9CA3AF', lineHeight: 1.45 }}>
-        {trialEligible ? `${TRIAL_DAYS} days free, then ${price}/month` : `${price}/month`}
-        {' · Renews automatically · Cancel anytime'}
+        {`${price}/month, renews automatically until cancelled.`}
+        {trialEligible ? ` Charged after the ${TRIAL_DAYS}-day free trial.` : ''}
       </p>
       <div style={{
         display: 'flex', gap: 10, flexWrap: 'wrap',
@@ -43,10 +43,34 @@ export default function StorePurchaseFooter({ store, price, trialEligible = true
   );
 }
 
+/**
+ * The price, as the biggest pricing element on the screen.
+ *
+ * App Review (3.1.2(c), Oct 2026) rejected a flow whose free trial stood out
+ * more than the billed amount. So the amount is large and first, and the trial
+ * is a smaller line under it. Goes right above the purchase button.
+ */
+export function StorePriceBlock({ price, trialEligible = true, align = 'center', tone = 'light' }) {
+  const dark = tone === 'dark';
+  return (
+    <div style={{ textAlign: align, display: 'flex', flexDirection: 'column', gap: 2 }}>
+      <div style={{ color: dark ? '#fff' : '#0F1729', lineHeight: 1.1 }}>
+        <span style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-0.02em' }}>{price}</span>
+        <span style={{ fontSize: 15, fontWeight: 600, color: dark ? 'rgba(255,255,255,.75)' : '#4B5563' }}> / month</span>
+      </div>
+      {trialEligible && (
+        <div style={{ fontSize: 12.5, color: dark ? 'rgba(255,255,255,.7)' : '#6B7280' }}>
+          {TRIAL_DAYS}-day free trial first · cancel anytime
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** Label for the main button, given where the purchase is. */
-export function storeButtonLabel(store, trialEligible = true) {
+export function storeButtonLabel(store) {
   if (store.busy === 'buying') return 'Opening the App Store…';
   if (store.busy === 'confirming') return 'Confirming…';
   if (store.busy === 'restoring') return 'Restoring…';
-  return trialEligible ? `Try it ${TRIAL_DAYS} days free` : 'Subscribe';
+  return 'Subscribe';
 }

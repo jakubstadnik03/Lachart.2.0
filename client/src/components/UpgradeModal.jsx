@@ -13,7 +13,7 @@ import { createCheckoutSession } from '../services/api';
 import { useAuth } from '../context/AuthProvider';
 import { planForUser } from '../utils/planForUser';
 import { useStorePurchase } from '../hooks/useStorePurchase';
-import StorePurchaseFooter, { storeButtonLabel } from './StorePurchaseFooter';
+import StorePurchaseFooter, { StorePriceBlock, storeButtonLabel } from './StorePurchaseFooter';
 
 const SWIPE_THRESHOLD = 80;
 const SWIPE_VEL_THRESHOLD = 400;
@@ -321,6 +321,9 @@ export default function UpgradeModal({ isOpen, onClose, feature = 'This feature'
           <div style={{ padding: '12px 20px 16px', flexShrink: 0, borderTop: '1px solid #f3f4f6' }}>
             {useStore ? (
               <>
+                <div style={{ marginBottom: 10 }}>
+                  <StorePriceBlock price={nativePrice} trialEligible={store.trialEligible} />
+                </div>
                 <button
                   type="button"
                   onClick={store.buy}
@@ -328,7 +331,7 @@ export default function UpgradeModal({ isOpen, onClose, feature = 'This feature'
                   className="w-full py-3 rounded-xl text-sm font-semibold text-white mb-2"
                   style={{ background: '#5E6590', opacity: store.busy ? 0.7 : 1 }}
                 >
-                  {storeButtonLabel(store, store.trialEligible)}
+                  {storeButtonLabel(store)}
                 </button>
                 <div style={{ marginBottom: 10 }}>
                   <StorePurchaseFooter store={store} price={nativePrice} trialEligible={store.trialEligible} />

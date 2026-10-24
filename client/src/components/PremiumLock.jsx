@@ -7,7 +7,7 @@ import { planForUser } from '../utils/planForUser';
 import { trackEvent } from '../utils/analytics';
 import { ATHLETE_PLAN_PRICE_LABEL, COACH_PLAN_PRICE_LABEL, TRIAL_DAYS } from '../constants/planPricing';
 import { useStorePurchase } from '../hooks/useStorePurchase';
-import StorePurchaseFooter, { storeButtonLabel } from './StorePurchaseFooter';
+import StorePurchaseFooter, { StorePriceBlock, storeButtonLabel } from './StorePurchaseFooter';
 import { PremiumButton, PremiumBadge, PREMIUM_GRADIENT } from './PremiumButton';
 
 /**
@@ -195,8 +195,9 @@ function PersonalPreviewLock({
 
         {!unknown && (
           <>
+            {useStore && <StorePriceBlock price={price} trialEligible={store.trialEligible} />}
             <PremiumButton onClick={onUnlock} disabled={Boolean(store.busy)}>
-              {useStore ? storeButtonLabel(store, store.trialEligible) : `Try it ${TRIAL_DAYS} days free`}
+              {useStore ? storeButtonLabel(store) : `Try it ${TRIAL_DAYS} days free`}
             </PremiumButton>
             {useStore ? (
               <StorePurchaseFooter store={store} price={price} trialEligible={store.trialEligible} />

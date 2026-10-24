@@ -10,8 +10,8 @@ import { planForUser } from '../../utils/planForUser';
 import { trackEvent } from '../../utils/analytics';
 import { getReturnSession } from '../../utils/impersonation';
 import { shouldShowPaywall, markPaywallShown } from '../../utils/paywallPrompt';
-import { ATHLETE_PLAN_PRICE_LABEL, COACH_PLAN_PRICE_LABEL, TRIAL_DAYS } from '../../constants/planPricing';
-import StorePurchaseFooter, { storeButtonLabel } from '../StorePurchaseFooter';
+import { ATHLETE_PLAN_PRICE_LABEL, COACH_PLAN_PRICE_LABEL } from '../../constants/planPricing';
+import StorePurchaseFooter, { StorePriceBlock, storeButtonLabel } from '../StorePurchaseFooter';
 import { PremiumButton, PREMIUM_DEEP, PREMIUM_GRADIENT } from '../PremiumButton';
 
 const BENEFITS = {
@@ -120,8 +120,8 @@ export default function PremiumPaywall() {
     >
       {/* ── Hero ── */}
       <div style={{
-        position: 'relative', overflow: 'hidden', background: PREMIUM_DEEP, color: '#fff',
-        padding: 'calc(env(safe-area-inset-top, 0px) + 10px) 22px 150px',
+        position: 'relative', overflow: 'hidden', background: PREMIUM_DEEP, color: '#fff', flexShrink: 0,
+        padding: 'calc(env(safe-area-inset-top, 0px) + 10px) 22px 128px',
       }}>
         <div aria-hidden="true" style={{
           position: 'absolute', width: 340, height: 340, right: -120, top: -140, borderRadius: '50%',
@@ -155,7 +155,7 @@ export default function PremiumPaywall() {
             padding: '6px 11px', borderRadius: 999, background: 'rgba(255,255,255,.12)',
             border: '1px solid rgba(255,255,255,.22)',
           }}>
-            {store.trialEligible ? `${TRIAL_DAYS} days free` : 'LaChart Premium'}
+            LaChart {isCoach ? 'Coach' : 'Athlete'}
           </span>
           <h2 style={{ margin: '14px 0 8px', fontSize: 34, lineHeight: 1.06, fontWeight: 800, letterSpacing: '-0.03em' }}>
             {isCoach ? (
@@ -203,8 +203,9 @@ export default function PremiumPaywall() {
         <div style={{ flex: 1, minHeight: 4 }} />
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxWidth: 440, width: '100%', margin: '0 auto' }}>
+          <StorePriceBlock price={price} trialEligible={store.trialEligible} />
           <PremiumButton size="lg" onClick={buy} disabled={Boolean(store.busy)}>
-            {storeButtonLabel(store, store.trialEligible)}
+            {storeButtonLabel(store)}
           </PremiumButton>
           <button
             type="button"
