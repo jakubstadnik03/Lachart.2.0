@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthProvider';
 import { MagnifyingGlassIcon, EllipsisVerticalIcon, UserPlusIcon, UsersIcon } from '@heroicons/react/24/outline';
 import { useNavigate } from 'react-router-dom';
@@ -33,6 +33,8 @@ const AthletesPage = () => {
   const [athletes, setAthletes] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const submittingRef = useRef(false);
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
   const [selectedAthlete, setSelectedAthlete] = useState(null);
   const [dropdownOpen, setDropdownOpen] = useState(null);
@@ -224,6 +226,11 @@ const AthletesPage = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    // One request at a time: while a slow server answers, more taps on the
+    // button each created the athlete again (one coach got 13 "Son S").
+    if (submittingRef.current) return;
+    submittingRef.current = true;
+    setSubmitting(true);
     try {
       // Konverze data z DD.MM.YYYY na YYYY-MM-DD
       const formattedDate = formData.dateOfBirth ? 
@@ -312,6 +319,10 @@ const AthletesPage = () => {
       addNotification(errorMessage, 'error');
       // Keep the modal open so user can fix the error
       setIsModalOpen(true);
+    }
+    finally {
+      submittingRef.current = false;
+      setSubmitting(false);
     }
   };
 
@@ -775,10 +786,11 @@ const AthletesPage = () => {
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 px-4 py-3 bg-primary text-white rounded-xl text-sm font-semibold shadow-md hover:bg-primary-dark transition-colors"
+                  disabled={submitting}
+                  className="flex-1 px-4 py-3 bg-primary text-white rounded-xl text-sm font-semibold shadow-md hover:bg-primary-dark transition-colors disabled:opacity-60"
                   style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
                 >
-                  {selectedAthlete ? 'Save Changes' : 'Add Athlete'}
+                  {submitting ? 'Saving…' : (selectedAthlete ? 'Save Changes' : 'Add Athlete')}
                 </button>
               </div>
             </form>

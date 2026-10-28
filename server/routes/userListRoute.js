@@ -21,6 +21,7 @@ const UserDao = require("../dao/userDao");
 const TrainingDao = require("../dao/trainingDao");
 const forgotPasswordAbl = require("../abl/user-abl/forgot-password-abl");
 const { toCoachSafeAthlete } = require("../utils/coachSafeAthlete");
+const { findRecentDuplicateAthlete } = require("../utils/recentDuplicateAthlete");
 const { normalizeSignupRole } = require("../utils/signupRole");
 const bcrypt = require("bcrypt");
 const crypto = require("crypto");
@@ -530,6 +531,27 @@ router.post(
             console.log("Email already registered:", email);
             return res.status(400).json({ error: "Email is already registered" });
             }
+        }
+
+        // The same athlete again within minutes is a repeated tap, not a new
+        // person: answer with the one already created (see the helper).
+        const duplicate = await findRecentDuplicateAthlete(mongoose.model('User'), {
+            coachId: coach._id, name, surname, email,
+        });
+        if (duplicate) {
+            console.log("add-athlete: repeat of", String(duplicate._id), "— not creating another");
+            return res.status(200).json({
+                message: "Athlete already added",
+                athlete: {
+                    _id: duplicate._id,
+                    name: duplicate.name,
+                    surname: duplicate.surname,
+                    email: duplicate.email,
+                    sport: duplicate.sport,
+                    isRegistrationComplete: false,
+                    ...coachLinkFields(duplicate, coach),
+                },
+            });
         }
 
         // Generate temporary password
