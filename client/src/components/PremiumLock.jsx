@@ -34,6 +34,9 @@ import { PremiumButton, PremiumBadge, PREMIUM_GRADIENT } from './PremiumButton';
  *                which told nobody what they would be paying for.
  *   unlocks    – short list of what Premium adds on top of the teaser
  *   title      – heading of the personal preview, defaults to `feature`
+ *   coachCovered – true for a read-only view that a coach's plan opens for
+ *                their athletes (canViewAnalytics in usePremium). Leave it off
+ *                for anything that creates work or costs us per use.
  */
 export default function PremiumLock({
   feature = 'This feature',
@@ -45,13 +48,14 @@ export default function PremiumLock({
   teaser = null,
   unlocks = null,
   className = '',
+  coachCovered = false,
   children,
 }) {
-  const { isPremium, premiumResolved, gate, UpgradeModalProps } = usePremium();
+  const { isPremium, canViewAnalytics, premiumResolved, gate, UpgradeModalProps } = usePremium();
   const isNative = isCapacitorNative();
   const lockHeight = isNative ? Math.min(minHeight, 140) : minHeight;
 
-  if (isPremium) return children;
+  if (isPremium || (coachCovered && canViewAnalytics)) return children;
 
   // Until the profile lands, isPremium reads exactly like "free" — so every
   // navigation flashed a wall of "Premium feature" locks at a paying

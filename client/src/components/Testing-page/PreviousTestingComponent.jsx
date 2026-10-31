@@ -140,7 +140,9 @@ const PreviousTestingComponent = ({
   const { user } = useAuth();
   // usePremium already force-unlocks on native iOS for App Store 3.1.1 —
   // see comment in client/src/hooks/usePremium.js.
-  const { isPremium, gate, UpgradeModalProps } = usePremium();
+  // canViewAnalytics also covers an athlete whose coach pays for them: their
+  // history, zones and comparison open; editing and training plans do not.
+  const { isPremium, canViewAnalytics, gate, UpgradeModalProps } = usePremium();
   const [selectedTests, setSelectedTests] = useState([]);
   const [currentTest, setCurrentTest] = useState(null);
   const [glucoseColumnHidden, setGlucoseColumnHidden] = useState(false);
@@ -479,7 +481,7 @@ const PreviousTestingComponent = ({
             exit={{ opacity: 0, y: -20 }}
             transition={{ duration: 0.3 }}
           >
-        {(isPremium || filteredTests.length <= FREE_TEST_LIMIT) ? (
+        {(canViewAnalytics || filteredTests.length <= FREE_TEST_LIMIT) ? (
           <DateSelector
             tests={filteredTests}
             onSelectTest={handleDateSelectorTestSelect}
@@ -566,7 +568,7 @@ const PreviousTestingComponent = ({
             exit={{ opacity: 0, y: -20 }}
             transition={{ duration: 0.3 }}
           >
-        {isPremium ? (
+        {canViewAnalytics ? (
           <TrainingZonesGenerator mockData={currentTest} />
         ) : (
           <PremiumLockedCard
@@ -615,7 +617,7 @@ const PreviousTestingComponent = ({
                 </div>
               }
             >
-              {isPremium ? (
+              {canViewAnalytics ? (
                 <RacePacePredictorCard {...racePredictorProps} />
               ) : (
                 <PremiumLockedCard
@@ -634,7 +636,7 @@ const PreviousTestingComponent = ({
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.3 }}
       >
-        {isPremium ? (
+        {canViewAnalytics ? (
           <TestSelector
             tests={filteredTests}
             selectedTests={selectedTests}
@@ -651,7 +653,7 @@ const PreviousTestingComponent = ({
       </motion.div>
 
       <AnimatePresence>
-        {isPremium && selectedTests && selectedTests.length > 0 && (
+        {canViewAnalytics && selectedTests && selectedTests.length > 0 && (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}

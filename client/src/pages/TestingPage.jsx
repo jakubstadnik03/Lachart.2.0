@@ -84,7 +84,7 @@ const TestingPage = () => {
   const [stravaModalVariant, setStravaModalVariant] = useState('page-load');
   const suppressPageLoadStravaRef = useRef(false);
   const [coachAthleteCount, setCoachAthleteCount] = useState(0);
-  const { isPremium, gate, UpgradeModalProps } = usePremium();
+  const { isPremium, canViewAnalytics, gate, UpgradeModalProps } = usePremium();
   const [mobileTab, setMobileTab] = useState('tests');
   const [planLimitModal, setPlanLimitModal] = useState({ isOpen: false, feature: '' });
   const navigate = useNavigate();
@@ -1684,7 +1684,7 @@ const TestingPage = () => {
                 </div>
               ) : (
                 <>
-                  {!isPremium ? (
+                  {!canViewAnalytics ? (
                     <div className="flex flex-col items-center justify-center py-16 text-center gap-4">
                       <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center">
                         <LockClosedIcon className="w-6 h-6 text-primary" />

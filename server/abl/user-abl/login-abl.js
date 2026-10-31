@@ -4,6 +4,7 @@ const jwt = require("jsonwebtoken");
 const { JWT_SECRET } = require("../../config/jwt.config");
 const { saveLoginLocation } = require("../../utils/geoip");
 const { resolvePremiumForUserDocument } = require("../../utils/premiumAccess");
+const { resolveCoachedAccess, coachedAccessPayload } = require("../../utils/coachedAccess");
 
 class LoginAbl {
     constructor() {
@@ -71,6 +72,7 @@ class LoginAbl {
             saveLoginLocation(this.userDao, user, req);
 
             const premiumState = await resolvePremiumForUserDocument(user);
+            const coachedAccess = coachedAccessPayload(await resolveCoachedAccess(user));
 
             res.status(200).json({
                 token,
@@ -84,6 +86,7 @@ class LoginAbl {
                     premium: user.premium === true,
                     isPremium: premiumState.isPremium,
                     premiumSource: premiumState.source,
+                    coachedAccess,
                     athletes: user.athletes || [],
                     // Without this the client caches a user whose dismissal flags
                     // are all undefined, and every "seen once" modal reopens on

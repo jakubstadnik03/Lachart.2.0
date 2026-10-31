@@ -3803,6 +3803,7 @@ export default function NativeTrainingPage({
           <div style={{ ...cardEntry(3), ...snap }}>
             <PremiumLock
               feature="Performance Profile"
+              coachCovered
               plan="pro"
               title="Performance profile"
               teaser={(() => {

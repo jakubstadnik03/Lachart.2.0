@@ -61,6 +61,28 @@ describe('PremiumLock', () => {
     expect(html).not.toContain('the real content');
   });
 
+  describe('an athlete whose coach pays for them', () => {
+    const renderCovered = (coachCovered) => {
+      Object.assign(mockPremium, { isPremium: false, canViewAnalytics: true, premiumResolved: true });
+      return renderToStaticMarkup(
+        <PremiumLock feature="Form" coachCovered={coachCovered}>
+          <div>the real content</div>
+        </PremiumLock>,
+      );
+    };
+    afterEach(() => { mockPremium.canViewAnalytics = false; });
+
+    it('sees a read-only view their coach covers', () => {
+      expect(renderCovered(true)).toContain('the real content');
+    });
+
+    it('still meets the lock on anything their coach does not cover', () => {
+      const html = renderCovered(false);
+      expect(html).toContain('Premium feature');
+      expect(html).not.toContain('the real content');
+    });
+  });
+
   describe('personal preview', () => {
     const renderPreview = (state, role = 'athlete') => {
       Object.assign(mockPremium, state);

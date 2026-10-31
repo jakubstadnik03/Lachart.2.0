@@ -11,7 +11,9 @@
  *   3. SUBSCRIPTION_ENABLED !== 'true' (paywall off systemwide)          → always allowed
  *   4. BETA_ALL_PREMIUM === 'true' (early-access override)               → always allowed
  *   5. Active paid Stripe subscription whose plan unlocks the feature    → allowed
- *   6. Otherwise → 403 with { code, requiredPlans, currentPlan }
+ *   6. A COACHED_FEATURES key, and the athlete's coach is on a coach-tier
+ *      plan (utils/coachedAccess)                                        → allowed
+ *   7. Otherwise → 403 with { code, requiredPlans, currentPlan }
  *
  * The matrix below MUST stay in sync with:
  *   client/src/pages/About.jsx          (marketing pitch)
@@ -25,6 +27,7 @@
 
 const User = require('../models/UserModel');
 const { resolvePremiumForUserDocument } = require('../utils/premiumAccess');
+const { resolveCoachedAccess, coachedFeatureAllowed, COACHED_FEATURES } = require('../utils/coachedAccess');
 
 /**
  * Which plans unlock which feature. Free is implicit when listed.
@@ -187,7 +190,7 @@ function requireFeature(featureKey) {
 
   return async (req, res, next) => {
     try {
-      const { plan, bypass } = await resolveUserPlan(req);
+      const { user, plan, bypass } = await resolveUserPlan(req);
       if (bypass) {
         req.gatePlan = plan;
         req.gateBypass = bypass;
@@ -197,6 +200,16 @@ function requireFeature(featureKey) {
       if (allowed.includes(plan)) {
         req.gatePlan = plan;
         return next();
+      }
+      // A coach-tier plan covers the read-only side of Pro for its athletes
+      // (utils/coachedAccess). Looked up only when the athlete's own plan fails.
+      if (COACHED_FEATURES.includes(featureKey) && user) {
+        const coached = await resolveCoachedAccess(user);
+        if (coachedFeatureAllowed(featureKey, coached)) {
+          req.gatePlan = plan;
+          req.gateCoachedBy = coached.coachId;
+          return next();
+        }
       }
       // Cheapest plan that unlocks the feature — UI uses this to deep-link
       // straight to the right Stripe price.

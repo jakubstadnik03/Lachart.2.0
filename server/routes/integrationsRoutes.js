@@ -21,6 +21,7 @@ const {
 const GarminStream = require('../models/GarminStream');
 const GarminWellness = require('../models/GarminWellness');
 const { resolveUserPlan } = require('../middleware/featureGate');
+const { resolveCoachedAccess } = require('../utils/coachedAccess');
 const User = require('../models/UserModel');
 const Training = require('../models/training');
 const TrainingAbl = require('../abl/trainingAbl');
@@ -5707,8 +5708,11 @@ router.get('/activities', verifyToken, activitiesCacheMiddleware, async (req, re
     // still gets full history. resolveUserPlan returns a non-'free' plan for any
     // bypass (admin / SUBSCRIPTION_ENABLED off / manual premium / real sub).
     try {
-      const { plan } = await resolveUserPlan(req);
-      if (plan === 'free') {
+      const { user: requester, plan } = await resolveUserPlan(req);
+      // An athlete whose coach pays for them keeps full history too.
+      const coveredByCoach = plan === 'free'
+        && (await resolveCoachedAccess(requester)).active;
+      if (plan === 'free' && !coveredByCoach) {
         const thirtyDaysAgo = new Date(Date.now() - (30 * 24 * 60 * 60 * 1000));
         if (dateCutoff < thirtyDaysAgo) dateCutoff = thirtyDaysAgo;
       }

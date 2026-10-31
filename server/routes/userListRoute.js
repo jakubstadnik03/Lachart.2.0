@@ -43,6 +43,7 @@ const LactateSession = require("../models/lactateSession");
 const Event = require("../models/Event");
 const User = require("../models/UserModel");
 const { resolvePremiumForUserDocument } = require("../utils/premiumAccess");
+const { resolveCoachedAccess, coachedAccessPayload } = require("../utils/coachedAccess");
 const CoachOutreachLead = require("../models/CoachOutreachLead");
 const { sendLactateTestReportEmail } = require("../services/lactateTestReportEmailService");
 const {
@@ -1080,6 +1081,7 @@ router.put("/edit-profile", verifyToken, async (req, res) => {
         }
 
         const premiumState = await resolvePremiumForUserDocument(updatedUser);
+        const coachedAccess = coachedAccessPayload(await resolveCoachedAccess(updatedUser));
 
         // Return updated data without sensitive information
         const userResponse = {
@@ -1092,6 +1094,7 @@ router.put("/edit-profile", verifyToken, async (req, res) => {
             premium: updatedUser.premium === true,
             isPremium: premiumState.isPremium,
             premiumSource: premiumState.source,
+            coachedAccess,
             dateOfBirth: updatedUser.dateOfBirth,
             address: updatedUser.address,
             phone: updatedUser.phone,
@@ -1565,6 +1568,7 @@ router.get("/profile", verifyToken, async (req, res) => {
         const regLoc = publicRegistrationLocation(user);
 
         const premiumState = await resolvePremiumForUserDocument(user);
+        const coachedAccess = coachedAccessPayload(await resolveCoachedAccess(user));
 
         // Return data without sensitive information
         const userResponse = {
@@ -1577,6 +1581,7 @@ router.get("/profile", verifyToken, async (req, res) => {
             premium: user.premium === true,
             isPremium: premiumState.isPremium,
             premiumSource: premiumState.source,
+            coachedAccess,
             createdAt: user.createdAt || null,
             signupMethod: signup.method,
             signupMethodSource: signup.source,

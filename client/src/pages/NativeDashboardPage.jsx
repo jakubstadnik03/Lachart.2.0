@@ -818,12 +818,15 @@ export default function NativeDashboardPage({
   // isPremium; there is no "has ever held a paid plan" flag on it yet. Until
   // the server sends one, somebody who cancelled can see this up to three
   // times over three months, which is the known rough edge.
-  const { isPremium, premiumResolved } = usePremium();
+  //
+  // An athlete whose coach pays for them is not offered a plan of their own
+  // here: canViewAnalytics stands in for isPremium.
+  const { canViewAnalytics, premiumResolved } = usePremium();
   const [trialOfferOpen, setTrialOfferOpen] = useState(false);
   useEffect(() => {
     const eligible = shouldOfferTrial({
       user,
-      isPremium,
+      isPremium: canViewAnalytics,
       premiumResolved,
       hasTest: Array.isArray(tests) && tests.length > 0,
       hasTracker: hasTrackerConnected(user),
@@ -833,7 +836,7 @@ export default function NativeDashboardPage({
     markTrialOfferShown();
     trackEvent('trial_offer_shown', { source: 'native_dashboard' });
     setTrialOfferOpen(true);
-  }, [user, isPremium, premiumResolved, tests]);
+  }, [user, canViewAnalytics, premiumResolved, tests]);
 
   // The viewer's own most recent test, used to frame the connect sheet above.
   // `tests` is already on the page for the last-test card, so this costs
@@ -1408,7 +1411,7 @@ export default function NativeDashboardPage({
             </div>
             <div style={styles.overviewTitle}>Training overview</div>
 
-            {!isPremium && (
+            {!canViewAnalytics && (
             <div style={{ ...cardEntry(0), ...snapStyle }}>
               <PremiumLock
                 feature="Performance Insights"
@@ -1449,6 +1452,7 @@ export default function NativeDashboardPage({
             <div style={{ ...cardEntry(2), ...snapStyle }}>
               <PremiumLock
                 feature="Upcoming Races"
+                coachCovered
                 plan="pro"
                 title="Race countdown"
                 unlocks={[
@@ -1487,6 +1491,7 @@ export default function NativeDashboardPage({
             <div style={{ ...cardEntry(4), ...snapStyle }}>
               <PremiumLock
                 feature="This Week & Daily TSS"
+                coachCovered
                 plan="pro"
                 title="Daily training stress"
                 unlocks={['Training stress for every day of the week, against your plan']}
@@ -1544,7 +1549,7 @@ export default function NativeDashboardPage({
               Without Premium it stands alone and the carousel waits, locked,
               on the overview. */}
           <div style={{ ...cardEntry(0), ...snapStyle }}>
-            {isPremium ? (
+            {canViewAnalytics ? (
               <WeeklySummaryCarousel
                 activities={activities}
                 plannedWorkouts={plannedWorkouts}
@@ -1656,6 +1661,7 @@ export default function NativeDashboardPage({
           <div ref={statusHeroRef} style={{ ...cardEntry(3), ...snapStyle }}>
             <PremiumLock
               feature="Form & Fitness (Status)"
+              coachCovered
               plan="pro"
               title="Form & fitness"
               teaser={<FormTeaser todayMetrics={todayMetrics} loading={metricsLoading} />}

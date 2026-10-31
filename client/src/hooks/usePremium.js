@@ -41,6 +41,15 @@ export function usePremium() {
   const isCoach = isPremium;
 
   /**
+   * An athlete whose coach is on a coach-tier plan (server/utils/coachedAccess).
+   * It opens the read-only side of Pro — full test history with zones and
+   * comparison, the load/form charts, full calendar history — and nothing
+   * that creates work, which stays behind isPremium.
+   */
+  const coachedAccess = user?.coachedAccess?.active === true ? user.coachedAccess : null;
+  const canViewAnalytics = isPremium || coachedAccess != null;
+
+  /**
    * False until the user object exists.
    *
    * isPremium is `user != null && user.isPremium === true`, so during the
@@ -83,5 +92,13 @@ export function usePremium() {
     requiredPlan: modalState.requiredPlan,
   };
 
-  return { isPremium, premiumResolved, isCoach, gate, UpgradeModalProps };
+  return {
+    isPremium,
+    premiumResolved,
+    isCoach,
+    canViewAnalytics,
+    coachedBy: coachedAccess?.coachName || null,
+    gate,
+    UpgradeModalProps,
+  };
 }

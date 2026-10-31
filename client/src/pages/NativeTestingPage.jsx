@@ -971,6 +971,7 @@ export default function NativeTestingPage({ user, athleteId: externalAthleteId }
             <div style={{ ...cardEntry(2), ...snap }}>
               <PremiumLock
                 feature="Training Since Test"
+                coachCovered
                 plan="pro"
                 title="Since your test"
                 teaser={(

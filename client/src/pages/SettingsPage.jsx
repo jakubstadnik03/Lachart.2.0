@@ -188,7 +188,7 @@ const SettingsPage = () => {
   const { user, logout, login } = useAuth();
   const location = useLocation();
   const { addNotification } = useNotification();
-  const { isPremium, gate, UpgradeModalProps: fitUpgradeModalProps } = usePremium();
+  const { isPremium, coachedBy, canViewAnalytics, gate, UpgradeModalProps: fitUpgradeModalProps } = usePremium();
   const [activeTab, setActiveTab] = useState('profile');
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   
@@ -3311,6 +3311,13 @@ const SettingsPage = () => {
                   ) : null}
                   {isManualPremium && (
                     <span className="inline-block mt-1 px-2 py-0.5 text-xs bg-purple-100 text-purple-700 rounded-full font-medium">Complimentary access</span>
+                  )}
+                  {/* Their coach pays for the read-only side — say so, or a
+                      free label reads as "you are missing out". */}
+                  {currentPlan === 'free' && !isPremium && canViewAnalytics && (
+                    <p className="mt-2 max-w-md text-sm text-gray-600">
+                      {coachedBy ? `${coachedBy}'s Coach plan` : 'Your coach’s plan'} covers your full test history, training zones and charts. You don’t need a plan of your own to train with them.
+                    </p>
                   )}
                   {!isManualPremium && isActive && currentPlan !== 'free' && (
                     <span className="inline-block mt-1 px-2 py-0.5 text-xs bg-green-100 text-green-700 rounded-full font-medium">Active</span>
