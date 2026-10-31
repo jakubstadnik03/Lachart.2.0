@@ -24,8 +24,14 @@ export function resolveLtAnchorsFromTest(testData) {
   let lt2_value = thresholds['LTP2'];
   let hr1 = thresholds.heartRates?.['LTP1'];
   let hr2 = thresholds.heartRates?.['LTP2'];
+  // The engine already keeps LT2 clear of LT1 and says so in its notes and
+  // confidence. Swapping in OBLA 3.5 / IAT here — both read off the raw
+  // stages, not the engine's curve — meant the zones saved to the profile
+  // were built around a different LT2 from the one the test page showed.
+  // The swap stays for the legacy pipeline, which has no such guard.
+  const fromEngine = Boolean(thresholds.engine);
 
-  if (sport === 'bike' && lt1_value != null && lt2_value != null && (lt2_value - lt1_value) < MIN_LT2_LT1_GAP_W) {
+  if (!fromEngine && sport === 'bike' && lt1_value != null && lt2_value != null && (lt2_value - lt1_value) < MIN_LT2_LT1_GAP_W) {
     const obla35 = thresholds['OBLA 3.5'];
     const iat = thresholds['IAT'];
     if (obla35 != null && obla35 > lt1_value + MIN_LT2_LT1_GAP_W) {
@@ -36,7 +42,7 @@ export function resolveLtAnchorsFromTest(testData) {
       hr2 = thresholds.heartRates?.['IAT'] ?? hr2;
     }
   }
-  if (sport === 'run' || sport === 'swim') {
+  if (!fromEngine && (sport === 'run' || sport === 'swim')) {
     const gap = lt1_value != null && lt2_value != null ? lt1_value - lt2_value : 0;
     const minGapPace = (lt2_value || 0) * 0.08;
     if (gap < minGapPace && lt1_value != null && lt2_value != null) {
@@ -62,5 +68,5 @@ export function resolveLtAnchorsFromTest(testData) {
     if (lt2_value >= lt1_value) return null;
   }
 
-  return { lt1_value, lt2_value, sport, hr1, hr2 };
+  return { lt1_value, lt2_value, sport, hr1, hr2, hrCurve: thresholds.engine?.heartRateCurve || null };
 }

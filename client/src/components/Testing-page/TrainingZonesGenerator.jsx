@@ -9,7 +9,8 @@ import TestSection from './TestSection';
 import TrainingGlossary from '../DashboardPage/TrainingGlossary';
 import { useAuth } from '../../context/AuthProvider';
 import { getEffectiveLactateInputMode, getLactateDisplayMode } from '../../utils/lactateTestInputMode';
-import { ltZoneBounds, zonesFromBounds, measuredMaxHr } from '../../utils/trainingZoneBounds';
+import { ltZoneBounds, TOP_FACTOR } from '../../utils/trainingZoneBounds';
+import { heartRateZonesForTest } from './zoneCalculator';
 import { resolveDistanceUnitSystem } from '../../utils/unitsConverter';
 
 const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
@@ -399,14 +400,26 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
     // HR is optional - if not available, we'll show zones without HR
     const hasHR = hr1 && hr2;
 
-    // One HR zone set for every branch below. Edges are shared (no gap between
-    // Z3 and Z4), and Z5 stops at the heart rate actually recorded in the test
-    // instead of 1.30x LT2 HR, which used to run well past the athlete's max.
-    const hrZones = hasHR
-      ? zonesFromBounds(ltZoneBounds({
-          lt1: hr1, lt2: hr2, ascending: true, floorFactor: 0.50, top: measuredMaxHr(mockData),
-        }))
-      : null;
+    // The same zone shape as the profile, the report e-mail and the app
+    // (utils/trainingZoneBounds). This table used its own — Z1 from 0.50x
+    // LT1, Z5 to 1.20x LT2 — so the zones on this page and the zones saved
+    // to the profile were different numbers for the same test.
+    const isPaceSportNow = sport === 'run' || sport === 'swim';
+    const intensityAscending = !isPaceSportNow || storageMode === 'speed';
+    const zoneBoundsFor = (round) => ltZoneBounds({
+      lt1: lt1_value, lt2: lt2_value, ascending: intensityAscending,
+      topFactor: isPaceSportNow ? TOP_FACTOR.pace : TOP_FACTOR.power, round,
+    });
+    // HR zones are the HR this athlete had at each of those edges in the test
+    // — see heartRateZoneBoundsFromTest — or nothing, with the reason, when
+    // HR barely moved between the thresholds.
+    const hrResult = heartRateZonesForTest({
+      anchors: { lt1_value, lt2_value, sport, hr1, hr2, hrCurve: thresholds.engine?.heartRateCurve },
+      intensityBounds: zoneBoundsFor(false),
+      testData: mockData,
+    });
+    const hrZones = hrResult.zones;
+    const heartRateNote = hrResult.note;
     const hrRange = (z) => {
       const zone = hrZones?.[`zone${z}`];
       return zone ? `${zone.min}\u2013${zone.max} BPM` : 'N/A';
@@ -556,7 +569,7 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
       // Z1: intenzita pod 90 % LT1 (spodní hranice ~50 % LT1 pro tabulku)
       // Shared zone edges: the end of one zone is the start of the next, so no
       // intensity falls between Z3 and Z4 (or Z4 and Z5) as it used to.
-      const powerB = ltZoneBounds({ lt1: lt1_watts, lt2: lt2_watts, ascending: true, floorFactor: 0.50, topFactor: 1.20 }) || [0, 0, 0, 0, 0, 0];
+      const powerB = zoneBoundsFor(true) || [0, 0, 0, 0, 0, 0];
       const zone1_min_power = powerB[0];
       const zone1_max_power = powerB[1];
       const zone2_min_power = powerB[1];
@@ -627,17 +640,17 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
           zone1: {
             min: zone1_min_power,
             max: zone1_max_power,
-            description: '< 90% LT1 (recovery / easy)',
+            description: '< 80% LT1 (recovery / easy)',
             hr: hasHR ? hrRange(1) : 'N/A',
-            percent: '< 90% LT1',
+            percent: '< 80% LT1',
             lactate: `${finalZone1.min.toFixed(1)}–${finalZone1.max.toFixed(1)}`,
           },
           zone2: {
             min: zone2_min_power,
             max: zone2_max_power,
-            description: '90%–100% LT1',
+            description: '80%–100% LT1',
             hr: hasHR ? hrRange(2) : 'N/A',
-            percent: '90–100% LT1',
+            percent: '80–100% LT1',
             lactate: `${finalZone2.min.toFixed(1)}–${finalZone2.max.toFixed(1)}`,
           },
           zone3: {
@@ -651,23 +664,24 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
           zone4: {
             min: zone4_min_power,
             max: zone4_max_power,
-            description: 'LT2 – 104% LT2 (threshold)',
+            description: 'LT2 ± 3% (threshold)',
             hr: hasHR ? hrRange(4) : 'N/A',
-            percent: 'LT2 – 104% LT2',
+            percent: 'LT2 ± 3%',
             // Use the calculated range for this specific test (no hardcoded 4.0 anchor)
             lactate: `${finalZone4.min.toFixed(1)}–${finalZone4.max.toFixed(1)}`,
           },
           zone5: {
             min: zone5_min_power,
             max: zone5_max_power,
-            description: '> 104% LT2 (VO₂max+ / sprint)',
+            description: '> LT2 + 3% (VO₂max+ / sprint)',
             hr: hasHR ? hrRange(5) : 'N/A',
-            percent: '> 104% LT2',
+            percent: '> LT2 + 3%',
             // Use the calculated range for this specific test (no hardcoded 4.0 anchor)
             lactate: `${finalZone5.min.toFixed(1)}–${finalZone5.max.toFixed(1)}`,
           },
         },
-        heartRate: hrZones
+        heartRate: hrZones,
+        heartRateNote,
       };
       setZones(applyTestZoneOverrides(calculated, sport));
     } else if (storageMode === 'speed') {
@@ -678,7 +692,7 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
 
       // Shared zone edges: the end of one zone is the start of the next, so no
       // intensity falls between Z3 and Z4 (or Z4 and Z5) as it used to.
-      const speedB = ltZoneBounds({ lt1: lt1_kmh, lt2: lt2_kmh, ascending: true, floorFactor: 0.50, topFactor: 1.30 }) || [0, 0, 0, 0, 0, 0];
+      const speedB = zoneBoundsFor(true) || [0, 0, 0, 0, 0, 0];
       const zone1_min_speed = speedB[0];
       const zone1_max_speed = speedB[1];
       const zone2_min_speed = speedB[1];
@@ -733,17 +747,17 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
           zone1: {
             min: toDisplaySpeed(zone1_min_speed),
             max: toDisplaySpeed(zone1_max_speed),
-            description: '< 90% LT1 (recovery / easy)',
+            description: '< 80% LT1 (recovery / easy)',
             hr: hasHR ? hrRange(1) : 'N/A',
-            percent: '< 90% LT1',
+            percent: '< 80% LT1',
             lactate: `${finalZone1Speed.min.toFixed(1)}–${finalZone1Speed.max.toFixed(1)}`,
           },
           zone2: {
             min: toDisplaySpeed(zone2_min_speed),
             max: toDisplaySpeed(zone2_max_speed),
-            description: '90%–100% LT1',
+            description: '80%–100% LT1',
             hr: hasHR ? hrRange(2) : 'N/A',
-            percent: '90–100% LT1',
+            percent: '80–100% LT1',
             lactate: `${finalZone2Speed.min.toFixed(1)}–${finalZone2Speed.max.toFixed(1)}`,
           },
           zone3: {
@@ -757,21 +771,22 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
           zone4: {
             min: toDisplaySpeed(zone4_min_speed),
             max: toDisplaySpeed(zone4_max_speed),
-            description: 'LT2 – 104% LT2 (threshold)',
+            description: 'LT2 ± 3% (threshold)',
             hr: hasHR ? hrRange(4) : 'N/A',
-            percent: 'LT2 – 104% LT2',
+            percent: 'LT2 ± 3%',
             lactate: `${finalZone4Speed.min.toFixed(1)}–${finalZone4Speed.max.toFixed(1)}`,
           },
           zone5: {
             min: toDisplaySpeed(zone5_min_speed),
             max: toDisplaySpeed(zone5_max_speed),
-            description: '> 104% LT2 (VO₂max+ / sprint)',
+            description: '> LT2 + 3% (VO₂max+ / sprint)',
             hr: hasHR ? hrRange(5) : 'N/A',
-            percent: '> 104% LT2',
+            percent: '> LT2 + 3%',
             lactate: `${finalZone5Speed.min.toFixed(1)}–${finalZone5Speed.max.toFixed(1)}`,
           },
         },
         heartRate: hrZones,
+        heartRateNote,
       };
       setZones(applyTestZoneOverrides(calculated, sport));
     } else {
@@ -787,7 +802,7 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
       // Shared zone edges: the end of one zone is the start of the next, so no
       // intensity falls between Z3 and Z4 (or Z4 and Z5) as it used to.
       // Pace seconds run backwards, so the edges descend (ascending: false).
-      const pace_secB = ltZoneBounds({ lt1: lt1_sec, lt2: lt2_sec, ascending: false, floorFactor: 0.50, topFactor: 1.30 }) || [0, 0, 0, 0, 0, 0];
+      const pace_secB = zoneBoundsFor(true) || [0, 0, 0, 0, 0, 0];
       const zone1_min_pace_sec = pace_secB[0];
       const zone1_max_pace_sec = pace_secB[1];
       const zone2_min_pace_sec = pace_secB[1];
@@ -850,17 +865,17 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
         zone1: {
             min: fmt(zone1_min_pace_sec), // pomalejší (více sekund)
             max: fmt(zone1_max_pace_sec), // rychlejší (méně sekund)
-          description: '< 90% LT1 (recovery / easy)',
+          description: '< 80% LT1 (recovery / easy)',
           hr: hrRange(1),
-          percent: '< 90% LT1',
+          percent: '< 80% LT1',
           lactate: `${finalZone1Pace.min.toFixed(1)}–${finalZone1Pace.max.toFixed(1)}`,
         },
         zone2: {
             min: fmt(zone2_min_pace_sec), // pomalejší
             max: fmt(zone2_max_pace_sec), // rychlejší
-          description: '90%–100% LT1',
+          description: '80%–100% LT1',
           hr: hrRange(2),
-          percent: '90–100% LT1',
+          percent: '80–100% LT1',
           lactate: `${finalZone2Pace.min.toFixed(1)}–${finalZone2Pace.max.toFixed(1)}`,
         },
         zone3: {
@@ -874,23 +889,24 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
         zone4: {
             min: fmt(zone4_min_pace_sec), // pomalejší
             max: fmt(zone4_max_pace_sec), // rychlejší
-          description: 'LT2 – 104% LT2 (threshold)',
+          description: 'LT2 ± 3% (threshold)',
           hr: hrRange(4),
-          percent: 'LT2 – 104% LT2',
+          percent: 'LT2 ± 3%',
           // Use the calculated range for this specific test (no hardcoded 4.0 anchor)
           lactate: `${finalZone4Pace.min.toFixed(1)}–${finalZone4Pace.max.toFixed(1)}`,
         },
         zone5: {
             min: fmt(zone5_min_pace_sec), // pomalejší
             max: fmt(zone5_max_pace_sec), // rychlejší
-          description: '> 104% LT2 (VO₂max+ / sprint)',
+          description: '> LT2 + 3% (VO₂max+ / sprint)',
           hr: hrRange(5),
-          percent: '> 104% LT2',
+          percent: '> LT2 + 3%',
           // Use the calculated range for this specific test (no hardcoded 4.0 anchor)
           lactate: `${finalZone5Pace.min.toFixed(1)}–${finalZone5Pace.max.toFixed(1)}`,
         },
       },
-      heartRate: hrZones
+      heartRate: hrZones,
+      heartRateNote,
     };
     setZones(applyTestZoneOverrides(calculated, sport));
     }
@@ -1007,6 +1023,11 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
                 <p>Please edit the test and add base lactate value for accurate threshold and zone calculations.</p>
               </div>
             </div>
+          </div>
+        )}
+        {zones?.heartRateNote && (
+          <div className="mx-4 mt-4 px-3 sm:px-4 py-2 bg-amber-50 border-l-4 border-amber-400 rounded-lg max-w-full">
+            <p className="text-sm text-amber-900 break-words">{zones.heartRateNote}</p>
           </div>
         )}
         <div className="overflow-x-auto max-w-full">
@@ -1153,11 +1174,11 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
           </ul>
         ) : (
           <ul className="text-xs sm:text-sm space-y-1.5 sm:space-y-1">
-            <li className="flex items-start gap-2"><span className="mt-1 w-2.5 h-2.5 rounded-full bg-blue-400/70 border border-white/70 shadow flex-shrink-0" /><span><span className="font-medium text-gray-900">Zone 1 (Recovery/Easy):</span> <span className="hidden sm:inline text-gray-500">&lt;90% LT1 · </span>Long easy runs &amp; recovery</span></li>
-            <li className="flex items-start gap-2"><span className="mt-1 w-2.5 h-2.5 rounded-full bg-green-400/70 border border-white/70 shadow flex-shrink-0" /><span><span className="font-medium text-gray-900">Zone 2 (Base):</span> <span className="hidden sm:inline text-gray-500">90–100% LT1 · </span>Aerobic base building</span></li>
+            <li className="flex items-start gap-2"><span className="mt-1 w-2.5 h-2.5 rounded-full bg-blue-400/70 border border-white/70 shadow flex-shrink-0" /><span><span className="font-medium text-gray-900">Zone 1 (Recovery/Easy):</span> <span className="hidden sm:inline text-gray-500">&lt;80% LT1 · </span>Long easy runs &amp; recovery</span></li>
+            <li className="flex items-start gap-2"><span className="mt-1 w-2.5 h-2.5 rounded-full bg-green-400/70 border border-white/70 shadow flex-shrink-0" /><span><span className="font-medium text-gray-900">Zone 2 (Base):</span> <span className="hidden sm:inline text-gray-500">80–100% LT1 · </span>Aerobic base building</span></li>
             <li className="flex items-start gap-2"><span className="mt-1 w-2.5 h-2.5 rounded-full bg-yellow-400/70 border border-white/70 shadow flex-shrink-0" /><span><span className="font-medium text-gray-900">Zone 3 (Tempo):</span> <span className="hidden sm:inline text-gray-500">LT1–LT2 · </span>Marathon / sweet spot</span></li>
             <li className="flex items-start gap-2"><span className="mt-1 w-2.5 h-2.5 rounded-full bg-orange-400/70 border border-white/70 shadow flex-shrink-0" /><span><span className="font-medium text-gray-900">Zone 4 (Threshold):</span> <span className="hidden sm:inline text-gray-500">~LT2 · </span>Threshold / interval, high aerobic</span></li>
-            <li className="flex items-start gap-2"><span className="mt-1 w-2.5 h-2.5 rounded-full bg-red-500/70 border border-white/70 shadow flex-shrink-0" /><span><span className="font-medium text-gray-900">Zone 5 (VO2max+):</span> <span className="hidden sm:inline text-gray-500">&gt;105% LT2 · </span>Fast repeats, <b>max</b> zone</span></li>
+            <li className="flex items-start gap-2"><span className="mt-1 w-2.5 h-2.5 rounded-full bg-red-500/70 border border-white/70 shadow flex-shrink-0" /><span><span className="font-medium text-gray-900">Zone 5 (VO2max+):</span> <span className="hidden sm:inline text-gray-500">&gt;LT2 + 3% · </span>Fast repeats, <b>max</b> zone</span></li>
           </ul>
         )}
       </div>

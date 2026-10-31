@@ -486,6 +486,7 @@ function calculateThresholds(testData) {
     thresholds.lactates['LTP2'] = engine.lt2.lactate;
     thresholds.heartRates['LTP2'] = engine.lt2.heartRate;
     thresholds.confidence = engine.confidence;
+    thresholds.engine = { notes: engine.notes, heartRateCurve: engine.heartRateCurve };
     delete thresholds['LTRatio'];
     if (Number.isFinite(engine.ratio) && engine.ratio >= 1.03 && engine.ratio <= (isPaceSport ? 2.5 : 1.5)) {
       thresholds['LTRatio'] = engine.ratio.toFixed(2);
