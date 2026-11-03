@@ -10,6 +10,7 @@ import WeeklySummaryCarousel from '../components/NativeDashboard/WeeklySummaryCa
 import LastTestCard      from '../components/NativeDashboard/LastTestCard';
 import ZoneDistCard      from '../components/NativeDashboard/ZoneDistCard';
 import AppleHealthWellnessCard from '../components/NativeDashboard/AppleHealthWellnessCard';
+import WellnessCheckInCard from '../components/Wellness/WellnessCheckInCard';
 import HealthEpisodeCard from '../components/NativeDashboard/HealthEpisodeCard';
 import WellnessDetailSheet from '../components/shared/WellnessDetailSheet';
 import OnboardingChecklist from '../components/NativeDashboard/OnboardingChecklist';
@@ -1538,6 +1539,15 @@ export default function NativeDashboardPage({
             key={`nhec-${athleteId || user?._id || user?.id || 'self'}`}
             athleteId={athleteId || user?._id || user?.id}
             loading={loading}
+            style={{ ...cardEntry(0), ...snapStyle }}
+          />
+
+          {/* Daily wellness check-in: the "check in" prompt when one is due,
+              the trend once there are answers. Renders nothing otherwise. */}
+          <WellnessCheckInCard
+            key={`nwci-${athleteId || user?._id || user?.id || 'self'}`}
+            athleteId={athleteId || null}
+            variant="native"
             style={{ ...cardEntry(0), ...snapStyle }}
           />
 

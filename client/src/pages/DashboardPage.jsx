@@ -27,6 +27,7 @@ import FormFitnessChart from "../components/DashboardPage/FormFitnessChart";
 import WeeklyTrainingLoad from "../components/DashboardPage/WeeklyTrainingLoad";
 import WellnessCard from "../components/DashboardPage/WellnessCard";
 import HealthStatusCard from "../components/DashboardPage/HealthStatusCard";
+import WellnessCheckInCard from "../components/Wellness/WellnessCheckInCard";
 import RaceCountdownCard from "../components/DashboardPage/RaceCountdownCard";
 import DailyCoachCard from "../components/DashboardPage/DailyCoachCard";
 import TrainingTimeline from "../components/DashboardPage/TrainingTimeline";
@@ -3156,6 +3157,12 @@ export default function DashboardPage() {
                 when there is no open episode. */}
             <HealthStatusCard
               key={`hsc-${dashboardDataAthleteId}`}
+              athleteId={dashboardDataAthleteId}
+            />
+            {/* The athlete's daily "how are you" answers. Hidden for an athlete
+                who is not asked; a coach always sees it, to switch it on. */}
+            <WellnessCheckInCard
+              key={`wci-${dashboardDataAthleteId}`}
               athleteId={dashboardDataAthleteId}
             />
             <RaceCountdownCard
