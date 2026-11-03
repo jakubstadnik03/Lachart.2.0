@@ -24,4 +24,30 @@ function planForStripePrice(price, env = process.env) {
   return AMOUNT_TO_PLAN[amount] || null;
 }
 
-module.exports = { planForStripePrice };
+/**
+ * What a checkout for `planId` should do when the user already has a Stripe
+ * subscription, judged by Stripe's own copy of it rather than our row.
+ *
+ * Starting a fresh Checkout on top of a live subscription is how one customer
+ * ended up paying for Coach twice: the new subscription overwrote the row's
+ * stripeSubscriptionId and the old one kept billing, invisible to us. The
+ * portal cannot switch plans (turned off in the Dashboard), so a different
+ * plan is switched in place instead.
+ *
+ * @param {object|null} stripeSubscription  stripe.subscriptions.retrieve result
+ * @param {string} planId                   the plan being bought
+ * @returns {'checkout'|'switch'|'already_subscribed'|'reactivate'|'past_due'}
+ *   'checkout' when nothing is live in Stripe — our row was stale.
+ */
+function checkoutOverExisting(stripeSubscription, planId, env = process.env) {
+  const status = stripeSubscription?.status;
+  if (!['active', 'trialing', 'past_due'].includes(status)) return 'checkout';
+  // A failing card is fixed first; switching price now would only stack a
+  // second unpaid invoice on the first.
+  if (status === 'past_due') return 'past_due';
+  const current = planForStripePrice(stripeSubscription.items?.data?.[0]?.price, env);
+  if (current !== planId) return 'switch';
+  return stripeSubscription.cancel_at_period_end ? 'reactivate' : 'already_subscribed';
+}
+
+module.exports = { planForStripePrice, checkoutOverExisting };

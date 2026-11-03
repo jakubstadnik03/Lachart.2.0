@@ -5,7 +5,7 @@ const stripe = process.env.SUBSCRIPTION_ENABLED === 'true' && process.env.STRIPE
 const User = require('../models/UserModel');
 const Subscription = require('../models/SubscriptionModel');
 const { canStartCheckout, manageBilling, providerOf, STRIPE } = require('../utils/billingProvider');
-const { planForStripePrice } = require('../utils/stripePlan');
+const { planForStripePrice, checkoutOverExisting } = require('../utils/stripePlan');
 const { canBindStoreTransaction, APPLE } = require('../utils/billingProvider');
 const { mapRevenueCatEvent } = require('../utils/revenueCatEvent');
 const crypto = require('crypto');
@@ -300,6 +300,60 @@ exports.createCheckoutSession = async (req, res) => {
           ? 'Your LaChart subscription is billed through the App Store. Cancel it in iPhone Settings before subscribing here, or manage it from your iPhone.'
           : 'Your LaChart subscription is billed through Google Play. Cancel it in the Play Store before subscribing here, or manage it from your phone.',
       });
+    }
+
+    // Already paying through Stripe: never open a second Checkout on top.
+    // Ask Stripe rather than trusting the row, which drifts when a webhook
+    // is missed — a subscription Stripe has already ended falls through to
+    // a normal checkout below.
+    if (!gate.allowed && gate.reason === 'already_subscribed' && subscription.stripeSubscriptionId) {
+      let live = null;
+      try {
+        live = await stripe.subscriptions.retrieve(subscription.stripeSubscriptionId);
+      } catch (err) {
+        if (err?.code !== 'resource_missing' && err?.statusCode !== 404) throw err;
+      }
+      const step = checkoutOverExisting(live, planId);
+
+      if (step === 'already_subscribed') {
+        return res.status(409).json({
+          error: 'Already subscribed',
+          reason: 'already_subscribed',
+          message: `You already have the ${plan.name} plan.`,
+        });
+      }
+      if (step === 'reactivate') {
+        return res.status(409).json({
+          error: 'Cancellation scheduled',
+          reason: 'cancel_scheduled',
+          message: `Your ${plan.name} plan is set to end. Use Reactivate under Settings → Subscription to keep it.`,
+        });
+      }
+      if (step === 'past_due') {
+        return res.status(409).json({
+          error: 'Payment past due',
+          reason: 'payment_past_due',
+          message: 'Your last payment failed. Update your card under Settings → Subscription → Manage billing, then change plan.',
+        });
+      }
+      if (step === 'switch') {
+        // Prorated onto the next invoice: no surprise charge now, and a
+        // trial keeps running on the new price.
+        const updated = await stripe.subscriptions.update(live.id, {
+          items: [{ id: live.items.data[0].id, price: plan.stripePriceId }],
+          proration_behavior: 'create_prorations',
+          cancel_at_period_end: false,
+        });
+        subscription.plan = planId;
+        subscription.status = updated.status;
+        subscription.stripePriceId = plan.stripePriceId;
+        subscription.cancelAtPeriodEnd = false;
+        await subscription.save();
+        await syncRoleWithPlan(user, planId);
+        await user.save();
+        console.log(`[Checkout] switched ${user.email} to ${planId} on ${live.id}`);
+        return res.json({ switched: true, plan: planId, url: successUrl || null });
+      }
     }
 
     if (subscription?.stripeCustomerId) {
