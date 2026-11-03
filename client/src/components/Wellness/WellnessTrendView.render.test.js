@@ -46,12 +46,20 @@ afterEach(() => {
   container.remove();
 });
 
+const show = (props) => {
+  // root.render is React's, not Testing Library's; the rule only sees the name.
+  // eslint-disable-next-line testing-library/no-unnecessary-act
+  act(() => {
+    root.render(<WellnessTrendView {...props} />);
+  });
+};
+
 function tile(label) {
   return [...container.querySelectorAll('button')].find((b) => b.textContent.startsWith(label));
 }
 
 test('a fall in stress reads green, a fall in sleep reads red', () => {
-  act(() => root.render(<WellnessTrendView summary={summary} />));
+  show({ summary });
   const stressDelta = [...tile('Stress').querySelectorAll('span')].find((s) => s.textContent === '−2');
   const sleepDelta = [...tile('Sleep').querySelectorAll('span')].find((s) => s.textContent === '−2');
   expect(stressDelta.className).toContain('text-emerald-600');
@@ -59,13 +67,13 @@ test('a fall in stress reads green, a fall in sleep reads red', () => {
 });
 
 test('pain shows as its own flag beside the score', () => {
-  act(() => root.render(<WellnessTrendView summary={summary} />));
+  show({ summary });
   expect(container.textContent).toContain('Pain reported');
   expect(container.textContent).toContain('55');
 });
 
 test('tapping a tile opens that area’s 14-day chart, tapping again closes it', () => {
-  act(() => root.render(<WellnessTrendView summary={summary} />));
+  show({ summary });
   expect(container.textContent).not.toContain('Stress · 14 days');
   act(() => tile('Stress').click());
   expect(container.textContent).toContain('Stress · 14 days');
@@ -74,8 +82,14 @@ test('tapping a tile opens that area’s 14-day chart, tapping again closes it',
   expect(container.textContent).not.toContain('Stress · 14 days');
 });
 
+test('the app variant renders the same tiles and deltas', () => {
+  show({ summary, variant: 'native' });
+  expect(tile('Stress').textContent).toContain('−2');
+  expect(container.textContent).toContain('since last');
+});
+
 test('renders nothing before the first check-in', () => {
-  act(() => root.render(<WellnessTrendView summary={{ ...summary, latest: null }} />));
+  show({ summary: { ...summary, latest: null } });
   expect(container.innerHTML).toBe('');
 });
 

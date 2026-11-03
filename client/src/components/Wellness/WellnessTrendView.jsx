@@ -56,7 +56,7 @@ const PAD_B = 18;
  * plan, not missing data.
  */
 function TrendChart({
-  days, valueFor, min, max, height = 120, bands = [], ticks = [], colorFor, ariaLabel,
+  days, valueFor, min, max, height = 120, bands = [], ticks = [], colorFor, ariaLabel, line = '#94a3b8',
 }) {
   const plotW = W - PAD_L - PAD_R;
   const plotH = height - PAD_T - PAD_B;
@@ -97,7 +97,7 @@ function TrendChart({
           </text>
         </g>
       ))}
-      {path && <path d={path} fill="none" stroke="#94a3b8" strokeWidth="1.5" strokeLinejoin="round" />}
+      {path && <path d={path} fill="none" stroke={line} strokeWidth="1.5" strokeLinejoin="round" />}
       {points.map((p) => (
         <circle key={p.d} cx={x(p.i)} cy={y(p.v)} r="3.5" fill={colorFor(p.v)} stroke="#fff" strokeWidth="1.5">
           <title>{`${p.d}: ${p.v}`}</title>
@@ -125,9 +125,10 @@ function bandHex(score) {
   return BAND_STYLE.watch.hex;
 }
 
-function ScoreTrend({ days, byDate }) {
+function ScoreTrend({ days, byDate, line }) {
   return (
     <TrendChart
+      line={line}
       days={days}
       valueFor={(d) => byDate[d]?.score ?? null}
       min={0}
@@ -150,7 +151,7 @@ function ScoreTrend({ days, byDate }) {
   );
 }
 
-function AreaTrend({ area, days, byDate }) {
+function AreaTrend({ area, days, byDate, line }) {
   // Colour each answer by whether it is a good or a bad one for this area.
   const colorFor = (v) => {
     const goodness = area.higherIsBetter ? v : 6 - v;
@@ -168,13 +169,55 @@ function AreaTrend({ area, days, byDate }) {
       ariaLabel={`${area.label}, last 14 days`}
       ticks={[1, 2, 3, 4, 5].map((v) => ({ value: v }))}
       colorFor={colorFor}
+      line={line}
     />
   );
 }
 
-function AreaTile({ area, info, active, onClick }) {
+/**
+ * The native app speaks its own visual language (glass cards, lavender
+ * accent, small uppercase labels), so the native variant swaps the chrome
+ * while the numbers and structure stay identical to the web.
+ */
+const N = {
+  ink: '#0A0E1A',
+  accent: '#5E6590',
+  muted: '#9CA3AF',
+  label: {
+    fontSize: 9.5, fontWeight: 800, color: '#9CA3AF', letterSpacing: '0.06em', textTransform: 'uppercase',
+  },
+  tile: { background: 'rgba(118,126,181,.06)', borderRadius: 12, padding: '8px 10px' },
+  tileActive: { background: 'rgba(118,126,181,.16)', boxShadow: 'inset 0 0 0 1px rgba(94,101,144,.35)' },
+};
+
+function AreaTile({ area, info, active, onClick, native }) {
   const trend = TREND_STYLE[info?.trend || 'same'];
   const value = info?.value;
+  if (native) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        aria-expanded={active}
+        style={{
+          ...N.tile, ...(active ? N.tileActive : null),
+          border: 'none', textAlign: 'left', fontFamily: 'inherit', minWidth: 0,
+          cursor: 'pointer', WebkitTapHighlightColor: 'transparent', touchAction: 'manipulation',
+        }}
+      >
+        <div style={{ ...N.label, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{area.label}</div>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 5, marginTop: 2 }}>
+          <span style={{ fontSize: 16, fontWeight: 800, color: N.ink, fontVariantNumeric: 'tabular-nums' }}>{value ?? '—'}</span>
+          <span style={{ fontSize: 11.5, fontWeight: 800, color: trend.hex, fontVariantNumeric: 'tabular-nums' }}>
+            {formatDelta(info?.delta)}
+          </span>
+        </div>
+        <div style={{ fontSize: 10.5, color: '#6B7280', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {value ? area.scale[value - 1] : ''}
+        </div>
+      </button>
+    );
+  }
   return (
     <button
       type="button"
@@ -194,9 +237,29 @@ function AreaTile({ area, info, active, onClick }) {
   );
 }
 
-export default function WellnessTrendView({ summary }) {
+function Flag({ children, native }) {
+  if (native) {
+    return (
+      <span style={{
+        fontSize: 11, fontWeight: 800, color: '#B91C1C', background: '#FEF2F2',
+        border: '1px solid #FECACA', borderRadius: 999, padding: '3px 9px',
+      }}
+      >
+        {children}
+      </span>
+    );
+  }
+  return (
+    <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-rose-50 text-rose-700 ring-1 ring-rose-200">
+      {children}
+    </span>
+  );
+}
+
+export default function WellnessTrendView({ summary, variant = 'web' }) {
   const [openArea, setOpenArea] = useState(null);
   const { latest, deltas, band, rows = [], today, trendFrom } = summary || {};
+  const native = variant === 'native';
 
   const days = useMemo(
     () => (trendFrom && today ? dayKeys(trendFrom, today) : []),
@@ -209,83 +272,134 @@ export default function WellnessTrendView({ summary }) {
   const bandStyle = BAND_STYLE[band] || null;
   const scoreTrend = TREND_STYLE[deltas?.score?.trend || 'same'];
   const area = openArea ? areaByKey(openArea) : null;
+  const logged = latest.linkedEpisodeId ? ' · logged' : '';
 
-  return (
-    <div className="space-y-3">
-      <div className="flex items-end justify-between gap-3">
-        <div className="flex items-end gap-3">
-          <div className="text-4xl font-bold leading-none tabular-nums" style={{ color: bandStyle?.hex }}>
-            {latest.score}
-          </div>
-          <div className="pb-0.5">
-            {bandStyle && (
-              <span className={`inline-block text-xs font-medium px-2 py-0.5 rounded-full ring-1 ${bandStyle.pill}`}>
-                {bandStyle.label}
-              </span>
-            )}
-            <div className="text-xs text-gray-500 mt-1">{relativeDay(latest.date, today)}</div>
-          </div>
+  const scoreBlock = native ? (
+    <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10 }}>
+        <div style={{
+          fontSize: 38, lineHeight: 1, fontWeight: 800, letterSpacing: '-0.03em',
+          color: bandStyle?.hex || N.ink, fontVariantNumeric: 'tabular-nums',
+        }}
+        >
+          {latest.score}
         </div>
-        <div className="text-right">
-          <div className={`text-sm font-semibold tabular-nums ${scoreTrend.text}`}>
-            {formatDelta(deltas?.score?.delta)}
-          </div>
-          <div className="text-[11px] text-gray-400">since last check-in</div>
+        <div style={{ paddingBottom: 2 }}>
+          {bandStyle && (
+            <span style={{
+              fontSize: 10.5, fontWeight: 800, color: bandStyle.hex, background: `${bandStyle.hex}1A`,
+              borderRadius: 8, padding: '3px 8px',
+            }}
+            >
+              {bandStyle.label}
+            </span>
+          )}
+          <div style={{ fontSize: 11.5, color: '#6B7280', marginTop: 5 }}>{relativeDay(latest.date, today)}</div>
         </div>
       </div>
+      <div style={{ textAlign: 'right' }}>
+        <div style={{ fontSize: 15, fontWeight: 800, color: scoreTrend.hex, fontVariantNumeric: 'tabular-nums' }}>
+          {formatDelta(deltas?.score?.delta)}
+        </div>
+        <div style={N.label}>since last</div>
+      </div>
+    </div>
+  ) : (
+    <div className="flex items-end justify-between gap-3">
+      <div className="flex items-end gap-3">
+        <div className="text-4xl font-bold leading-none tabular-nums" style={{ color: bandStyle?.hex }}>
+          {latest.score}
+        </div>
+        <div className="pb-0.5">
+          {bandStyle && (
+            <span className={`inline-block text-xs font-medium px-2 py-0.5 rounded-full ring-1 ${bandStyle.pill}`}>
+              {bandStyle.label}
+            </span>
+          )}
+          <div className="text-xs text-gray-500 mt-1">{relativeDay(latest.date, today)}</div>
+        </div>
+      </div>
+      <div className="text-right">
+        <div className={`text-sm font-semibold tabular-nums ${scoreTrend.text}`}>
+          {formatDelta(deltas?.score?.delta)}
+        </div>
+        <div className="text-[11px] text-gray-400">since last check-in</div>
+      </div>
+    </div>
+  );
+
+  return (
+    <div style={native ? { display: 'flex', flexDirection: 'column', gap: 12 } : undefined} className={native ? undefined : 'space-y-3'}>
+      {scoreBlock}
 
       {(latest.pain || latest.illness) && (
-        <div className="flex flex-wrap gap-1.5">
-          {latest.pain && (
-            <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-rose-50 text-rose-700 ring-1 ring-rose-200">
-              Pain reported{latest.linkedEpisodeId ? ' · logged' : ''}
-            </span>
-          )}
-          {latest.illness && (
-            <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-rose-50 text-rose-700 ring-1 ring-rose-200">
-              Feeling ill{latest.linkedEpisodeId ? ' · logged' : ''}
-            </span>
-          )}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+          {latest.pain && <Flag native={native}>Pain reported{logged}</Flag>}
+          {latest.illness && <Flag native={native}>Feeling ill{logged}</Flag>}
         </div>
       )}
 
-      {latest.note && (
+      {latest.note && (native ? (
+        <div style={{
+          fontSize: 12.5, lineHeight: 1.45, color: '#374151', background: 'rgba(118,126,181,.06)',
+          borderLeft: '2px solid rgba(94,101,144,.45)', borderRadius: 10, padding: '8px 11px',
+        }}
+        >
+          {latest.note}
+        </div>
+      ) : (
         <blockquote className="text-sm text-gray-700 bg-slate-50 rounded-xl px-3 py-2 border-l-2 border-slate-300">
           {latest.note}
         </blockquote>
-      )}
+      ))}
 
-      {days.length > 0 && <ScoreTrend days={days} byDate={byDate} />}
+      {days.length > 0 && <ScoreTrend days={days} byDate={byDate} line={native ? '#767EB5' : undefined} />}
 
-      <div className="grid grid-cols-3 gap-2">
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: native ? 6 : 8 }}>
         {WELLNESS_AREAS.map((a) => (
           <AreaTile
             key={a.key}
             area={a}
             info={deltas?.areas?.[a.key]}
             active={openArea === a.key}
+            native={native}
             onClick={() => setOpenArea((cur) => (cur === a.key ? null : a.key))}
           />
         ))}
       </div>
 
       {area && (
-        <div className="rounded-xl ring-1 ring-slate-200 p-3">
-          <div className="flex items-center justify-between mb-1">
-            <div className="text-sm font-semibold text-gray-900">{area.label} · 14 days</div>
-            <button type="button" onClick={() => setOpenArea(null)} className="text-xs text-gray-500">
+        <div
+          className={native ? undefined : 'rounded-xl ring-1 ring-slate-200 p-3'}
+          style={native ? { borderRadius: 14, border: '1px solid rgba(118,126,181,.18)', background: 'rgba(255,255,255,.55)', padding: '10px 10px 6px' } : undefined}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 2 }}>
+            <div style={native ? { fontSize: 13, fontWeight: 800, color: N.ink } : undefined} className={native ? undefined : 'text-sm font-semibold text-gray-900'}>
+              {area.label} · 14 days
+            </div>
+            <button
+              type="button"
+              onClick={() => setOpenArea(null)}
+              style={native ? { background: 'none', border: 'none', fontFamily: 'inherit', fontSize: 12, fontWeight: 700, color: N.accent, padding: 4 } : undefined}
+              className={native ? undefined : 'text-xs text-gray-500'}
+            >
               Close
             </button>
           </div>
-          <div className="text-[11px] text-gray-500 mb-1">
+          <div style={native ? { fontSize: 11, color: '#6B7280', marginBottom: 2 } : undefined} className={native ? undefined : 'text-[11px] text-gray-500 mb-1'}>
             1 = {area.scale[0]}, 5 = {area.scale[4]}
             {area.higherIsBetter ? '' : ' · lower is better'}
           </div>
-          <AreaTrend area={area} days={days} byDate={byDate} />
+          <AreaTrend area={area} days={days} byDate={byDate} line={native ? '#767EB5' : undefined} />
         </div>
       )}
 
-      <p className="text-[11px] text-gray-400">{GUIDANCE_NOTE}</p>
+      <p
+        style={native ? { fontSize: 10.5, lineHeight: 1.4, color: N.muted, margin: 0 } : undefined}
+        className={native ? undefined : 'text-[11px] text-gray-400'}
+      >
+        {GUIDANCE_NOTE}
+      </p>
     </div>
   );
 }

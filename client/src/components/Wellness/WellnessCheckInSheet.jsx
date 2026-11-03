@@ -13,11 +13,10 @@
  * Bottom sheet on a phone (web and the Capacitor app), centred modal from the
  * sm breakpoint up - the same shell as HealthCheckInModal.
  */
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect } from 'react';
 import ReactDOM from 'react-dom';
 import { XMarkIcon } from '@heroicons/react/24/outline';
-import { saveWellnessCheckIn } from '../../services/wellnessCheckInApi';
-import { fetchHealthToday } from '../../services/healthApi';
+import useWellnessCheckInForm from './useWellnessCheckInForm';
 import { WELLNESS_AREAS, BAND_STYLE, GUIDANCE_NOTE } from './wellnessCopy';
 
 function ScaleRow({ area, value, onChange }) {
@@ -84,14 +83,6 @@ function YesNo({ question, hint, value, onChange }) {
   );
 }
 
-/** Open episodes of the matching kind, for "update what is already logged". */
-function matchingEpisodes(items, { pain, illness }) {
-  return (items || []).filter((it) => {
-    const kind = it?.catalogEntry?.kind || it?.episode?.kind;
-    return (illness && kind === 'illness') || (pain && kind !== 'illness');
-  });
-}
-
 export default function WellnessCheckInSheet({
   open,
   onClose,
@@ -102,27 +93,12 @@ export default function WellnessCheckInSheet({
   existing = null,
   sharedWithCoach = true,
 }) {
-  const [answers, setAnswers] = useState({});
-  const [pain, setPain] = useState(null);
-  const [illness, setIllness] = useState(null);
-  const [note, setNote] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState(null);
-  const [saved, setSaved] = useState(null); // { checkIn, band }
-  const [openEpisodes, setOpenEpisodes] = useState(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const a = {};
-    WELLNESS_AREAS.forEach(({ key }) => { a[key] = existing?.[key] ?? null; });
-    setAnswers(a);
-    setPain(existing ? Boolean(existing.pain) : null);
-    setIllness(existing ? Boolean(existing.illness) : null);
-    setNote(existing?.note || '');
-    setSaved(null);
-    setError(null);
-    setOpenEpisodes(null);
-  }, [open, existing]);
+  const f = useWellnessCheckInForm({ open, existing, onSaved });
+  const {
+    answers, pain, illness, note, saving, error, saved, complete, answered, total, handoffNeeded,
+  } = f;
+  const relevant = f.relevantEpisodes;
+  const openEpisodes = f.episodesLoaded ? relevant : null;
 
   // Lock the page behind the sheet, as the other sheets do.
   useEffect(() => {
@@ -132,42 +108,7 @@ export default function WellnessCheckInSheet({
     return () => { document.body.style.overflow = prev; };
   }, [open]);
 
-  const answered = WELLNESS_AREAS.filter(({ key }) => answers[key] != null).length;
-  const complete = answered === WELLNESS_AREAS.length && pain != null && illness != null;
-
-  const handoffNeeded = Boolean(saved && (saved.checkIn.pain || saved.checkIn.illness));
-  useEffect(() => {
-    if (!handoffNeeded || openEpisodes) return;
-    fetchHealthToday().then(setOpenEpisodes).catch(() => setOpenEpisodes([]));
-  }, [handoffNeeded, openEpisodes]);
-
-  const relevant = useMemo(
-    () => matchingEpisodes(openEpisodes, saved?.checkIn || {}),
-    [openEpisodes, saved],
-  );
-
   if (!open) return null;
-
-  const handleSave = async () => {
-    if (!complete) return;
-    setSaving(true);
-    setError(null);
-    try {
-      const result = await saveWellnessCheckIn({
-        ...answers,
-        pain,
-        illness,
-        note: note.trim(),
-        date: existing?.date || undefined,
-      });
-      setSaved(result);
-      onSaved?.(result);
-    } catch (e) {
-      setError(e?.response?.data?.error || e.message || 'Could not save');
-    } finally {
-      setSaving(false);
-    }
-  };
 
   const band = saved ? BAND_STYLE[saved.band] : null;
 
@@ -203,7 +144,7 @@ export default function WellnessCheckInSheet({
                   key={area.key}
                   area={area}
                   value={answers[area.key]}
-                  onChange={(v) => setAnswers((prev) => ({ ...prev, [area.key]: v }))}
+                  onChange={(v) => f.setAnswer(area.key, v)}
                 />
               ))}
 
@@ -212,9 +153,9 @@ export default function WellnessCheckInSheet({
                   question="Do you have any pain?"
                   hint="Joint, tendon or anything that isn't normal muscle soreness"
                   value={pain}
-                  onChange={setPain}
+                  onChange={f.setPain}
                 />
-                <YesNo question="Are you feeling ill?" value={illness} onChange={setIllness} />
+                <YesNo question="Are you feeling ill?" value={illness} onChange={f.setIllness} />
               </div>
 
               <label className="block">
@@ -222,7 +163,7 @@ export default function WellnessCheckInSheet({
                 <span className="text-xs text-gray-400 ml-1">Optional</span>
                 <textarea
                   value={note}
-                  onChange={(e) => setNote(e.target.value.slice(0, 500))}
+                  onChange={(e) => f.setNote(e.target.value)}
                   rows={2}
                   className="mt-1.5 w-full rounded-xl border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-200"
                   placeholder="Travel, exams, a bad night…"
@@ -238,10 +179,10 @@ export default function WellnessCheckInSheet({
               <button
                 type="button"
                 disabled={!complete || saving}
-                onClick={handleSave}
+                onClick={f.save}
                 className="w-full rounded-xl bg-blue-600 text-white font-semibold py-3 disabled:opacity-40"
               >
-                {saving ? 'Saving…' : complete ? 'Save check-in' : `${answered + (pain != null) + (illness != null)} of 8 answered`}
+                {saving ? 'Saving…' : complete ? 'Save check-in' : `${answered} of ${total} answered`}
               </button>
             </div>
           </>
