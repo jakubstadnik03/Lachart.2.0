@@ -973,8 +973,12 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
     const finalInputMode = inputMode;
     const finalUnitSystem = unitSystem;
     
+    // thresholdOverrides is the calculator's to write, not this form's: the
+    // copy in testData can be older than what was pinned since, and sending
+    // it back reset a saved LT1/LT2 to the auto values.
+    const { thresholdOverrides: _notThisFormsToSave, ...testBase } = testData || {};
     const updatedTest = {
-      ...testData,
+      ...testBase,
       title: formData.title.trim(),
       description: formData.description?.trim() || '',
       weight: parseLocalizedNumber(formData.weight, 0),

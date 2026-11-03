@@ -3807,6 +3807,7 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
         notes: engine.notes,
         lt1: { candidates: engine.lt1.candidates, clamped: engine.lt1.clamped },
         lt2: { candidates: engine.lt2.candidates, voters: engine.lt2.voters, fallback: engine.lt2.fallback },
+        heartRateCurve: engine.heartRateCurve,
       };
     }
 

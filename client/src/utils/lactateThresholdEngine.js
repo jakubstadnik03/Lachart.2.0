@@ -336,6 +336,53 @@ function median(arr) {
   return a.length % 2 ? a[mid] : (a[mid - 1] + a[mid]) / 2;
 }
 
+/**
+ * Heart rate against intensity, as one monotone polyline.
+ *
+ * Every HR the product shows for a test — at LT1, at LT2, and at each zone
+ * edge — is read off this, so the HR zones are the power/pace zones expressed
+ * in beats rather than a separate guess. Stage HRs are pooled the same way the
+ * lactates are (a stage that reads a beat lower than the one before is strap
+ * noise or a short stage, not the heart slowing under more load).
+ *
+ * @param {Array<{u:number, hr:number|null}>} pts  stages in intensity units
+ * @returns {Array<{u:number, hr:number}>|null}  sorted by u, or null with fewer than two
+ */
+export function heartRateCurvePoints(pts) {
+  const known = (pts || [])
+    .filter((p) => p && Number.isFinite(p.u) && p.hr != null && Number.isFinite(Number(p.hr)) && Number(p.hr) > 0)
+    .map((p) => ({ u: p.u, hr: Number(p.hr) }))
+    .sort((a, b) => a.u - b.u);
+  const merged = [];
+  for (const p of known) {
+    const last = merged[merged.length - 1];
+    if (last && Math.abs(last.u - p.u) < 1e-9) { last.hr = (last.hr + p.hr) / 2; } else merged.push({ ...p });
+  }
+  if (merged.length < 2) return null;
+  const iso = isotonic(merged.map((p) => p.hr));
+  return merged.map((p, i) => ({ u: p.u, hr: iso[i] }));
+}
+
+/**
+ * HR at an intensity on that polyline. A zone edge (the bottom of Z2, the
+ * top of Z4) often sits a little beyond the first or last stage, so outside
+ * the stages it carries on: below, along the slope of the first three (HR
+ * rises close to linearly at low intensity); above, along the last segment
+ * only, so a plateau at the top stays a plateau instead of being extended
+ * upward from the steeper stages before it.
+ */
+export function heartRateAtIntensity(points, u) {
+  if (!points || points.length < 2 || !Number.isFinite(u)) return null;
+  const n = points.length;
+  const slope = (a, b) => {
+    const du = points[b].u - points[a].u;
+    return du > 0 ? Math.max(0, (points[b].hr - points[a].hr) / du) : 0;
+  };
+  if (u < points[0].u) return points[0].hr - slope(0, Math.min(2, n - 1)) * (points[0].u - u);
+  if (u > points[n - 1].u) return points[n - 1].hr + slope(n - 2, n - 1) * (u - points[n - 1].u);
+  return interpolateAt(points.map((p) => p.u), points.map((p) => p.hr), u);
+}
+
 /** Stages in entry order whose intensity falls below an earlier one are typos. */
 export function dropOutOfOrderStages(stages) {
   if (stages.length < 5) return stages;
@@ -506,10 +553,12 @@ export function analyzeLactateTest({ sport = 'bike', stages = [], baseLactate = 
   if (ratio != null && (ratio < 1.06 || ratio > 1.45)) confidence -= 15;
   confidence = Math.max(5, Math.min(100, confidence));
 
+  // HR comes from every stage that was not a typo — the warm-up stage left
+  // out of the lactate curve still has a perfectly good heart rate.
+  const hrPoints = heartRateCurvePoints(ordered);
   const hrAt = (x) => {
-    const known = merged.filter((p) => p.hr != null);
-    if (known.length < 2) return null;
-    return Math.round(interpolateAt(known.map((p) => p.u), known.map((p) => p.hr), x));
+    const hr = heartRateAtIntensity(hrPoints, x);
+    return hr == null ? null : Math.round(hr);
   };
   const out = (x) => fromIntensity(x, sport);
   const outCandidates = (obj) => Object.fromEntries(Object.entries(obj).map(([k, v]) => [k, out(v)]));
@@ -536,6 +585,8 @@ export function analyzeLactateTest({ sport = 'bike', stages = [], baseLactate = 
       fallback: lt2Fallback,
     },
     ratio: Number(ratio.toFixed(3)),
+    // The HR curve the zones are read from, in the stages' own units.
+    heartRateCurve: hrPoints ? hrPoints.map((p) => ({ value: out(p.u), heartRate: Number(p.hr.toFixed(2)) })) : null,
     confidence,
     violations,
     notes,

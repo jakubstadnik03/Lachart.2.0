@@ -394,6 +394,16 @@ const PreviousTestingComponent = ({
     }
   }, [selectedSport, setTests]);
 
+  // The calculator saved a pinned LT1/LT2: keep this copy of the test in step,
+  // or the next re-sync (switching tests, saving Test details) restores the
+  // values from before the pin.
+  const handleThresholdOverridesSaved = useCallback((testId, thresholdOverrides) => {
+    const patch = (t) => (t && String(t._id) === String(testId) ? { ...t, thresholdOverrides } : t);
+    setTests(prev => prev.map(patch));
+    setCurrentTest(prev => patch(prev));
+    setSelectedTests(prev => prev.map(patch));
+  }, [setTests]);
+
   const handleTestDelete = useCallback(async (testToDelete) => {
     try {
       await deleteTest(testToDelete._id);
@@ -555,7 +565,7 @@ const PreviousTestingComponent = ({
             exit={{ opacity: 0, y: -20 }}
             transition={{ duration: 0.3 }}
           >
-        <LactateCurveCalculator mockData={currentTest} athleteId={athleteId} isPremium={isPremium} />
+        <LactateCurveCalculator mockData={currentTest} athleteId={athleteId} isPremium={isPremium} onThresholdOverridesSaved={handleThresholdOverridesSaved} />
           </motion.div>
         )}
       </AnimatePresence>
