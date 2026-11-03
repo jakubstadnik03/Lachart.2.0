@@ -3426,7 +3426,15 @@ export default function DashboardPage() {
                 />
                 {currentTest && currentTest.results && (
                   <>
-                    <LactateCurveCalculator mockData={currentTest} athleteId={dashboardDataAthleteId} />
+                    <LactateCurveCalculator
+                      mockData={currentTest}
+                      athleteId={dashboardDataAthleteId}
+                      onThresholdOverridesSaved={(testId, thresholdOverrides) => {
+                        const patch = (t) => (t && String(t._id) === String(testId) ? { ...t, thresholdOverrides } : t);
+                        setTests((prev) => (Array.isArray(prev) ? prev.map(patch) : prev));
+                        setCurrentTest(patch);
+                      }}
+                    />
                   </>
                 )}
               </>

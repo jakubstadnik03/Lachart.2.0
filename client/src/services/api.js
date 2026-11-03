@@ -422,6 +422,14 @@ api.interceptors.response.use(
           invalidateTrainingCaches();
         }
       }
+      // Same for tests. The threshold override panel and others call
+      // api.put('/test/:id') directly; the test list is persisted for two
+      // hours, so a reload served the test from before the save and a pinned
+      // LT1/LT2 snapped back to the auto values.
+      if (['put', 'post', 'patch', 'delete'].includes(method) && /^\/?test(\/|$)/.test(url)
+          && !/\/(send-report-email|ai-coach)$/.test(url)) {
+        invalidateTestCaches();
+      }
     } catch { /* never let cache bookkeeping break a response */ }
 
     return response;
