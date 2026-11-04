@@ -34,6 +34,8 @@ import { isCapacitorNative } from '../utils/isNativeApp';
 import NativeProfilePage from './NativeProfilePage';
 import { formatProfileFullName } from '../utils/profileName';
 import { fmtViewerPaceBare, viewerPaceSuffix } from '../utils/viewerUnits';
+import { mapExternalActivitiesToCalendar } from '../utils/mapExternalActivityToCalendar';
+import { dedupeMergedCalendarActivities } from '../utils/dedupeMergedCalendarActivities';
 
 const MAX_PROFILE_CALENDAR_ACTIVITIES = 2000;
 
@@ -43,7 +45,9 @@ function sortAndLimitCalendarActivities(combined) {
     const x = d.getTime();
     return Number.isNaN(x) ? 0 : x;
   };
-  return [...combined].sort((a, b) => tMs(b) - tMs(a)).slice(0, MAX_PROFILE_CALENDAR_ACTIVITIES);
+  return dedupeMergedCalendarActivities(combined)
+    .sort((a, b) => tMs(b) - tMs(a))
+    .slice(0, MAX_PROFILE_CALENDAR_ACTIVITIES);
 }
 
 const COACH_LIKE_ROLES = ['coach', 'tester', 'testing', 'admin'];
@@ -354,6 +358,10 @@ const [selectedTitle, setSelectedTitle] = useState(null);
           athleteId: targetId,
           summaryOnly: true,
           limit: MAX_PROFILE_CALENDAR_ACTIVITIES,
+          // Same payload the dashboard asks for: both pages write the one
+          // shared `calendarData_<id>` cache, so asking for less here strips
+          // the lap bars off the dashboard's cards until it refetches.
+          withLapProfiles: true,
         }).catch(err => {
           if (err.response?.status !== 429 && err.code !== 'ERR_NETWORK' && err.code !== 'ERR_EMPTY_RESPONSE') {
             console.error('Error loading Strava activities:', err);
@@ -361,12 +369,6 @@ const [selectedTitle, setSelectedTitle] = useState(null);
           return [];
         })
       ]);
-
-      const trainingByStravaId = new Map();
-      (regTrainings || []).forEach(t => {
-        const sid = t?.sourceStravaActivityId;
-        if (sid) trainingByStravaId.set(String(sid), t);
-      });
 
       const combined = [
         ...(fitData || []).map(t => ({
@@ -401,38 +403,12 @@ const [selectedTitle, setSelectedTitle] = useState(null);
             avgPower: t.avgPower || t.averagePower || null,
             avgSpeed: t.avgSpeed || t.averageSpeed || null,
           })),
-        ...(stravaData || []).map(a => {
-          const stravaId = a.stravaId || a.id;
-          const linkedTraining = trainingByStravaId.get(String(stravaId));
-          return {
-            ...a,
-            type: 'strava',
-            date: a.startDate,
-            title: linkedTraining?.title || a.titleManual || a.name || 'Untitled Activity',
-            linkedTrainingTitle: linkedTraining?.title || null,
-            sport: a.sport,
-            stravaId,
-            id: `strava-${stravaId}`,
-            avgPower: a.averagePower || a.average_watts,
-            weightedAveragePower: a.weightedAveragePower ?? a.weighted_average_watts ?? null,
-            avgSpeed: a.averageSpeed || a.average_speed,
-            maxPower: a.maxPower || a.max_watts,
-            avgHeartRate: a.averageHeartRate || a.average_heartrate,
-            maxHeartRate: a.maxHeartRate || a.max_heartrate,
-            totalTime: a.movingTime || a.elapsedTime,
-            distance: a.distance,
-            tss:
-              a.manualTss ??
-              (linkedTraining?.tss ||
-                linkedTraining?.totalTSS ||
-                a.tss ||
-                a.totalTSS ||
-                a.total_tss ||
-                null),
-            tssDisplayMode: a.tssDisplayMode ?? linkedTraining?.tssDisplayMode ?? null,
-            kilojoules: a.kilojoules ?? a.raw?.kilojoules,
-          };
-        }),
+        // Garmin / Apple Health / Polar / Coros rows carry no stravaId, so the
+        // old inline mapping here gave every one of them the id
+        // `strava-undefined` and the calendar's dedupe collapsed them into a
+        // single activity. The dashboard's mapper keys each source by its own
+        // id — share it rather than keeping a second, strava-only copy.
+        ...mapExternalActivitiesToCalendar(stravaData, regTrainings),
       ];
 
       const limitedForView = sortAndLimitCalendarActivities(combined);
