@@ -58,4 +58,17 @@ function emailReachability(email) {
   return { reachable: true, reason: null };
 }
 
-module.exports = { isAppleRelay, isSyntheticAppleAddress, emailReachability };
+/**
+ * The same verdict as emailReachability, in a form a Mongo query can use, for
+ * queues that have to leave these addresses out rather than discover them one
+ * failed send at a time.
+ */
+function unreachableAddressPattern() {
+  return String(process.env.APPLE_RELAY_SENDER_REGISTERED).toLowerCase() === 'true'
+    ? /^\s*apple_[^@]+@privaterelay\.appleid\.com\s*$/i
+    : /@privaterelay\.appleid\.com\s*$/i;
+}
+
+module.exports = {
+  isAppleRelay, isSyntheticAppleAddress, emailReachability, unreachableAddressPattern,
+};

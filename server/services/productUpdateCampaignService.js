@@ -25,6 +25,7 @@ const { emailLinkBase } = require('../utils/emailLinkBase');
 const path = require('path');
 const crypto = require('crypto');
 const { createCampaignTransporter, campaignSender } = require('../utils/createEmailTransporter');
+const { unreachableAddressPattern } = require('../utils/emailReachability');
 const User = require('../models/UserModel');
 const Subscription = require('../models/SubscriptionModel');
 
@@ -230,7 +231,9 @@ async function sendOne(user, issueId, { dryRun = false } = {}) {
   const assets = listAssets(issueId);
   const html = prepareHtmlForRecipient(loadIssueHtml(issueId), {
     assets,
-    subscriber: await paysForLaChart(user._id),
+    // A manual comp grant lives on the user, where the subscription lookup
+    // cannot see it, and those people should not be offered a trial either.
+    subscriber: user.premium === true || await paysForLaChart(user._id),
     unsubscribeUrl: unsubscribeUrlFor(user._id),
     utmCampaign: meta.utmCampaign,
   });
@@ -328,7 +331,13 @@ function pendingFilter(issueId) {
   const filter = {
     // $nin, not two $ne keys: the second silently replaced the first, so an
     // account with a null email read as sendable.
-    email: { $exists: true, $nin: [null, ''], $regex: ADDRESS_SHAPE },
+    // $not as well as the shape: the transporter refuses Apple relay addresses,
+    // a refusal leaves no marker, and the tick takes three from the head of the
+    // queue. When four of them reached the head on 11 October the newsletter
+    // stopped dead, with 232 real addresses behind them. Leaving them in the
+    // count would also have kept this issue "pending" for good, and the next
+    // one from ever starting.
+    email: { $exists: true, $nin: [null, ''], $regex: ADDRESS_SHAPE, $not: unreachableAddressPattern() },
     isActive: { $ne: false },
     'notifications.emailNotifications': { $ne: false },
     'notifications.marketingEmails': { $ne: false },
@@ -341,7 +350,7 @@ function pendingFilter(issueId) {
 
 async function findPendingUsers(issueId, limit) {
   return User.find(pendingFilter(issueId))
-    .select('_id email name surname isActive notifications retentionEmails')
+    .select('_id email name surname isActive notifications retentionEmails premium')
     .sort({ createdAt: 1 })
     .limit(limit)
     .lean();

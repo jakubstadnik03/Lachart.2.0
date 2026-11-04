@@ -23,6 +23,11 @@ describe('who gets a premium letter', () => {
       .toEqual({ ok: false, reason: 'already_paying' });
   });
 
+  test('never somebody on a manual comp grant', () => {
+    // No subscription row says so, so the paying lookup answers false for them.
+    expect(ask(free({ premium: true }))).toEqual({ ok: false, reason: 'already_paying' });
+  });
+
   test('never when paying status was not looked up', () => {
     // A missing subscription lookup must not read as "free". This is the one
     // mistake there is no recovering from — the customer sees you asking them

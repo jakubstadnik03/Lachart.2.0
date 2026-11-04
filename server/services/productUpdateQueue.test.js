@@ -23,6 +23,7 @@ const {
   pendingFilter, releaseCutoff, queueKey, listIssues,
   pickAudienceBlocks, prepareHtmlForRecipient,
 } = require('./productUpdateCampaignService');
+const { emailReachability } = require('../utils/emailReachability');
 
 let failures = 0;
 const ok = (name, fn) => {
@@ -85,6 +86,30 @@ ok('an address that can never be delivered to is not kept in the queue', () => {
   }
   for (const good of ['a@b.com', 'first.last+tag@sub.example.co.uk']) {
     assert.ok(re.test(good), `${good} is an address`);
+  }
+});
+
+ok('an address the transporter will refuse does not hold the head of the queue', () => {
+  // Four Apple relay addresses reached the head on 11 October. The tick takes
+  // three, the guard refuses them, no marker is written, and the next tick takes
+  // the same three, so nothing has gone out since.
+  const saved = process.env.APPLE_RELAY_SENDER_REGISTERED;
+  const sample = [
+    '88abc@privaterelay.appleid.com', 'apple_001.abc@privaterelay.appleid.com', 'a@gmail.com',
+  ];
+  try {
+    for (const flag of [undefined, 'true']) {
+      if (flag) process.env.APPLE_RELAY_SENDER_REGISTERED = flag;
+      else delete process.env.APPLE_RELAY_SENDER_REGISTERED;
+      const excluded = pendingFilter('2026-09').email.$not;
+      for (const e of sample) {
+        assert.strictEqual(!excluded.test(e), emailReachability(e).reachable,
+          `queue and transporter disagree about ${e} with the relay flag ${flag}`);
+      }
+    }
+  } finally {
+    if (saved === undefined) delete process.env.APPLE_RELAY_SENDER_REGISTERED;
+    else process.env.APPLE_RELAY_SENDER_REGISTERED = saved;
   }
 });
 
