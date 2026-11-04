@@ -186,7 +186,7 @@ async function findReadyCandidates(limit = 20) {
     marketingEmails: { $ne: false },
     [`retentionEmails.${STATE_KEY}.count`]: { $not: { $gte: 3 } },
   })
-    .select('_id email name surname isActive notifications marketingEmails retentionEmails createdAt appDownloadEmail')
+    .select('_id email name surname isActive notifications marketingEmails retentionEmails createdAt appDownloadEmail premium')
     // Oldest accounts first: they have had the longest to decide and the
     // longest since anybody wrote to them.
     .sort({ createdAt: 1 })
