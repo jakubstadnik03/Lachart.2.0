@@ -32,6 +32,9 @@ const Subscription = require('../models/SubscriptionModel');
 const ROOT = path.join(__dirname, '..', 'templates', 'productUpdate');
 const IMG_EXT = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp']);
 const SENT_MAP = 'retentionEmails.productUpdates';
+const FAILED_MAP = 'retentionEmails.productUpdateFailures';
+/** Failed attempts at one issue before a recipient gives up their place in its queue. */
+const MAX_SEND_ATTEMPTS = 3;
 
 /** Mongoose Map keys can't contain "." or "$"; keep ids filesystem- and URL-safe. */
 function isValidIssueId(id) {
@@ -218,6 +221,43 @@ function alreadyGotIssue(user, issueId) {
   return !!map[issueId];
 }
 
+const OUTAGE_CODES = new Set([
+  'EAUTH', 'ECONNECTION', 'ETIMEDOUT', 'ESOCKET', 'EDNS', 'ETLS', 'EPROTOCOL',
+  'ECONNRESET', 'ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN',
+]);
+
+/**
+ * Is this failure about the recipient, or about us?
+ *
+ * A failed send leaves no sent-marker and a tick takes the oldest pending
+ * accounts, so three addresses that always fail stop the newsletter for everyone
+ * behind them. That has happened twice, with a different kind of address each
+ * time, so failures are counted rather than the addresses being listed.
+ *
+ * Only against the person they are about, though. Expired SMTP credentials fail
+ * every send, and counting those would walk down the list dropping people who
+ * did nothing wrong. Anything unrecognised counts against the recipient: at worst
+ * one person misses one issue, where the alternative is a queue that stops.
+ */
+function blamesRecipient(err) {
+  if (err?.permanent || err?.command === 'RCPT TO') return true;
+  if (OUTAGE_CODES.has(err?.code)) return false;
+  // The server objected to our sender or to the message, which is the same for everyone.
+  if (err?.command === 'MAIL FROM' || err?.command === 'DATA') return false;
+  if (err?.responseCode >= 400 && err?.responseCode < 500) return false;
+  if (/invalid sender/i.test(err?.message || '')) return false;
+  return true;
+}
+
+/** A failed count must never turn into a failed tick. */
+async function recordFailedAttempt(userId, issueId) {
+  try {
+    await User.updateOne({ _id: userId }, { $inc: { [`${FAILED_MAP}.${issueId}`]: 1 } });
+  } catch (e) {
+    console.warn(`[productUpdate:${issueId}] could not record a failed attempt for ${userId}:`, e?.message);
+  }
+}
+
 /** Send one issue to one user. Returns { sent, reason }. */
 async function sendOne(user, issueId, { dryRun = false } = {}) {
   if (!issueExists(issueId)) return { sent: false, reason: 'unknown_issue' };
@@ -269,6 +309,7 @@ async function sendOne(user, issueId, { dryRun = false } = {}) {
     if (!wasAccepted || wasRejected) {
       const reason = `relay did not accept recipient — accepted=[${accepted.join(',')}] rejected=[${rejected.join(',')}] response="${sendInfo?.response || ''}"`;
       console.error(`[productUpdate:${issueId}] ${user.email}: ${reason}`);
+      await recordFailedAttempt(user._id, issueId);
       return { sent: false, reason, smtp: { accepted, rejected, response: sendInfo?.response, messageId: sendInfo?.messageId } };
     }
 
@@ -284,6 +325,7 @@ async function sendOne(user, issueId, { dryRun = false } = {}) {
   } catch (e) {
     const reason = (e && (e.message || e.reason || String(e))) || 'send_failed';
     console.error(`[productUpdate:${issueId}] failed to send to ${user.email}:`, reason, e?.code || '');
+    if (blamesRecipient(e)) await recordFailedAttempt(user._id, issueId);
     return { sent: false, reason, smtp: { code: e?.code, command: e?.command, response: e?.response } };
   }
 }
@@ -341,6 +383,7 @@ function pendingFilter(issueId) {
     isActive: { $ne: false },
     'notifications.emailNotifications': { $ne: false },
     'notifications.marketingEmails': { $ne: false },
+    [`${FAILED_MAP}.${issueId}`]: { $not: { $gte: MAX_SEND_ATTEMPTS } },
     $or: [{ [field]: { $exists: false } }, { [field]: null }],
   };
   const cutoff = issueExists(issueId) ? releaseCutoff(loadMeta(issueId)) : null;
@@ -363,9 +406,10 @@ async function getPendingCount(issueId) {
 /** Lightweight admin stats for one issue. */
 async function getIssueStats(issueId) {
   const field = `${SENT_MAP}.${issueId}`;
-  const [sent, pending, totalWithEmail] = await Promise.all([
+  const [sent, pending, gaveUp, totalWithEmail] = await Promise.all([
     User.countDocuments({ [field]: { $ne: null, $exists: true } }),
     getPendingCount(issueId),
+    User.countDocuments({ [`${FAILED_MAP}.${issueId}`]: { $gte: MAX_SEND_ATTEMPTS } }),
     User.countDocuments({ email: { $exists: true, $ne: null, $ne: '' } }),
   ]);
   const eligible = sent + pending;
@@ -375,6 +419,7 @@ async function getIssueStats(issueId) {
     meta: issueExists(issueId) ? loadMeta(issueId) : null,
     sent,
     pending,
+    gaveUp,
     eligible,
     totalWithEmail,
     progressPct: eligible > 0 ? Math.round((sent / eligible) * 100) : (sent > 0 ? 100 : 0),
@@ -439,7 +484,7 @@ async function runCampaign({
 async function resetIssue(issueId, { email = null } = {}) {
   const field = `${SENT_MAP}.${issueId}`;
   const filter = email ? { email: String(email).toLowerCase().trim() } : {};
-  const result = await User.updateMany(filter, { $unset: { [field]: '' } });
+  const result = await User.updateMany(filter, { $unset: { [field]: '', [`${FAILED_MAP}.${issueId}`]: '' } });
   return { issueId, matched: result.matchedCount ?? result.n, modified: result.modifiedCount ?? result.nModified };
 }
 
@@ -452,6 +497,8 @@ module.exports = {
   getActiveIssueId,
   getScheduledIssueId,
   pendingFilter,
+  blamesRecipient,
+  MAX_SEND_ATTEMPTS,
   pickAudienceBlocks,
   paysForLaChart,
   prepareHtmlForRecipient,
