@@ -4,6 +4,7 @@
  */
 import { calculateThresholds } from '../components/Testing-page/DataTable';
 import { getEffectiveLactateInputMode } from './lactateTestInputMode';
+import { withShortenedLastLevel } from './lactateThresholdEngine';
 import { fmtViewerPace, viewerUnitSystem } from './viewerUnits';
 import { KM_PER_MILE, testRunPaceStoredPerMile } from './unitsConverter';
 
@@ -58,7 +59,7 @@ export function extractLactateThresholds(test) {
   let ltp1Hr = ov.LTP1_hr != null ? Number(ov.LTP1_hr) : null;
   let ltp2Hr = ov.LTP2_hr != null ? Number(ov.LTP2_hr) : null;
 
-  const pts = (Array.isArray(test.results) ? test.results : [])
+  const pts = withShortenedLastLevel(test)
     .map((r) => ({
       x: Number(String(r.power ?? r.interval ?? '').replace(',', '.')),
       y: Number(String(r.lactate ?? '').replace(',', '.')),

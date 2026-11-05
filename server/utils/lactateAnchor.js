@@ -17,6 +17,7 @@
 'use strict';
 
 const { calculateThresholds } = require('./lactateThresholds');
+const { withShortenedLastLevel } = require('./lactateThresholdEngine');
 const { getEffectiveLactateInputMode, normalizeLactateSport } = require('./lactateTestInputMode');
 
 /**
@@ -61,7 +62,7 @@ function extractAnchor(test) {
     }
   }
 
-  const points = (Array.isArray(test.results) ? test.results : [])
+  const points = withShortenedLastLevel(test)
     .filter((r) => r?.intervalType !== 'recovery')
     .map((r) => ({ x: num(r.power ?? r.interval), y: num(r.lactate), hr: num(r.heartRate) }))
     .filter((p) => p.x > 0 && p.y > 0);

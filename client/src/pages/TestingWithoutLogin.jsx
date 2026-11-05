@@ -687,7 +687,7 @@ const TestingWithoutLogin = () => {
           const [mm,ss]=p.split(':').map(Number);
           if (!isNaN(mm)&&!isNaN(ss)) p=(mm*60+ss).toString();
         }
-        return { interval:r.interval||(i+1), power:parseFloat(String(p).replace(',','.'))||0, heartRate:parseFloat(String(r.heartRate).replace(',','.'))||0, lactate:parseFloat(String(r.lactate).replace(',','.'))||0, glucose:parseFloat(String(r.glucose).replace(',','.'))||0, RPE:parseFloat(String(r.RPE).replace(',','.'))||0 };
+        return { interval:r.interval||(i+1), power:parseFloat(String(p).replace(',','.'))||0, heartRate:parseFloat(String(r.heartRate).replace(',','.'))||0, lactate:parseFloat(String(r.lactate).replace(',','.'))||0, glucose:parseFloat(String(r.glucose).replace(',','.'))||0, RPE:parseFloat(String(r.RPE).replace(',','.'))||0, duration:r.duration, distanceMeters:r.distanceMeters };
       }).filter(Boolean)
     };
   };
@@ -731,6 +731,9 @@ const TestingWithoutLogin = () => {
           lactate: parseFloat(String(r.lactate).replace(',', '.')) || 0,
           glucose: parseFloat(String(r.glucose).replace(',', '.')) || 0,
           RPE: parseFloat(String(r.RPE).replace(',', '.')) || 0,
+          duration: r.duration,
+          distanceMeters: r.distanceMeters,
+          intervalType: r.intervalType,
         })),
       };
       const testToSave = {
@@ -745,6 +748,9 @@ const TestingWithoutLogin = () => {
         comments: td.comments || '',
         unitSystem: td.unitSystem || 'metric',
         inputMode: td.inputMode || 'pace',
+        stageDurationSec: td.stageDurationSec,
+        stageDistance: td.stageDistance,
+        stageMeasureMode: td.stageMeasureMode,
         results: td.results,
       };
       const saved = await api.post('/test', testToSave);
@@ -782,7 +788,7 @@ const TestingWithoutLogin = () => {
         if (hasValidData && userId) {
           try {
             const td = prepareCalculatorData();
-            const testToSave = { athleteId:String(userId), sport:td.sport||'bike', title:td.title||`Lactate Test - ${td.sport} - ${new Date().toLocaleDateString()}`, date:td.date?.includes('T')?td.date:new Date(td.date||Date.now()).toISOString(), description:td.description||'', baseLactate:Number(td.baseLactate)||0, weight:parseFloat(String(td.weight).replace(',','.'))||0, specifics:td.specifics||{}, comments:td.comments||'', unitSystem:'metric', inputMode:'pace', results:td.results.map((r,i)=>({...r,interval:r.interval||(i+1)})) };
+            const testToSave = { athleteId:String(userId), sport:td.sport||'bike', title:td.title||`Lactate Test - ${td.sport} - ${new Date().toLocaleDateString()}`, date:td.date?.includes('T')?td.date:new Date(td.date||Date.now()).toISOString(), description:td.description||'', baseLactate:Number(td.baseLactate)||0, weight:parseFloat(String(td.weight).replace(',','.'))||0, specifics:td.specifics||{}, comments:td.comments||'', unitSystem:'metric', inputMode:'pace', stageDurationSec:td.stageDurationSec, stageDistance:td.stageDistance, stageMeasureMode:td.stageMeasureMode, results:td.results.map((r,i)=>({...r,interval:r.interval||(i+1)})) };
             const saved = await api.post('/test', testToSave, { headers:{'Authorization':`Bearer ${token}`} });
             if (saved?.data?._id) { addNotification('Lactate test saved to your account!','success'); try { await logTestCreated(testToSave.sport,(testToSave.results||[]).length,userId); } catch{} }
           } catch(e) { console.warn('Test save failed:',e); }
@@ -815,7 +821,7 @@ const TestingWithoutLogin = () => {
       if (hasValidData && userId && token) {
         try {
           const td = prepareCalculatorData();
-          const testToSave = { athleteId:String(userId), sport:td.sport||'bike', title:td.title||`Lactate Test - ${td.sport} - ${new Date().toLocaleDateString()}`, date:td.date?.includes('T')?td.date:new Date(td.date||Date.now()).toISOString(), description:td.description||'', baseLactate:Number(td.baseLactate)||0, weight:parseFloat(String(td.weight).replace(',','.'))||0, specifics:td.specifics||{}, comments:td.comments||'', unitSystem:'metric', inputMode:'pace', results:td.results.map((r,i)=>({...r,interval:r.interval||(i+1)})) };
+          const testToSave = { athleteId:String(userId), sport:td.sport||'bike', title:td.title||`Lactate Test - ${td.sport} - ${new Date().toLocaleDateString()}`, date:td.date?.includes('T')?td.date:new Date(td.date||Date.now()).toISOString(), description:td.description||'', baseLactate:Number(td.baseLactate)||0, weight:parseFloat(String(td.weight).replace(',','.'))||0, specifics:td.specifics||{}, comments:td.comments||'', unitSystem:'metric', inputMode:'pace', stageDurationSec:td.stageDurationSec, stageDistance:td.stageDistance, stageMeasureMode:td.stageMeasureMode, results:td.results.map((r,i)=>({...r,interval:r.interval||(i+1)})) };
           const saved = await api.post('/test', testToSave, { headers:{'Authorization':`Bearer ${token}`} });
           if (saved?.data?._id) { addNotification('Lactate test saved!','success'); try { await logTestCreated(testToSave.sport,(testToSave.results||[]).length,userId); } catch{} }
         } catch(e) { console.warn('Test save failed:',e); }

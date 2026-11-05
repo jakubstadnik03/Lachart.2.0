@@ -17,6 +17,7 @@ import TestSection from './TestSection';
 import { useAuth } from '../../context/AuthProvider';
 import { resolveDistanceUnitSystem } from '../../utils/unitsConverter';
 import { getEffectiveLactateInputMode, getLactateDisplayMode } from '../../utils/lactateTestInputMode';
+import { withShortenedLastLevel } from '../../utils/lactateThresholdEngine';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend);
 
@@ -246,7 +247,7 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
   }
 
   // Filter out rows with empty or invalid values
-  const validResults = mockData.results.filter(result => {
+  const validResults = withShortenedLastLevel(mockData).filter(result => {
     if (!result || result.power === undefined || result.power === null || result.lactate === undefined || result.lactate === null) {
       console.log('Invalid result - missing power or lactate');
       return false;

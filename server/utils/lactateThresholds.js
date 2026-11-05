@@ -4,7 +4,7 @@
  * - Focuses on deterministic threshold values for reports/emails
  */
 
-const { analyzeLactateTest } = require('./lactateThresholdEngine');
+const { analyzeLactateTest, withShortenedLastLevel } = require('./lactateThresholdEngine');
 
 // Linear interpolation helper
 function interpolate(x0, y0, x1, y1, targetY) {
@@ -259,7 +259,7 @@ function calculateThresholds(testData) {
   const baseLactate = Number(testData?.baseLactate) || 0;
   const sport = testData?.sport || 'bike';
   const isPaceSport = sport === 'run' || sport === 'swim';
-  const resultsRaw = Array.isArray(testData?.results) ? testData.results : [];
+  const resultsRaw = withShortenedLastLevel(testData);
 
   let validResults = resultsRaw
     .map(r => {

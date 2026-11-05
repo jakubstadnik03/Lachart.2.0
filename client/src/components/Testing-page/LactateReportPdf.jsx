@@ -9,6 +9,7 @@ import {
 } from '@react-pdf/renderer';
 import { formatHeight, formatWeight, resolveDistanceUnitSystem, getUserUnits } from '../../utils/unitsConverter';
 import { getEffectiveLactateInputMode, normalizeLactateSport } from '../../utils/lactateTestInputMode';
+import { shortenedLastLevel, shortenedLevelNote, withShortenedLastLevel } from '../../utils/lactateThresholdEngine';
 
 // ── Logo URL (client-side, resolved at runtime) ────────────────────────────────
 const LOGO_URL = (() => {
@@ -997,6 +998,9 @@ export default function LactateReportPdf({ test, athlete, thresholds, zones, pre
   const sport       = U.sport;
   const unitSys     = test.unitSystem || 'metric';
   const results     = Array.isArray(test.results) ? test.results : [];
+  // The table keeps what was typed; the curves read a last level stopped early where the thresholds do.
+  const curveResults = withShortenedLastLevel(test);
+  const shortenedLevel = shortenedLastLevel(test);
   const athleteName = pdfSafe(athlete ? `${athlete.name || ''} ${athlete.surname || ''}`.trim() : 'Athlete');
   const testDate    = fmtDate(test.date);
   const isBike      = U.isBike;
@@ -1300,7 +1304,7 @@ export default function LactateReportPdf({ test, athlete, thresholds, zones, pre
 
           <View wrap={false}>
             {results.length >= 2
-              ? <LattateCurveSvg results={results} U={U} thresholds={thresholds} primary={brandPrimary} />
+              ? <LattateCurveSvg results={curveResults} U={U} thresholds={thresholds} primary={brandPrimary} />
               : <Text style={{ fontSize: 8.5, color: C.gray }}>Not enough data points to render curve.</Text>
             }
           </View>
@@ -1350,6 +1354,11 @@ export default function LactateReportPdf({ test, athlete, thresholds, zones, pre
                 </View>
               ))}
             </View>
+            {shortenedLevel && (
+              <Text style={{ fontSize: 7.5, color: C.gray, marginTop: 4 }}>
+                {shortenedLevelNote(shortenedLevel, fmtInt)}
+              </Text>
+            )}
           </View>
         </View>
 
@@ -1499,8 +1508,8 @@ export default function LactateReportPdf({ test, athlete, thresholds, zones, pre
 
               {/* Overlaid dual-curve chart (primary comparison only) */}
               <ComparisonCurveSvg
-                currentResults={results}
-                prevResults={prevTest.results}
+                currentResults={curveResults}
+                prevResults={withShortenedLastLevel(prevTest)}
                 U={U}
                 currentThresholds={thresholds}
                 prevThresholds={prevThresholds}

@@ -2,6 +2,7 @@ const { createEmailTransporter } = require('../utils/createEmailTransporter');
 const User = require('../models/UserModel');
 const { generateEmailTemplate, getClientUrl } = require('../utils/emailTemplate');
 const { calculateThresholds } = require('../utils/lactateThresholds');
+const { withShortenedLastLevel } = require('../utils/lactateThresholdEngine');
 const { calculateZonesFromTest, formatPace } = require('../utils/lactateZones');
 const { buildLactateCurveSvg, escapeHtml } = require('../utils/lactateReportSvgs');
 
@@ -353,7 +354,7 @@ async function sendDemoTestEmail({ testData, email, name, userId = null }) {
       : 'Intensity';
 
   const lactateSvg = buildLactateCurveSvg({
-    results: testData.results || [],
+    results: withShortenedLastLevel(testData),
     sportLabel: `${sport.toUpperCase()} • Lactate Curve`,
     xLabel,
     sport,
