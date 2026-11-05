@@ -3,7 +3,7 @@
  * Uses the same calculateThresholds() pipeline as the full test page / zone tables.
  */
 import { calculateThresholds } from '../components/Testing-page/DataTable';
-import { getEffectiveLactateInputMode } from './lactateTestInputMode';
+import { getEffectiveLactateInputMode, getLactateDisplayMode } from './lactateTestInputMode';
 import { fmtViewerPace, viewerUnitSystem } from './viewerUnits';
 import { KM_PER_MILE, testRunPaceStoredPerMile } from './unitsConverter';
 
@@ -34,6 +34,13 @@ export function formatThresholdIntensity(value, test, sport = normLactateSport(t
   // A test recorded in miles keeps its pace per mile; bring it to the stored
   // scale first, then print it the way the viewer reads.
   const canonical = testRunPaceStoredPerMile(test, sport) ? n / KM_PER_MILE : n;
+  // Typed as speed and stored as seconds: it keeps reading as speed.
+  if (getLactateDisplayMode(test) === 'speed') {
+    const kmh = (sport === 'swim' ? 360 : 3600) / canonical;
+    return viewerUnitSystem() === 'imperial'
+      ? `${(kmh / KM_PER_MILE).toFixed(1)} mph`
+      : `${kmh.toFixed(1)} km/h`;
+  }
   return fmtViewerPace(canonical, sport);
 }
 

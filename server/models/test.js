@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { speedLoadsAsPaceSeconds } = require('../utils/lactateTestInputMode');
 
 const testResultSchema = new mongoose.Schema({
     power: Number,
@@ -121,5 +122,21 @@ const testSchema = new mongoose.Schema({
 }, {
     timestamps: true,
 });
+
+// Every reader expects run and swim loads in pace seconds. A few saved tests
+// hold km/h instead, from when the public calculator's signup save stored them
+// as typed, so they are corrected on the way out, for lean queries too. The
+// database only changes if something later saves one of these documents, and
+// then it gets the corrected values.
+function readLoadsAsPaceSeconds(test) {
+  const seconds = test?.results ? speedLoadsAsPaceSeconds(test) : null;
+  if (!seconds) return;
+  test.results.forEach((row, i) => {
+    if (row) row.power = seconds[i];
+  });
+  test.inputMode = 'speed';
+}
+testSchema.post('find', (tests) => tests.forEach(readLoadsAsPaceSeconds));
+testSchema.post(['findOne', 'findOneAndUpdate'], (test) => readLoadsAsPaceSeconds(test));
 
 module.exports = mongoose.model('Test', testSchema);
