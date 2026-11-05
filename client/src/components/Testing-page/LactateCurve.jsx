@@ -191,7 +191,8 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
   // Get unit system and input mode from user profile, mockData, or default
   // to metric/pace. User's live trainingPreferences.paceDisplay takes
   // priority for DISPLAY so switching the setting immediately updates every
-  // chart without re-saving each test.
+  // chart without re-saving each test, except a test typed as speed, which
+  // stays in speed (see getLactateDisplayMode).
   const unitSystem = resolveDistanceUnitSystem(user, mockData?.unitSystem || 'metric');
   const storageMode = getEffectiveLactateInputMode(mockData);
   const inputMode = getLactateDisplayMode(mockData, user);

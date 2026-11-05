@@ -18,6 +18,7 @@ import { GoogleLogin } from '@react-oauth/google';
 import { API_BASE_URL } from '../config/api.config';
 import { logUserRegistration, logTestCreated } from '../utils/eventLogger';
 import { isCapacitorNative } from '../utils/isNativeApp';
+import { withPaceSecondLoads } from '../utils/lactateTestInputMode';
 import {
   BeakerIcon,
   HeartIcon,
@@ -678,7 +679,7 @@ const TestingWithoutLogin = () => {
   const prepareCalculatorData = () => {
     const baseLaStr = String(testData.baseLa ?? testData.baseLactate ?? '0');
     const baseLactate = baseLaStr==='' ? 0 : parseFloat(baseLaStr.replace(',','.'));
-    return {
+    return withPaceSecondLoads({
       ...testData, baseLactate,
       results: testData.results.map((r,i) => {
         if (!r) return null;
@@ -689,7 +690,7 @@ const TestingWithoutLogin = () => {
         }
         return { interval:r.interval||(i+1), power:parseFloat(String(p).replace(',','.'))||0, heartRate:parseFloat(String(r.heartRate).replace(',','.'))||0, lactate:parseFloat(String(r.lactate).replace(',','.'))||0, glucose:parseFloat(String(r.glucose).replace(',','.'))||0, RPE:parseFloat(String(r.RPE).replace(',','.'))||0 };
       }).filter(Boolean)
-    };
+    });
   };
 
   const handleTestDataChange = (newData) => {
@@ -782,7 +783,7 @@ const TestingWithoutLogin = () => {
         if (hasValidData && userId) {
           try {
             const td = prepareCalculatorData();
-            const testToSave = { athleteId:String(userId), sport:td.sport||'bike', title:td.title||`Lactate Test - ${td.sport} - ${new Date().toLocaleDateString()}`, date:td.date?.includes('T')?td.date:new Date(td.date||Date.now()).toISOString(), description:td.description||'', baseLactate:Number(td.baseLactate)||0, weight:parseFloat(String(td.weight).replace(',','.'))||0, specifics:td.specifics||{}, comments:td.comments||'', unitSystem:'metric', inputMode:'pace', results:td.results.map((r,i)=>({...r,interval:r.interval||(i+1)})) };
+            const testToSave = { athleteId:String(userId), sport:td.sport||'bike', title:td.title||`Lactate Test - ${td.sport} - ${new Date().toLocaleDateString()}`, date:td.date?.includes('T')?td.date:new Date(td.date||Date.now()).toISOString(), description:td.description||'', baseLactate:Number(td.baseLactate)||0, weight:parseFloat(String(td.weight).replace(',','.'))||0, specifics:td.specifics||{}, comments:td.comments||'', unitSystem:td.unitSystem||'metric', inputMode:td.inputMode||'pace', results:td.results.map((r,i)=>({...r,interval:r.interval||(i+1)})) };
             const saved = await api.post('/test', testToSave, { headers:{'Authorization':`Bearer ${token}`} });
             if (saved?.data?._id) { addNotification('Lactate test saved to your account!','success'); try { await logTestCreated(testToSave.sport,(testToSave.results||[]).length,userId); } catch{} }
           } catch(e) { console.warn('Test save failed:',e); }
@@ -815,7 +816,7 @@ const TestingWithoutLogin = () => {
       if (hasValidData && userId && token) {
         try {
           const td = prepareCalculatorData();
-          const testToSave = { athleteId:String(userId), sport:td.sport||'bike', title:td.title||`Lactate Test - ${td.sport} - ${new Date().toLocaleDateString()}`, date:td.date?.includes('T')?td.date:new Date(td.date||Date.now()).toISOString(), description:td.description||'', baseLactate:Number(td.baseLactate)||0, weight:parseFloat(String(td.weight).replace(',','.'))||0, specifics:td.specifics||{}, comments:td.comments||'', unitSystem:'metric', inputMode:'pace', results:td.results.map((r,i)=>({...r,interval:r.interval||(i+1)})) };
+          const testToSave = { athleteId:String(userId), sport:td.sport||'bike', title:td.title||`Lactate Test - ${td.sport} - ${new Date().toLocaleDateString()}`, date:td.date?.includes('T')?td.date:new Date(td.date||Date.now()).toISOString(), description:td.description||'', baseLactate:Number(td.baseLactate)||0, weight:parseFloat(String(td.weight).replace(',','.'))||0, specifics:td.specifics||{}, comments:td.comments||'', unitSystem:td.unitSystem||'metric', inputMode:td.inputMode||'pace', results:td.results.map((r,i)=>({...r,interval:r.interval||(i+1)})) };
           const saved = await api.post('/test', testToSave, { headers:{'Authorization':`Bearer ${token}`} });
           if (saved?.data?._id) { addNotification('Lactate test saved!','success'); try { await logTestCreated(testToSave.sport,(testToSave.results||[]).length,userId); } catch{} }
         } catch(e) { console.warn('Test save failed:',e); }
