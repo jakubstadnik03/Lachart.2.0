@@ -399,6 +399,115 @@ function dropOutOfOrderStages(stages) {
   return keep.length >= 4 ? keep : stages;
 }
 
+/** Within this share of its planned length a level counts as finished: sampling a few seconds early is not stopping. */
+const SHORT_LEVEL_SHARE = 0.9;
+/** Earlier levels within this ratio of each other are a fixed-length protocol. */
+const SAME_LENGTH_RATIO = 1.05;
+
+function positiveNumber(v) {
+  const n = Number(String(v ?? '').replace(',', '.'));
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+/** Seconds from a stored number or a "M:SS" still as typed in the form. */
+function stageSeconds(v) {
+  const mmss = String(v ?? '').trim().match(/^(\d+):(\d{1,2})$/);
+  return mmss ? Number(mmss[1]) * 60 + Number(mmss[2]) : positiveNumber(v);
+}
+
+/**
+ * How long the last level was meant to be. The levels before it say so when
+ * they share a length, and they beat the test-level setting, which real tests
+ * contradict ("600 s" over levels of 360 s). When they differ the protocol is
+ * not fixed-length, as in a fixed distance where each level takes less time
+ * than the last, so a short last level means nothing and the answer is null.
+ */
+function plannedLength(earlierLevels, testLevel) {
+  const known = earlierLevels.filter((v) => v != null);
+  if (known.length < 2) return positiveNumber(testLevel);
+  const recent = known.slice(-3);
+  if (Math.max(...recent) / Math.min(...recent) > SAME_LENGTH_RATIO) return null;
+  return median(recent);
+}
+
+/**
+ * A last level stopped early. Lactate read after 1:40 of a 3:00 level at
+ * 17 km/h is not lactate at 17 km/h: the athlete only ever carried part of the
+ * step from the level before. So the level counts at the speed it was worth,
+ * the last finished level plus the completed share of the step (Kuipers), in
+ * speed or watts rather than pace because that is what lactate responds to.
+ *
+ * Only the last work level, and only when it is the hardest of the test: an
+ * early stop means nothing anywhere else. The stored row keeps what was typed.
+ *
+ * @param {object} test  { sport, results, stageDurationSec, stageDistance }
+ * @returns {object|null} { index, measure: 'duration'|'distance', completed, planned, share, power, targetPower }
+ */
+function shortenedLastLevel(test) {
+  const sport = test?.sport;
+  const levels = (Array.isArray(test?.results) ? test.results : [])
+    .map((row, index) => ({ row, index, load: positiveNumber(row?.power), u: toIntensity(positiveNumber(row?.power), sport) }))
+    .filter(({ row, u }) => u != null && row.intervalType !== 'recovery' && positiveNumber(row.lactate) != null);
+  if (levels.length < 2) return null;
+
+  const last = levels[levels.length - 1];
+  const earlier = levels.slice(0, -1);
+  if (last.row.targetPower != null) return null;
+  // Run and swim loads are pace seconds; a few old tests hold km/h, which the thresholds reject anyway.
+  if (isPaceSport(sport) && levels.some((l) => l.load < 60)) return null;
+  const previous = earlier.reduce((a, b) => (b.u > a.u ? b : a));
+  if (last.u <= previous.u) return null;
+
+  const measure = [
+    {
+      measure: 'duration',
+      completed: stageSeconds(last.row.duration),
+      planned: plannedLength(earlier.map((l) => stageSeconds(l.row.duration)), test.stageDurationSec),
+    },
+    {
+      measure: 'distance',
+      completed: positiveNumber(last.row.distanceMeters),
+      planned: plannedLength(earlier.map((l) => positiveNumber(l.row.distanceMeters)), test.stageDistance),
+    },
+  ].find((m) => m.completed != null && m.planned != null && m.completed < m.planned * SHORT_LEVEL_SHARE);
+  if (!measure) return null;
+
+  const share = measure.completed / measure.planned;
+  return {
+    ...measure,
+    index: last.index,
+    share,
+    power: Number(fromIntensity(previous.u + share * (last.u - previous.u), sport).toFixed(1)),
+    targetPower: last.load,
+  };
+}
+
+/**
+ * The test's rows as the calculations should read them: a copy with the last
+ * level at its proportional load when it was stopped early, otherwise the rows
+ * as they are. Safe to call twice, because the adjusted row carries targetPower.
+ */
+function withShortenedLastLevel(test) {
+  const results = Array.isArray(test?.results) ? test.results : [];
+  const shortened = shortenedLastLevel(test);
+  if (!shortened) return results;
+  return results.map((row, i) => {
+    if (i !== shortened.index) return row;
+    // A Mongoose subdocument spreads into its plumbing, not its fields.
+    const plain = typeof row.toObject === 'function' ? row.toObject() : row;
+    return { ...plain, power: shortened.power, targetPower: shortened.targetPower };
+  });
+}
+
+/** One sentence for the reader; formatLoad turns a stored load into their units. */
+function shortenedLevelNote(shortened, formatLoad) {
+  const length = (v) => (shortened.measure === 'distance'
+    ? `${Math.round(v)} m`
+    : `${Math.floor(v / 60)}:${String(Math.round(v % 60)).padStart(2, '0')}`);
+  return `Last level stopped at ${length(shortened.completed)} of ${length(shortened.planned)}: `
+    + `counted at ${formatLoad(shortened.power)} instead of ${formatLoad(shortened.targetPower)} in the curve and thresholds.`;
+}
+
 /**
  * @param {object} test
  * @param {string} test.sport   'bike' | 'run' | 'swim' (aliases accepted)
@@ -596,4 +705,4 @@ function analyzeLactateTest({ sport = 'bike', stages = [], baseLactate = null } 
   };
 }
 
-module.exports = { LT1_RISE_MMOL, LT1_TARGET_MIN_MMOL, LT1_MIN_ABOVE_BASE, LT1_CAP_MIN_MMOL, LT1_CAP_MAX_MMOL, LT1_CROSSING_WEIGHT, LT2_MIN_MMOL, LT2_MAX_MMOL, OBLA_MMOL, OBLA_FALLBACK_MMOL, IAT_RISE_MMOL, MIN_LT2_OVER_LT1, isPaceSport, toIntensity, fromIntensity, isotonic, monotoneCubic, interpolateAt, firstCrossing, dmaxOnCurve, logLogBreakpoint, segmentedBreakpoints, heartRateCurvePoints, heartRateAtIntensity, dropOutOfOrderStages, analyzeLactateTest };
+module.exports = { LT1_RISE_MMOL, LT1_TARGET_MIN_MMOL, LT1_MIN_ABOVE_BASE, LT1_CAP_MIN_MMOL, LT1_CAP_MAX_MMOL, LT1_CROSSING_WEIGHT, LT2_MIN_MMOL, LT2_MAX_MMOL, OBLA_MMOL, OBLA_FALLBACK_MMOL, IAT_RISE_MMOL, MIN_LT2_OVER_LT1, isPaceSport, toIntensity, fromIntensity, isotonic, monotoneCubic, interpolateAt, firstCrossing, dmaxOnCurve, logLogBreakpoint, segmentedBreakpoints, heartRateCurvePoints, heartRateAtIntensity, dropOutOfOrderStages, SHORT_LEVEL_SHARE, SAME_LENGTH_RATIO, shortenedLastLevel, withShortenedLastLevel, shortenedLevelNote, analyzeLactateTest };

@@ -11,6 +11,7 @@ import {
   Legend,
 } from 'chart.js';
 import { calculateThresholds, calculatePolynomialRegression, calculatePolynomialRegressionLactateToHR } from './DataTable';
+import { withShortenedLastLevel } from '../../utils/lactateThresholdEngine';
 import { convertPowerToPace } from '../../utils/paceConverter';
 import { calculateZonesFromTest } from './zoneCalculator';
 import { ArrowsRightLeftIcon } from '@heroicons/react/24/outline';
@@ -114,10 +115,11 @@ const TestComparison = ({ tests = [] }) => {
 
   // Vypočítáme thresholds pro každý test + HR polynom pro HR view
   const testsWithThresholds = validTests.map(test => {
+    const results = withShortenedLastLevel(test);
     const thresholds = calculateThresholds(test);
-    const polyPoints = calculatePolynomialRegression(test.results);
-    const polyPointsLactateToHR = calculatePolynomialRegressionLactateToHR(test.results);
-    const resultsWithHR = (test.results || []).filter(r => {
+    const polyPoints = calculatePolynomialRegression(results);
+    const polyPointsLactateToHR = calculatePolynomialRegressionLactateToHR(results);
+    const resultsWithHR = results.filter(r => {
       const hr = r.heartRate;
       if (hr == null || hr === '') return false;
       const n = Number(String(hr).replace(',', '.'));
@@ -125,6 +127,7 @@ const TestComparison = ({ tests = [] }) => {
     });
     return {
       ...test,
+      results,
       thresholds,
       polyPoints,
       polyPointsLactateToHR,

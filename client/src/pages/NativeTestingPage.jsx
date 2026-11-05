@@ -18,6 +18,7 @@ import { requestTrainingZonesModal } from '../utils/trainingZonesSetup';
 // the actual test page.
 import { calculateThresholds as desktopCalculateThresholds } from '../components/Testing-page/DataTable';
 import NewTestSheet from '../components/NativeDashboard/NewTestSheet';
+import { shortenedLastLevel, shortenedLevelNote, withShortenedLastLevel } from '../utils/lactateThresholdEngine';
 import NativeBenchmarkCard from '../components/native/NativeBenchmarkCard';
 import NativeSinceTestCard from '../components/native/NativeSinceTestCard';
 import NativePredictedCurveCard from '../components/native/NativePredictedCurveCard';
@@ -95,7 +96,7 @@ function extractThresholds(test) {
   let lt1Hr  = ov.LTP1_hr      != null ? Number(ov.LTP1_hr)      : null;
   let lt2Hr  = ov.LTP2_hr      != null ? Number(ov.LTP2_hr)      : null;
 
-  const pts = (Array.isArray(test.results) ? test.results : [])
+  const pts = withShortenedLastLevel(test)
     .map(r => ({
       x:  Number(String(r.power ?? r.interval ?? '').replace(',', '.')),
       y:  Number(String(r.lactate ?? '').replace(',', '.')),
@@ -714,6 +715,11 @@ export default function NativeTestingPage({ user, athleteId: externalAthleteId }
                   <div data-curve-anchor>
                     <LactateCurve thresholds={selectedTh} />
                   </div>
+                  {shortenedLastLevel(selected) && (
+                    <div style={{ marginTop: 6, fontSize: 11, lineHeight: 1.35, color: 'rgba(60,60,67,.6)' }}>
+                      {shortenedLevelNote(shortenedLastLevel(selected), (v) => fmtThreshold(v, selectedTh.sport, user, selected))}
+                    </div>
+                  )}
 
                   {/* LT1 / LT2 — rich tiles with lactate + HR sub-info */}
                   <div style={{

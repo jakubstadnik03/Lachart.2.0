@@ -12,6 +12,7 @@ import { updateTest, deleteTest } from '../../services/api';
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from '../../context/AuthProvider';
 import { getUserUnits, resolveDistanceUnitSystem } from '../../utils/unitsConverter';
+import { withShortenedLastLevel } from '../../utils/lactateThresholdEngine';
 import { usePremium } from '../../hooks/usePremium';
 import UpgradeModal from '../UpgradeModal';
 import { LockClosedIcon, ClipboardDocumentListIcon } from '@heroicons/react/24/outline';
@@ -427,7 +428,7 @@ const PreviousTestingComponent = ({
     const anchors = resolveLtAnchorsFromTest(currentTest);
     if (!anchors) return null;
 
-    const raw = currentTest.results
+    const raw = withShortenedLastLevel(currentTest)
       .map((r) => ({
         load: Number(String(r.power ?? "").replace(",", ".")),
         lac: Number(String(r.lactate ?? "").replace(",", ".")),

@@ -30,6 +30,7 @@ import TestSection from './TestSection';
 import TrainingGlossary from '../DashboardPage/TrainingGlossary';
 import { useAuth } from '../../context/AuthProvider';
 import { getEffectiveLactateInputMode, getLactateDisplayMode } from '../../utils/lactateTestInputMode';
+import { shortenedLastLevel, shortenedLevelNote, withShortenedLastLevel } from '../../utils/lactateThresholdEngine';
 import { resolveDistanceUnitSystem } from '../../utils/unitsConverter';
 import { parseLtInput, paceSecondsToDisplaySeconds, displaySecondsToPaceSeconds } from './ltOverrideInput';
 import UpgradeModal from '../UpgradeModal';
@@ -1416,7 +1417,9 @@ const LactateCurveCalculator = ({
       LTP2_La: thresholds.lactates?.['LTP2'],
     });
   }
-  const results = mockData.results;
+  // A last level stopped early is plotted where calculateThresholds reads it.
+  const results = withShortenedLastLevel(mockData);
+  const shortenedLevel = shortenedLastLevel(mockData);
 
   // Calculate training zones for visualization
   const zones = calculateZonesFromTest(mockDataWithOverrides);
@@ -1425,8 +1428,10 @@ const LactateCurveCalculator = ({
   // Sources, in priority order:
   //   1. Test-level `stageDurationSec` / `stageDistance` from the Protocol section
   //   2. Median of explicit per-row `duration` / `distanceMeters` values
-  // Cutoff = 60 % of the reference. Rows shorter than cutoff are excluded from
-  // the curve fit / LT1 / LT2 — same behaviour as recovery rows.
+  // Cutoff = 60 % of the reference. Rows shorter than cutoff are left off the
+  // chart and its curve fit; LT1/LT2 still read them, because the engine takes
+  // every stage measured. A last level stopped early is the exception: it stays,
+  // at its proportional load (see shortenedLastLevel in lactateThresholdEngine).
   //
   // CRITICAL fallback: if neither test-level setting nor per-row values are
   // present, both cutoffs stay at 0 and the row is ALWAYS kept. So tests
@@ -1467,12 +1472,13 @@ const LactateCurveCalculator = ({
     // AND distance independently because a swim might log only distance.
     // When the row's value is not set OR no reference exists, this is a
     // no-op (the row is kept).
+    const stoppedEarly = r.targetPower != null;
     const rowDur = Number(r.duration);
-    if (Number.isFinite(rowDur) && rowDur > 0 && shortStageCutoffSec > 0 && rowDur < shortStageCutoffSec) {
+    if (!stoppedEarly && Number.isFinite(rowDur) && rowDur > 0 && shortStageCutoffSec > 0 && rowDur < shortStageCutoffSec) {
       return false;
     }
     const rowDist = Number(r.distanceMeters);
-    if (Number.isFinite(rowDist) && rowDist > 0 && shortStageCutoffDist > 0 && rowDist < shortStageCutoffDist) {
+    if (!stoppedEarly && Number.isFinite(rowDist) && rowDist > 0 && shortStageCutoffDist > 0 && rowDist < shortStageCutoffDist) {
       return false;
     }
     const powerStr = r.power?.toString().trim();
@@ -2995,6 +3001,9 @@ const LactateCurveCalculator = ({
       : (unitSystem === 'imperial' ? '/mi' : '/km');
     return `${formatZoneBoundaryPace(n)}${unit}`;
   };
+  const fmtLevelLoad = (v) => (isPaceSport && inputMode === 'speed'
+    ? `${convertPaceToSpeed(v, unitSystem, isSwimming).toFixed(1)} ${unitSystem === 'imperial' ? 'mph' : 'km/h'}`
+    : fmtThresholdX(Math.round(v)).replace(/^0/, ''));
   const demoRows = demoMode ? [
     { key: 'LTP1', label: 'LT1', gloss: 'Aerobic threshold' },
     { key: 'LTP2', label: 'LT2', gloss: 'Anaerobic threshold' },
@@ -3405,7 +3414,13 @@ const LactateCurveCalculator = ({
             </div>
           );
         })()}
-        
+
+        {shortenedLevel && (
+          <p className="mb-2 text-[11px] text-gray-500 leading-snug">
+            {shortenedLevelNote(shortenedLevel, fmtLevelLoad)}
+          </p>
+        )}
+
         <div className="flex flex-col lg:flex-row gap-4">
           <div
             className={(showDataTable || demoMode) ? "flex-1 min-w-0" : "w-full"}

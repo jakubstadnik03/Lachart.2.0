@@ -11,6 +11,7 @@
 import React, { useMemo } from 'react';
 import { fmtViewerPace } from '../../../utils/viewerUnits';
 import { KM_PER_MILE, testRunPaceStoredPerMile } from '../../../utils/unitsConverter';
+import { withShortenedLastLevel } from '../../../utils/lactateThresholdEngine';
 
 const W = 1080;
 const H = 1920;
@@ -28,7 +29,7 @@ export default function LactateCurveTemplate({ test = {}, thresholds = null, acc
 
   // Build (x, lactate) pairs. x = power (watts) or pace (sec/km)
   const points = useMemo(() => {
-    const results = Array.isArray(test.results) ? test.results : [];
+    const results = withShortenedLastLevel(test);
     return results
       .map(r => {
         const lac = Number(r?.lactate ?? r?.lactateValue);

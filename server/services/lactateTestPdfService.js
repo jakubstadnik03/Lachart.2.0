@@ -5,6 +5,7 @@
  */
 const { getReportData } = require('./lactateTestReportEmailService');
 const { formatPace } = require('../utils/lactateZones');
+const { withShortenedLastLevel } = require('../utils/lactateThresholdEngine');
 const { escapeHtml } = require('../utils/lactateReportSvgs');
 const path = require('path');
 const fs = require('fs');
@@ -315,7 +316,7 @@ function buildDualAxisCurveSvg({ results, sport, unitSystem, inputMode }) {
  */
 function buildComparisonSvg({ currentTest, prevTest, sport, unitSystem, inputMode }) {
   const coreSport = normalizeSport(sport);
-  const parse = (test) => (Array.isArray(test?.results) ? test.results : [])
+  const parse = (test) => withShortenedLastLevel(test)
     .map(r => ({ x: toDisplayX(r.power, { sport: coreSport, unitSystem, inputMode }), la: Number(r.lactate), hr: Number(r.heartRate) }))
     .filter(p => Number.isFinite(p.x) && Number.isFinite(p.la));
 
@@ -685,7 +686,7 @@ async function generateTestReportPdf(requesterUserId, testId, overrides = {}) {
 
     // ---------- LACTATE + HR CURVE (dual axis) ----------
     const dualSvg = buildDualAxisCurveSvg({
-      results: test.results || [],
+      results: withShortenedLastLevel(test),
       sport: coreSport, unitSystem, inputMode: displayInputMode
     });
     if (dualSvg) {

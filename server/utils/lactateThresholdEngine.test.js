@@ -28,4 +28,27 @@ const mph = (s) => 3600 / s;
 assert.ok(mph(r.lt1.value) > 6.5 && mph(r.lt1.value) < 6.8, `LT1 ${mph(r.lt1.value)}`);
 assert.ok(mph(r.lt2.value) > 7.4 && mph(r.lt2.value) < 7.8, `LT2 ${mph(r.lt2.value)}`);
 assert.ok(r.lt2.lactate >= 3 && r.lt2.lactate <= 3.6, `LT2 La ${r.lt2.lactate}`);
+
+// A last level stopped early: the reports must read the speed the calculator does.
+const { calculateThresholds } = require('./lactateThresholds');
+const treadmill = (lastSpeed, lastDuration) => ({
+  sport: 'run', baseLactate: 1.0, stageDurationSec: 180,
+  results: [[12, 1.2], [13, 1.4], [14, 1.9], [15, 3.0], [16, 5.0]]
+    .map(([speed, lactate]) => ({ power: 3600 / speed, lactate, duration: 180 }))
+    .concat({ power: 3600 / lastSpeed, lactate: 8.1, duration: lastDuration }),
+});
+const stopped = calculateThresholds(treadmill(17, 100));
+const proportional = calculateThresholds(treadmill(16 + 100 / 180, 180));
+assert.ok(Math.abs(stopped.LTP1 - proportional.LTP1) < 0.5, `LT1 ${stopped.LTP1} vs ${proportional.LTP1}`);
+assert.ok(Math.abs(stopped.LTP2 - proportional.LTP2) < 0.5, `LT2 ${stopped.LTP2} vs ${proportional.LTP2}`);
+
+// What the form sends survives the schema, and a real Mongoose test reads the same.
+const Test = require('../models/test');
+const saved = new Test({ ...treadmill(17, 100), athleteId: 'athlete', title: 'Treadmill', date: '2026-11-05', stageDurationSec: '180', stageMeasureMode: 'duration' });
+assert.strictEqual(saved.validateSync(), undefined, 'test should validate');
+assert.strictEqual(saved.stageDurationSec, 180);
+assert.strictEqual(saved.stageMeasureMode, 'duration');
+assert.strictEqual(saved.results[5].duration, 100);
+const fromDoc = calculateThresholds(saved);
+assert.ok(Math.abs(fromDoc.LTP2 - proportional.LTP2) < 0.5, `doc LT2 ${fromDoc.LTP2} vs ${proportional.LTP2}`);
 console.log('lactateThresholdEngine.test.js passed');
