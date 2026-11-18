@@ -28,6 +28,21 @@ const COPY = {
     lead: 'You have thresholds from a lactate test, but nothing is being measured against them. Connect your watch and every session is — time in each zone, training load, and whether your threshold is actually moving.',
     caption: 'From your latest test',
   },
+  /**
+   * For someone with neither a test nor a tracker — 317 of 741 real accounts
+   * on 2026-11-18, and the worst-converting cohort in the base (6.6 % ever
+   * paid, against 22.3 % of accounts with a tracker).
+   *
+   * There are no thresholds to lead with here, so the pitch runs the other
+   * way round: connect first, and LaChart estimates a curve from the training
+   * itself (the same estimate the predicted-curve card and email already
+   * draw), which is something they can have today without a lab.
+   */
+  untested: {
+    title: 'See your thresholds before you test',
+    lead: 'Connect your watch and LaChart reads your training to estimate where your thresholds sit — your curve, your zones, no lab needed. A lactate test later sharpens it; this gets you started.',
+    caption: null,
+  },
 };
 
 const TrackerConnectPrompt = ({ isOpen, onClose, test, variant = 'post_save' }) => {
