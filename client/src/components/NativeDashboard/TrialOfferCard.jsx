@@ -20,8 +20,14 @@ const WEB_URL = 'https://lachart.net/settings?tab=subscription';
  * does here.
  *
  * When it appears is decided in utils/trialOfferPrompt.js.
+ *
+ * `hasTest` only changes what it leads with. LaChart is bought for two
+ * different reasons — 21 of the 78 accounts that have ever paid never saved a
+ * lactate test, and pay for the calendar, the structured workouts and the
+ * watch export. Leading those people with "your zones" sold them a product
+ * they were not buying, and until now the offer never reached them at all.
  */
-export default function TrialOfferCard({ user, onDismiss }) {
+export default function TrialOfferCard({ user, onDismiss, hasTest = true }) {
   const plan = planForUser('pro', user);
   const isCoach = plan === 'coach';
   const price = isCoach ? COACH_PLAN_PRICE_LABEL : ATHLETE_PLAN_PRICE_LABEL;
@@ -56,7 +62,9 @@ export default function TrialOfferCard({ user, onDismiss }) {
             LaChart {planName}
           </div>
           <div style={{ fontSize: 17, fontWeight: 700, color: '#0A0E1A', lineHeight: 1.25 }}>
-            Your zones are measuring your training. See the rest of it.
+            {hasTest
+              ? 'Your zones are measuring your training. See the rest of it.'
+              : 'Your training is here. Now plan it.'}
           </div>
         </div>
         <button
@@ -74,7 +82,9 @@ export default function TrialOfferCard({ user, onDismiss }) {
       </div>
 
       <ul style={{ margin: 0, paddingLeft: 18, color: '#4B5563', fontSize: 13, lineHeight: 1.65 }}>
-        <li>Your whole test history, not just the latest one</li>
+        {hasTest
+          ? <li>Your whole test history, not just the latest one</li>
+          : <li>Plan your week in the calendar</li>}
         <li>Form, fitness and fatigue tracked against every session</li>
         <li>Structured workouts pushed to your watch</li>
         {isCoach && <li>Unlimited athletes on one roster</li>}

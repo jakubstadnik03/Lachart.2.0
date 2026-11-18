@@ -51,8 +51,13 @@ describe('who gets offered the trial', () => {
     expect(shouldOfferTrial(eligible({ everSubscribed: true }))).toBe(false);
   });
 
-  test('not without a test — there are no zones to sell yet', () => {
-    expect(shouldOfferTrial(eligible({ hasTest: false }))).toBe(false);
+  test('offers to someone with a tracker and no test — a quarter of payers are those people', () => {
+    // This used to return false. Of 78 accounts that have ever paid, 21 never
+    // saved a lactate test: they buy the calendar, the structured workouts and
+    // the watch export. Requiring a test hid the offer from 72 free accounts
+    // with a tracker against the 57 that had both, so the condition was
+    // excluding more than half of everyone otherwise eligible.
+    expect(shouldOfferTrial(eligible({ hasTest: false }))).toBe(true);
   });
 
   test('not without a tracker — that person gets the connect prompt instead', () => {

@@ -1541,7 +1541,11 @@ export default function NativeDashboardPage({
           {/* 5 · Weekly summary */}
           {trialOfferOpen && (
             <div style={{ ...cardEntry(5), ...snapStyle }}>
-              <TrialOfferCard user={user} onDismiss={() => setTrialOfferOpen(false)} />
+              <TrialOfferCard
+                user={user}
+                onDismiss={() => setTrialOfferOpen(false)}
+                hasTest={Array.isArray(tests) && tests.length > 0}
+              />
             </div>
           )}
 

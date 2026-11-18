@@ -6,11 +6,24 @@
  * started a trial — while 21 of 33 finished trials converted. The offer
  * converts; almost nobody reaches it. The app never showed it at all.
  *
- * Who it asks: someone on the free plan whose product is actually working —
- * they have a lactate test and something measuring their training against it.
- * Offering a trial to an athlete whose zones govern nothing is the wrong ask;
- * that person gets the tracker prompt instead (see trackerConnectPrompt.js),
- * and the two therefore never target the same account at the same time.
+ * Who it asks: someone on the free plan whose product is actually working.
+ * A connected tracker is the bar, because that is what makes LaChart do
+ * anything daily. Offering a trial to an account with nothing coming in is
+ * the wrong ask; that person gets the tracker prompt instead (see
+ * trackerConnectPrompt.js), and the two therefore never target the same
+ * account at the same time.
+ *
+ * A lactate test is NOT required, and used to be. LaChart is bought for two
+ * different reasons and the billing data says so plainly: of 78 accounts that
+ * have ever paid, 21 — 27 % — never saved a single test. They pay for the
+ * calendar, the structured workouts and the watch export. Requiring a test
+ * here meant the in-app trial was never offered to the people who buy exactly
+ * that: on 2026-11-18, 72 free accounts had a tracker and no test against 57
+ * with both, so this one condition was hiding the offer from more than half
+ * the accounts that qualify for it on every other count.
+ *
+ * `hasTest` is still taken, and still used — not to decide whether to ask, but
+ * to frame what the offer leads with. See TrialOfferCard.
  *
  * Anyone who has ever held a paid subscription is left alone. Someone who
  * cancelled does not want the same pitch again — that is the win-back
@@ -48,16 +61,17 @@ function readState() {
  * @param {object}  o.user           the signed-in user
  * @param {boolean} o.isPremium      resolved premium status — never offer to a payer
  * @param {boolean} [o.premiumResolved] false while it is still unknown
- * @param {boolean} o.hasTest        they have saved a lactate test
- * @param {boolean} o.hasTracker     a workout tracker is connected
+ * @param {boolean} o.hasTracker     a workout tracker is connected — the bar
  * @param {boolean} [o.everSubscribed] they have held a paid plan before
  * @returns {boolean}
+ *
+ * Callers may also pass `hasTest`; it is deliberately not read here. Whether
+ * someone has tested decides what the offer says, not whether they get it.
  */
 export function shouldOfferTrial({
   user,
   isPremium,
   premiumResolved = true,
-  hasTest = false,
   hasTracker = false,
   everSubscribed = false,
 } = {}) {
@@ -66,7 +80,9 @@ export function shouldOfferTrial({
   // same, and pitching a paying subscriber is the one unacceptable mistake.
   if (!premiumResolved || isPremium) return false;
   if (everSubscribed) return false;
-  if (!hasTest || !hasTracker) return false;
+  // A tracker is the bar; a test is not. 27 % of everyone who has ever paid
+  // never saved one. `hasTest` only chooses the copy — see the header.
+  if (!hasTracker) return false;
 
   const { count, lastAt } = readState();
   if (count >= MAX_OFFERS) return false;
