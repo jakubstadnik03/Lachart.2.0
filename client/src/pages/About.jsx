@@ -1769,7 +1769,7 @@ export default function About() {
               <Eyebrow>Pricing</Eyebrow>
               <h2 className="lc-big" style={{ margin: '14px 0 12px' }}>Start free. Go Pro when you're ready.</h2>
               <p className="lc-lead" style={{ margin: '0 auto' }}>
-                Your first three lactate tests, your curve and your zones are free — long enough to watch a threshold move.
+                Your first two lactate tests, your curve and your zones are free — enough to watch a threshold move.
                 Athlete adds unlimited tests, the full history behind them, and a calendar that pushes structured workouts
                 to your Garmin. Coach does all of it for a whole roster. Both start with{' '}
                 <b style={{ color: LC.text }}>2 weeks free</b>. Cancel anytime.

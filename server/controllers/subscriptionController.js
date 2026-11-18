@@ -71,7 +71,7 @@ const PLANS = {
     // Keep in step with QUOTA_LIMITS in server/middleware/featureGate.js
     // (the gate that enforces it) and client/src/constants/planLimits.js.
     limits: {
-      tests: 3,
+      tests: 2,
       athletes: 1
     }
   },
