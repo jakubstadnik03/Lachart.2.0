@@ -7,6 +7,7 @@ import { trackEvent } from '../../utils/analytics';
 import { resolveDistanceUnitSystem } from '../../utils/unitsConverter';
 import TrainingGlossary from '../DashboardPage/TrainingGlossary';
 import { sanitizeLactateInput } from '../../utils/lactateInput';
+import { shortenedLastLevel, shortenedLevelNote } from '../../utils/lactateThresholdEngine';
 import { usePremium } from '../../hooks/usePremium';
 import UpgradeModal from '../UpgradeModal';
 import { getUserTests } from '../../services/api';
@@ -57,7 +58,15 @@ const PROTOCOL_TIPS = [
   { label: 'Row 1', text: 'first workload step' },
   { label: 'Lactate column', text: 'measured value at sampling time' },
   { label: 'Power / HR', text: 'intensity of that step' },
+  { label: 'Stopped early', text: 'last level cut short? Turn on the Dur column (form settings, Show columns) and enter the time reached, e.g. 1:40. It counts at a proportional speed or power.' },
 ];
+
+// What the Protocol section edits and the test stores: numbers, or null when cleared.
+const PROTOCOL_FIELDS = [
+  'restingHR', 'preLoadHR', 'maxHR', 'maxLactate', 'recoveryHR3min', 'recoveryLactate3min',
+  'stageDurationSec', 'stageDistance', 'restBetweenStagesSec',
+];
+const protocolFieldsFrom = (test) => Object.fromEntries(PROTOCOL_FIELDS.map((f) => [f, test?.[f] ?? '']));
 
 const FieldHint = ({ children, wide = false }) => {
   const [open, setOpen] = useState(false);
@@ -361,15 +370,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
     // Protocol metadata — saved alongside the test for cross-test comparison
     // and future use by improved LT analysis (Modified Dmax / IAT). None of
     // these influence the current curve fit directly.
-    restingHR: testData?.restingHR ?? '',
-    preLoadHR: testData?.preLoadHR ?? '',
-    maxHR: testData?.maxHR ?? '',
-    maxLactate: testData?.maxLactate ?? '',
-    recoveryHR3min: testData?.recoveryHR3min ?? '',
-    recoveryLactate3min: testData?.recoveryLactate3min ?? '',
-    stageDurationSec: testData?.stageDurationSec ?? '',
-    stageDistance: testData?.stageDistance ?? '',
-    restBetweenStagesSec: testData?.restBetweenStagesSec ?? '',
+    ...protocolFieldsFrom(testData),
   });
 
   useEffect(() => {
@@ -751,7 +752,8 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
           baseLa: baseLaValue,
         date: formatDate(testData.date),
         specifics: testData.specifics || { specific: '', weather: '' },
-        comments: testData.comments || ''
+        comments: testData.comments || '',
+        ...protocolFieldsFrom(testData),
         };
       });
       const resultsSignature = JSON.stringify(
@@ -990,6 +992,14 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
       unitSystem: finalUnitSystem,
       inputMode: finalInputMode,
       rpeScale: rpeScale,
+      // From the form, not testBase. A saved test's parent ignores form edits, so
+      // reading these from testData silently threw away what was typed here.
+      ...Object.fromEntries(
+        PROTOCOL_FIELDS
+          .filter((f) => formData[f] !== undefined)
+          .map((f) => [f, parseLocalizedNumber(formData[f], null)])
+      ),
+      stageMeasureMode,
       results: rows
         .map((row, index) => {
           // Convert power to seconds for backend
@@ -1301,10 +1311,17 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
     return (testData?.sport === 'swim' || formData?.sport === 'swim') ? 'distance' : 'duration';
   });
   const isDistanceMode = stageMeasureMode === 'distance';
+  // Another saved test in the same form brings its own values, not the last one's.
+  useEffect(() => {
+    if (!testData?._id) return;
+    setFormData((prev) => ({ ...prev, ...protocolFieldsFrom(testData) }));
+    if (testData.stageMeasureMode) setStageMeasureMode(testData.stageMeasureMode);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [testData?._id]);
   const stageColumnLabel = isDistanceMode ? 'Dist' : 'Dur';
   const stageColumnTooltip = isDistanceMode
-    ? 'Distance of this stage in meters. Leave blank to use the test-level default. Shorter stages are excluded from the curve so they don\'t pull the regression.'
-    : 'Duration from step start to blood sample (MM:SS). E.g. 5:00 if sampled at minute 5 of a 6 min stage. Leave blank to use test-level stage duration.';
+    ? 'Distance of this stage in meters. Leave blank to use the test-level default. Shorter stages are excluded from the curve so they don\'t pull the regression, except a last level stopped early, which counts at a proportional speed.'
+    : 'Duration from step start to blood sample (MM:SS). E.g. 5:00 if sampled at minute 5 of a 6 min stage. Leave blank to use test-level stage duration. If the last level was stopped early, enter the time reached (e.g. 1:40): it then counts at a proportional speed or power.';
 
   const formatPaceSeconds = (totalSec) => {
     const s = Math.max(0, Math.round(Number(totalSec) || 0));
@@ -1312,6 +1329,26 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
     const ss = s % 60;
     return `${String(m).padStart(2, '0')}:${String(ss).padStart(2, '0')}`;
   };
+
+  // Tell the reader, while they type, what a last level stopped early will count as.
+  const shortenedLevel = shortenedLastLevel({
+    sport: formData.sport,
+    stageDurationSec: formData.stageDurationSec,
+    stageDistance: formData.stageDistance,
+    results: rows.map((r) => ({ ...r, power: convertPowerToSeconds(r.power, inputMode, unitSystem, formData.sport) })),
+  });
+  const formatFormLoad = (stored) => {
+    if (formData.sport === 'bike') return `${Math.round(stored)} W`;
+    const imperial = unitSystem === 'imperial';
+    if (inputMode === 'speed') return `${convertSecondsToSpeed(stored, unitSystem, formData.sport).toFixed(1)} ${imperial ? 'mph' : 'km/h'}`;
+    const per = formData.sport === 'swim' ? (imperial ? '/100yd' : '/100m') : (imperial ? '/mi' : '/km');
+    return `${formatPaceSeconds(stored).replace(/^0/, '')}${per}`;
+  };
+  // A Dur on the last level with nothing to compare it to does nothing, so say what it needs.
+  const hasDur = (r) => String(r?.duration ?? '').trim() !== '';
+  const lastWorkRow = [...rows].reverse().find((r) => r.intervalType !== 'recovery' && String(r.power ?? '').trim() && String(r.lactate ?? '').trim());
+  const lastLevelNeedsLength = !shortenedLevel && !formData.stageDurationSec && hasDur(lastWorkRow)
+    && rows.filter((r) => r !== lastWorkRow && hasDur(r)).length < 2;
 
   const parsePaceInput = (val) => {
     if (val == null) return NaN;
@@ -1401,6 +1438,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
     if (isPaceSport) {
       setInputMode(isSpeedInput ? 'speed' : 'pace');
     }
+    setFormData((prev) => ({ ...prev, stageDurationSec: Number(stepWizard.stageDurationSec) || '' }));
     // Also propagate stage duration AND the chosen inputMode to the
     // test-level metadata so the curve calculator (and exports) read the
     // right axis. Without `inputMode`, a saved test would forget whether
@@ -1883,8 +1921,10 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
                       baseLa: originalTestData.baseLactate?.toString() || '',
                       date: formatDate(originalTestData.date),
                       specifics: originalTestData.specifics || { specific: '', weather: '' },
-                      comments: originalTestData.comments || ''
+                      comments: originalTestData.comments || '',
+                      ...protocolFieldsFrom(originalTestData),
                     });
+                    if (originalTestData.stageMeasureMode) setStageMeasureMode(originalTestData.stageMeasureMode);
                     
                     // Restore inputMode and unitSystem first (before restoring rows)
                     const restoredInputMode = originalTestData.inputMode || inputMode;
@@ -2490,6 +2530,17 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
             );
           })()}
         </div>
+
+        {shortenedLevel && (
+          <p className="mt-2 flex-shrink-0 text-xs text-gray-500 leading-snug">
+            {shortenedLevelNote(shortenedLevel, formatFormLoad)}
+          </p>
+        )}
+        {lastLevelNeedsLength && (isNewTest || isEditMode) && (
+          <p className="mt-2 flex-shrink-0 text-xs text-amber-700 leading-snug">
+            To count the last level proportionally, set Stage duration under Protocol, or fill Dur on the other levels.
+          </p>
+        )}
 
         {/* Action buttons only when editing — wrap onto multiple rows on
             narrow viewports so they never overflow the form card. */}

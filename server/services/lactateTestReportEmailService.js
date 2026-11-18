@@ -3,6 +3,7 @@ const User = require('../models/UserModel');
 const Test = require('../models/test');
 const { generateEmailTemplate, getClientUrl } = require('../utils/emailTemplate');
 const { calculateThresholds } = require('../utils/lactateThresholds');
+const { withShortenedLastLevel } = require('../utils/lactateThresholdEngine');
 const { calculateZonesFromTest, formatPace } = require('../utils/lactateZones');
 const { buildLactateCurveSvg, svgToEmailImgSrc, escapeHtml } = require('../utils/lactateReportSvgs');
 
@@ -458,7 +459,7 @@ async function getReportData(requesterUserId, testId, overrides = {}) {
       : 'Intensity';
 
   const lactateSvg = buildLactateCurveSvg({
-    results: test.results || [],
+    results: withShortenedLastLevel(test),
     sportLabel: `${sport.toUpperCase()} • Lactate Curve`,
     xLabel,
     sport,

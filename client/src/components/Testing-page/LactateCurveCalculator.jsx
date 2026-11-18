@@ -30,6 +30,7 @@ import TestSection from './TestSection';
 import TrainingGlossary from '../DashboardPage/TrainingGlossary';
 import { useAuth } from '../../context/AuthProvider';
 import { getEffectiveLactateInputMode, getLactateDisplayMode } from '../../utils/lactateTestInputMode';
+import { shortenedLastLevel, shortenedLevelNote, withShortenedLastLevel } from '../../utils/lactateThresholdEngine';
 import { resolveDistanceUnitSystem } from '../../utils/unitsConverter';
 import { parseLtInput, paceSecondsToDisplaySeconds, displaySecondsToPaceSeconds } from './ltOverrideInput';
 import UpgradeModal from '../UpgradeModal';
@@ -1073,18 +1074,23 @@ const LactateCurveCalculator = ({
   const inputMode = displayMode;
 
   // A threshold as the panel's input shows it: mm:ss in the athlete's units
-  // for pace, whole watts otherwise. Stored values are sec/km (or sec/mile)
-  // and sec/100m, so imperial pace has to be converted both ways.
+  // for pace, km/h or mph for speed, whole watts otherwise. Stored values are
+  // sec/km (or sec/mile) and sec/100m, so they are converted both ways. A
+  // typed mm:ss is always a pace, even while the test reads in speed.
   const paceInput = isPaceSport && inputMode === 'pace';
+  const speedInput = isPaceSport && inputMode === 'speed';
+  const speedUnit = unitSystem === 'imperial' ? 'mph' : 'km/h';
   const paceOpts = { isSwimming, unitSystem, testRunPerMileStorage };
   const ltStoredToInput = (v) => {
     if (v == null || !Number.isFinite(Number(v))) return '';
+    if (speedInput) return storedXToChartX(Number(v), chartXOpts).toFixed(1);
     return paceInput ? formatSecondsToMMSS(paceSecondsToDisplaySeconds(Number(v), paceOpts)) : String(Math.round(Number(v)));
   };
   const ltInputToStored = (raw) => {
     const x = parseLtInput(raw);
     if (x == null) return null;
-    return paceInput ? displaySecondsToPaceSeconds(x, paceOpts) : x;
+    if (speedInput && !String(raw).includes(':')) return chartXToStoredX(x, chartXOpts);
+    return isPaceSport ? displaySecondsToPaceSeconds(x, paceOpts) : x;
   };
 
   // Sync ltOverrides from server data when test/overrides change
@@ -1416,7 +1422,9 @@ const LactateCurveCalculator = ({
       LTP2_La: thresholds.lactates?.['LTP2'],
     });
   }
-  const results = mockData.results;
+  // A last level stopped early is plotted where calculateThresholds reads it.
+  const results = withShortenedLastLevel(mockData);
+  const shortenedLevel = shortenedLastLevel(mockData);
 
   // Calculate training zones for visualization
   const zones = calculateZonesFromTest(mockDataWithOverrides);
@@ -1425,8 +1433,10 @@ const LactateCurveCalculator = ({
   // Sources, in priority order:
   //   1. Test-level `stageDurationSec` / `stageDistance` from the Protocol section
   //   2. Median of explicit per-row `duration` / `distanceMeters` values
-  // Cutoff = 60 % of the reference. Rows shorter than cutoff are excluded from
-  // the curve fit / LT1 / LT2 — same behaviour as recovery rows.
+  // Cutoff = 60 % of the reference. Rows shorter than cutoff are left off the
+  // chart and its curve fit; LT1/LT2 still read them, because the engine takes
+  // every stage measured. A last level stopped early is the exception: it stays,
+  // at its proportional load (see shortenedLastLevel in lactateThresholdEngine).
   //
   // CRITICAL fallback: if neither test-level setting nor per-row values are
   // present, both cutoffs stay at 0 and the row is ALWAYS kept. So tests
@@ -1467,12 +1477,13 @@ const LactateCurveCalculator = ({
     // AND distance independently because a swim might log only distance.
     // When the row's value is not set OR no reference exists, this is a
     // no-op (the row is kept).
+    const stoppedEarly = r.targetPower != null;
     const rowDur = Number(r.duration);
-    if (Number.isFinite(rowDur) && rowDur > 0 && shortStageCutoffSec > 0 && rowDur < shortStageCutoffSec) {
+    if (!stoppedEarly && Number.isFinite(rowDur) && rowDur > 0 && shortStageCutoffSec > 0 && rowDur < shortStageCutoffSec) {
       return false;
     }
     const rowDist = Number(r.distanceMeters);
-    if (Number.isFinite(rowDist) && rowDist > 0 && shortStageCutoffDist > 0 && rowDist < shortStageCutoffDist) {
+    if (!stoppedEarly && Number.isFinite(rowDist) && rowDist > 0 && shortStageCutoffDist > 0 && rowDist < shortStageCutoffDist) {
       return false;
     }
     const powerStr = r.power?.toString().trim();
@@ -2989,12 +3000,15 @@ const LactateCurveCalculator = ({
     if (v == null || !Number.isFinite(Number(v))) return '—';
     const n = Number(v);
     if (!isPaceSport) return `${Math.round(n)} W`;
-    if (dataIsSpeed) return `${n.toFixed(1)} ${unitSystem === 'imperial' ? 'mph' : 'km/h'}`;
+    if (speedInput) return `${storedXToChartX(n, chartXOpts).toFixed(1)} ${speedUnit}`;
     const unit = isSwimming
       ? (unitSystem === 'imperial' ? '/100yd' : '/100m')
       : (unitSystem === 'imperial' ? '/mi' : '/km');
     return `${formatZoneBoundaryPace(n)}${unit}`;
   };
+  const fmtLevelLoad = (v) => (isPaceSport && inputMode === 'speed'
+    ? `${convertPaceToSpeed(v, unitSystem, isSwimming).toFixed(1)} ${unitSystem === 'imperial' ? 'mph' : 'km/h'}`
+    : fmtThresholdX(Math.round(v)).replace(/^0/, ''));
   const demoRows = demoMode ? [
     { key: 'LTP1', label: 'LT1', gloss: 'Aerobic threshold' },
     { key: 'LTP2', label: 'LT2', gloss: 'Anaerobic threshold' },
@@ -3253,7 +3267,7 @@ const LactateCurveCalculator = ({
             <div className="mx-0 mb-3 p-3 rounded-xl border border-violet-200 bg-violet-50 flex flex-col gap-3">
               <div className="flex items-center justify-between gap-2">
                 <p className="text-xs font-semibold text-violet-900">Manual threshold override</p>
-                <p className="text-xs text-violet-500">{isPaceSport ? 'Pace mm:ss · lactate mmol/L' : 'Watts · lactate mmol/L'}</p>
+                <p className="text-xs text-violet-500">{speedInput ? `Speed ${speedUnit} · lactate mmol/L` : isPaceSport ? 'Pace mm:ss · lactate mmol/L' : 'Watts · lactate mmol/L'}</p>
               </div>
 
               {/* Auto reference row — clickable to restore auto values */}
@@ -3268,7 +3282,7 @@ const LactateCurveCalculator = ({
                   const autoXStr = autoX != null
                     ? (isPaceSport && inputMode === 'pace'
                         ? formatSecondsToMMSS(paceSecondsToDisplaySeconds(autoX, { isSwimming, unitSystem, testRunPerMileStorage }))
-                        : `${Math.round(autoX)} W`)
+                        : fmtThresholdX(autoX))
                     : null;
                   const isActive = ltOverrides[key] != null;
                   const borderC = accent === 'green' ? 'border-green-200 hover:border-green-400' : 'border-red-200 hover:border-red-400';
@@ -3315,7 +3329,7 @@ const LactateCurveCalculator = ({
                       {/* Pace / Watts */}
                       <div>
                         <label className="text-[10px] text-violet-600 font-medium uppercase tracking-wide mb-0.5 block">
-                          {isPaceSport ? 'Pace' : 'Power (W)'}
+                          {speedInput ? `Speed (${speedUnit})` : isPaceSport ? 'Pace' : 'Power (W)'}
                         </label>
                         <input
                           type="text"
@@ -3331,7 +3345,7 @@ const LactateCurveCalculator = ({
                               setLtEditLactates(prev => ({ ...prev, [key]: '' }));
                             }
                           }}
-                          placeholder={isPaceSport ? 'e.g. 4:15' : 'e.g. 280'}
+                          placeholder={speedInput ? 'e.g. 12.5' : isPaceSport ? 'e.g. 4:15' : 'e.g. 280'}
                           className={`w-full px-2 py-1.5 text-sm border ${borderAccent} rounded-lg bg-white focus:outline-none focus:ring-2`}
                         />
                       </div>
@@ -3368,7 +3382,7 @@ const LactateCurveCalculator = ({
                         <span className="text-[10px] text-violet-600 bg-violet-100 rounded px-1.5 py-0.5 self-start">
                           Pinned: {isPaceSport && inputMode === 'pace'
                             ? formatSecondsToMMSS(paceSecondsToDisplaySeconds(ltOverrides[key], { isSwimming, unitSystem, testRunPerMileStorage }))
-                            : `${Math.round(ltOverrides[key])} W`}
+                            : fmtThresholdX(ltOverrides[key])}
                         </span>
                       )}
                     </div>
@@ -3405,7 +3419,13 @@ const LactateCurveCalculator = ({
             </div>
           );
         })()}
-        
+
+        {shortenedLevel && (
+          <p className="mb-2 text-[11px] text-gray-500 leading-snug">
+            {shortenedLevelNote(shortenedLevel, fmtLevelLoad)}
+          </p>
+        )}
+
         <div className="flex flex-col lg:flex-row gap-4">
           <div
             className={(showDataTable || demoMode) ? "flex-1 min-w-0" : "w-full"}
@@ -3552,7 +3572,7 @@ const LactateCurveCalculator = ({
                             })
                           )
                         : isPaceSport && inputMode === 'speed'
-                          ? `${Number(thresholds.testAnalysis.lt1.power).toFixed(1)} ${unitSystem === 'imperial' ? 'mph' : 'km/h'}`
+                          ? fmtThresholdX(thresholds.testAnalysis.lt1.power)
                           : `${Math.round(thresholds.testAnalysis.lt1.power)} W`}
                     </span>
                     {thresholds.testAnalysis.lt1.hr != null && (
@@ -3579,7 +3599,7 @@ const LactateCurveCalculator = ({
                             })
                           )
                         : isPaceSport && inputMode === 'speed'
-                          ? `${Number(thresholds.testAnalysis.lt2.power).toFixed(1)} ${unitSystem === 'imperial' ? 'mph' : 'km/h'}`
+                          ? fmtThresholdX(thresholds.testAnalysis.lt2.power)
                           : `${Math.round(thresholds.testAnalysis.lt2.power)} W`}
                     </span>
                     {thresholds.testAnalysis.lt2.hr != null && (
