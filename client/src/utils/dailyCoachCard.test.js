@@ -158,6 +158,17 @@ describe('buildDailyCard', () => {
     expect(card.directiveKind).toBe('rest');
   });
 
+  // The card said "Nothing planned. Rest well" next to the swim the athlete
+  // had just finished.
+  it('acknowledges a session already done today instead of calling it a rest day', () => {
+    const swim = { id: 's1', date: new Date(NOW.getTime() - 60 * 60 * 1000), sport: 'swim', title: 'Afternoon Swim', totalTime: 2832, distance: 3230, tss: 54 };
+    const card = build({ plannedWorkouts: [], activities: [...activities, swim] });
+    expect(card.todayCompleted.map((c) => c.title)).toEqual(['Afternoon Swim']);
+    expect(card.directiveKind).toBe('done-today');
+    expect(card.directive).toMatch(/^Afternoon Swim done today/);
+    expect(card.directive).not.toMatch(/Nothing planned|Rest day/);
+  });
+
   it('names the session when a rest day follows a big one', () => {
     const card = build({
       plannedWorkouts: [],

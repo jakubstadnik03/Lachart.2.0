@@ -580,9 +580,14 @@ export default function NativeTestingPage({ user, athleteId: externalAthleteId }
             <div style={styles.subtitle}>
               {tests.length} test{tests.length !== 1 ? 's' : ''}
               {tests.length > 0 && (() => {
-                const newest = filtered[0] || tests[0];
-                if (!newest) return null;
-                return ` · last ${fmtRelativeDate(newest.date || newest.testDate || 0)}`;
+                // The count is every test, so the date has to be the newest of
+                // every test too — it came from the sport filter ("14 tests ·
+                // last 8 months ago" while a run test was a month newer).
+                const ts = (t) => new Date(t?.date || t?.testDate || 0).getTime() || 0;
+                const newest = tests.reduce((best, t) => (ts(t) > ts(best) ? t : best), tests[0]);
+                if (!newest || !ts(newest)) return null;
+                const rel = fmtRelativeDate(newest.date || newest.testDate);
+                return ` · latest ${/ago$|^Today$|^Yesterday$/.test(rel) ? rel.toLowerCase() : `on ${rel}`}`;
               })()}
             </div>
           </div>
@@ -648,7 +653,7 @@ export default function NativeTestingPage({ user, athleteId: externalAthleteId }
             if (sportTestCount < 2) return null;
             return (
               <div style={{ ...cardEntry(2), ...snap }}>
-                <LT2TrendSparkline tests={tests} sport={selectedSport} />
+                <LT2TrendSparkline tests={tests} sport={selectedSport} getLT2={(t) => extractThresholds(t)?.lt2} />
               </div>
             );
           })()}
@@ -675,12 +680,22 @@ export default function NativeTestingPage({ user, athleteId: externalAthleteId }
             <div style={{ ...cardEntry(1), ...snap }}>
               <GlassCard>
                 <div key={`sel-${selected._id || selected.id}`}>
-                  {/* Header row */}
-                  <div style={{
-                    display: 'flex', alignItems: 'center', gap: 10,
-                    marginBottom: 11,
-                    animation: 'ndFadeIn .35s cubic-bezier(.22,1,.36,1) both',
-                  }}>
+                  {/* Header row — tapping the test opens it, like "Open full
+                      data" below; a card that looks tappable and does
+                      nothing reads as broken. */}
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => navigate(`/testing?testId=${encodeURIComponent(selected._id || selected.id)}&full=1`)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') navigate(`/testing?testId=${encodeURIComponent(selected._id || selected.id)}&full=1`); }}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 10,
+                      marginBottom: 11,
+                      cursor: 'pointer',
+                      WebkitTapHighlightColor: 'transparent',
+                      animation: 'ndFadeIn .35s cubic-bezier(.22,1,.36,1) both',
+                    }}
+                  >
                     <SportTile sport={selectedTh.sport} size={36} />
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={styles.testTitle}>

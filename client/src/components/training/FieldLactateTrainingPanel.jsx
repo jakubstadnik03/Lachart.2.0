@@ -12,6 +12,7 @@ import {
 import RecordLactateModal from './RecordLactateModal';
 import AssignLactateModal from './AssignLactateModal';
 import { scoreIntervalSession, LIKELY_TEST_SCORE, LIKELY_INTERVALS_SCORE } from '../../utils/intervalSessionScore';
+import { sortPendingRows, sportLabel } from '../../utils/fieldLactateRows';
 
 function formatWhen(iso) {
   if (!iso) return '—';
@@ -131,9 +132,7 @@ export default function FieldLactateTrainingPanel({
     } catch { /* ignore */ }
   };
 
-  const scored = rows
-    .map(a => ({ ...a, ...scoreActivity(a) }))
-    .sort((a, b) => b.score - a.score);
+  const scored = sortPendingRows(rows.map(a => ({ ...a, ...scoreActivity(a) })));
 
   const calendarHref =
     user && ['coach', 'tester', 'testing', 'admin'].includes(String(user.role || '').toLowerCase()) &&
@@ -305,8 +304,8 @@ export default function FieldLactateTrainingPanel({
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="text-[11px] text-slate-400">
                             {formatWhen(a.startDate)}
-                            {a.sport ? ` · ${a.sport}` : ''}
-                            {a.lapCount > 0 ? ` · ${a.lapCount} laps` : ''}
+                            {a.sport ? ` · ${sportLabel(a.sport)}` : ''}
+                            {a.lapCount > 0 ? ` · ${a.lapCount} ${a.lapCount === 1 ? 'lap' : 'laps'}` : ''}
                             {a.movingTime ? ` · ${formatDuration(a.movingTime)}` : ''}
                           </span>
                         </div>

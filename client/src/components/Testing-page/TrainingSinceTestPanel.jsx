@@ -344,7 +344,7 @@ function SeasonChart({ timeline, testMarkers, anchor, kind, storageMode }) {
             <XAxis
               dataKey="ms" type="number" scale="time" domain={['dataMin', 'dataMax']}
               ticks={monthTicks}
-              tickFormatter={(v) => new Date(v).toLocaleDateString(undefined, { month: 'short' })}
+              tickFormatter={(v) => new Date(v).toLocaleDateString('en-GB', { month: 'short' })}
               tick={{ fontSize: 10, fill: '#94a3b8' }}
               axisLine={{ stroke: '#e2e8f0' }} tickLine={false}
             />

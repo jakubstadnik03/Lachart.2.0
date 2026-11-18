@@ -224,6 +224,23 @@ export const readSpeed = (r) => {
 };
 
 /**
+ * Fastest speed a human holds for the shortest window plotted (5 s), with
+ * room to spare. A pool swim showed "best 0:23/100m" (4.3 m/s — twice the
+ * 50 m world record) from push-off and watch glitches; anything faster than
+ * this is a spike and is left out of the peak, not averaged into it.
+ */
+export const SPEED_CEILING_MPS = { swim: 2.5, run: 11 };
+export const readSpeedFor = (sport) => {
+  const ceiling = SPEED_CEILING_MPS[sport] || Infinity;
+  return (r) => {
+    const v = readSpeed(r);
+    return v > ceiling ? 0 : v;
+  };
+};
+const readSwimSpeed = readSpeedFor('swim');
+const readRunSpeed = readSpeedFor('run');
+
+/**
  * One peak-values chart with a Pace/HR (run) or Power/HR (bike) toggle —
  * same control language as Time in Zones, so the session modal does not
  * show two separate peak curves side by side.
@@ -282,7 +299,7 @@ export function PeakValuesPanel({
     };
   } else if (active === 'pace') {
     chartProps = {
-      read: readSpeed,
+      read: isSwim ? readSwimSpeed : readRunSpeed,
       color: '#767EB5',
       unit: paceUnitShort(unitSystem, paceSport),
       bestLabel: 'best',

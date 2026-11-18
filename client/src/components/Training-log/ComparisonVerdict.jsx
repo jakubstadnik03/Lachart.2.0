@@ -27,7 +27,7 @@ const TONE = {
 
 function formatDate(date) {
   if (!date) return '';
-  return date.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+  return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
 }
 
 function TrendIcon({ direction, className }) {

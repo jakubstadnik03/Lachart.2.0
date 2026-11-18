@@ -138,6 +138,7 @@ const PreviousTestingComponent = ({
   athleteId = null,
 }) => {
   const { user } = useAuth();
+  const viewingOtherAthlete = Boolean(athleteId && user?._id && String(athleteId) !== String(user._id));
   // usePremium already force-unlocks on native iOS for App Store 3.1.1 —
   // see comment in client/src/hooks/usePremium.js.
   // canViewAnalytics also covers an athlete whose coach pays for them: their
@@ -499,10 +500,14 @@ const PreviousTestingComponent = ({
           />
         ) : (
           <PremiumLockedCard
-            title={`You've saved ${uniqueTests.length} tests`}
-            description={
-              `Free covers your first ${FREE_TEST_LIMIT}. Unlock your full history to switch between all ${uniqueTests.length} tests and watch your thresholds move over time.`
-            }
+            // A coach looking at an athlete was told "You've saved 14 tests",
+            // as if they were the coach's own.
+            title={viewingOtherAthlete
+              ? `This athlete has ${uniqueTests.length} tests`
+              : `You've saved ${uniqueTests.length} tests`}
+            description={viewingOtherAthlete
+              ? `Free covers the first ${FREE_TEST_LIMIT}. Unlock full history to switch between all ${uniqueTests.length} of their tests and follow their thresholds over time.`
+              : `Free covers your first ${FREE_TEST_LIMIT}. Unlock your full history to switch between all ${uniqueTests.length} tests and watch your thresholds move over time.`}
             ctaLabel="Unlock full history"
             onUpgrade={() => {
               trackEvent('test_history_upsell_click', { testCount: uniqueTests.length, source: 'history_wall' });

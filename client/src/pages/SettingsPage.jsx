@@ -70,7 +70,7 @@ function formatAccountCreatedAt(iso) {
   try {
     const d = new Date(iso);
     if (Number.isNaN(d.getTime())) return null;
-    return d.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
+    return d.toLocaleDateString('en-GB', { year: 'numeric', month: 'long', day: 'numeric' });
   } catch {
     return null;
   }
@@ -86,7 +86,7 @@ function formatRegistrationLocationLine(loc) {
     try {
       const r = new Date(loc.resolvedAt);
       if (!Number.isNaN(r.getTime())) {
-        extras.push(`recorded ${r.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}`);
+        extras.push(`recorded ${r.toLocaleDateString('en-GB', { year: 'numeric', month: 'short', day: 'numeric' })}`);
       }
     } catch {
       // ignore
@@ -716,7 +716,7 @@ const SettingsPage = () => {
       }
       const state = s.backfillState || null;
       const cursorDate = s.backfillCursorBefore
-        ? new Date(s.backfillCursorBefore * 1000).toLocaleDateString('cs', { year: 'numeric', month: 'short' })
+        ? new Date(s.backfillCursorBefore * 1000).toLocaleDateString('en-GB', { year: 'numeric', month: 'short' })
         : null;
       const next = state ? {
         state,
@@ -3227,11 +3227,20 @@ const SettingsPage = () => {
         );
 
       case 'subscription': {
-        const currentPlan = subData?.subscription?.plan || 'free';
+        const storedPlan = subData?.subscription?.plan || 'free';
         const subStatus = subData?.subscription?.status;
         const isActive = subData?.subscription?.isActive;
         const cancelAtPeriodEnd = subData?.subscription?.cancelAtPeriodEnd;
         const periodEnd = subData?.subscription?.currentPeriodEnd;
+        // A cancelled plan whose period is over is history, not the current
+        // plan. The page went on saying "LaChart Pro · Canceled · Renews
+        // 28 August 2026" months after that date, marked the paid card as
+        // "Your current plan" and kept the upgrade button disabled — while the
+        // rest of the app had already gone back to Free and offered a trial.
+        const periodOver = periodEnd ? new Date(periodEnd).getTime() < Date.now() : false;
+        const lapsed = storedPlan !== 'free' && !isPremium
+          && (!isActive || ['canceled', 'incomplete_expired', 'unpaid'].includes(String(subStatus || '')) || periodOver);
+        const currentPlan = lapsed ? 'free' : storedPlan;
         const systemEnabled = subData?.subscription?.systemEnabled;
         // Bought in the iPhone app: Apple bills it, and only Apple can cancel
         // it. A cancel button here would say "cancelled" while Apple kept
@@ -3239,7 +3248,7 @@ const SettingsPage = () => {
         const storeProvider = subData?.subscription?.selfServe === false ? subData.subscription.provider : null;
         const storeManageUrl = subData?.subscription?.manageUrl || 'https://apps.apple.com/account/subscriptions';
         const premiumSource = subData?.premiumSource || user?.premiumSource;
-        const isManualPremium = premiumSource === 'manual';
+        const isManualPremium = premiumSource === 'manual' && !lapsed;
         // User already used a trial if they have a trialStart date in their subscription
         const alreadyTrialed = !!subData?.subscription?.trialStart;
         const showTrial = !alreadyTrialed && currentPlan === 'free';
@@ -3289,7 +3298,7 @@ const SettingsPage = () => {
         const formatPeriodEnd = (iso) => {
           if (!iso) return null;
           try {
-            return new Date(iso).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
+            return new Date(iso).toLocaleDateString('en-GB', { year: 'numeric', month: 'long', day: 'numeric' });
           } catch { return null; }
         };
 
@@ -3302,9 +3311,17 @@ const SettingsPage = () => {
                 <div>
                   <p className="text-xs text-gray-400 uppercase tracking-wide mb-1">Current plan</p>
                   <h3 className={`${isMobile ? 'text-lg' : 'text-2xl'} font-bold text-gray-900`}>
-                    LaChart {currentPlan.charAt(0).toUpperCase() + currentPlan.slice(1)}
+                    {/* The cards call the 'pro' plan "Athlete"; the banner said "Pro". */}
+                    LaChart {PLANS_UI.find((p) => p.id === currentPlan)?.name || (currentPlan.charAt(0).toUpperCase() + currentPlan.slice(1))}
                   </h3>
-                  {subStatus ? (
+                  {lapsed && (
+                    <p className="mt-1 text-sm text-gray-500">
+                      Your {PLANS_UI.find((p) => p.id === storedPlan)?.name || storedPlan} plan{premiumSource === 'manual' ? ' (complimentary)' : ''} ended{periodEnd ? ` on ${formatPeriodEnd(periodEnd)}` : ''}.
+                    </p>
+                  )}
+                  {/* A complimentary plan is not billed; the status of an old,
+                      cancelled card subscription ("Canceled") only confused it. */}
+                  {subStatus && !lapsed && !isManualPremium ? (
                     <p className="mt-1 text-xs text-gray-500 capitalize">
                       Billing status: {String(subStatus).replace(/_/g, ' ')}
                     </p>
@@ -3327,7 +3344,7 @@ const SettingsPage = () => {
                       Cancels on {formatPeriodEnd(periodEnd)} — you keep access until then.
                     </p>
                   )}
-                  {!cancelAtPeriodEnd && periodEnd && currentPlan !== 'free' && (
+                  {!cancelAtPeriodEnd && periodEnd && currentPlan !== 'free' && !periodOver && String(subStatus || '') !== 'canceled' && (
                     <p className="mt-1 text-xs text-gray-400">Renews {formatPeriodEnd(periodEnd)}</p>
                   )}
                 </div>
@@ -3509,6 +3526,7 @@ const SettingsPage = () => {
                             Available at lachart.net
                           </div>
                         ) : systemEnabled ? (
+                          <>
                           <button
                             onClick={() => handleUpgrade(plan.id)}
                             disabled={subActionLoading || isManualPremium}
@@ -3526,6 +3544,12 @@ const SettingsPage = () => {
                               ? `Upgrade to ${plan.name}`
                               : `Switch to ${plan.name}`}
                           </button>
+                          {isManualPremium && (
+                            <p className="mt-1.5 text-center text-[11px] text-gray-500">
+                              Your access is complimentary — write to support to change plans.
+                            </p>
+                          )}
+                          </>
                         ) : (
                           <div className="text-center text-xs text-gray-400 py-2 border border-dashed border-gray-200 rounded-xl">
                             Billing not yet activated

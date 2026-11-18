@@ -50,15 +50,19 @@ export function usePremium() {
   const canViewAnalytics = isPremium || coachedAccess != null;
 
   /**
-   * False until the user object exists.
+   * False until the user object exists and says whether it is premium.
    *
    * isPremium is `user != null && user.isPremium === true`, so during the
    * moment before the profile resolves it reads exactly like "free" — which
    * made the sidebar flash a "Start 2-week free trial" button at paying users
    * on every navigation. Anything that renders only for non-premium users must
    * wait for this rather than trusting !isPremium.
+   *
+   * A user restored from a cache written before the premium fields were kept
+   * has no isPremium at all; that is also "not known yet", not "free". The
+   * server always sends a boolean, so its presence marks a resolved state.
    */
-  const premiumResolved = user != null;
+  const premiumResolved = user != null && (FREE_FOR_EVERYONE || typeof user.isPremium === 'boolean');
 
   const [modalState, setModalState] = useState({
     isOpen: false,

@@ -564,6 +564,15 @@ export default function TrainingHub({
   const [showAllGroups, setShowAllGroups] = useState(false);
   const [showAllOneOffs, setShowAllOneOffs] = useState(false);
   const [showLactate, setShowLactate] = useState(false);
+  // How long a card waits for its laps before it shows the number it has,
+  // marked provisional. Laps normally land in a second or two, and then the
+  // first number shown is the final one; when the server is slow a blank card
+  // for minutes is worse than an honest "provisional".
+  const [lapPatience, setLapPatience] = useState(true);
+  useEffect(() => {
+    const id = setTimeout(() => setLapPatience(false), LAP_PATIENCE_MS);
+    return () => clearTimeout(id);
+  }, []);
 
   // A session measured from its laps and one measured from its overall
   // average are not the same number — an interval session's average includes
@@ -594,6 +603,19 @@ export default function TrainingHub({
     && g.sessions[g.sessions.length - 1].date.getTime() >= recentCut);
   const better = active.filter((g) => g.trend.trend === 'better');
   const worse = active.filter((g) => g.trend.trend === 'worse');
+  // A group whose laps are still arriving has provisional numbers: the work
+  // power read 247 W from the session average, then 257 W once the laps came
+  // in. The card's number waits for the latest session's laps (it is that
+  // session's number); the trend, built from the whole group, waits for all
+  // of them, and so does the headline. Nothing changes after it is shown.
+  const settling = (g) => g.sessions.some((s) => s.lapsLoading);
+  const valueSettling = (g) => {
+    const last = g.sessions[g.sessions.length - 1];
+    // A latest session with no laps of its own drops out of the lap-measured
+    // basis once a second lapped session arrives, so its number can move too.
+    return Boolean(last?.lapsLoading) || (Boolean(last?.wholeOnly) && settling(g));
+  };
+  const headlineSettling = active.some(settling);
 
   const openGroup = withTrend.find((g) => g.key === openGroupKey) || null;
 
@@ -650,6 +672,8 @@ export default function TrainingHub({
     const basis = (g.trendBasis && g.trendBasis.length ? g.trendBasis : g.sessions);
     const shownValue = basis[basis.length - 1].summary.value;
     const color = toneColor(g.trend?.trend);
+    const pending = valueSettling(g);
+    const trendPending = settling(g);
     return (
       <button key={g.key} type="button" onClick={() => setOpenGroupKey(g.key)} style={{
         ...glass, ...tap, display: 'block', width: '100%', textAlign: 'left', padding: '13px 14px', color: C.ink,
@@ -662,20 +686,30 @@ export default function TrainingHub({
               {g.shape ? `${g.shape} · ` : ''}{g.sessions.length}× · {relative(last.date)}
             </div>
           </div>
-          <Chip chip={trendChip(g.trend, g.sport)} />
+          {trendPending ? null : <Chip chip={trendChip(g.trend, g.sport)} />}
         </div>
-        {shownValue ? (
+        {pending && !lapPatience && shownValue ? (
+          <div style={{ marginTop: 10 }}>
+            <span style={{ fontSize: 19, fontWeight: 800, letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums', opacity: 0.45 }}>{fmt(shownValue, g.sport)}</span>
+            <div style={{ fontSize: 11, color: C.faint, marginTop: 1 }}>Provisional · reading laps…</div>
+          </div>
+        ) : pending ? (
+          <div style={{ marginTop: 10 }}>
+            <div aria-label="Reading laps" style={{ height: 22, width: 92, borderRadius: 6, background: 'rgba(118,126,181,.14)', animation: 'thPulse 1.2s ease-in-out infinite alternate' }} />
+            <div style={{ fontSize: 11, color: C.faint, marginTop: 4 }}>Reading laps…</div>
+          </div>
+        ) : shownValue ? (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 10, gap: 10 }}>
             <div>
               <div>
                 <span style={{ fontSize: 19, fontWeight: 800, letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }}>{fmt(shownValue, g.sport)}</span>
-                {g.trend && <span style={{ fontSize: 12, fontWeight: 700, marginLeft: 6, color }}>{deltaText(g.trend, g.sport)}</span>}
+                {g.trend && !trendPending && <span style={{ fontSize: 12, fontWeight: 700, marginLeft: 6, color }}>{deltaText(g.trend, g.sport)}</span>}
               </div>
               <div style={{ fontSize: 11, color: C.faint, marginTop: 1 }}>
                 {g.sport === 'bike' ? 'Work power' : 'Work pace'} · since {shortDate(g.sessions[0].date)}
               </div>
             </div>
-            <Spark values={basis.map((s) => s.summary.value)} sport={g.sport} color={color} />
+            {trendPending ? null : <Spark values={basis.map((s) => s.summary.value)} sport={g.sport} color={color} />}
           </div>
         ) : null}
       </button>
@@ -790,10 +824,16 @@ export default function TrainingHub({
             </>
           )}
 
-          {categoryCompared.length === 0 && active.length > 0 && (
+          {categoryCompared.length === 0 && active.length > 0 && !headlineSettling && (
             <div style={{ ...glass, padding: '13px 16px', fontSize: 13, color: '#374151', lineHeight: 1.45 }}>
-              <b style={{ color: C.ink }}>{better.length} of {active.length}</b> sessions you repeat got better in the last three months.
-              {worse.length > 0 && <> <b style={{ color: C.ink }}>{worse[0].label}</b> is slipping.</>}
+              {/* Says which groups it counts: the list below shows every
+                  session repeated twice, this only the ones done three times
+                  or more, the latest within three months — "1 of 1" above a
+                  list of six read as a miscount. */}
+              {active.length === 1
+                ? <><b style={{ color: C.ink }}>{active[0].label}</b>, the one session you have repeated three times or more lately, {better.length ? 'got better' : worse.length ? 'is slipping' : 'is holding'}.</>
+                : <><b style={{ color: C.ink }}>{better.length} of {active.length}</b> sessions you have repeated three times or more lately got better.</>}
+              {active.length > 1 && worse.length > 0 && <> <b style={{ color: C.ink }}>{worse[0].label}</b> is slipping.</>}
             </div>
           )}
 
@@ -869,6 +909,8 @@ const linkBtn = {
   ...tap, alignSelf: 'center', border: 'none', background: 'transparent', color: C.accent,
   fontSize: 13.5, fontWeight: 700, padding: '8px 12px',
 };
+
+const LAP_PATIENCE_MS = 6000;
 
 const SHEET_KEYFRAMES = '@keyframes thSheetIn { from { transform: translateY(100%); } to { transform: none; } } @keyframes thPulse { from { opacity: .45; } to { opacity: .8; } }';
 

@@ -389,7 +389,7 @@ export default function PmcCombinedChart({
     let when = showPoint.date;
     try {
       const d = new Date(`${showPoint.date}T12:00:00`);
-      when = d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+      when = d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
     } catch { /* keep the ISO date */ }
     const parts = [];
     if (showPoint.projected) parts.push(`${when} · Planned`);

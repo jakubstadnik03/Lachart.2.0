@@ -211,7 +211,7 @@ const TrainingComparison = ({ trainings: rawTrainings }) => {
         const result = training.results?.[i];
         if (result) {
           const date = new Date(training.date || training.timestamp || training.createdAt);
-          const dateLabel = date.toLocaleDateString('cs-CZ', { day: '2-digit', month: '2-digit' });
+          const dateLabel = date.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit' });
           const trainingLabel = `${dateLabel} (${trainingIndex + 1})`;
           let value = null;
           if (selectedMetric === 'power') value = result.power;
@@ -254,7 +254,7 @@ const TrainingComparison = ({ trainings: rawTrainings }) => {
     const savedActiveSeries = activeSeries;
     filteredTrainings.forEach((training, index) => {
       const date = new Date(training.date || training.timestamp || training.createdAt);
-      const dateLabel = date.toLocaleDateString('cs-CZ', { day: '2-digit', month: '2-digit' });
+      const dateLabel = date.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit' });
       const trainingLabel = `${dateLabel} (${index + 1})`;
       meta[trainingLabel] = { training, index, results: training.results || [] };
       next[trainingLabel] = savedActiveSeries[trainingLabel] !== undefined
@@ -514,7 +514,7 @@ const TrainingComparison = ({ trainings: rawTrainings }) => {
 
   const snapshotSeries = useMemo(() => snapshotSelectedTrainings.map((training, idx) => {
     const date = getTrainingDate(training);
-    const dateLabel = Number.isNaN(date.getTime()) ? `Unknown ${idx + 1}` : date.toLocaleDateString('cs-CZ', { day: '2-digit', month: '2-digit', year: '2-digit' });
+    const dateLabel = Number.isNaN(date.getTime()) ? `Unknown ${idx + 1}` : date.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit' });
     return { key: `snapshot_${idx}`, label: dateLabel, training, color: SERIES_COLORS[idx % SERIES_COLORS.length] };
   }), [snapshotSelectedTrainings]);
 
@@ -672,7 +672,7 @@ const TrainingComparison = ({ trainings: rawTrainings }) => {
 
     const rows = snapshotSelectedTrainings.map((training, tIdx) => {
       const d = getTrainingDate(training);
-      const label = Number.isNaN(d.getTime()) ? `#${tIdx+1}` : d.toLocaleDateString('cs-CZ', { day: '2-digit', month: '2-digit', year: '2-digit' });
+      const label = Number.isNaN(d.getTime()) ? `#${tIdx+1}` : d.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit' });
 
       // Use filtered items so timeline respects the work-interval filter
       const items = filteredIntervalSets.get(getTrainingUid(training)) || (training.results || []).map((r, i) => ({ result: r, originalIdx: i }));
@@ -935,7 +935,7 @@ const TrainingComparison = ({ trainings: rawTrainings }) => {
                   {snapshotSelectedTrainings.map((t, idx) => {
                     const id = getTrainingUid(t);
                     const d = getTrainingDate(t);
-                    const dateLabel = Number.isNaN(d.getTime()) ? 'Unknown' : d.toLocaleDateString('cs-CZ', { day: '2-digit', month: '2-digit', year: '2-digit' });
+                    const dateLabel = Number.isNaN(d.getTime()) ? 'Unknown' : d.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit' });
                     return (
                       <button key={`chip-${id}`} onClick={() => setSnapshotSelectedIds(prev => prev.filter(x => x !== id))}
                         className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-xs border border-primary/20 bg-primary/8 text-primary hover:bg-primary/15 transition-colors"
@@ -957,7 +957,7 @@ const TrainingComparison = ({ trainings: rawTrainings }) => {
                   const id = getTrainingUid(training);
                   const isSnapshotChecked = snapshotSelectedIds.includes(id);
                   const date = getTrainingDate(training);
-                  const dateLabel = Number.isNaN(date.getTime()) ? '—' : date.toLocaleDateString('cs-CZ', { day: '2-digit', month: '2-digit', year: '2-digit' });
+                  const dateLabel = Number.isNaN(date.getTime()) ? '—' : date.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit' });
                   const color = SERIES_COLORS[absIndex % SERIES_COLORS.length];
                   return (
                     <div key={training._id || index}
@@ -1200,10 +1200,10 @@ const TrainingComparison = ({ trainings: rawTrainings }) => {
                     <tr className="bg-gray-50 border-b border-gray-100">
                       <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 w-10">#</th>
                       <th className="px-3 py-2 text-left text-xs font-semibold" style={{ color: SERIES_COLORS[0] }}>
-                        {(() => { const d = getTrainingDate(sameTrainingSnapshot.firstTraining); return Number.isNaN(d.getTime()) ? 'First' : d.toLocaleDateString('cs-CZ', { day: '2-digit', month: '2-digit', year: '2-digit' }); })()}
+                        {(() => { const d = getTrainingDate(sameTrainingSnapshot.firstTraining); return Number.isNaN(d.getTime()) ? 'First' : d.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit' }); })()}
                       </th>
                       <th className="px-3 py-2 text-left text-xs font-semibold" style={{ color: SERIES_COLORS[snapshotSeries.length > 1 ? snapshotSeries.length - 1 : 1] }}>
-                        {(() => { const d = getTrainingDate(sameTrainingSnapshot.lastTraining); return Number.isNaN(d.getTime()) ? 'Last' : d.toLocaleDateString('cs-CZ', { day: '2-digit', month: '2-digit', year: '2-digit' }); })()}
+                        {(() => { const d = getTrainingDate(sameTrainingSnapshot.lastTraining); return Number.isNaN(d.getTime()) ? 'Last' : d.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit' }); })()}
                       </th>
                       <th className="px-3 py-2 text-right text-xs font-semibold text-gray-500">Delta</th>
                     </tr>
@@ -1280,7 +1280,7 @@ const TrainingComparison = ({ trainings: rawTrainings }) => {
                   <div className="space-y-1 max-h-56 overflow-y-auto rounded-xl border border-gray-100">
                     {filteredTrainings.map((training, index) => {
                       const date = getTrainingDate(training);
-                      const dateLabel = Number.isNaN(date.getTime()) ? '—' : date.toLocaleDateString('cs-CZ', { day: '2-digit', month: '2-digit' });
+                      const dateLabel = Number.isNaN(date.getTime()) ? '—' : date.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit' });
                       const trainingLabel = `${dateLabel} (${index + 1})`;
                       const color = SERIES_COLORS[index % SERIES_COLORS.length];
                       const isOn = activeSeries[trainingLabel] !== false;

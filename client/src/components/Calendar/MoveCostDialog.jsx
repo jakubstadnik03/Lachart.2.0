@@ -38,7 +38,7 @@ export function shouldConfirm(assessment) {
 function formatDay(key) {
   const d = new Date(`${key}T12:00:00`);
   if (Number.isNaN(d.getTime())) return key;
-  return d.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
+  return d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
 }
 
 /**

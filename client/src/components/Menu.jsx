@@ -230,11 +230,14 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
       showFor: ["coach", "athlete"]
      },
     {
+      // Athletes plan their own weeks too (the page works for them and the
+      // Athlete plan sells it), but the entry was coach-only, so the only way
+      // in was a URL or a link buried in the calendar.
       name: "Workout Planner",
       path: "/workout-planner",
       icon: "/icon/calendar.svg",
       iconWhite: "/icon/calendar-white.svg",
-      showFor: ["coach", "tester", "testing"]
+      showFor: ["athlete", "coach", "tester", "testing"]
     },
     {
       name: "Annual Plan",
@@ -243,13 +246,13 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
       iconWhite: "/icon/calendar-white.svg",
       showFor: ["athlete", "coach", "tester", "testing", "admin"]
     },
-    // {
-    //   name: "Lactate Statistics",
-    //   path: "/lactate-statistics",
-    //   icon: "/icon/testing.svg",
-    //   iconWhite: "/icon/testing-white.svg",
-    //   showFor: ["coach", "athlete"]
-    // },
+    {
+      name: "Lactate Statistics",
+      path: "/lactate-statistics",
+      icon: "/icon/testing.svg",
+      iconWhite: "/icon/testing-white.svg",
+      showFor: ["coach", "athlete"]
+    },
     {
       name: "Training",
       getPath: (athleteId) => user?.role === "coach" && athleteId ? `/training/${athleteId}` : "/training",

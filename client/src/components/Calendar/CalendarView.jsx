@@ -9,7 +9,7 @@ import SessionProgressChart from '../training/SessionProgressChart';
 import CompareSessionsMenu from '../training/CompareSessionsMenu';
 import { comparedSessionStub } from '../../utils/comparedSessionStub';
 import TimeInZonesBar from '../training/TimeInZonesBar';
-import { PeakValuesPanel } from '../training/PeakValuesChart';
+import { PeakValuesPanel, SPEED_CEILING_MPS } from '../training/PeakValuesChart';
 import WorkoutStepsCompliance from '../training/WorkoutStepsCompliance';
 import ActivityPeaksTab from '../training/ActivityPeaksTab';
 import SessionVsTestPanel from '../training/SessionVsTestPanel';
@@ -102,6 +102,9 @@ import { MapContainer, TileLayer, Polyline, CircleMarker, Tooltip as LeafletTool
 import 'leaflet/dist/leaflet.css';
 import TrainingChart from '../FitAnalysis/TrainingChart';
 import RaceDetailModal from './RaceDetailModal';
+
+// Swim stroke rate tops out well under 100/min; higher readings are glitches.
+const SWIM_CADENCE_CEILING = 100;
 
 function MapInvalidator() {
   const map = useMap();
@@ -371,7 +374,7 @@ function MonthYearPicker({ date, onPick, label }) {
 
   const months = React.useMemo(
     () => Array.from({ length: 12 }, (_, m) =>
-      new Date(2000, m, 1).toLocaleDateString(undefined, { month: 'short' })),
+      new Date(2000, m, 1).toLocaleDateString('en-GB', { month: 'short' })),
     [],
   );
   const now = new Date();
@@ -486,7 +489,7 @@ function SessionHoverContent({ planned, activity, profile, getCategory }) {
   const title = planned?.title || activity?.title || activity?.name || 'Session';
   const when = activity?.date || activity?.timestamp || planned?.date;
   const dateStr = when
-    ? new Date(when).toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })
+    ? new Date(when).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })
     : null;
 
   const category = activity?.category || planned?.category || null;
@@ -572,7 +575,7 @@ function RaceHoverContent({ race, color }) {
       </div>
       {when && (
         <div className="text-[11px] text-gray-500">
-          {when.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+          {when.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
           {days != null && (
             <span className="text-gray-400">
               {days > 0 ? ` · in ${days} day${days === 1 ? '' : 's'}` : days === 0 ? ' · today' : ` · ${-days} day${days === -1 ? '' : 's'} ago`}
@@ -593,7 +596,7 @@ function PeriodHoverContent({ periods }) {
   const fmt = (key) => {
     const [y, m, d] = String(key).split('-').map(Number);
     if (!y) return key;
-    return new Date(y, m - 1, d).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+    return new Date(y, m - 1, d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
   };
   return (
     <div className="flex flex-col gap-2">
@@ -2871,11 +2874,14 @@ function mamFromRecords(recs, key, mult = 1, summaryAvg = null) {
  * sample should not define a column an athlete reads as fact.
  */
 function mamPaceFromRecords(recs, { isSwim, avgSpeed }) {
-  // Below this nobody is moving under their own power in this sport.
+  // Below this nobody is moving under their own power in this sport; above
+  // the ceiling nobody is either — a pool swim's push-off and watch glitches
+  // read as 0:23/100m, twice world-record speed (see SPEED_CEILING_MPS).
   const movingFloorMs = isSwim ? 0.25 : 0.5;
+  const ceilingMs = SPEED_CEILING_MPS[isSwim ? 'swim' : 'run'];
   const speedVals = recs
     .map(r => r.speed)
-    .filter(v => v != null && v > movingFloorMs);
+    .filter(v => v != null && v > movingFloorMs && v <= ceilingMs);
   if (speedVals.length < 3) return null;
 
   const toPace = (s) => (isSwim ? 100 / s : 1000 / s);
@@ -2926,7 +2932,9 @@ function buildWorkoutMamRows({ recs, isBike, isRun, isSwim, sport, power, hr, ca
     const d = mamFromRecords(recs, 'power', 1, power > 0 ? power : null);
     if (d) rows.push({ label: 'Power', unit: 'W', d, dec: 0 });
   }
-  const cadD = mamFromRecords(recs, 'cadence', 1, cadence > 0 ? cadence : null);
+  // Swim stroke rate tops out well under 100/min; 176 in a pool is a glitch.
+  const cadRecs = isSwim ? recs.filter(r => !(Number(r.cadence) > SWIM_CADENCE_CEILING)) : recs;
+  const cadD = mamFromRecords(cadRecs, 'cadence', 1, cadence > 0 ? cadence : null);
   if (cadD) rows.push({ label: 'Cadence', unit: isSwim ? 'spm' : cadenceDisplayUnit(sport), d: cadD, dec: 0 });
   if (includeElevation) {
     const d = mamFromRecords(recs, 'altitude', 1, null);
@@ -4027,7 +4035,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
     : cadenceRaw;
   const avgSpeed  = Number(merged.avgSpeed || merged.averageSpeed || merged.average_speed || 0);
   const actDate   = merged.date || merged.timestamp || merged.startDate || merged.start_time;
-  const dateStr   = actDate ? new Date(actDate).toLocaleDateString(undefined, { weekday:'long', month:'long', day:'numeric', year:'numeric' }) : '';
+  const dateStr   = actDate ? new Date(actDate).toLocaleDateString('en-GB', { weekday:'long', month:'long', day:'numeric', year:'numeric' }) : '';
   const notes = merged.description || merged.notes || '';
   const planComment = plannedCommentText(plannedWorkout);
   const planDescription = plannedDescriptionOnly(plannedWorkout);
@@ -4081,13 +4089,17 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
     }).length >= 1;
   }, [isRun, laps, chartTraining?.records, isStravaActivity, unitSystem]);
 
-  // ── Auto-title from detected interval structure ──
-  // When an activity still has a generic/auto-generated name ("Morning Ride",
-  // "Bike wu"…) and no manual title, and its laps reveal a repeated structure,
-  // name it e.g. "5×8min LT2". Never touches a title the athlete set by hand.
-  const autoStructTitleRef = useRef(false);
+  // ── Title suggested from the detected interval structure ──
+  // When an activity still has a generic name ("Morning Ride", "Afternoon
+  // Swim"…) and no manual title, and its laps reveal a repeated structure, we
+  // offer a name such as "5×8min LT2". It used to be SAVED the moment the
+  // activity was opened — by whoever opened it, a coach included — so simply
+  // looking at a swim renamed it, and the calendar went on showing the old
+  // name until a reload. Now it is only offered; one tap applies it.
+  const [suggestedTitle, setSuggestedTitle] = useState(null);
+  const [applyingTitle, setApplyingTitle] = useState(false);
   useEffect(() => {
-    if (autoStructTitleRef.current) return;
+    setSuggestedTitle(null);
     if (!Array.isArray(merged?.laps) || merged.laps.length < 3) return;
     if (merged.titleManual) return; // respect manual names
     const curTitle = String(merged.title || merged.name || '').trim();
@@ -4096,36 +4108,61 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
     const sportKey = /run/i.test(merged.sport || '') ? 'run' : /swim/i.test(merged.sport || '') ? 'swim' : 'bike';
     const structured = buildStructureTitle(merged.laps, { categoryLabel: catLabel, sport: sportKey });
     if (!structured || structured === curTitle) return;
-    autoStructTitleRef.current = true;
-    (async () => {
-      try {
-        const id = String(merged.id || merged._id || '');
-        const isStrava = !!merged.stravaId || merged.source === 'strava' || merged.type === 'strava' || id.startsWith('strava-');
-        const isFit    = merged.source === 'fit' || merged.type === 'fit' || id.startsWith('fit-') || (!!merged.timestamp && !isStrava && !merged._id);
-        const { updateStravaActivity, updateFitTraining, updateTraining } = await import('../../services/api.js');
-        if (isStrava) {
-          await updateStravaActivity(String(merged.stravaId || id.replace(/^strava-/, '')), { title: structured }, athleteId || null);
-        } else if (isFit) {
-          await updateFitTraining(String(merged._id || id.replace(/^fit-/, '')), { titleManual: structured }, athleteId || null);
-        } else if (merged._id) {
-          await updateTraining(String(merged._id), { title: structured });
-        } else {
-          return;
-        }
-        setDetail((prev) => ({ ...(prev || {}), titleManual: structured, title: structured }));
-        try {
-          window.dispatchEvent(new CustomEvent('activityTitleUpdated', { detail: { id: String(merged.id || merged._id || ''), title: structured } }));
-        } catch { /* ignore */ }
-      } catch {
-        autoStructTitleRef.current = false; // allow retry on next open
-      }
-    })();
-    // Deliberately keyed on identity + the fields that should retrigger a
-    // re-title. merged.name/sport/type/etc. are read for the payload only;
-    // listing them would re-run this auto-title effect every time the very
-    // fields it writes change. Pre-existing behaviour — not widened here.
+    setSuggestedTitle(structured);
+    // Keyed on identity + the fields that decide the suggestion; the rest are
+    // read for the payload only.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [merged?.id, merged?._id, merged?.laps, merged?.titleManual, merged?.title, merged?.category, getCategory]);
+
+  const applySuggestedTitle = async () => {
+    const structured = suggestedTitle;
+    if (!structured || applyingTitle) return;
+    setApplyingTitle(true);
+    try {
+      const id = String(merged.id || merged._id || '');
+      const isStrava = !!merged.stravaId || merged.source === 'strava' || merged.type === 'strava' || id.startsWith('strava-');
+      const isFit    = merged.source === 'fit' || merged.type === 'fit' || id.startsWith('fit-') || (!!merged.timestamp && !isStrava && !merged._id);
+      const { updateStravaActivity, updateFitTraining, updateTraining } = await import('../../services/api.js');
+      if (isStrava) {
+        await updateStravaActivity(String(merged.stravaId || id.replace(/^strava-/, '')), { title: structured }, athleteId || null);
+      } else if (isFit) {
+        await updateFitTraining(String(merged._id || id.replace(/^fit-/, '')), { titleManual: structured }, athleteId || null);
+      } else if (merged._id) {
+        await updateTraining(String(merged._id), { title: structured });
+      } else {
+        return;
+      }
+      setDetail((prev) => ({ ...(prev || {}), titleManual: structured, title: structured }));
+      setSuggestedTitle(null);
+      try {
+        window.dispatchEvent(new CustomEvent('activityTitleUpdated', { detail: { id: String(merged.id || merged._id || ''), title: structured } }));
+      } catch { /* ignore */ }
+    } catch { /* keep the suggestion so it can be tried again */ }
+    finally { setApplyingTitle(false); }
+  };
+
+  const titleSuggestion = suggestedTitle && !plannedWorkout?.title ? (
+    <div className="mt-1 flex items-center gap-1.5 min-w-0">
+      <button
+        type="button"
+        onClick={applySuggestedTitle}
+        disabled={applyingTitle}
+        className="inline-flex items-center gap-1 min-w-0 px-2 py-0.5 rounded-full border border-primary/30 bg-primary/5 text-primary text-[11px] font-semibold hover:bg-primary/10 disabled:opacity-50"
+        title="Rename this activity after its interval structure"
+      >
+        <span className="shrink-0">Rename to</span>
+        <span className="truncate">“{suggestedTitle}”</span>
+      </button>
+      <button
+        type="button"
+        onClick={() => setSuggestedTitle(null)}
+        className="shrink-0 text-[11px] text-gray-400 hover:text-gray-600 px-1"
+        aria-label="Dismiss the suggested name"
+      >
+        ×
+      </button>
+    </div>
+  ) : null;
 
   // Planned workout data
   const plannedDur  = plannedWorkout ? plannedWorkoutDurationSecs(plannedWorkout, dur) : 0;
@@ -5115,6 +5152,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
             <div className="flex-1 min-w-0">
               <div className="font-bold text-gray-900 text-base leading-snug truncate">{displayTitle}</div>
               <div className="text-xs text-gray-400 mt-0.5 truncate">{dateStr}</div>
+              {titleSuggestion}
             </div>
             {detailLoading && (
               <svg className="w-4 h-4 animate-spin text-gray-300 flex-shrink-0" fill="none" viewBox="0 0 24 24">
@@ -6122,6 +6160,7 @@ export function ActivityFullModal({ activity, plannedWorkout: initialPlannedWork
           <div className="flex-1 min-w-0">
             <div className="font-bold text-gray-900 text-base leading-snug break-words">{displayTitle}</div>
             <div className="text-xs text-gray-400 mt-0.5">{dateStr}</div>
+            {titleSuggestion}
           </div>
           {detailLoading && (
             <svg className="w-4 h-4 animate-spin text-gray-300 flex-shrink-0" fill="none" viewBox="0 0 24 24">
@@ -6894,7 +6933,7 @@ function ActivityDetailPopup({ activity, anchorRect, onClose, onSelectActivity, 
 
   const actDate = a.date || a.timestamp || a.startDate || a.start_time;
   const dateStr = actDate
-    ? new Date(actDate).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
+    ? new Date(actDate).toLocaleDateString('en-GB', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
     : '';
 
   const notes = a.description || a.notes || '';
@@ -7665,8 +7704,8 @@ export function DayPlanEditSheet({ date, plan, onClose, onSave, onDelete }) {
     const [y, m, d] = String(date).split('-').map(Number);
     return new Date(y, m - 1, d);
   }, [date]);
-  const niceDate = dateObj.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' });
-  const weekdayName = dateObj.toLocaleDateString(undefined, { weekday: 'long' });
+  const niceDate = dateObj.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
+  const weekdayName = dateObj.toLocaleDateString('en-GB', { weekday: 'long' });
 
   // Build the list of YYYY-MM-DD target dates: the base day plus one per week
   // for `repeatWeeks` weeks ahead (same weekday).
@@ -8878,18 +8917,29 @@ export default function CalendarView({
     requestAnimationFrame(() => tryScroll());
   }, [scrollToEl]);
 
-  // Load user profile for FTP and threshold pace
+  // Load the profile whose thresholds score these sessions (FTP, threshold
+  // pace, swim LT2). In coach view that is the ATHLETE's profile: it always
+  // loaded the logged-in user's, so a coach saw an athlete's swim as
+  // "31 TSS (est.) — set swim LT2 in profile" while the athlete's own profile
+  // gave 54. It is also handed to the activity modal, which then skips its
+  // own athlete-aware fetch.
+  const { user: calendarAuthUser } = useAuth() || {};
+  const selfId = String(user?._id || user?.id || calendarAuthUser?._id || calendarAuthUser?.id || '');
+  const profileAthleteId = athleteId && selfId && String(athleteId) !== selfId ? String(athleteId) : null;
   useEffect(() => {
+    let cancelled = false;
+    setUserProfile(null);
     const loadUserProfile = async () => {
       try {
-        const response = await api.get('/user/profile');
-        setUserProfile(response.data);
+        const response = await api.get(profileAthleteId ? `/user/athlete/${profileAthleteId}/profile` : '/user/profile');
+        if (!cancelled) setUserProfile(response.data);
       } catch (error) {
         console.error('Error loading user profile:', error);
       }
     };
     loadUserProfile();
-  }, []);
+    return () => { cancelled = true; };
+  }, [profileAthleteId]);
 
   useEffect(() => {
     localStorage.setItem('calendarView_categoryFilter', categoryFilter || 'all');
@@ -8967,7 +9017,7 @@ export default function CalendarView({
     } else {
       periodStart = startOfMonth(anchorDate);
       periodEnd = endOfMonth(anchorDate);
-      label = anchorDate.toLocaleString(undefined, { month: 'long', year: 'numeric' });
+      label = anchorDate.toLocaleString('en-GB', { month: 'long', year: 'numeric' });
     }
     onVisiblePeriodChange({
       view: useWeek ? 'week' : 'month',
@@ -9801,7 +9851,7 @@ export default function CalendarView({
             {(() => {
               const ws = startOfWeek(anchorDate);
               const we = addDays(addDays(ws, -2*7), 16*7 - 1);
-              return `${ws.toLocaleDateString(undefined,{month:'short',year:'numeric'})} – ${we.toLocaleDateString(undefined,{month:'short',year:'numeric'})}`;
+              return `${ws.toLocaleDateString('en-GB',{month:'short',year:'numeric'})} – ${we.toLocaleDateString('en-GB',{month:'short',year:'numeric'})}`;
             })()}
           </div>
         ) : (
@@ -9809,7 +9859,7 @@ export default function CalendarView({
             <MonthYearPicker
               date={anchorDate}
               onPick={setAnchorDate}
-              label={anchorDate.toLocaleString(undefined, { month: 'long', year: 'numeric' })}
+              label={anchorDate.toLocaleString('en-GB', { month: 'long', year: 'numeric' })}
             />
           </span>
         )}
@@ -9931,7 +9981,7 @@ export default function CalendarView({
                   className="flex items-center gap-1 text-sm font-bold text-primary uppercase tracking-wide touch-manipulation active:opacity-70"
                   style={{ WebkitTapHighlightColor: 'transparent' }}
                 >
-                  {anchorDate.toLocaleString(undefined, { month: 'long', year: 'numeric' })}
+                  {anchorDate.toLocaleString('en-GB', { month: 'long', year: 'numeric' })}
                   <ChevronDownIcon className="w-3.5 h-3.5 text-primary/60" />
                 </button>
                 <div className="flex items-center gap-1">
@@ -9996,7 +10046,7 @@ export default function CalendarView({
                   className="flex items-center gap-1 text-sm font-bold text-primary uppercase tracking-wide touch-manipulation active:opacity-70"
                   style={{ WebkitTapHighlightColor: 'transparent' }}
                 >
-                  {anchorDate.toLocaleString(undefined, { month: 'long', year: 'numeric' })}
+                  {anchorDate.toLocaleString('en-GB', { month: 'long', year: 'numeric' })}
                   <ChevronDownIcon className="w-3.5 h-3.5 text-primary/60" />
                 </button>
                 <div className="flex items-center gap-1">
@@ -10062,7 +10112,7 @@ export default function CalendarView({
                   </div>
                   {view === 'week' && (
                     <span className="ml-2 text-[11px] font-medium text-gray-500">
-                      {`${startOfWeek(anchorDate).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })} – ${addDays(startOfWeek(anchorDate), 6).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}`}
+                      {`${startOfWeek(anchorDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} – ${addDays(startOfWeek(anchorDate), 6).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`}
                     </span>
                   )}
                 </div>
@@ -10114,7 +10164,7 @@ export default function CalendarView({
                   {showMonthHeader && (
                     <div className="flex items-center gap-2 py-2 mt-1 mb-0.5">
                       <span className="text-[11px] font-bold uppercase tracking-wide text-primary">
-                        {dayDate.toLocaleString(undefined, { month: 'long', year: 'numeric' })}
+                        {dayDate.toLocaleString('en-GB', { month: 'long', year: 'numeric' })}
                       </span>
                       <div className="flex-1 h-px bg-gray-200" />
                     </div>
@@ -10546,7 +10596,7 @@ export default function CalendarView({
                           style={{ backgroundColor: isCurrentWeek ? 'rgba(118,126,181,0.04)' : undefined }}>
                           <div className="flex items-center justify-between mb-2">
                             <span className={`text-xs font-bold ${isCurrentWeek ? 'text-primary' : 'text-gray-500'}`}>
-                              {wk.weekStart.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })} – {weekEnd.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}
+                              {wk.weekStart.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} – {weekEnd.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
                             </span>
                             {isCurrentWeek && <span className="text-[9px] bg-primary text-white px-1.5 py-0.5 rounded-full font-bold">This week</span>}
                           </div>
@@ -10581,7 +10631,7 @@ export default function CalendarView({
               {/* Sentinel: scrolling to the bottom advances to next month */}
               <div ref={monthSentinelBottomRef} className="flex items-center justify-center py-4 gap-2 text-gray-300 text-xs select-none">
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5l7 7-7 7"/></svg>
-                <span>{new Date(anchorDate.getFullYear(), anchorDate.getMonth() + 1, 1).toLocaleString(undefined, { month: 'long', year: 'numeric' })}</span>
+                <span>{new Date(anchorDate.getFullYear(), anchorDate.getMonth() + 1, 1).toLocaleString('en-GB', { month: 'long', year: 'numeric' })}</span>
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5l7 7-7 7"/></svg>
               </div>
             </div>
@@ -10603,7 +10653,7 @@ export default function CalendarView({
             const weekKey = weekStart.toISOString().slice(0, 10);
             const wkSummary = weeklySummary.find(w => w.weekStart.toISOString().slice(0, 10) === weekKey);
             const isCurrentWeek = weekDays.some(d => isSameDay(d, new Date()));
-            const weekLabel = `${weekStart.toLocaleDateString(undefined,{day:'numeric',month:'short'})} – ${weekEnd.toLocaleDateString(undefined,{day:'numeric',month:'short',year:'numeric'})}`;
+            const weekLabel = `${weekStart.toLocaleDateString('en-GB',{day:'numeric',month:'short'})} – ${weekEnd.toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})}`;
 
             return (
               <div key={weekKey} className={`border-b border-gray-100 ${isCurrentWeek ? 'border-l-4 border-l-primary' : 'border-l-4 border-l-transparent'}`}>
@@ -11154,7 +11204,7 @@ export default function CalendarView({
               {Array.from({ length: 12 }, (_, i) => {
                 const isSelected = pickerYear === anchorDate.getFullYear() && i === anchorDate.getMonth();
                 const isCurrentMonth = pickerYear === new Date().getFullYear() && i === new Date().getMonth();
-                const label = new Date(pickerYear, i, 1).toLocaleString(undefined, { month: 'short' });
+                const label = new Date(pickerYear, i, 1).toLocaleString('en-GB', { month: 'short' });
                 return (
                   <button
                     key={i}

@@ -99,7 +99,7 @@ router.get('/routes', verifyToken, async (req, res) => {
     const streams = await StravaStream.find({
       userId: targetId,
       stravaId: { $in: activities.map((a) => a.stravaId) },
-    }).select('stravaId streams.latlng').lean();
+    }).select('stravaId streams.latlng packed').lean();
     // channel(): the sync stores Strava's wrapped {data:[…]}, the backfill the
     // bare series. Passing the wrapper straight through gave routeSignature an
     // object where it expected points, so those activities matched nothing.

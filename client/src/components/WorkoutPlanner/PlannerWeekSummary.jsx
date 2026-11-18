@@ -40,9 +40,10 @@ export default function PlannerWeekSummary({
 
   const plannedHoursStr = plan.totalSec > 0 ? formatWeekDurationSeconds(plan.totalSec) : null;
   const doneHoursStr = done.totalSec > 0 ? formatWeekDurationSeconds(done.totalSec) : null;
-  const completionPct = plan.totalSec > 0 && done.totalSec > 0
-    ? Math.min(100, Math.round((done.totalSec / plan.totalSec) * 100))
-    : null;
+  // Planned sessions done, not hours trained over hours planned: see
+  // plannedSessionsCompletion. A week nothing has happened in yet (a future
+  // one) shows no badge rather than a 0 %.
+  const completionPct = done.totalSec > 0 ? (summary.completion?.pct ?? null) : null;
 
   const planDaysCount = summary.weekPlanned?.length
     ? new Set(summary.weekPlanned.map((pw) => String(pw.date || '').slice(0, 10))).size
@@ -228,7 +229,7 @@ export default function PlannerWeekSummary({
           <div
             className="h-full rounded-full transition-all"
             style={{
-              width: `${Math.min(100, (done.totalSec / plan.totalSec) * 100)}%`,
+              width: `${Math.min(100, completionPct ?? 0)}%`,
               backgroundColor: completionPct >= 100 ? '#22c55e' : completionPct >= 70 ? '#f59e0b' : '#767EB5',
             }}
           />

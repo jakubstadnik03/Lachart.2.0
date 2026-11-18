@@ -409,9 +409,12 @@ export default function IntensityDistributionChart({ athleteId, activities = [],
         if (cancelled) return;
         const z = data?.powerZones?.[zoneKey];
         setAthleteProfileSport(data?.sport ?? null);
+        // Same fallback as utils/zoneContext: profiles whose zones were
+        // generated before lt1/lt2 were stored carry only the bands, and the
+        // dashboard said "LT1/LT2 not set" while the planner used 318/402 W.
         setLtProfile({
-          lt1: toFinitePositive(z?.lt1),
-          lt2: toFinitePositive(z?.lt2),
+          lt1: toFinitePositive(z?.lt1) ?? toFinitePositive(z?.zone3?.min),
+          lt2: toFinitePositive(z?.lt2) ?? toFinitePositive(z?.zone4?.min),
         });
       } catch {
         if (!cancelled) setLtProfile({ lt1: null, lt2: null });

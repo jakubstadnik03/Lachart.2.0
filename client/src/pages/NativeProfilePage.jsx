@@ -637,7 +637,8 @@ export default function NativeProfilePage({ user, userInfo, calendarData = [], o
                   { label: 'Weight',  value: weight ? `${weight} kg` : null },
                 ].map(({ label, value }, idx) => {
                   const canEdit = !isViewingOtherAthlete || (isCoachLike && athleteProfile);
-                  const tile = <KpiTile label={label} value={value ?? (canEdit ? 'Set' : '—')} />;
+                  // "Set" in the value slot read as the value itself ("FTP: Set").
+                  const tile = <KpiTile label={label} value={value ?? (canEdit ? '+ Add' : '—')} />;
                   return (
                     <div key={label} style={{ animation: `ndPopIn .45s ${idx * 60}ms cubic-bezier(.22,1.4,.36,1) both` }}>
                       {value == null && canEdit ? (
@@ -1045,9 +1046,11 @@ function SportZonesBlock({ sport, user, tests, athleteId = null, override, onEdi
     const hasUserPrimary = userPZ?.zone1 && userPZ?.zone1.min != null;
     const hasUserHR = userHR?.zone1 && userHR?.zone1.min != null;
 
-    const testDate = latestTest ? new Date(latestTest.date || latestTest.testDate || 0).getTime() : 0;
-    const zonesUpdated = userPZ?.lastUpdated ? new Date(userPZ.lastUpdated).getTime() : 0;
-    const preferTestZones = zonesFromLatestTest && (!hasUserPrimary || testDate > zonesUpdated);
+    // The profile's zones are what the planner, TSS and statistics use, on
+    // the web and on the server. Showing a newer, never-applied test here
+    // instead made the same athlete "LT1 327 / LT2 412" on the phone and
+    // "318 / 402" everywhere else. A newer test is offered below, not swapped in.
+    const preferTestZones = zonesFromLatestTest && !hasUserPrimary;
 
     const packFromTest = () => {
       if (!zonesFromLatestTest) return null;
@@ -1085,7 +1088,7 @@ function SportZonesBlock({ sport, user, tests, athleteId = null, override, onEdi
       hr1: initial.hr1,
       hr2: initial.hr2,
     });
-  }, [override, user, sport, initial, latestTest, latestTh, zonesFromLatestTest]);
+  }, [override, user, sport, initial, latestTh, zonesFromLatestTest]);
 
   const fmtLtLabel = (value) => {
     if (value == null) return '—';
@@ -1093,8 +1096,30 @@ function SportZonesBlock({ sport, user, tests, athleteId = null, override, onEdi
     return isPace ? `${fmtPaceVal(value, sport)}${viewerPaceSuffix(sport)}` : `${Math.round(value)} W`;
   };
 
-  const lt1Show = latestTh?.lt1 ?? display?.primary?.lt1 ?? initial.lt1;
-  const lt2Show = latestTh?.lt2 ?? display?.primary?.lt2 ?? initial.lt2;
+  // Thresholds shown are those of the zones shown. Profile bands written
+  // before lt1/lt2 were stored fall back to their edges, as utils/zoneContext does.
+  const showingProfile = !override && display?.primary && display.primary === user?.powerZones?.[SHORT_TO_LONG[sport]];
+  const profileLt1 = showingProfile ? (display.primary.lt1 || display.primary.zone3?.min || null) : null;
+  const profileLt2 = showingProfile ? (display.primary.lt2 || display.primary.zone4?.min || null) : null;
+  const lt1Show = showingProfile ? profileLt1 : (latestTh?.lt1 ?? display?.primary?.lt1 ?? initial.lt1);
+  const lt2Show = showingProfile ? profileLt2 : (latestTh?.lt2 ?? display?.primary?.lt2 ?? initial.lt2);
+  const fmtShownLt = (value) => {
+    if (value == null) return '—';
+    if (showingProfile) return isPace ? `${fmtPaceVal(value, sport)}${viewerPaceSuffix(sport)}` : `${Math.round(value)} W`;
+    return fmtLtLabel(value);
+  };
+  // A test newer than the profile zones whose thresholds differ by more than
+  // 2 % — worth saying so, and pointing at the editor that applies it.
+  const newerTestHint = (() => {
+    if (!showingProfile || !latestTest || !latestTh) return null;
+    const testDate = new Date(latestTest.date || latestTest.testDate || 0).getTime();
+    const zonesUpdated = display.primary?.lastUpdated ? new Date(display.primary.lastUpdated).getTime() : 0;
+    if (!(testDate > zonesUpdated)) return null;
+    const differs = (a, b) => Number(a) > 0 && Number(b) > 0 && Math.abs(Number(a) - Number(b)) / Number(b) > 0.02;
+    if (!differs(latestTh.lt1, profileLt1) && !differs(latestTh.lt2, profileLt2)) return null;
+    const when = new Date(testDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+    return `Latest test (${when}): LT1 ${fmtLtLabel(latestTh.lt1)} · LT2 ${fmtLtLabel(latestTh.lt2)} — not applied to these zones.`;
+  })();
 
   const hasAnything = display?.primary || display?.heartRateZones;
   return (
@@ -1117,7 +1142,7 @@ function SportZonesBlock({ sport, user, tests, athleteId = null, override, onEdi
           </div>
           <div style={{ fontSize: 10, color: '#9CA3AF', fontWeight: 600 }}>
             {hasAnything && (lt1Show != null || lt2Show != null)
-              ? `LT1 ${fmtLtLabel(lt1Show)} · LT2 ${fmtLtLabel(lt2Show)}`
+              ? `LT1 ${fmtShownLt(lt1Show)} · LT2 ${fmtShownLt(lt2Show)}`
               : 'No thresholds set'}
           </div>
         </div>
@@ -1135,6 +1160,22 @@ function SportZonesBlock({ sport, user, tests, athleteId = null, override, onEdi
           Edit
         </button>
       </div>
+
+      {newerTestHint && (
+        <button
+          type="button"
+          onClick={onEdit}
+          style={{
+            display: 'block', width: 'calc(100% - 22px)', margin: '0 11px 6px',
+            padding: '6px 9px', borderRadius: 8, textAlign: 'left',
+            background: '#FFFBEB', border: '1px solid #FDE68A', color: '#92400E',
+            fontSize: 10.5, fontWeight: 600, lineHeight: 1.35, fontFamily: 'inherit',
+            cursor: 'pointer', WebkitTapHighlightColor: 'transparent',
+          }}
+        >
+          {newerTestHint} <span style={{ fontWeight: 800, textDecoration: 'underline' }}>Edit zones</span>
+        </button>
+      )}
 
       {/* Zones table */}
       {hasAnything && (

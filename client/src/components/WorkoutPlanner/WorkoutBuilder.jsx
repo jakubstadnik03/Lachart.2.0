@@ -289,8 +289,13 @@ export function materializeParsedWorkout(items, { context = {}, nextId }) {
       // A warm-up written as a distance stays a distance. It used to be
       // converted to an estimated duration here, so "3 km build" came back as
       // 5 × 2:31 and the kilometres the athlete had typed were gone.
+      // A build with a recovery between the steps, or any build in a lactate
+      // test, is a ladder of work stages, not a warm-up: the stages were
+      // listed as "Warmup 1…6" and drawn in warm-up colours.
+      const rec = it.build.rec || null;
+      const isLadder = Boolean(rec) || context?.sport === 'lactate';
       const spec = {
-        rampType: 'warmup',
+        rampType: isLadder ? 'work' : 'warmup',
         count: it.build.count,
         from: { type: 'zone', value: 1 },
         to: it.build.to || { type: 'zone', value: 3 },
@@ -299,8 +304,18 @@ export function materializeParsedWorkout(items, { context = {}, nextId }) {
           : { durationSeconds: it.build.secs || 180 }),
       };
       const gid = nextId();
-      buildRampSteps(spec, context).forEach((st, i) => {
-        out.push({ ...st, clientId: nextId(), groupId: gid, ...(i === 0 ? { isGroupHeader: true, groupRepeat: 1, rampSpec: spec } : {}) });
+      const ramp = buildRampSteps(spec, context);
+      ramp.forEach((st, i) => {
+        out.push({
+          ...st,
+          ...(isLadder ? { label: `Stage ${i + 1}` } : {}),
+          clientId: nextId(),
+          groupId: gid,
+          // The ramp spec cannot describe the pauses, so a ladder with
+          // recoveries is kept as ordinary steps (see rampSpecOf).
+          ...(i === 0 ? { isGroupHeader: true, groupRepeat: 1, ...(rec ? {} : { rampSpec: spec }) } : {}),
+        });
+        if (rec && i < ramp.length - 1) out.push({ ...withTime(rec), groupId: gid });
       });
     }
   });
@@ -2870,6 +2885,10 @@ function SessionRecipeForm({ sport, onBuild, onDraft }) {
  * way a coach writes it on a whiteboard — "15min WU + 4x10min LT2 2min rec
  * + 10min CD". Both end as the same steps.
  */
+/** Default step test: six 4-minute stages from easy to above LT2, a minute
+ *  between them for the blood sample. Used to seed the composer for a test. */
+export const LACTATE_TEST_PROTOCOL_TEXT = '10min WU + 6x4min build Z5 1min rec + 10min CD';
+
 function SessionComposer({ context, sport, onAdd, onDraft, defaultOpen }) {
   // React renders the children of a <details> whether or not it is open — the
   // browser only hides them. So the recipe form stayed mounted while collapsed
@@ -2881,8 +2900,12 @@ function SessionComposer({ context, sport, onAdd, onDraft, defaultOpen }) {
   // athlete's LT2 is 2.2 km. Mounting the body only while open means closing
   // the composer unmounts the form, and its cleanup clears the draft.
   const [open, setOpen] = useState(Boolean(defaultOpen));
-  const [mode, setMode] = useState('form');
-  const [text, setText] = useState('');
+  // A lactate test is a step ladder, which the fill-in form (warm-up, sets,
+  // cool-down) cannot describe — it offered 4×10 min LT2 for a test. Start a
+  // test in the typed mode with a standard protocol instead.
+  const isTest = sport === 'lactate';
+  const [mode, setMode] = useState(isTest ? 'text' : 'form');
+  const [text, setText] = useState(isTest ? LACTATE_TEST_PROTOCOL_TEXT : '');
   const [warnings, setWarnings] = useState([]);
   const add = (items, parseWarnings = []) => {
     const steps = materializeParsedWorkout(items, { context, nextId: uid });
@@ -2959,7 +2982,7 @@ function SessionComposer({ context, sport, onAdd, onDraft, defaultOpen }) {
 // ═══════════════════════════════════════════════════════════════════════════
 // Main WorkoutBuilder
 // ═══════════════════════════════════════════════════════════════════════════
-export default function WorkoutBuilder({ initialSteps = [], context = {}, sport = 'bike', onChange, stickyPreview = true }) {
+export default function WorkoutBuilder({ initialSteps = [], context = {}, sport = 'bike', onChange, onDraftChange, stickyPreview = true }) {
   const [steps, setSteps] = useState(initialSteps.length > 0 ? initialSteps : []);
   const [quickBlocksOpen, setQuickBlocksOpen] = useState(false);
   const [quickIntervalOpen, setQuickIntervalOpen] = useState(false);
@@ -3106,6 +3129,16 @@ export default function WorkoutBuilder({ initialSteps = [], context = {}, sport 
   // Steps the composer is still describing: drawn behind the real ones so the
   // chart answers "is this the session I meant" while it is still a question.
   const [draftSteps, setDraftSteps] = useState(null);
+  // The parent saves `steps`, but on a fresh session the chart shows only the
+  // composer's draft (it is pre-filled, so it draws the moment the builder
+  // opens). Saving then sent `steps: []` — an empty session behind a chart of
+  // 4×10 min LT2. Report the draft so the parent can save what was on screen.
+  const onDraftChangeRef = useRef(onDraftChange);
+  onDraftChangeRef.current = onDraftChange;
+  useEffect(() => {
+    onDraftChangeRef.current?.(draftSteps?.length ? draftSteps : null);
+  }, [draftSteps]);
+  useEffect(() => () => onDraftChangeRef.current?.(null), []);
   const duplicateStep = (idx) => notify(duplicateStepAt(steps, idx, uid));
   const addAfterStep = (idx) => notify(addStepAfter(steps, idx, uid));
   const moveStep = (idx, dir) => {
@@ -3241,13 +3274,17 @@ export default function WorkoutBuilder({ initialSteps = [], context = {}, sport 
   const updateGroupRepeat = (gid,reps) => notify(steps.map(s=>s.groupId===gid&&s.isGroupHeader?{...s,groupRepeat:reps}:s));
 
   const totalSecs = useMemo(() => totalDuration(steps), [steps]);
+  // With nothing built yet the chart shows only the draft, and that draft is
+  // what gets saved — so the total describes it instead of reading "0:00".
+  const labelSteps = useMemo(() => (steps.length ? steps : (draftSteps || [])), [steps, draftSteps]);
   const previewTotalLabel = useMemo(() => {
+    const secs = steps.length ? totalSecs : totalDuration(labelSteps);
     if (ctx.sport === 'run' || ctx.sport === 'swim') {
-      const dist = expandSteps(steps).reduce((sum, s) => sum + resolveStepDistanceMeters(s, ctx), 0);
-      if (dist > 0) return `${fmtDistance(dist)} · ${fmtDuration(totalSecs)}`;
+      const dist = expandSteps(labelSteps).reduce((sum, s) => sum + resolveStepDistanceMeters(s, ctx), 0);
+      if (dist > 0) return `${fmtDistance(dist)} · ${fmtDuration(secs)}`;
     }
-    return `${fmtDuration(totalSecs)} total`;
-  }, [steps, ctx, totalSecs]);
+    return `${fmtDuration(secs)} total`;
+  }, [steps, labelSteps, ctx, totalSecs]);
 
   return (
     <div className="flex flex-col gap-4">

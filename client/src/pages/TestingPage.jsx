@@ -28,6 +28,7 @@ import ThresholdHistory from '../components/Testing-page/ThresholdHistory';
 import TrainingSinceTestPanel from '../components/Testing-page/TrainingSinceTestPanel';
 import { sportKind } from '../utils/hrPowerProfile';
 import TestRecommendationCard from '../components/Testing-page/TestRecommendationCard';
+import { extractLactateThresholds } from '../utils/extractLactateThresholds';
 import PredictedCurveCard from '../components/Testing-page/PredictedCurveCard';
 import { FREE_TEST_LIMIT, FREE_COACH_ATHLETE_LIMIT } from '../constants/planLimits';
 
@@ -1040,55 +1041,6 @@ const TestingPage = () => {
     const diff = Date.now() - d.getTime();
     return Math.floor(diff / (1000 * 60 * 60 * 24));
   };
-  // Simple LT2 estimate from test: interpolate power/pace at 4.0 mmol/L if possible
-  // Wrapped in try/catch to prevent freeze on problematic test data
-  const estimateLt2FromTest = (test) => {
-    try {
-    if (!test?.results || test.results.length < 3) return null;
-    const sport = test.sport;
-    const isPaceSport = sport === 'run' || sport === 'swim';
-    const baseLactate = Number(test.baseLactate || 1.0);
-    const targetLac = 4.0;
-
-    const pts = test.results
-      .map(r => ({
-        x: Number(String(r.power ?? '').replace(',', '.')),
-        y: Number(String(r.lactate ?? '').replace(',', '.')),
-        hr: Number(String(r.heartRate ?? '').replace(',', '.'))
-      }))
-      .filter(p => Number.isFinite(p.x) && Number.isFinite(p.y));
-
-    if (pts.length < 3) return null;
-
-    // sort: bike ascending power; run/swim descending pace-seconds (slow->fast in seconds means higher seconds is slower)
-    pts.sort((a, b) => isPaceSport ? (b.x - a.x) : (a.x - b.x));
-
-    // Find segment crossing target lactate
-    for (let i = 0; i < pts.length - 1; i++) {
-      const a = pts[i], b = pts[i + 1];
-      if ((a.y <= targetLac && b.y >= targetLac) || (a.y >= targetLac && b.y <= targetLac)) {
-        const t = (targetLac - a.y) / (b.y - a.y || 1);
-        const x = a.x + t * (b.x - a.x);
-        const hr = (Number.isFinite(a.hr) && Number.isFinite(b.hr)) ? (a.hr + t * (b.hr - a.hr)) : null;
-        return { x, hr, lac: targetLac };
-      }
-    }
-
-    // Fallback: D-max-ish fallback: use point where lactate is ~ base*3 (classic), otherwise max x
-    const target2 = baseLactate * 3.0;
-    const closest = pts.reduce((best, p) => {
-      const d = Math.abs(p.y - target2);
-      if (!best || d < best.d) return { p, d };
-      return best;
-    }, null);
-    if (closest?.p) return { x: closest.p.x, hr: closest.p.hr, lac: closest.p.y };
-
-    return { x: pts[pts.length - 1].x, hr: pts[pts.length - 1].hr, lac: pts[pts.length - 1].y };
-    } catch (error) {
-      console.error('Error estimating LT2 from test:', error, test);
-      return null; // Return null instead of crashing
-    }
-  };
 
   const latestBySport = useMemo(() => {
     const by = { bike: null, run: null, swim: null };
@@ -1204,13 +1156,16 @@ const TestingPage = () => {
       let runLt2FromTest = null;
       
       try {
-        bikeLt2FromTest = estimateLt2FromTest(lastBikeTest)?.x || null;
+        // Same LT2 as the chart and the test card (pinned override, else the
+        // chosen method). A raw 4.0 mmol/L interpolation here printed
+        // "Last test LT2: 415 W" beside a chart saying 412 W.
+        bikeLt2FromTest = extractLactateThresholds(lastBikeTest)?.lt2 || null;
       } catch (e) {
         console.warn('Error estimating bike LT2 from test:', e);
       }
       
       try {
-        runLt2FromTest = estimateLt2FromTest(lastRunTest)?.x || null;
+        runLt2FromTest = extractLactateThresholds(lastRunTest)?.lt2 || null;
       } catch (e) {
         console.warn('Error estimating run LT2 from test:', e);
       }

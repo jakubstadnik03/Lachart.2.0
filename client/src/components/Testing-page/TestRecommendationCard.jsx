@@ -4,6 +4,8 @@
  * from every available data source: FIT files, Strava activities, previous tests, HR streams.
  */
 import React, { useState, useMemo } from 'react';
+import { retestLevelForAge } from '../../utils/retestAge';
+import { extractLactateThresholds } from '../../utils/extractLactateThresholds';
 import { useAuth } from '../../context/AuthProvider';
 import { formatRunPace } from '../../utils/unitsConverter';
 import { fmtViewerPace } from '../../utils/viewerUnits';
@@ -145,9 +147,11 @@ function SourceBadge({ icon: Icon, label, value, color = C.primary }) {
 
 function UrgencyBadge({ days }) {
   if (days == null) return null;
-  const level = days < 60 ? 'ok' : days < 90 ? 'soon' : 'retest';
+  const level = retestLevelForAge(days);
+  // Age is all this badge knows, so a young test is not declared "up to date":
+  // the threshold chart may still find current power above it.
   const cfg = {
-    ok:     { Icon: CheckCircleIcon,       bg: '#F0FDF9', border: '#A7F3D0', text: C.greenos,    msg: `Last test ${days}d ago — up to date` },
+    ok:     { Icon: CheckCircleIcon,       bg: '#F0FDF9', border: '#A7F3D0', text: C.greenos,    msg: `Last test ${days}d ago` },
     soon:   { Icon: ClockIcon,             bg: '#FFFBEB', border: '#FDE68A', text: '#B45309',    msg: `Last test ${days}d ago — schedule soon` },
     retest: { Icon: ExclamationTriangleIcon, bg: '#FFF5F4', border: '#F9BDB9', text: C.red,     msg: `Last test ${days}d ago — retest recommended` },
   }[level];
@@ -280,18 +284,27 @@ export default function TestRecommendationCard({
         return Math.round(rides.reduce((s, r) => s + Number(r.avgPower || r.averagePower), 0) / rides.length);
       })();
 
-      const ftpEst   = lt2Test || fitFtp || stravaW || advisor.bike?.ftp || null;
+      const ftpRaw   = lt2Test || fitFtp || stravaW || advisor.bike?.ftp || null;
+      // Whole watts: the test's LT2 is interpolated ("FTP est. 411.68884503283493 W").
+      const ftpEst   = ftpRaw ? Math.round(ftpRaw) : null;
+      // The protocol marks LT1/LT2 on its stages. Those come from the last
+      // test first — the HR-based estimate from training put "LT2" on the
+      // 330 W stage of an athlete whose tested LT2 is 412 W (330 W is LT1).
+      const testTh   = lastTest ? extractLactateThresholds(lastTest) : null;
+      const planNum  = (v) => (v ? Number(String(v).replace(/\D/g, '')) || null : null);
       const hrMax    = hrTestPlan?.bike?.hrMax?.value || null;
-      const lt1Hr    = hrTestPlan?.bike?.lt1?.hr?.value || null;
-      const lt2Hr    = hrTestPlan?.bike?.lt2?.hr?.value || null;
-      const lt1Power = hrTestPlan?.bike?.lt1?.power ? Number(String(hrTestPlan.bike.lt1.power).replace(/\D/g, '')) : null;
-      const lt2Power = hrTestPlan?.bike?.lt2?.power ? Number(String(hrTestPlan.bike.lt2.power).replace(/\D/g, '')) : null;
+      const lt1Hr    = (testTh?.lt1Hr ? Math.round(testTh.lt1Hr) : null) || hrTestPlan?.bike?.lt1?.hr?.value || null;
+      const lt2Hr    = (testTh?.lt2Hr ? Math.round(testTh.lt2Hr) : null) || hrTestPlan?.bike?.lt2?.hr?.value || null;
+      const lt1Power = (testTh?.lt1 ? Math.round(testTh.lt1) : null) || planNum(hrTestPlan?.bike?.lt1?.power);
+      const lt2Power = (testTh?.lt2 ? Math.round(testTh.lt2) : null) || planNum(hrTestPlan?.bike?.lt2?.power);
 
       const sources = {
-        fit:    fitFtp   ? `FIT 20-min: ${fitFtp} W` : null,
-        strava: stravaW  ? `Strava avg: ${stravaW} W` : null,
-        test:   lt2Test  ? `Last test LT2: ${Math.round(lt2Test)} W` : null,
-        hr:     hrMax    ? `HRmax: ${hrMax} bpm${lt1Hr ? ` · LT1: ${lt1Hr}` : ''}${lt2Hr ? ` · LT2: ${lt2Hr}` : ''} bpm` : null,
+        // Bare values: SourceBadge already prints "Strava:", "Last test:"…
+        // ("Strava: Strava avg: 280 W", "Last test: Last test LT2: 415 W").
+        fit:    fitFtp   ? `${fitFtp} W (20-min)` : null,
+        strava: stravaW  ? `${stravaW} W avg` : null,
+        test:   lt2Test  ? `LT2 ${Math.round(lt2Test)} W` : null,
+        hr:     hrMax    ? `max ${hrMax} bpm${lt1Hr ? ` · LT1 ${lt1Hr}` : ''}${lt2Hr ? ` · LT2 ${lt2Hr}` : ''}` : null,
       };
 
       return { isPace: false, ftpEst, hrMax, lt1Hr, lt2Hr, lt1Power, lt2Power, days, sources, lastTest };
@@ -313,13 +326,14 @@ export default function TestRecommendationCard({
 
       const lt2Sec  = lt2Test || stravaS || advisor.run?.lt2FromLastTest || null;
       const hrMax   = hrTestPlan?.run?.hrMax?.value || null;
-      const lt1Hr   = hrTestPlan?.run?.lt1?.hr?.value || null;
-      const lt2Hr   = hrTestPlan?.run?.lt2?.hr?.value || null;
+      const runTh   = lastTest ? extractLactateThresholds(lastTest) : null;
+      const lt1Hr   = (runTh?.lt1Hr ? Math.round(runTh.lt1Hr) : null) || hrTestPlan?.run?.lt1?.hr?.value || null;
+      const lt2Hr   = (runTh?.lt2Hr ? Math.round(runTh.lt2Hr) : null) || hrTestPlan?.run?.lt2?.hr?.value || null;
 
       const sources = {
-        strava: stravaS ? `Strava est.: ${fmtPace(stravaS)}` : null,
-        test:   lt2Test ? `Last test LT2: ${fmtPace(lt2Test)}` : null,
-        hr:     hrMax   ? `HRmax: ${hrMax} bpm${lt1Hr ? ` · LT1: ${lt1Hr}` : ''}${lt2Hr ? ` · LT2: ${lt2Hr}` : ''} bpm` : null,
+        strava: stravaS ? `${fmtPace(stravaS)} est.` : null,
+        test:   lt2Test ? `LT2 ${fmtPace(lt2Test)}` : null,
+        hr:     hrMax   ? `max ${hrMax} bpm${lt1Hr ? ` · LT1 ${lt1Hr}` : ''}${lt2Hr ? ` · LT2 ${lt2Hr}` : ''}` : null,
       };
 
       return { isPace: sport !== 'bike', lt2Sec, hrMax, lt1Hr, lt2Hr, days, sources, lastTest };

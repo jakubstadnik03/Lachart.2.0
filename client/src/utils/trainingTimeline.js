@@ -156,8 +156,8 @@ export function buildTrainingTimeline({
 
     return {
       date: key,
-      label: date.toLocaleDateString(undefined, { day: 'numeric', month: 'short' }),
-      weekday: date.toLocaleDateString(undefined, { weekday: 'short' }),
+      label: date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }),
+      weekday: date.toLocaleDateString('en-GB', { weekday: 'short' }),
       isToday: key === todayKey,
       isFuture: key > todayKey,
       isWeekStart: date.getDay() === 1,

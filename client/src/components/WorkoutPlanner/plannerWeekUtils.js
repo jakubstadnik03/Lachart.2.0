@@ -1,5 +1,6 @@
 import { formatDistanceForUser } from '../../utils/unitsConverter';
 import { completedSecs, completedDistM, completedTss } from '../../utils/completedSessionStats';
+import { pairPlannedWithActivities } from '../../utils/calendarDayOrdering';
 import { computeEstTSS } from './WorkoutBuilder';
 import { plannerSportKey, stepTotalSecs } from './WorkoutPlanModal';
 
@@ -84,6 +85,56 @@ export function filterItemsForWeek(items, weekStart, dateField = 'date') {
   });
 }
 
+// The same day the week row puts the plan on (isSameDay on new Date(p.date)),
+// so the badge and the day's cards always agree about what was paired.
+const dayKeyOf = (raw) => {
+  if (!raw) return null;
+  const d = new Date(raw);
+  return Number.isNaN(d.getTime()) ? null : toLocalDateStr(d);
+};
+
+/**
+ * How much of the week's plan was actually done, in planned time.
+ *
+ * The planner's badge used to divide the week's whole training time by its
+ * planned time and cap it at 100 %. A week with one planned 52-minute swim
+ * and seventeen hours of unplanned riding and running read "100 %" with the
+ * swim itself never done. Here a planned session counts as done when it was
+ * completed in the app or the calendar's own pairing found a session for it
+ * that day; skipped sessions leave the plan rather than count against it.
+ *
+ * @returns {{ doneSec: number, plannedSec: number, pct: number|null }}
+ */
+export function plannedSessionsCompletion(weekPlanned = [], weekDone = []) {
+  const active = (weekPlanned || []).filter((pw) => pw && pw.status !== 'skipped');
+  const plannedSec = active.reduce((sum, pw) => sum + plannedWorkoutSecs(pw), 0);
+  if (!(plannedSec > 0)) return { doneSec: 0, plannedSec: 0, pct: null };
+
+  const doneByDay = new Map();
+  (weekDone || []).forEach((t) => {
+    const k = dayKeyOf(t?.date || t?.startDate || t?.start_date);
+    if (!k) return;
+    if (!doneByDay.has(k)) doneByDay.set(k, []);
+    doneByDay.get(k).push(t);
+  });
+  const planByDay = new Map();
+  active.forEach((pw) => {
+    const k = dayKeyOf(pw.date);
+    if (!k) return;
+    if (!planByDay.has(k)) planByDay.set(k, []);
+    planByDay.get(k).push(pw);
+  });
+
+  let doneSec = 0;
+  planByDay.forEach((plans, day) => {
+    const { pwToAct } = pairPlannedWithActivities(plans, doneByDay.get(day) || []);
+    plans.forEach((pw) => {
+      if (pw.status === 'completed' || pwToAct.has(String(pw._id))) doneSec += plannedWorkoutSecs(pw);
+    });
+  });
+  return { doneSec, plannedSec, pct: Math.round((doneSec / plannedSec) * 100) };
+}
+
 /** Build done + planned week summary (calendar-style). */
 export function buildPlannerWeekSummary({
   planned = [],
@@ -154,6 +205,7 @@ export function buildPlannerWeekSummary({
       totalDist,
       bySport: Array.from(sportMap.values()).sort((a, b) => b.tss - a.tss || b.sec - a.sec),
     },
+    completion: plannedSessionsCompletion(weekPlanned, weekDone),
     planned: {
       count: weekPlanned.length,
       totalTss: plannedTotalTss,

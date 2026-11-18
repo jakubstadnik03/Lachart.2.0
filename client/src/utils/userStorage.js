@@ -45,8 +45,52 @@ export const extractUserDataForStorage = (user) => {
           phone:        user.coachBranding.phone        ?? null,
         }
       : null,
+    // Premium state. Without it a paying user restored from this cache —
+    // every app open until /user/profile answers, and for good when that call
+    // fails (a Render 502, a cold start past the timeout) — was treated as
+    // free: "Upgrade to Pro" over their own test history, the 30-day lock on
+    // the calendar, the "Try Pro" banner. The server still enforces access;
+    // this only stops the UI from walling off what the user has paid for.
+    // Left undefined when the source never said, so an old cache stays
+    // recognisably "not resolved" (see usePremium).
+    ...(typeof user.isPremium === 'boolean' ? { isPremium: user.isPremium } : {}),
+    ...(user.premiumSource ? { premiumSource: user.premiumSource } : {}),
+    ...(user.premium === true ? { premium: true } : {}),
+    ...(user.coachedAccess ? { coachedAccess: user.coachedAccess } : {}),
     // Explicitly exclude: athletes array, large nested objects, etc.
   };
+};
+
+const PREMIUM_KEYS = ['isPremium', 'premiumSource', 'premium', 'coachedAccess'];
+
+/**
+ * Keep the premium state we already know when an update does not carry it.
+ *
+ * Several settings calls answer with a user object that has no isPremium
+ * (it is computed per request, never stored on the user). Taking that object
+ * as-is wiped a paying user's premium state in memory and in the cache, and
+ * the paywalls came back. Only copies within the same account, and only when
+ * the update says nothing about premium itself.
+ */
+export const carryPremiumState = (prev, next) => {
+  if (!next || typeof next !== 'object') return next;
+  if (typeof next.isPremium === 'boolean') return next;
+  if (!prev || typeof prev.isPremium !== 'boolean') return next;
+  if (!prev._id || !next._id || String(prev._id) !== String(next._id)) return next;
+  const carried = { ...next };
+  PREMIUM_KEYS.forEach((k) => {
+    if (prev[k] !== undefined && carried[k] === undefined) carried[k] = prev[k];
+  });
+  return carried;
+};
+
+const readCachedUser = () => {
+  try {
+    const raw = localStorage.getItem('user');
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
 };
 
 /**
@@ -54,7 +98,7 @@ export const extractUserDataForStorage = (user) => {
  */
 export const saveUserToStorage = (user) => {
   try {
-    const userData = extractUserDataForStorage(user);
+    const userData = extractUserDataForStorage(carryPremiumState(readCachedUser(), user));
     const jsonString = JSON.stringify(userData);
     
     // Check size (localStorage limit is usually 5-10MB)
