@@ -8,7 +8,7 @@ import { useAuth } from '../../context/AuthProvider';
 import { getEffectiveLactateInputMode, getLactateDisplayMode } from '../../utils/lactateTestInputMode';
 import { resolveDistanceUnitSystem } from '../../utils/unitsConverter';
 import { computeLactateThresholds } from './lactateThresholdSegmented';
-import { analyzeLactateTest } from '../../utils/lactateThresholdEngine';
+import { analyzeLactateTest, withShortenedLastLevel } from '../../utils/lactateThresholdEngine';
 
 /** Dev: podrobné logy LT1/LT2 jsou ve vývoji zapnuté výchozí. Vypnout: `localStorage.setItem('lachart:debugThresholds','0')`. */
 export const isThresholdDebugEnabled = () => {
@@ -2751,7 +2751,7 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
 
   const calculateThresholds = (mockData) => {
     const baseLactate = mockData.baseLactate;
-    const { results } = mockData;
+    const results = withShortenedLastLevel(mockData);
     // API / formulář může posílat cycling|running|swimming — findLactateThresholds očekává bike|run|swim
     let sport = mockData.sport || 'bike';
     const sLow = String(sport).toLowerCase();

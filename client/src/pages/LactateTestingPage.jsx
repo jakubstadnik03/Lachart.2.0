@@ -920,8 +920,12 @@ const LactateTestingPage = () => {
         // ── Also save into Testing DB so the lactate curve is visible in /testing ──
         if (lactateValues.length > 0) {
           try {
-            const testResults = lactateValues.map((lv) => {
+            const workDuration = protocol.workDuration ?? 360;
+            const testResults = lactateValues.map((lv, i) => {
               const stepData = historicalData.filter(d => d.step === lv.step - 1);
+              // A last level ended early keeps the time it really ran, so it counts at a proportional load.
+              const ranFor = Math.max(0, ...stepData.map(d => d.intervalTime || 0));
+              const stoppedEarly = i === lactateValues.length - 1 && ranFor > 0 && ranFor < workDuration;
               const hrVals   = stepData.map(d => d.heartRate).filter(v => v > 0);
               const avgHR    = hrVals.length ? Math.round(hrVals.reduce((a, b) => a + b, 0) / hrVals.length) : null;
               const vo2Vals  = stepData.map(d => d.vo2).filter(v => v > 0);
@@ -933,7 +937,7 @@ const LactateTestingPage = () => {
                 lactate:       lv.lactate,
                 vo2:           avgVo2,
                 RPE:           lv.borg   ?? null,
-                duration:      protocol.workDuration ?? 360,
+                duration:      stoppedEarly ? ranFor : workDuration,
                 intervalType:  'work',
               };
             });
