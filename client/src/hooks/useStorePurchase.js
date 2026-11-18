@@ -74,7 +74,9 @@ export function useStorePurchase(plan = 'pro', source = 'unknown', { loadOffer =
         });
       });
     return () => { alive = false; };
-  }, [available, loadOffer, plan, userId]);
+    // `source` is in here because the failure report carries it. It is a
+    // constant string per call site, so it never re-runs the load.
+  }, [available, loadOffer, plan, userId, source]);
 
   const confirm = useCallback(async () => {
     setBusy('confirming');
