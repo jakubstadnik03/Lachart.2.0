@@ -4,6 +4,7 @@
 import {
   analyzeLactateTest, isotonic, monotoneCubic, firstCrossing, dmaxOnCurve,
   logLogBreakpoint, toIntensity, fromIntensity, dropOutOfOrderStages,
+  shortenedLastLevel, withShortenedLastLevel, shortenedLevelNote,
 } from './lactateThresholdEngine';
 
 const mph = (secPerMile) => 3600 / secPerMile;
@@ -191,5 +192,110 @@ describe('what real tests in the database read as', () => {
     expect(r.lt1.lactate).toBeCloseTo(t.expect.lt1La, 1);
     expect(r.lt2.lactate).toBeCloseTo(t.expect.lt2La, 1);
     expect(r.confidence).toBe(t.expect.confidence);
+  });
+});
+
+describe('a last level stopped early', () => {
+  const kmh = (v) => 3600 / v;
+  // [km/h, lactate, seconds]
+  const treadmill = (rows, extra = {}) => ({
+    sport: 'run',
+    ...extra,
+    results: rows.map(([speed, lactate, duration]) => ({ power: 3600 / speed, lactate, duration })),
+  });
+  const threeMinute = (last) => treadmill([[13, 1.5, 180], [14, 2.0, 180], [15, 3.1, 180], [16, 5.0, 180], [17, 7.0, last]]);
+
+  it('counts 1:40 of a 3:00 level at the last finished speed plus that share of the step', () => {
+    const s = shortenedLastLevel(threeMinute(100));
+    expect(kmh(s.power)).toBeCloseTo(16.56, 1);
+    expect(kmh(s.targetPower)).toBeCloseTo(17, 6);
+    expect(s).toMatchObject({ index: 4, measure: 'duration', completed: 100, planned: 180 });
+  });
+
+  it('prorates watts linearly on a real bike test: 60 s of a 300 s level, 380 to 420 W', () => {
+    const results = [100, 140, 180, 220, 260, 300, 340, 380].map((power) => ({ power, lactate: 2, duration: 300 }));
+    results.push({ power: 420, lactate: 12, duration: 60 });
+    expect(shortenedLastLevel({ sport: 'bike', stageDurationSec: 300, results }).power).toBe(388);
+  });
+
+  it('takes the planned length from the test setting when only the last level has a Dur', () => {
+    const rows = [[14, 2], [15, 3], [16, 5]].map(([speed, lactate]) => [speed, lactate, undefined]);
+    const test = treadmill([...rows, [17, 7, 100]], { stageDurationSec: '180' });
+    expect(kmh(shortenedLastLevel(test).power)).toBeCloseTo(16.56, 1);
+  });
+
+  it('reads durations still typed as M:SS in the form', () => {
+    const s = shortenedLastLevel(treadmill([[14, 2, '03:00'], [15, 3, '03:00'], [16, 5, '03:00'], [17, 7, '1:40']]));
+    expect(s).toMatchObject({ completed: 100, planned: 180 });
+  });
+
+  it('prorates a level cut short by distance', () => {
+    const results = [[12, 2], [13, 3], [14, 5]].map(([speed, lactate]) => ({ power: 3600 / speed, lactate, distanceMeters: 800 }));
+    results.push({ power: 3600 / 15, lactate: 7, distanceMeters: 400 });
+    const s = shortenedLastLevel({ sport: 'run', results });
+    expect(s.measure).toBe('distance');
+    expect(kmh(s.power)).toBeCloseTo(14.5, 1);
+  });
+
+  it('skips a recovery sample logged after the level', () => {
+    const test = threeMinute(100);
+    test.results.push({ power: 3600 / 8, lactate: 6, duration: 180, intervalType: 'recovery' });
+    expect(shortenedLastLevel(test).index).toBe(4);
+  });
+
+  // Each of these is a pattern from saved tests that must keep what was typed.
+  it.each([
+    ['fixed distance: each level takes less time than the last',
+      treadmill([[12.9, 1, 560], [13.6, 1.2, 530], [14.6, 1.6, 495], [15.7, 2.2, 460], [16.5, 3, 435], [17.7, 4.5, 410], [18.9, 7, 380]])],
+    ['a test setting that the levels contradict',
+      { sport: 'bike', stageDurationSec: 600, results: [125, 150, 175, 200, 225, 250].map((power, i) => ({ power, lactate: 1 + i, duration: i ? 360 : 600 })) }],
+    ['every level shorter than the test setting',
+      treadmill([[13, 1, 300], [14, 2, 300], [15, 3, 300], [16, 5, 300]], { stageDurationSec: 400 })],
+    ['a last level within 10 % of its length', threeMinute(170)],
+    ['a level that ran its full length', threeMinute(180)],
+    ['a last level with no Dur', threeMinute(undefined)],
+    ['no way to tell the planned length', treadmill([[14, 2], [15, 3], [16, 5], [17, 7, 100]])],
+    ['a last level that is not the hardest',
+      treadmill([[14, 2, 180], [15, 3, 180], [16, 5, 180], [15.5, 4, 100]])],
+    ['loads stored as km/h',
+      { sport: 'run', results: [14, 15, 16].map((power, i) => ({ power, lactate: 2 + i, duration: 180 })).concat({ power: 17, lactate: 7, duration: 100 }) }],
+  ])('leaves alone %s', (_, test) => {
+    expect(shortenedLastLevel(test)).toBeNull();
+    expect(withShortenedLastLevel(test)).toBe(test.results);
+  });
+
+  it('leaves mixed short levels of distance alone', () => {
+    const results = [1200, 1200, 400, 400].map((distanceMeters, i) => ({ power: 300 - i * 20, lactate: 1 + i, distanceMeters }));
+    expect(shortenedLastLevel({ sport: 'run', results })).toBeNull();
+  });
+
+  it('changes a copy, and only once', () => {
+    const test = threeMinute(100);
+    const typed = test.results[4].power;
+    const once = withShortenedLastLevel(test);
+    expect(test.results[4].power).toBe(typed);
+    expect(once[4].targetPower).toBe(typed);
+    expect(once[4].duration).toBe(100);
+    const twice = withShortenedLastLevel({ ...test, results: once });
+    expect(twice[4].power).toBe(once[4].power);
+  });
+
+  it('keeps the fields of a Mongoose subdocument', () => {
+    class Subdoc {
+      constructor(fields) { this.$fields = fields; }
+      get power() { return this.$fields.power; }
+      get lactate() { return this.$fields.lactate; }
+      get duration() { return this.$fields.duration; }
+      toObject() { return { ...this.$fields }; }
+    }
+    const results = threeMinute(100).results.map((r) => new Subdoc({ ...r, heartRate: 170 }));
+    const [last] = withShortenedLastLevel({ sport: 'run', results }).slice(-1);
+    expect(last).toMatchObject({ lactate: 7, duration: 100, heartRate: 170 });
+    expect(kmh(last.power)).toBeCloseTo(16.56, 1);
+  });
+
+  it('explains itself in the reader\'s units', () => {
+    const note = shortenedLevelNote(shortenedLastLevel(threeMinute(100)), (v) => `${kmh(v).toFixed(1)} km/h`);
+    expect(note).toBe('Last level stopped at 1:40 of 3:00: counted at 16.6 km/h instead of 17.0 km/h in the curve and thresholds.');
   });
 });
