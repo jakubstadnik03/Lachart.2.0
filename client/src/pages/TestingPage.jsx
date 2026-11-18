@@ -5,6 +5,7 @@ import { useNotification } from '../context/NotificationContext';
 import api, { invalidateCache, addTest } from '../services/api';
 import SportsSelector from "../components/Header/SportsSelector";
 import PreviousTestingComponent from "../components/Testing-page/PreviousTestingComponent";
+import RetestCard from "../components/Testing-page/RetestCard";
 import ErrorBoundary from "../components/common/ErrorBoundary";
 import NewTestingComponent from "../components/Testing-page/NewTestingComponent";
 import CPTestPanel from "../components/Testing-page/CPTestPanel";
@@ -138,6 +139,23 @@ const TestingPage = () => {
     }
     return user?._id ?? null;
   }, [isTestingRole, isCoachLikeRole, selectedAthleteId, user?.role, user?._id]);
+  /**
+   * The newest test on screen — the one a retest would follow.
+   *
+   * Dates are compared as numbers rather than sorting the array in place:
+   * `tests` is rendered elsewhere in its own order, and a sort here would
+   * reorder the list under the user.
+   */
+  const latestOwnTest = useMemo(() => {
+    if (!Array.isArray(tests) || tests.length === 0) return null;
+    return tests.reduce((best, t) => {
+      const d = new Date(t?.date || 0).getTime();
+      if (!Number.isFinite(d)) return best;
+      const bd = best ? new Date(best.date || 0).getTime() : -Infinity;
+      return d > bd ? t : best;
+    }, null);
+  }, [tests]);
+
   const isPendingSelectedAthlete = useMemo(() => {
     if (!isCoachLikeRole) return false;
     if (!selectedAthleteId) return false;
@@ -1633,6 +1651,27 @@ const TestingPage = () => {
               )}
 
               {/* Free-plan usage banner removed — all users have unlimited tests */}
+
+              {/* ── Retest loop ───────────────────────────────────────────────
+                  Offered on the athlete's own most recent test, which is also
+                  the only test it can be offered on: a retest follows the
+                  latest one. Deliberately a standing card rather than a prompt
+                  after saving, so it also reaches the 240 accounts that already
+                  sit more than six weeks past their single test — a save-time
+                  prompt would reach none of them. See utils/retestPlan.js. ── */}
+              {latestOwnTest && (
+                <div style={sectionSnap}>
+                  <RetestCard
+                    test={latestOwnTest}
+                    newerTestAt={null}
+                    canEdit={String(effectiveTargetAthleteId || '') === String(user?._id || '')}
+                    onChanged={(retest) => setTests((prev) => prev.map((t) => (
+                      String(t._id) === String(latestOwnTest._id) ? { ...t, retest } : t
+                    )))}
+                    onAddTest={() => setShowNewTesting(true)}
+                  />
+                </div>
+              )}
 
               {/* Tests list — wrapped in ErrorBoundary so a single bad
                   test (NaN, weird lactate sequence, etc.) can't freeze

@@ -21,6 +21,7 @@ import NewTestSheet from '../components/NativeDashboard/NewTestSheet';
 import NativeBenchmarkCard from '../components/native/NativeBenchmarkCard';
 import NativeSinceTestCard from '../components/native/NativeSinceTestCard';
 import NativePredictedCurveCard from '../components/native/NativePredictedCurveCard';
+import NativeRetestCard from '../components/Testing-page/NativeRetestCard';
 import LT2TrendSparkline from '../components/DashboardPage/LT2TrendSparkline';
 import { usePremium } from '../hooks/usePremium';
 import UpgradeModal from '../components/UpgradeModal';
@@ -301,6 +302,21 @@ export default function NativeTestingPage({ user, athleteId: externalAthleteId }
   const athleteId = externalAthleteId || user?._id || user?.id;
 
   const [tests, setTests] = useState([]);
+  /**
+   * The newest test held — the one a retest would follow.
+   *
+   * Reduced rather than sorted: `tests` is rendered in its own order further
+   * down and a sort here would reorder the list under the user.
+   */
+  const latestTest = useMemo(() => {
+    if (!Array.isArray(tests) || tests.length === 0) return null;
+    return tests.reduce((best, t) => {
+      const d = new Date(t?.date || 0).getTime();
+      if (!Number.isFinite(d)) return best;
+      const bd = best ? new Date(best.date || 0).getTime() : -Infinity;
+      return d > bd ? t : best;
+    }, null);
+  }, [tests]);
   // Post-save "connect a tracker" prompt — holds the test it was raised for so
   // the sheet can lead with that test's own thresholds.
   const [trackerPromptTest, setTrackerPromptTest] = useState(null);
@@ -907,6 +923,24 @@ export default function NativeTestingPage({ user, athleteId: externalAthleteId }
                   </button>
                 </div>
               </GlassCard>
+            </div>
+          )}
+
+          {/* ─── Retest loop. Only on the athlete's own latest test, because a
+              retest follows the latest one; `newerTestAt` is therefore null by
+              construction here. A standing card rather than a prompt after
+              saving, so it reaches the accounts already months past their one
+              test. See utils/retestPlan.js. ─── */}
+          {isOwnTests && latestTest && String(latestTest._id) === String(selected?._id) && (
+            <div style={{ ...cardEntry(2), ...snap }}>
+              <NativeRetestCard
+                test={latestTest}
+                newerTestAt={null}
+                onChanged={(retest) => setTests((prev) => prev.map((t) => (
+                  String(t._id) === String(latestTest._id) ? { ...t, retest } : t
+                )))}
+                onAddTest={() => navigate('/testing?full=1')}
+              />
             </div>
           )}
 

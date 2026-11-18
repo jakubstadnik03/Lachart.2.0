@@ -307,6 +307,7 @@ const { startStreamBackfillScheduler } = require('./services/streamBackfillSched
 const { startWinBackScheduler } = require('./services/winBackScheduler');
 const { startPremiumScheduler } = require('./services/premiumScheduler');
 const { startCoachFollowUpScheduler } = require('./services/coachFollowUpScheduler');
+const { startRetestReminderScheduler } = require('./services/retestReminderScheduler');
 const { startCancelFeedbackScheduler } = require('./services/cancelFeedbackScheduler');
 const { startPredictedCurveScheduler } = require('./services/predictedCurveScheduler');
 const { startTrackerConnectScheduler } = require('./services/trackerConnectScheduler');
@@ -418,6 +419,9 @@ startStreamBackfillScheduler();
 startWinBackScheduler();
 startPremiumScheduler();
 startCoachFollowUpScheduler();
+// Reminders for retests the athlete scheduled themselves. In-app + push only;
+// see the file header for why this one is deliberately not an email campaign.
+startRetestReminderScheduler();
 startCancelFeedbackScheduler();
 
 // "Here is the curve your training implies" — athletes who have never tested.
