@@ -284,6 +284,14 @@ export default function About() {
                   "@type": "Answer",
                   "text": "Yes. LaChart has dedicated coach plans that allow managing multiple athletes, tracking training data over time, importing FIT files from Garmin/Wahoo, syncing with Strava, and generating professional PDF reports for each athlete."
                 }
+              },
+              {
+                "@type": "Question",
+                "name": "Do my athletes need their own subscription?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "No. On the Coach plan your athletes use a free account: they see every session you plan, get it on their Garmin, mark it done, and see their own test history, training zones and load charts. You see how each session went."
+                }
               }
             ]
           }
@@ -2471,5 +2479,6 @@ const FAQ = [
   { q: 'Do I need to register to use the calculator?', a: 'No. The free calculator runs without an account. A free account adds saving, history, comparison and PDF export.' },
   { q: 'Which sports does LaChart cover?', a: 'Cycling, running, swimming and triathlon. Power-based for bike, pace-based for run / swim, HR overlay on every chart.' },
   { q: 'Can I generate a PDF report from my lactate test?', a: 'Yes. After a test you can download a branded PDF with the lactate curve, HR overlay, all thresholds (LTP1, LTP2, OBLA, IAT), the five training zones, stage-by-stage results, a comparison with your previous test and personalised training recommendations.' },
+  { q: 'Do my athletes need their own subscription?', a: 'No. On the Coach plan your athletes use a free account: they see every session you plan, get it on their Garmin, mark it done, and see their own test history, training zones and load charts. You see how each session went.' },
   { q: 'Is my data exportable?', a: "Yes. Every account can export training history (CSV) and individual tests (PDF). We don't lock your data in." },
 ];

@@ -439,6 +439,18 @@ const userSchema = new mongoose.Schema({
     weeklyReportsLastSentWeekStart: { type: Date, default: null }
   },
   /**
+   * How often this athlete is asked for the daily wellness check-in
+   * (models/WellnessCheckIn.js). Set by the coach per athlete; an athlete with
+   * no coach may set their own. Off by default, so nobody is asked until
+   * someone decides it is worth asking.
+   */
+  wellnessCheckIn: {
+    mode: { type: String, enum: ['off', 'daily', 'interval'], default: 'off' },
+    everyDays: { type: Number, min: 2, max: 14, default: 2 },
+    setBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+    updatedAt: { type: Date, default: null },
+  },
+  /**
    * "Your threshold has moved" notices, per sport.
    *
    * Keyed by sport because an athlete's bike and run drift independently, and
@@ -503,6 +515,10 @@ const userSchema = new mongoose.Schema({
      *  Mongoose Map keys must not contain "." or "$" — issue ids are limited to
      *  [A-Za-z0-9_-] (see productUpdateCampaignService.isValidIssueId). */
     productUpdates:          { type: Map, of: Date, default: undefined },
+    /** Failed sends per issue, issueId → count. Enough of them and the recipient
+     *  leaves that issue's queue. Counts rather than dates, because any date in
+     *  retentionEmails reads to utils/marketingThrottle as a marketing send. */
+    productUpdateFailures:   { type: Map, of: Number, default: undefined },
     /** Automated web-only re-engagement drip (app → Strava → planning). */
     appReengagementStep1Sent: { type: Date, default: null },
     appReengagementStep2Sent: { type: Date, default: null },

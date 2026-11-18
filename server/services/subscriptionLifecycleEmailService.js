@@ -132,9 +132,14 @@ async function sendPaymentReceiptEmail(user, opts = {}) {
         : ''}</p>`
     : '';
 
+  const recovered = Boolean(opts.recovered);
+  const intro = recovered
+    ? `<p>Good news — the payment for your ${label} subscription went through after all. Charged <strong>${amountStr}</strong>, and your Premium access is fully back on. Nothing else to do.</p>`
+    : `<p>Your ${label} subscription renewed. Charged <strong>${amountStr}</strong> to the card on file — thanks for sticking around.</p>`;
+
   const content = `
     <p>Hi <strong>${user.name || 'there'}</strong>,</p>
-    <p>Your ${label} subscription renewed. Charged <strong>${amountStr}</strong> to the card on file — thanks for sticking around.</p>
+    ${intro}
     ${periodStr ? `<p style="color: #4A5E82; font-size: 14.5px;">Your plan is paid through <strong>${periodStr}</strong>.</p>` : ''}
     ${invoiceBlock}
     <p style="margin-top: 22px;">Questions about the bill, or wrong amount? Reply to this email — it lands straight in my inbox.</p>
@@ -142,8 +147,8 @@ async function sendPaymentReceiptEmail(user, opts = {}) {
   `;
 
   return send(user, {
-    subject: `Receipt — ${amountStr} for ${label}`,
-    title: `Thanks — payment received`,
+    subject: recovered ? `Payment received — your ${label} is back on` : `Receipt — ${amountStr} for ${label}`,
+    title: recovered ? 'Sorted — payment went through' : `Thanks — payment received`,
     content,
     buttonText: 'Open my dashboard',
     buttonUrl: `${getClientUrl()}/dashboard`,

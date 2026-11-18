@@ -336,6 +336,53 @@ function median(arr) {
   return a.length % 2 ? a[mid] : (a[mid - 1] + a[mid]) / 2;
 }
 
+/**
+ * Heart rate against intensity, as one monotone polyline.
+ *
+ * Every HR the product shows for a test — at LT1, at LT2, and at each zone
+ * edge — is read off this, so the HR zones are the power/pace zones expressed
+ * in beats rather than a separate guess. Stage HRs are pooled the same way the
+ * lactates are (a stage that reads a beat lower than the one before is strap
+ * noise or a short stage, not the heart slowing under more load).
+ *
+ * @param {Array<{u:number, hr:number|null}>} pts  stages in intensity units
+ * @returns {Array<{u:number, hr:number}>|null}  sorted by u, or null with fewer than two
+ */
+export function heartRateCurvePoints(pts) {
+  const known = (pts || [])
+    .filter((p) => p && Number.isFinite(p.u) && p.hr != null && Number.isFinite(Number(p.hr)) && Number(p.hr) > 0)
+    .map((p) => ({ u: p.u, hr: Number(p.hr) }))
+    .sort((a, b) => a.u - b.u);
+  const merged = [];
+  for (const p of known) {
+    const last = merged[merged.length - 1];
+    if (last && Math.abs(last.u - p.u) < 1e-9) { last.hr = (last.hr + p.hr) / 2; } else merged.push({ ...p });
+  }
+  if (merged.length < 2) return null;
+  const iso = isotonic(merged.map((p) => p.hr));
+  return merged.map((p, i) => ({ u: p.u, hr: iso[i] }));
+}
+
+/**
+ * HR at an intensity on that polyline. A zone edge (the bottom of Z2, the
+ * top of Z4) often sits a little beyond the first or last stage, so outside
+ * the stages it carries on: below, along the slope of the first three (HR
+ * rises close to linearly at low intensity); above, along the last segment
+ * only, so a plateau at the top stays a plateau instead of being extended
+ * upward from the steeper stages before it.
+ */
+export function heartRateAtIntensity(points, u) {
+  if (!points || points.length < 2 || !Number.isFinite(u)) return null;
+  const n = points.length;
+  const slope = (a, b) => {
+    const du = points[b].u - points[a].u;
+    return du > 0 ? Math.max(0, (points[b].hr - points[a].hr) / du) : 0;
+  };
+  if (u < points[0].u) return points[0].hr - slope(0, Math.min(2, n - 1)) * (points[0].u - u);
+  if (u > points[n - 1].u) return points[n - 1].hr + slope(n - 2, n - 1) * (u - points[n - 1].u);
+  return interpolateAt(points.map((p) => p.u), points.map((p) => p.hr), u);
+}
+
 /** Stages in entry order whose intensity falls below an earlier one are typos. */
 export function dropOutOfOrderStages(stages) {
   if (stages.length < 5) return stages;
@@ -347,6 +394,115 @@ export function dropOutOfOrderStages(stages) {
     keep.push(s);
   }
   return keep.length >= 4 ? keep : stages;
+}
+
+/** Within this share of its planned length a level counts as finished: sampling a few seconds early is not stopping. */
+export const SHORT_LEVEL_SHARE = 0.9;
+/** Earlier levels within this ratio of each other are a fixed-length protocol. */
+export const SAME_LENGTH_RATIO = 1.05;
+
+function positiveNumber(v) {
+  const n = Number(String(v ?? '').replace(',', '.'));
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+/** Seconds from a stored number or a "M:SS" still as typed in the form. */
+function stageSeconds(v) {
+  const mmss = String(v ?? '').trim().match(/^(\d+):(\d{1,2})$/);
+  return mmss ? Number(mmss[1]) * 60 + Number(mmss[2]) : positiveNumber(v);
+}
+
+/**
+ * How long the last level was meant to be. The levels before it say so when
+ * they share a length, and they beat the test-level setting, which real tests
+ * contradict ("600 s" over levels of 360 s). When they differ the protocol is
+ * not fixed-length, as in a fixed distance where each level takes less time
+ * than the last, so a short last level means nothing and the answer is null.
+ */
+function plannedLength(earlierLevels, testLevel) {
+  const known = earlierLevels.filter((v) => v != null);
+  if (known.length < 2) return positiveNumber(testLevel);
+  const recent = known.slice(-3);
+  if (Math.max(...recent) / Math.min(...recent) > SAME_LENGTH_RATIO) return null;
+  return median(recent);
+}
+
+/**
+ * A last level stopped early. Lactate read after 1:40 of a 3:00 level at
+ * 17 km/h is not lactate at 17 km/h: the athlete only ever carried part of the
+ * step from the level before. So the level counts at the speed it was worth,
+ * the last finished level plus the completed share of the step (Kuipers), in
+ * speed or watts rather than pace because that is what lactate responds to.
+ *
+ * Only the last work level, and only when it is the hardest of the test: an
+ * early stop means nothing anywhere else. The stored row keeps what was typed.
+ *
+ * @param {object} test  { sport, results, stageDurationSec, stageDistance }
+ * @returns {object|null} { index, measure: 'duration'|'distance', completed, planned, share, power, targetPower }
+ */
+export function shortenedLastLevel(test) {
+  const sport = test?.sport;
+  const levels = (Array.isArray(test?.results) ? test.results : [])
+    .map((row, index) => ({ row, index, load: positiveNumber(row?.power), u: toIntensity(positiveNumber(row?.power), sport) }))
+    .filter(({ row, u }) => u != null && row.intervalType !== 'recovery' && positiveNumber(row.lactate) != null);
+  if (levels.length < 2) return null;
+
+  const last = levels[levels.length - 1];
+  const earlier = levels.slice(0, -1);
+  if (last.row.targetPower != null) return null;
+  // Run and swim loads are pace seconds; a few old tests hold km/h, which the thresholds reject anyway.
+  if (isPaceSport(sport) && levels.some((l) => l.load < 60)) return null;
+  const previous = earlier.reduce((a, b) => (b.u > a.u ? b : a));
+  if (last.u <= previous.u) return null;
+
+  const measure = [
+    {
+      measure: 'duration',
+      completed: stageSeconds(last.row.duration),
+      planned: plannedLength(earlier.map((l) => stageSeconds(l.row.duration)), test.stageDurationSec),
+    },
+    {
+      measure: 'distance',
+      completed: positiveNumber(last.row.distanceMeters),
+      planned: plannedLength(earlier.map((l) => positiveNumber(l.row.distanceMeters)), test.stageDistance),
+    },
+  ].find((m) => m.completed != null && m.planned != null && m.completed < m.planned * SHORT_LEVEL_SHARE);
+  if (!measure) return null;
+
+  const share = measure.completed / measure.planned;
+  return {
+    ...measure,
+    index: last.index,
+    share,
+    power: Number(fromIntensity(previous.u + share * (last.u - previous.u), sport).toFixed(1)),
+    targetPower: last.load,
+  };
+}
+
+/**
+ * The test's rows as the calculations should read them: a copy with the last
+ * level at its proportional load when it was stopped early, otherwise the rows
+ * as they are. Safe to call twice, because the adjusted row carries targetPower.
+ */
+export function withShortenedLastLevel(test) {
+  const results = Array.isArray(test?.results) ? test.results : [];
+  const shortened = shortenedLastLevel(test);
+  if (!shortened) return results;
+  return results.map((row, i) => {
+    if (i !== shortened.index) return row;
+    // A Mongoose subdocument spreads into its plumbing, not its fields.
+    const plain = typeof row.toObject === 'function' ? row.toObject() : row;
+    return { ...plain, power: shortened.power, targetPower: shortened.targetPower };
+  });
+}
+
+/** One sentence for the reader; formatLoad turns a stored load into their units. */
+export function shortenedLevelNote(shortened, formatLoad) {
+  const length = (v) => (shortened.measure === 'distance'
+    ? `${Math.round(v)} m`
+    : `${Math.floor(v / 60)}:${String(Math.round(v % 60)).padStart(2, '0')}`);
+  return `Last level stopped at ${length(shortened.completed)} of ${length(shortened.planned)}: `
+    + `counted at ${formatLoad(shortened.power)} instead of ${formatLoad(shortened.targetPower)} in the curve and thresholds.`;
 }
 
 /**
@@ -506,10 +662,12 @@ export function analyzeLactateTest({ sport = 'bike', stages = [], baseLactate = 
   if (ratio != null && (ratio < 1.06 || ratio > 1.45)) confidence -= 15;
   confidence = Math.max(5, Math.min(100, confidence));
 
+  // HR comes from every stage that was not a typo — the warm-up stage left
+  // out of the lactate curve still has a perfectly good heart rate.
+  const hrPoints = heartRateCurvePoints(ordered);
   const hrAt = (x) => {
-    const known = merged.filter((p) => p.hr != null);
-    if (known.length < 2) return null;
-    return Math.round(interpolateAt(known.map((p) => p.u), known.map((p) => p.hr), x));
+    const hr = heartRateAtIntensity(hrPoints, x);
+    return hr == null ? null : Math.round(hr);
   };
   const out = (x) => fromIntensity(x, sport);
   const outCandidates = (obj) => Object.fromEntries(Object.entries(obj).map(([k, v]) => [k, out(v)]));
@@ -536,6 +694,8 @@ export function analyzeLactateTest({ sport = 'bike', stages = [], baseLactate = 
       fallback: lt2Fallback,
     },
     ratio: Number(ratio.toFixed(3)),
+    // The HR curve the zones are read from, in the stages' own units.
+    heartRateCurve: hrPoints ? hrPoints.map((p) => ({ value: out(p.u), heartRate: Number(p.hr.toFixed(2)) })) : null,
     confidence,
     violations,
     notes,

@@ -38,7 +38,7 @@ export const FREE_FEATURES = [
   `${FREE_TEST_LIMIT} lactate tests`,
   'Garmin & Strava sync',
   'Add lactate values to intervals',
-  'Connect with your coach',
+  'Train with your coach — their sessions on your Garmin',
   'Basic analytics',
 ];
 
@@ -65,7 +65,7 @@ export const PLAN_FEATURES = {
       {
         track: 'training',
         items: [
-          'Push structured workouts to your Garmin',
+          'Push your own workouts to your Garmin',
           'Plan your week in the calendar',
           'Sessions prescribed from your lactate test',
           'Start trainings from the app & smart trainer',
@@ -78,13 +78,13 @@ export const PLAN_FEATURES = {
   coach: {
     valueLines: [
       { track: 'testing', text: 'Test your whole roster and send each athlete a report with your name on it.' },
-      { track: 'training', text: 'Plan their weeks and push every session to their watch.' },
+      { track: 'training', text: 'Plan their weeks and push every session to their watch. Your athletes don’t need a plan of their own.' },
     ],
     groups: [
       {
         track: 'testing',
         items: [
-          'Unlimited athletes',
+          'Unlimited athletes, free for them',
           'Unlimited PDF report generation',
           'PDF branding — your logo, title & address',
         ],
@@ -93,6 +93,7 @@ export const PLAN_FEATURES = {
         track: 'training',
         items: [
           'Push each athlete’s session to their Garmin',
+          'Athletes see their own test history, zones & charts',
           'Plan workouts for your athletes',
           'Coach dashboard & overview',
           'Everything in Athlete',

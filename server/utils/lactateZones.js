@@ -4,7 +4,9 @@
  */
 
 const { calculateThresholds } = require('./lactateThresholds');
-const { ltZoneBounds, zonesFromBounds, measuredMaxHr, TOP_FACTOR } = require('./trainingZoneBounds');
+const {
+  ltZoneBounds, zonesFromBounds, measuredMaxHr, TOP_FACTOR, heartRateZoneBoundsFromTest,
+} = require('./trainingZoneBounds');
 
 function formatPace(seconds) {
   const s = Math.max(0, Math.round(Number(seconds) || 0));
@@ -25,8 +27,12 @@ function calculateZonesFromTest(testData) {
   let lt2 = Number(thresholds['LTP2'] || 0);
   let hr1 = thresholds.heartRates?.['LTP1'];
   let hr2 = thresholds.heartRates?.['LTP2'];
+  // The engine keeps LT2 clear of LT1 itself; swapping in the raw-stage
+  // OBLA 3.5 / IAT here built the e-mailed zones around a different LT2 from
+  // the one the report names. Legacy pipeline only — see the client twin.
+  const fromEngine = Boolean(thresholds.engine);
 
-  if (sport === 'bike' && lt1 && lt2 && (lt2 - lt1) < MIN_LT2_LT1_GAP_W) {
+  if (!fromEngine && sport === 'bike' && lt1 && lt2 && (lt2 - lt1) < MIN_LT2_LT1_GAP_W) {
     const obla35 = thresholds['OBLA 3.5'];
     const iat = thresholds['IAT'];
     if (obla35 != null && obla35 > lt1 + MIN_LT2_LT1_GAP_W) {
@@ -37,7 +43,7 @@ function calculateZonesFromTest(testData) {
       hr2 = thresholds.heartRates?.['IAT'] ?? hr2;
     }
   }
-  if (sport === 'run' || sport === 'swim') {
+  if (!fromEngine && (sport === 'run' || sport === 'swim')) {
     const gap = lt1 && lt2 ? lt1 - lt2 : 0;
     const minGapPace = (lt2 || 0) * 0.08;
     if (gap < minGapPace && lt1 && lt2) {
@@ -61,14 +67,25 @@ function calculateZonesFromTest(testData) {
     if (lt2 >= lt1) return null;
   }
 
-  const hasHR = hr1 != null && hr2 != null && !Number.isNaN(Number(hr1)) && !Number.isNaN(Number(hr2));
-  // Z5 stops at the heart rate the athlete actually reached in this test.
-  const heartRate = hasHR
-    ? zonesFromBounds(ltZoneBounds({
-        lt1: hr1, lt2: hr2, ascending: true,
-        topFactor: TOP_FACTOR.heartRate, top: measuredMaxHr(testData),
-      }))
+  const isBike = sport === 'bike';
+  const intensityBounds = ltZoneBounds({
+    lt1, lt2, ascending: isBike, topFactor: isBike ? TOP_FACTOR.power : TOP_FACTOR.pace, round: false,
+  });
+  // HR edges are the HR at each power/pace edge on this test's own HR curve
+  // (see heartRateZoneBoundsFromTest); percentages of the threshold HRs only
+  // when the legacy pipeline left no curve.
+  const top = measuredMaxHr(testData);
+  const hrCurve = thresholds.engine?.heartRateCurve;
+  const fromCurve = hrCurve
+    ? heartRateZoneBoundsFromTest({ intensityBounds, lt1, lt2, sport, hrCurve, top })
     : null;
+  const hasHR = hr1 != null && hr2 != null && !Number.isNaN(Number(hr1)) && !Number.isNaN(Number(hr2));
+  const heartRate = fromCurve
+    ? zonesFromBounds(fromCurve.bounds)
+    : (hasHR
+      ? zonesFromBounds(ltZoneBounds({ lt1: hr1, lt2: hr2, ascending: true, topFactor: TOP_FACTOR.heartRate, top }))
+      : null);
+  const heartRateNote = fromCurve ? fromCurve.note : null;
 
   if (sport === 'bike') {
     return {
@@ -78,7 +95,8 @@ function calculateZonesFromTest(testData) {
       power: zonesFromBounds(ltZoneBounds({
         lt1, lt2, ascending: true, topFactor: TOP_FACTOR.power,
       })),
-      heartRate
+      heartRate,
+      heartRateNote,
     };
   }
 
@@ -99,7 +117,8 @@ function calculateZonesFromTest(testData) {
       zone4: { min: formatPace(paceSeconds.zone4.min), max: formatPace(paceSeconds.zone4.max), minSeconds: paceSeconds.zone4.min, maxSeconds: paceSeconds.zone4.max },
       zone5: { min: formatPace(paceSeconds.zone5.min), max: formatPace(paceSeconds.zone5.max), minSeconds: paceSeconds.zone5.min, maxSeconds: paceSeconds.zone5.max }
     },
-    heartRate
+    heartRate,
+    heartRateNote,
   };
 }
 

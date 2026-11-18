@@ -5,7 +5,6 @@ const cors = require("cors");
 const compression = require('compression');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
-const NodeCache = require('node-cache');
 const swaggerJsdoc = require('swagger-jsdoc');
 const swaggerUi = require('swagger-ui-express');
 
@@ -192,19 +191,6 @@ mongoose
   .then(() => console.log("Connected to MongoDB"))
   .catch((err) => console.error("MongoDB connection error:", err));
 
-// Initialize cache
-// Response-body cache. Two defaults here were expensive on a 400MB heap:
-//   useClones (default true) deep-clones every value on BOTH set and get, so
-//     each cached training payload was stored twice and copied again per hit;
-//   no maxKeys meant one entry per distinct URL, unbounded — every athlete and
-//     query-string combination held a full response body for the whole TTL.
-// Bodies are written once and only read, so cloning buys nothing.
-const cache = new NodeCache({
-  stdTTL: 60,
-  useClones: false,
-  maxKeys: Number(process.env.RESPONSE_CACHE_MAX_KEYS || 500),
-});
-
 // Rate limiting — strict for anonymous traffic; authenticated SPA users get
 // much higher headroom (dashboard + coach athlete switch can fire 20–40 GETs).
 const publicLimiter = rateLimit({
@@ -243,27 +229,6 @@ const loginLimiter = rateLimit({
 });
 app.use('/user/login', loginLimiter);
 
-// Cache middleware
-const cacheMiddleware = (duration) => {
-  return (req, res, next) => {
-    const key = req.originalUrl || req.url;
-    const cachedResponse = cache.get(key);
-    
-    if (cachedResponse) {
-      return res.send(cachedResponse);
-    } else {
-      res.originalSend = res.send;
-      res.send = (body) => {
-        // maxKeys makes set() throw once the cache is full — a full cache must
-        // never turn into a failed response.
-        try { cache.set(key, body, duration); } catch { /* cache full: serve uncached */ }
-        res.originalSend(body);
-      };
-      next();
-    }
-  };
-};
-
 // Route Imports
 const testRoutes = require("./routes/testRoutes");
 const userListRoute = require("./routes/userListRoute");
@@ -291,6 +256,7 @@ const weeklyReviewRoutes    = require('./routes/weeklyReviewRoutes');
 const lactateAnalyticsRoutes = require('./routes/lactateAnalyticsRoutes');
 const thresholdDriftRoutes = require('./routes/thresholdDriftRoutes');
 const healthRoutes          = require('./routes/healthRoutes');
+const wellnessCheckInRoutes = require('./routes/wellnessCheckInRoutes');
 const atpRoutes             = require('./routes/atpRoutes');
 const dailyCardRoutes       = require('./routes/dailyCardRoutes');
 const timelineRoutes        = require('./routes/timelineRoutes');
@@ -346,6 +312,7 @@ app.use('/api/admin/coach-outreach', coachOutreachRoutes);
 app.use('/api/auth',              emailLoginRoutes);
 app.use('/api/weekly-reviews',    weeklyReviewRoutes);
 app.use('/api/health',            healthRoutes);
+app.use('/api/wellness-check-ins', wellnessCheckInRoutes);
 app.use('/api/atp',               atpRoutes);
 app.use('/api/daily-card',        dailyCardRoutes);
 app.use('/api/timeline',          timelineRoutes);
@@ -438,8 +405,10 @@ startTrackerConnectScheduler();
 // conservative enough that most ticks tell nobody anything.
 startThresholdShiftScheduler();
 
-// Apply cache middleware to routes that can be cached (reduced cache time for better data freshness)
-app.use('/api/training', cacheMiddleware(60), trainingRoute);
+// No shared response cache here: one keyed by URL alone ran before
+// verifyToken and handed one user's trainings to the next caller of the same
+// URL (with or without a token).
+app.use('/api/training', trainingRoute);
 
 // Swagger configuration
 const swaggerOptions = {

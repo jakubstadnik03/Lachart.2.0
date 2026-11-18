@@ -188,7 +188,7 @@ const SettingsPage = () => {
   const { user, logout, login } = useAuth();
   const location = useLocation();
   const { addNotification } = useNotification();
-  const { isPremium, gate, UpgradeModalProps: fitUpgradeModalProps } = usePremium();
+  const { isPremium, coachedBy, canViewAnalytics, gate, UpgradeModalProps: fitUpgradeModalProps } = usePremium();
   const [activeTab, setActiveTab] = useState('profile');
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   
@@ -3233,6 +3233,11 @@ const SettingsPage = () => {
         const cancelAtPeriodEnd = subData?.subscription?.cancelAtPeriodEnd;
         const periodEnd = subData?.subscription?.currentPeriodEnd;
         const systemEnabled = subData?.subscription?.systemEnabled;
+        // Bought in the iPhone app: Apple bills it, and only Apple can cancel
+        // it. A cancel button here would say "cancelled" while Apple kept
+        // charging, so these subscribers get a pointer to their iPhone instead.
+        const storeProvider = subData?.subscription?.selfServe === false ? subData.subscription.provider : null;
+        const storeManageUrl = subData?.subscription?.manageUrl || 'https://apps.apple.com/account/subscriptions';
         const premiumSource = subData?.premiumSource || user?.premiumSource;
         const isManualPremium = premiumSource === 'manual';
         // User already used a trial if they have a trialStart date in their subscription
@@ -3307,6 +3312,13 @@ const SettingsPage = () => {
                   {isManualPremium && (
                     <span className="inline-block mt-1 px-2 py-0.5 text-xs bg-purple-100 text-purple-700 rounded-full font-medium">Complimentary access</span>
                   )}
+                  {/* Their coach pays for the read-only side — say so, or a
+                      free label reads as "you are missing out". */}
+                  {currentPlan === 'free' && !isPremium && canViewAnalytics && (
+                    <p className="mt-2 max-w-md text-sm text-gray-600">
+                      {coachedBy ? `${coachedBy}'s Coach plan` : 'Your coach’s plan'} covers your full test history, training zones and charts. You don’t need a plan of your own to train with them.
+                    </p>
+                  )}
                   {!isManualPremium && isActive && currentPlan !== 'free' && (
                     <span className="inline-block mt-1 px-2 py-0.5 text-xs bg-green-100 text-green-700 rounded-full font-medium">Active</span>
                   )}
@@ -3322,7 +3334,24 @@ const SettingsPage = () => {
                 <div className="flex flex-col gap-2 items-end">
                   {/* Manage billing portal — web only. App Store 3.1.1
                       bans linking to Stripe customer portal from iOS apps. */}
-                  {!isManualPremium && currentPlan !== 'free' && systemEnabled && !isNativeIos && (
+                  {!isManualPremium && currentPlan !== 'free' && storeProvider && (
+                    <div className="max-w-xs text-right">
+                      <p className="text-xs text-gray-500">
+                        {storeProvider === 'google'
+                          ? 'You pay through Google Play. Manage or cancel it in the Play Store.'
+                          : 'You pay through the App Store. Manage or cancel it on your iPhone: Settings → your name → Subscriptions.'}
+                      </p>
+                      <a
+                        href={storeManageUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="mt-1 inline-block text-xs font-medium text-primary hover:underline"
+                      >
+                        {storeProvider === 'google' ? 'Open Play Store subscriptions' : 'Open App Store subscriptions'}
+                      </a>
+                    </div>
+                  )}
+                  {!isManualPremium && currentPlan !== 'free' && systemEnabled && !isNativeIos && !storeProvider && (
                     <>
                       {cancelAtPeriodEnd ? (
                         <button
@@ -3352,9 +3381,9 @@ const SettingsPage = () => {
                       )}
                     </>
                   )}
-                  {isNativeIos && !isManualPremium && currentPlan !== 'free' && (
+                  {isNativeIos && !isManualPremium && currentPlan !== 'free' && !storeProvider && (
                     <p className="text-xs text-gray-500">
-                      Manage your subscription at lachart.net in a web browser. Apple billing isn't available in this app version.
+                      Manage your subscription at lachart.net in a web browser.
                     </p>
                   )}
                 </div>

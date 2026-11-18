@@ -449,7 +449,7 @@ function renderOutreachHtml(person, { unsubscribeUrl, loginUrl }) {
           <tr><td style="padding:16px 20px;text-align:center;">
             <div style="font-size:17px;font-weight:800;color:${BRAND.ink};margin-bottom:4px;">2 weeks free</div>
             <div style="font-size:14px;color:${BRAND.muted};line-height:1.6;">
-              ${escapeHtml(scale)} — take the first two months on me, and only keep it if it earns its place.
+              ${escapeHtml(scale)} — take the first two weeks on me, and only keep it if it earns its place.
             </div>
           </td></tr>
         </table>

@@ -2,6 +2,13 @@ import { LockClosedIcon } from '@heroicons/react/24/outline';
 import { usePremium } from '../hooks/usePremium';
 import UpgradeModal from './UpgradeModal';
 import { isCapacitorNative } from '../utils/isNativeApp';
+import { useAuth } from '../context/AuthProvider';
+import { planForUser } from '../utils/planForUser';
+import { trackEvent } from '../utils/analytics';
+import { ATHLETE_PLAN_PRICE_LABEL, COACH_PLAN_PRICE_LABEL, TRIAL_DAYS } from '../constants/planPricing';
+import { useStorePurchase } from '../hooks/useStorePurchase';
+import StorePurchaseFooter, { StorePriceBlock, storeButtonLabel } from './StorePurchaseFooter';
+import { PremiumButton, PremiumBadge, PREMIUM_GRADIENT } from './PremiumButton';
 
 /**
  * Gate a feature behind premium with a "locked" preview.
@@ -20,6 +27,16 @@ import { isCapacitorNative } from '../utils/isNativeApp';
  *                omitted a neutral skeleton is drawn. NEVER pass the real,
  *                data-fetching component here — keep it dumb so nothing loads.
  *   label      – small caption under the lock, default "Premium feature"
+ *   teaser     – optional JSX built from the user's OWN data (one real number
+ *                or verdict), shown unblurred. Passing it or `unlocks` switches
+ *                to the personal preview: their number, what Premium adds to
+ *                it, and what it costs — instead of a blurred placeholder,
+ *                which told nobody what they would be paying for.
+ *   unlocks    – short list of what Premium adds on top of the teaser
+ *   title      – heading of the personal preview, defaults to `feature`
+ *   coachCovered – true for a read-only view that a coach's plan opens for
+ *                their athletes (canViewAnalytics in usePremium). Leave it off
+ *                for anything that creates work or costs us per use.
  */
 export default function PremiumLock({
   feature = 'This feature',
@@ -27,20 +44,41 @@ export default function PremiumLock({
   minHeight = 160,
   preview = null,
   label = 'Premium feature',
+  title = null,
+  teaser = null,
+  unlocks = null,
   className = '',
+  coachCovered = false,
   children,
 }) {
-  const { isPremium, premiumResolved, gate, UpgradeModalProps } = usePremium();
+  const { isPremium, canViewAnalytics, premiumResolved, gate, UpgradeModalProps } = usePremium();
   const isNative = isCapacitorNative();
   const lockHeight = isNative ? Math.min(minHeight, 140) : minHeight;
 
-  if (isPremium) return children;
+  if (isPremium || (coachCovered && canViewAnalytics)) return children;
 
   // Until the profile lands, isPremium reads exactly like "free" — so every
   // navigation flashed a wall of "Premium feature" locks at a paying
   // subscriber before correcting itself. Show a quiet skeleton instead: we do
   // not yet know, so we claim nothing.
   const unknown = !premiumResolved;
+
+  if (teaser || unlocks) {
+    return (
+      <PersonalPreviewLock
+        title={title || feature}
+        teaser={teaser}
+        unlocks={unlocks}
+        feature={feature}
+        plan={plan}
+        unknown={unknown}
+        isNative={isNative}
+        gate={gate}
+        UpgradeModalProps={UpgradeModalProps}
+        className={className}
+      />
+    );
+  }
 
   return (
     <>
@@ -77,6 +115,107 @@ export default function PremiumLock({
       </div>
 
       <UpgradeModal {...UpgradeModalProps} />
+    </>
+  );
+}
+
+const SUBSCRIBE_URL = 'https://lachart.net/settings?tab=subscription';
+
+/**
+ * The locked card as a personal preview: the user's own number up top, then
+ * what Premium adds to it, the price, and one button.
+ *
+ * The terms (trial length, price after it, cancel any time) are stated in full,
+ * as TrialOfferCard does. On iOS the button opens the App Store sheet
+ * (useStorePurchase); on web it opens the Stripe flow. A native build without
+ * in-app purchases configured still falls back to the website.
+ */
+function PersonalPreviewLock({
+  title, teaser, unlocks, feature, plan, unknown, isNative, gate, UpgradeModalProps, className,
+}) {
+  const { user } = useAuth();
+  const effectivePlan = planForUser(plan, user);
+  const store = useStorePurchase(effectivePlan, 'premium_preview', { loadOffer: isNative && !unknown });
+  const useStore = isNative && store.available;
+  const price = store.priceLabel || (effectivePlan === 'coach' ? COACH_PLAN_PRICE_LABEL : ATHLETE_PLAN_PRICE_LABEL);
+
+  const onUnlock = () => {
+    trackEvent('premium_preview_click', { feature, plan: effectivePlan, native: isNative });
+    if (useStore) {
+      store.buy();
+      return;
+    }
+    if (isNative) {
+      window.open(SUBSCRIBE_URL, '_blank', 'noopener,noreferrer');
+      return;
+    }
+    gate(feature, plan);
+  };
+
+  return (
+    <>
+      <div
+        className={className}
+        style={{
+          position: 'relative',
+          overflow: 'hidden',
+          // Gradient hairline border: white fill on the padding box, the
+          // Premium gradient on the border box.
+          background: `linear-gradient(#fff, #fff) padding-box, ${PREMIUM_GRADIENT} border-box`,
+          border: '1.5px solid transparent',
+          borderRadius: 20,
+          padding: 16,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 12,
+          boxShadow: '0 14px 30px -20px rgba(76,79,168,.55)',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+          <div style={{ fontSize: 16, fontWeight: 800, color: '#0A0E1A', letterSpacing: '-0.01em' }}>{title}</div>
+          <PremiumBadge />
+        </div>
+
+        {teaser && <div>{teaser}</div>}
+
+        {Array.isArray(unlocks) && unlocks.length > 0 && (
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 800, color: '#6C6FD6', letterSpacing: '.06em', textTransform: 'uppercase', marginBottom: 8 }}>
+              Premium adds
+            </div>
+            <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {unlocks.map((u) => (
+                <li key={u} style={{ display: 'flex', gap: 10, fontSize: 13.5, color: '#1F2738', lineHeight: 1.4, alignItems: 'flex-start' }}>
+                  <span aria-hidden="true" style={{
+                    flexShrink: 0, width: 18, height: 18, borderRadius: 9, marginTop: 1, background: PREMIUM_GRADIENT,
+                    color: '#fff', fontSize: 11, fontWeight: 900, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                  }}>✓</span>
+                  <span>{u}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {!unknown && (
+          <>
+            {useStore && <StorePriceBlock price={price} trialEligible={store.trialEligible} />}
+            <PremiumButton onClick={onUnlock} disabled={Boolean(store.busy)}>
+              {useStore ? storeButtonLabel(store) : `Try it ${TRIAL_DAYS} days free`}
+            </PremiumButton>
+            {useStore ? (
+              <StorePurchaseFooter store={store} price={price} trialEligible={store.trialEligible} />
+            ) : (
+              <p style={{ margin: 0, fontSize: 11, color: '#9CA3AF', lineHeight: 1.5, textAlign: 'center' }}>
+                Then {price} a month. Cancel any time before the trial ends and you are not charged.
+                {isNative ? ' Opens lachart.net in your browser.' : ''}
+              </p>
+            )}
+          </>
+        )}
+      </div>
+
+      {!isNative && <UpgradeModal {...UpgradeModalProps} />}
     </>
   );
 }

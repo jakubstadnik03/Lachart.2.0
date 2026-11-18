@@ -354,6 +354,9 @@ export default function DailyCoachCard({
   wellnessDays = undefined,
   loading = false,
   compact = false,
+  /** 'slide': drawn as a page of the Home insights carousel — the same glass
+   *  card, header and height as the pages beside it. */
+  variant = null,
   /** Coaches viewing an athlete get the facts without the second-person voice. */
   readOnly = false,
   /** Tap on a planned session — receives the raw planned workout. */
@@ -518,6 +521,55 @@ export default function DailyCoachCard({
   // read as "Form 0, you're neutral", which is a claim we haven't earned.
   const hasSignal = Number.isFinite(Number(todayMetrics?.fitness)) && (activities?.length || plannedWorkouts?.length);
   if (!hasSignal) return null;
+
+  if (minimised && variant === 'slide') {
+    return (
+      <button
+        type="button"
+        onClick={restore}
+        className="w-full text-left"
+        style={{
+          background: 'rgba(255,255,255,.65)',
+          backdropFilter: 'blur(22px) saturate(170%)',
+          WebkitBackdropFilter: 'blur(22px) saturate(170%)',
+          border: '1px solid rgba(255,255,255,.7)',
+          boxShadow: '0 1px 0 rgba(255,255,255,.7) inset, 0 8px 24px -10px rgba(10,14,26,.08)',
+          borderRadius: 18,
+          padding: '10px 14px 18px',
+          height: '100%',
+          boxSizing: 'border-box',
+          display: 'flex',
+          flexDirection: 'column',
+          WebkitTapHighlightColor: 'transparent',
+        }}
+      >
+        {/* Header row, laid out like "Performance Insights" next door */}
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <span
+              className="flex items-center justify-center rounded-lg shrink-0"
+              style={{ width: 22, height: 22, background: `${card.readiness.color}1f` }}
+            >
+              <span className="rounded-full" style={{ width: 8, height: 8, background: card.readiness.color }} />
+            </span>
+            <span className="text-[15px] font-bold text-gray-900">Today</span>
+            <ReadinessChip readiness={card.readiness} recovery={card.recovery} />
+          </div>
+          <PlannedGlyphs items={card.todayPlanned} />
+        </div>
+        {/* Body fills the card so it is as tall as the other pages */}
+        <div
+          className="flex-1 flex flex-col justify-center mt-2 rounded-xl px-3 py-2.5"
+          style={{ background: 'rgba(255,255,255,.55)', border: '1px solid rgba(118,126,181,.14)' }}
+        >
+          <div className="text-[15px] font-bold leading-tight" style={{ color: card.readiness.color }}>{card.headline}</div>
+          <p className="text-xs text-gray-600 leading-snug line-clamp-2 mt-1">
+            {isNerdStyle(prefs.style) ? card.readiness.readout : card.directive}
+          </p>
+        </div>
+      </button>
+    );
+  }
 
   if (minimised) {
     return (

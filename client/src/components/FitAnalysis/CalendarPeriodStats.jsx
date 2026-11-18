@@ -1002,51 +1002,91 @@ export default function CalendarPeriodStats({
     });
   }, [activities, tssProfile, user, period?.periodStart]);
 
+  /**
+   * This week against the one before it.
+   *
+   * It only worked in the Week view, so in Month — where Charts opens — the
+   * "Week vs week" tab showed the overview's stat cards and nothing else. A
+   * month has no single "this week", so take the week holding today when today
+   * is inside the month, and the month's last Monday–Sunday otherwise.
+   */
   const weekComparison = useMemo(() => {
-    if (periodView !== 'week') return null;
     if (!period?.periodStart || !period?.periodEnd) return null;
-
-    const prevStart = new Date(period.periodStart);
+    const monday = (d) => {
+      const x = new Date(d);
+      x.setHours(0, 0, 0, 0);
+      x.setDate(x.getDate() - ((x.getDay() + 6) % 7));
+      return x;
+    };
+    let curStart;
+    if (periodView === 'week') {
+      curStart = new Date(period.periodStart);
+      curStart.setHours(0, 0, 0, 0);
+    } else {
+      const today = new Date();
+      const pS = new Date(period.periodStart);
+      const pE = new Date(period.periodEnd);
+      curStart = today >= pS && today <= pE ? monday(today) : monday(pE);
+    }
+    const prevStart = new Date(curStart);
     prevStart.setDate(prevStart.getDate() - 7);
-    const prevEnd = new Date(period.periodEnd);
-    prevEnd.setDate(prevEnd.getDate() - 7);
 
-    const startK = getLocalDateString(prevStart);
-    const endK = getLocalDateString(prevEnd);
-    if (!startK || !endK) return null;
-
-    const prevActs = activities.filter((act) => {
-      const raw = act.date || act.timestamp || act.startDate || act.start_time;
-      if (!raw) return false;
-      const k = getLocalDateString(raw);
-      return k && k >= startK && k <= endK;
+    const dayKeys = (start) => Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(start);
+      d.setDate(d.getDate() + i);
+      return getLocalDateString(d);
     });
+    const curKeys = dayKeys(curStart);
+    const prevKeys = dayKeys(prevStart);
 
-    let prevTss = 0;
-    const prevDistByProfileSport = { cycling: 0, running: 0, swimming: 0, other: 0 };
+    const sumWeek = (keys) => {
+      const byDay = Object.fromEntries(keys.map((k) => [k, 0]));
+      const dist = { cycling: 0, running: 0, swimming: 0, other: 0 };
+      let tss = 0;
+      let count = 0;
+      activities.forEach((act) => {
+        const raw = act.date || act.timestamp || act.startDate || act.start_time;
+        const k = raw ? getLocalDateString(raw) : null;
+        if (!k || !(k in byDay)) return;
+        count += 1;
+        const dd = Number(act.distance || 0);
+        const ps = profileSportFromActivity(act.sport) || 'other';
+        if (dd > 0) dist[ps] = (dist[ps] || 0) + dd;
+        const t = computeTssForAct(act, tssProfile, user);
+        if (t > 0) { tss += t; byDay[k] += t; }
+      });
+      return { tss, dist, count, byDay: keys.map((k) => byDay[k]) };
+    };
+    const cur = sumWeek(curKeys);
+    const prev = sumWeek(prevKeys);
 
-    prevActs.forEach((act) => {
-      const dist = Number(act.distance || 0);
-      const ps = profileSportFromActivity(act.sport) || 'other';
-      if (dist > 0) prevDistByProfileSport[ps] = (prevDistByProfileSport[ps] || 0) + dist;
+    // A week still in progress is compared with the same days of the week
+    // before — Monday to Wednesday against Monday to Wednesday — or a
+    // Wednesday always reads as a collapse.
+    const todayKey = getLocalDateString(new Date());
+    const daysIn = curKeys.indexOf(todayKey) + 1; // 0 when the week is not the current one
+    const prevSameDays = daysIn > 0 ? prev.byDay.slice(0, daysIn).reduce((a, b) => a + b, 0) : prev.tss;
 
-      const tssVal = computeTssForAct(act, tssProfile, user);
-      if (tssVal > 0) prevTss += tssVal;
-    });
-
-    const deltaTss = (aggregates.totalTss || 0) - prevTss;
-    const ratio = prevTss > 0 ? (aggregates.totalTss || 0) / prevTss : null;
-    const overload = ratio != null ? ratio >= 1.35 : false;
-
+    const deltaTss = cur.tss - prevSameDays;
+    const ratio = prevSameDays > 0 ? cur.tss / prevSameDays : null;
+    const fmt = (d) => d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+    const curEnd = new Date(curStart); curEnd.setDate(curEnd.getDate() + 6);
     return {
-      prevCount: prevActs.length,
-      prevTss,
+      curTss: cur.tss,
+      curDistByProfileSport: cur.dist,
+      curByDay: cur.byDay,
+      curLabel: `${fmt(curStart)} – ${fmt(curEnd)}`,
+      prevCount: prev.count,
+      prevTss: prev.tss,
+      prevSameDays,
+      daysIn,
+      prevByDay: prev.byDay,
       deltaTss,
       ratio,
-      overload,
-      prevDistByProfileSport,
+      overload: ratio != null ? ratio >= 1.35 : false,
+      prevDistByProfileSport: prev.dist,
     };
-  }, [periodView, period?.periodStart, period?.periodEnd, activities, tssProfile, user, aggregates.totalTss]);
+  }, [periodView, period?.periodStart, period?.periodEnd, activities, tssProfile, user]);
 
   const prevPeriodBounds = useMemo(() => {
     if (!period?.periodStart || !period?.periodEnd) return null;
@@ -2055,7 +2095,9 @@ export default function CalendarPeriodStats({
             decides for itself whether it is the one being asked for. */}
         {(activeTab === 'overview' || OVERVIEW_PANELS.includes(activeTab)) && (
           <div className="space-y-5">
-            {/* Stat cards */}
+            {/* Stat cards — the overview's header; a single picked panel
+                stands on its own instead of under them. */}
+            {activeTab === 'overview' && (
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
               {[
                 {
@@ -2115,6 +2157,7 @@ export default function CalendarPeriodStats({
                 </div>
               ))}
             </div>
+            )}
 
             {/* Form & Fitness — combined zoomable chart, same PMC source as dashboard */}
             {showPanel('fitness') && effectiveAthleteId && (
@@ -2133,23 +2176,23 @@ export default function CalendarPeriodStats({
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                   <div className="bg-gray-50 rounded-xl p-3">
                     <div className="text-xs uppercase tracking-wide text-gray-400 font-semibold">
-                      Current TSS
+                      This week
                     </div>
                     <div className="text-sm font-bold text-gray-900 mt-1 tabular-nums">
-                      {Math.round(aggregates.totalTss || 0)}
+                      {Math.round(weekComparison.curTss || 0)} TSS
                     </div>
                   </div>
                   <div className="bg-gray-50 rounded-xl p-3">
                     <div className="text-xs uppercase tracking-wide text-gray-400 font-semibold">
-                      Previous TSS
+                      Week before
                     </div>
                     <div className="text-sm font-bold text-gray-900 mt-1 tabular-nums">
-                      {Math.round(weekComparison.prevTss || 0)}
+                      {Math.round(weekComparison.prevTss || 0)} TSS
                     </div>
                   </div>
                   <div className="bg-gray-50 rounded-xl p-3">
                     <div className="text-xs uppercase tracking-wide text-gray-400 font-semibold">
-                      Delta
+                      {weekComparison.daysIn > 0 ? `Delta · first ${weekComparison.daysIn} day${weekComparison.daysIn === 1 ? '' : 's'}` : 'Delta'}
                     </div>
                     <div
                       className={`text-sm font-bold mt-1 tabular-nums ${
@@ -2174,10 +2217,37 @@ export default function CalendarPeriodStats({
                   </div>
                 </div>
 
+                {/* Day by day: this week's TSS beside the same weekday a week earlier */}
+                {(() => {
+                  const max = Math.max(1, ...weekComparison.curByDay, ...weekComparison.prevByDay);
+                  return (
+                    <div className="bg-gray-50 rounded-xl p-3">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs uppercase tracking-wide text-gray-500 font-semibold">TSS by day · {weekComparison.curLabel}</span>
+                        <span className="flex items-center gap-2 text-[11px] text-gray-500">
+                          <span className="inline-flex items-center gap-1"><i className="inline-block w-2.5 h-2.5 rounded-sm bg-primary" />This week</span>
+                          <span className="inline-flex items-center gap-1"><i className="inline-block w-2.5 h-2.5 rounded-sm bg-primary/30" />Week before</span>
+                        </span>
+                      </div>
+                      <div className="flex items-end gap-2" style={{ height: 120 }}>
+                        {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((d, i) => (
+                          <div key={i} className="flex-1 flex flex-col items-center gap-1 h-full justify-end">
+                            <div className="w-full flex items-end gap-0.5 flex-1">
+                              <div className="flex-1 rounded-t bg-primary/30" style={{ height: `${(weekComparison.prevByDay[i] / max) * 100}%` }} title={`${Math.round(weekComparison.prevByDay[i])} TSS`} />
+                              <div className="flex-1 rounded-t bg-primary" style={{ height: `${(weekComparison.curByDay[i] / max) * 100}%` }} title={`${Math.round(weekComparison.curByDay[i])} TSS`} />
+                            </div>
+                            <span className="text-[10px] font-semibold text-gray-400">{d}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
+
                 {/* Sport mileage comparison */}
                 <div className="space-y-1.5">
                   {['cycling', 'running', 'swimming'].map((ps) => {
-                    const cur = aggregates.distByProfileSport?.[ps] || 0;
+                    const cur = weekComparison.curDistByProfileSport?.[ps] || 0;
                     const prev = weekComparison.prevDistByProfileSport?.[ps] || 0;
                     if (cur === 0 && prev === 0) return null;
                     const bucket = ps === 'cycling' ? 'bike' : ps === 'running' ? 'run' : 'swim';

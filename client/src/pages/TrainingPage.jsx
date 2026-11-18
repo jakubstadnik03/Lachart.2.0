@@ -41,6 +41,9 @@ export default function TrainingPage() {
   const selectedAthleteId = coachLike ? (_globalAthleteId || user?._id || null) : (user?._id || null);
   const setSelectedAthleteId = _setGlobalAthleteId;
   const [trainings, setTrainings] = useState([]);
+  // False until the list has arrived once (from cache or network), so an
+  // empty list can be told apart from one still on its way.
+  const [trainingsLoaded, setTrainingsLoaded] = useState(false);
   // Initialize selectedSport with localStorage or default to 'all'
   const [selectedSport, setSelectedSport] = useState(() => {
     const saved = localStorage.getItem('trainingStats_selectedSport');
@@ -226,6 +229,7 @@ export default function TrainingPage() {
           });
           if (Array.isArray(parsed) && parsed.length > 0) {
             setTrainings(parsed);
+            setTrainingsLoaded(true);
             // Default-select newest-with-results from cache so widgets aren't blank
             const newest = pickDefault(parsed);
             if (newest) {
@@ -302,6 +306,7 @@ export default function TrainingPage() {
       const allTrainings = dedupeTrainingRows(rawTrainings);
 
       setTrainings(allTrainings);
+      setTrainingsLoaded(true);
 
       // Nastavení výchozího vybraného tréninku — preferuj nejnovější s intervaly,
       // jinak prostě nejnovější (TrainingGraph by jinak vyrenderoval prázdný stav).
@@ -327,6 +332,7 @@ export default function TrainingPage() {
     } catch (err) {
       console.error('Error loading trainings:', err);
       //  setError('Failed to load trainings');
+      setTrainingsLoaded(true);
     }
   }, [selectedSport]);
 
@@ -902,6 +908,7 @@ export default function TrainingPage() {
       <NativeTrainingPage
         user={user}
         trainings={trainings}
+        trainingsLoaded={trainingsLoaded}
         athleteId={selectedAthleteId || user?._id}
         // Re-fetch the trainings list after a save. Without this the
         // user's just-saved edits stay only in the form's local state —

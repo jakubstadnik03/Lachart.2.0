@@ -348,7 +348,7 @@ const lactateSessionController = {
   // Generate mock FIT file for testing
   generateMockFitFile: async (req, res) => {
     try {
-      const { sessionId } = req.params;
+      const sessionId = req.params.id; // the route is /:id/mock-fit
       const session = await LactateSession.findById(sessionId);
       
       if (!session) {

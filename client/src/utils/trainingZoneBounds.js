@@ -13,6 +13,8 @@
  * this module. Keep the two in step.
  */
 
+import { heartRateAtIntensity, isPaceSport, toIntensity } from './lactateThresholdEngine';
+
 /** Force a strictly ordered boundary list so no zone can have zero width. */
 function enforceOrder(bounds, ascending) {
   const out = [...bounds];
@@ -91,6 +93,16 @@ const ZONE_SHAPE = {
   easySplit: 0.80,
   /** Half-width of the threshold zone, as a fraction of LT2. */
   thresholdBand: 0.03,
+  /**
+   * ...but never more than this share of the LT1–LT2 gap. Three percent of
+   * LT2 is a sensible threshold band when the thresholds are 10–30 % apart,
+   * as they usually are in watts or pace. When they sit closer it eats the
+   * gap, and Z3 — LT1 up to the bottom of that band — shrank to nothing: a
+   * test with LT2 4 % above LT1 got a Z3 two watts wide. Capping the band at
+   * a third of the gap keeps Z3 at least two thirds of it, and leaves every
+   * test whose thresholds are more than ~9 % apart exactly as it was.
+   */
+  thresholdBandOfGap: 1 / 3,
 };
 
 export const TOP_FACTOR = {
@@ -122,12 +134,18 @@ export function ltZoneBounds({ lt1, lt2, ascending, floorFactor = ZONE_SHAPE.flo
     ? (ascending ? Math.max(explicitTop, byFactor) : Math.min(explicitTop, byFactor))
     : byFactor;
 
+  const maxBand = ZONE_SHAPE.thresholdBandOfGap * Math.abs(b - a);
+  const band = (f) => {
+    const edge = scale(b, f);
+    return Math.abs(edge - b) <= maxBand ? edge : b + Math.sign(edge - b) * maxBand;
+  };
+
   const raw = [
     scale(a, floorFactor), // bottom of Z1
     scale(a, ZONE_SHAPE.easySplit), //              Z1 / Z2
     a, //                                          Z2 / Z3 — aerobic threshold
-    scale(b, 1 - ZONE_SHAPE.thresholdBand), //     Z3 / Z4 — just under LT2
-    scale(b, 1 + ZONE_SHAPE.thresholdBand), //     Z4 / Z5 — just over it
+    band(1 - ZONE_SHAPE.thresholdBand), //          Z3 / Z4 — just under LT2
+    band(1 + ZONE_SHAPE.thresholdBand), //          Z4 / Z5 — just over it
     ceiling, //               top of Z5
   ];
   return enforceOrder(round ? raw.map(Math.round) : raw, ascending);
@@ -153,6 +171,93 @@ export function zoneTargetFromThresholds(zone, { lt1, lt2, ascending, topFactor 
   if (!bounds) return null;
   const i = Math.max(0, Math.min(4, Math.round(Number(zone)) - 1));
   return (bounds[i] + bounds[i + 1]) / 2;
+}
+
+/** Narrowest HR zone worth prescribing: a strap drifts ±2 bpm within one steady effort. */
+export const MIN_HR_ZONE_BPM = 4;
+/** Below this LT1→LT2 HR rise, HR cannot separate Z3 from Z4. */
+export const MIN_HR_LT_GAP_BPM = 6;
+
+/**
+ * Heart-rate zones for a test, read off the athlete's own HR curve.
+ *
+ * These used to be ltZoneBounds applied to the two threshold heart rates —
+ * the power percentages (0.80x LT1, 0.97x and 1.03x LT2) multiplied into
+ * beats. HR does not stretch the way power does: LT2 is typically 15–30 %
+ * more watts than LT1 but only 4–8 % more beats, so "3 % under LT2 HR" landed
+ * at or below LT1 HR and Z3 came out one or two beats wide (a trial user's
+ * test: Z3 149–151 bpm, while the same test's power Z3 was 33 W wide). The
+ * percentages also put HR Z2 well below the HR the athlete actually had at
+ * the bottom of power Z2.
+ *
+ * Instead every edge between zones is the HR the athlete had at that edge's
+ * power or pace in this test, so a ride held in power Z3 shows Z3 on the
+ * heart-rate strap too. The bottom of Z1 and the top of Z5 are not readings
+ * but conventions, and keep the existing rules.
+ *
+ * HR is a coarse instrument near threshold — a strap reading drifts a couple
+ * of beats within one steady effort, and many athletes' HR flattens out above
+ * LT2. So:
+ *   · each of Z2, Z3 and Z4 keeps at least MIN_HR_ZONE_BPM, and Z4 reaches at
+ *     least half that either side of the LT2 heart rate; when the test's own
+ *     HR could not give Z4 that much the result says so;
+ *   · when HR barely moved between LT1 and LT2 (under MIN_HR_LT_GAP_BPM) it
+ *     cannot tell Z3 from Z4 at all, and there are no HR zones from this test
+ *     — just the reason, for the screen to show instead of a nonsense table.
+ *
+ * @param {object} o
+ * @param {number[]} o.intensityBounds  b0..b5 of the power/pace zones (stage units)
+ * @param {number}   o.lt1, o.lt2       thresholds in stage units
+ * @param {string}   o.sport
+ * @param {Array<{value:number, heartRate:number}>} o.hrCurve  analyzeLactateTest().heartRateCurve
+ * @param {number}  [o.top]             measured max HR (raises the top of Z5 only)
+ * @param {number}  [o.floorFactor]     bottom of Z1 as a fraction of LT1 HR
+ * @param {number}  [o.topFactor]       top of Z5 as a fraction of LT2 HR
+ * @returns {{bounds: number[]|null, hr1?: number, hr2?: number, note: string|null}|null}
+ *          null when the test has no usable HR at all
+ */
+export function heartRateZoneBoundsFromTest({
+  intensityBounds, lt1, lt2, sport, hrCurve, top = null,
+  floorFactor = ZONE_SHAPE.floor, topFactor = TOP_FACTOR.heartRate,
+}) {
+  if (!Array.isArray(intensityBounds) || intensityBounds.length !== 6 || !Array.isArray(hrCurve)) return null;
+  const points = hrCurve
+    .map((p) => ({ u: toIntensity(p.value, sport), hr: Number(p.heartRate) }))
+    .filter((p) => p.u != null && Number.isFinite(p.hr) && p.hr > 0)
+    .sort((x, y) => x.u - y.u);
+  if (points.length < 2) return null;
+  const at = (x) => heartRateAtIntensity(points, toIntensity(x, sport));
+  const hr1 = at(lt1);
+  const hr2 = at(lt2);
+  if (hr1 == null || hr2 == null) return null;
+
+  if (hr2 - hr1 < MIN_HR_LT_GAP_BPM) {
+    const [r1, r2] = [Math.round(hr1), Math.round(hr2)];
+    return {
+      bounds: null,
+      hr1: r1,
+      hr2: r2,
+      note: `Heart rate rose only ${Math.max(0, r2 - r1)} bpm between LT1 (${r1}) and LT2 (${r2}) in this test — too little to tell the zones apart by heart rate. Train Z2–Z4 by ${isPaceSport(sport) ? 'pace' : 'power'} from this test.`,
+    };
+  }
+
+  const half = MIN_HR_ZONE_BPM / 2;
+  const mapped = intensityBounds.map(at);
+  // Z4 straddles the LT2 heart rate by at least ±2; Z3 keeps at least 4 below it.
+  const b3 = Math.max(hr1 + MIN_HR_ZONE_BPM, Math.min(mapped[3], hr2 - half));
+  const b4 = Math.max(mapped[4], hr2 + half);
+  const b1 = Math.min(mapped[1], hr1 - MIN_HR_ZONE_BPM);
+  const b0 = Math.min(mapped[0], hr1 * floorFactor, b1 - MIN_HR_ZONE_BPM);
+  const explicitTop = Number(top);
+  const b5 = Math.max(hr2 * topFactor, b4 + MIN_HR_ZONE_BPM, Number.isFinite(explicitTop) && explicitTop > 0 ? explicitTop : 0);
+
+  const widened = mapped[4] - mapped[3] < MIN_HR_ZONE_BPM - 0.5;
+  const note = widened
+    ? `Heart rate rose only ${Math.max(0, Math.round(mapped[4] - mapped[3]))} bpm across the threshold zone in this test, so HR Z4 is set to LT2 HR ±${half} bpm. Above LT2, ${isPaceSport(sport) ? 'pace' : 'power'} is the better guide.`
+    : null;
+
+  const bounds = enforceOrder([b0, b1, hr1, b3, b4, b5].map(Math.round), true);
+  return { bounds, hr1: Math.round(hr1), hr2: Math.round(hr2), note };
 }
 
 /** Boundary list -> { zone1..zone5 } with shared min/max edges. */

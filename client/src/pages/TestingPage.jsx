@@ -42,6 +42,8 @@ function normalizeTestSportKey(sport) {
   return null;
 }
 
+const NO_TESTS = [];
+
 const TestingPage = () => {
   const { athleteId } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -61,8 +63,12 @@ const TestingPage = () => {
   const setSelectedAthleteId = _setGlobalAthleteId;
   const [showNewTesting, setShowNewTesting] = useState(false);
   const [selectedSport, setSelectedSport] = useState("all");
-  const [tests, setTests] = useState([]);
-  
+  const [loadedTests, setTests] = useState([]);
+  // Whose tests loadedTests are. The list stays in state while the next
+  // athlete's loads, so without this a coach switching athlete got the previous
+  // athlete's test reopened under the new name. See `tests` below.
+  const [testsLoadedFor, setTestsLoadedFor] = useState(null);
+
   // Limit tests to prevent memory issues (max 500)
   const MAX_TESTS = 500;
   const [error, setError] = useState(null);
@@ -85,7 +91,7 @@ const TestingPage = () => {
   const [stravaModalVariant, setStravaModalVariant] = useState('page-load');
   const suppressPageLoadStravaRef = useRef(false);
   const [coachAthleteCount, setCoachAthleteCount] = useState(0);
-  const { isPremium, gate, UpgradeModalProps } = usePremium();
+  const { isPremium, canViewAnalytics, gate, UpgradeModalProps } = usePremium();
   const [mobileTab, setMobileTab] = useState('tests');
   const [planLimitModal, setPlanLimitModal] = useState({ isOpen: false, feature: '' });
   const navigate = useNavigate();
@@ -166,6 +172,13 @@ const TestingPage = () => {
   /** Current effective athlete for data loads — used to drop stale / out-of-order list responses */
   const effectiveAthleteIdRef = useRef(effectiveTargetAthleteId);
   effectiveAthleteIdRef.current = effectiveTargetAthleteId;
+
+  /**
+   * The selected athlete's tests, and nobody else's: empty until their list
+   * arrives. The test list remounts per athlete and reopens the last test it
+   * remembers, which it found in the previous athlete's list.
+   */
+  const tests = String(testsLoadedFor) === String(effectiveTargetAthleteId) ? loadedTests : NO_TESTS;
   
   // Get testId from URL
   const testIdFromUrl = searchParams.get('testId');
@@ -324,6 +337,7 @@ const TestingPage = () => {
         return;
       }
 
+      setTestsLoadedFor(String(targetId));
       setTests(limitedTests);
     } catch (err) {
       // Silently ignore aborted/cancelled requests (user switched athlete mid-flight)
@@ -1723,7 +1737,7 @@ const TestingPage = () => {
                 </div>
               ) : (
                 <>
-                  {!isPremium ? (
+                  {!canViewAnalytics ? (
                     <div className="flex flex-col items-center justify-center py-16 text-center gap-4">
                       <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center">
                         <LockClosedIcon className="w-6 h-6 text-primary" />

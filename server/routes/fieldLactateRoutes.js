@@ -3,6 +3,7 @@ const router = express.Router();
 const verifyToken = require('../middleware/verifyToken');
 const FieldLactateMeasurement = require('../models/FieldLactateMeasurement');
 const Training = require('../models/training');
+const { canActForAthleteId } = require('../utils/athleteCoachAccess');
 
 // POST /api/field-lactate — record a new measurement
 router.post('/', verifyToken, async (req, res) => {
@@ -12,6 +13,9 @@ router.post('/', verifyToken, async (req, res) => {
       return res.status(400).json({ error: 'value is required' });
     }
     const targetAthleteId = athleteId || req.user.userId;
+    if (!(await canActForAthleteId(req.user.userId, targetAthleteId))) {
+      return res.status(403).json({ error: 'This athlete is not in your team' });
+    }
     const doc = await FieldLactateMeasurement.create({
       athleteId: targetAthleteId,
       recordedBy: req.user.userId,
@@ -32,6 +36,9 @@ router.get('/', verifyToken, async (req, res) => {
   try {
     const { athleteId, status } = req.query;
     const targetAthleteId = athleteId || req.user.userId;
+    if (!(await canActForAthleteId(req.user.userId, targetAthleteId))) {
+      return res.status(403).json({ error: 'This athlete is not in your team' });
+    }
     const filter = { athleteId: targetAthleteId };
     if (status) filter.status = status;
     const docs = await FieldLactateMeasurement.find(filter)
@@ -100,7 +107,8 @@ router.put('/:id/assign', verifyToken, async (req, res) => {
     // Write the lactate value into the actual training lap
     if (trainingId && lapIndex != null) {
       try {
-        const training = await Training.findById(trainingId);
+        // Only a training of the measurement's own athlete takes its value.
+        const training = await Training.findOne({ _id: trainingId, athleteId: String(doc.athleteId) });
         const row = resultRowForLap(training?.results, lapIndex, resultIndex);
         if (row >= 0) {
           training.results[row].lactate = doc.value;

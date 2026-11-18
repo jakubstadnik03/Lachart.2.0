@@ -4,7 +4,8 @@ const stripe = process.env.SUBSCRIPTION_ENABLED === 'true' && process.env.STRIPE
   : null;
 const User = require('../models/UserModel');
 const Subscription = require('../models/SubscriptionModel');
-const { canStartCheckout, manageBilling, STRIPE } = require('../utils/billingProvider');
+const { canStartCheckout, manageBilling, providerOf, STRIPE } = require('../utils/billingProvider');
+const { planForStripePrice, checkoutOverExisting } = require('../utils/stripePlan');
 const { canBindStoreTransaction, APPLE } = require('../utils/billingProvider');
 const { mapRevenueCatEvent } = require('../utils/revenueCatEvent');
 const crypto = require('crypto');
@@ -156,6 +157,28 @@ exports.getPlans = async (req, res) => {
  * Get current user's subscription
  * NOTE: Works even when subscription system is inactive (for UI display)
  */
+/**
+ * Apple and Google subscriptions can only be cancelled or changed in the
+ * store's own UI. Marking one cancelled here would tell the subscriber they
+ * are done while the store keeps charging them, so refuse and say where to go.
+ * Returns true when it has answered.
+ */
+function refuseStoreBilled(subscription, res) {
+  const where = manageBilling(subscription);
+  if (where.selfServe) return false;
+  const provider = providerOf(subscription);
+  res.status(409).json({
+    error: 'Managed by the store',
+    reason: 'managed_by_store',
+    provider,
+    manageUrl: where.url,
+    message: provider === 'apple'
+      ? 'This subscription is billed through the App Store. Manage or cancel it on your iPhone: Settings → your name → Subscriptions.'
+      : 'This subscription is billed through Google Play. Manage or cancel it in the Play Store.',
+  });
+  return true;
+}
+
 exports.getCurrentSubscription = async (req, res) => {
   try {
     const user = await User.findById(req.user.userId).populate('subscriptionId');
@@ -184,6 +207,7 @@ exports.getCurrentSubscription = async (req, res) => {
         ? subscription.toObject()
         : subscription;
     const premiumState = resolvePremiumAccess(user, subPlain);
+    const billing = manageBilling(subPlain);
 
     res.json({
       subscription: {
@@ -195,7 +219,11 @@ exports.getCurrentSubscription = async (req, res) => {
         cancelAtPeriodEnd: subscription.cancelAtPeriodEnd,
         isActive: subscription.isActive(),
         planDetails: plan,
-        systemEnabled: process.env.SUBSCRIPTION_ENABLED === 'true'
+        systemEnabled: process.env.SUBSCRIPTION_ENABLED === 'true',
+        // Where it is billed, and where to manage it when that is not us.
+        provider: providerOf(subPlain),
+        manageUrl: billing.url,
+        selfServe: billing.selfServe,
       },
       premium: user.premium === true,
       isPremium: premiumState.isPremium,
@@ -272,6 +300,60 @@ exports.createCheckoutSession = async (req, res) => {
           ? 'Your LaChart subscription is billed through the App Store. Cancel it in iPhone Settings before subscribing here, or manage it from your iPhone.'
           : 'Your LaChart subscription is billed through Google Play. Cancel it in the Play Store before subscribing here, or manage it from your phone.',
       });
+    }
+
+    // Already paying through Stripe: never open a second Checkout on top.
+    // Ask Stripe rather than trusting the row, which drifts when a webhook
+    // is missed — a subscription Stripe has already ended falls through to
+    // a normal checkout below.
+    if (!gate.allowed && gate.reason === 'already_subscribed' && subscription.stripeSubscriptionId) {
+      let live = null;
+      try {
+        live = await stripe.subscriptions.retrieve(subscription.stripeSubscriptionId);
+      } catch (err) {
+        if (err?.code !== 'resource_missing' && err?.statusCode !== 404) throw err;
+      }
+      const step = checkoutOverExisting(live, planId);
+
+      if (step === 'already_subscribed') {
+        return res.status(409).json({
+          error: 'Already subscribed',
+          reason: 'already_subscribed',
+          message: `You already have the ${plan.name} plan.`,
+        });
+      }
+      if (step === 'reactivate') {
+        return res.status(409).json({
+          error: 'Cancellation scheduled',
+          reason: 'cancel_scheduled',
+          message: `Your ${plan.name} plan is set to end. Use Reactivate under Settings → Subscription to keep it.`,
+        });
+      }
+      if (step === 'past_due') {
+        return res.status(409).json({
+          error: 'Payment past due',
+          reason: 'payment_past_due',
+          message: 'Your last payment failed. Update your card under Settings → Subscription → Manage billing, then change plan.',
+        });
+      }
+      if (step === 'switch') {
+        // Prorated onto the next invoice: no surprise charge now, and a
+        // trial keeps running on the new price.
+        const updated = await stripe.subscriptions.update(live.id, {
+          items: [{ id: live.items.data[0].id, price: plan.stripePriceId }],
+          proration_behavior: 'create_prorations',
+          cancel_at_period_end: false,
+        });
+        subscription.plan = planId;
+        subscription.status = updated.status;
+        subscription.stripePriceId = plan.stripePriceId;
+        subscription.cancelAtPeriodEnd = false;
+        await subscription.save();
+        await syncRoleWithPlan(user, planId);
+        await user.save();
+        console.log(`[Checkout] switched ${user.email} to ${planId} on ${live.id}`);
+        return res.json({ switched: true, plan: planId, url: successUrl || null });
+      }
     }
 
     if (subscription?.stripeCustomerId) {
@@ -617,23 +699,53 @@ async function handleSubscriptionUpdate(stripeSubscription) {
     subscription.canceledAt = new Date(stripeSubscription.canceled_at * 1000);
   }
 
-  // If subscription is canceled or past_due, downgrade to free
-  if (stripeSubscription.status === 'canceled' || stripeSubscription.status === 'past_due') {
+  // Only a canceled subscription goes back to free. past_due is Stripe still
+  // retrying the card: the plan stays (premiumAccess gives that grace), so a
+  // payment that goes through later restores everything by itself. Setting
+  // it to free here left paying customers on free for good.
+  if (stripeSubscription.status === 'canceled') {
     subscription.plan = 'free';
+  } else {
+    const plan = planForStripePrice(stripeSubscription.items?.data?.[0]?.price);
+    if (plan) subscription.plan = plan;
   }
 
   await subscription.save();
 }
 
 async function handlePaymentSucceeded(invoice) {
-  const subscriptionId = invoice.subscription;
+  const subscriptionId = invoiceSubscriptionId(invoice);
   if (!subscriptionId) return;
 
   const subscription = await Subscription.findOne({ stripeSubscriptionId: subscriptionId });
   if (subscription) {
     subscription.status = 'active';
+    // A plan lost to the old past_due → free downgrade comes back with the
+    // money. The invoice line says what was paid for.
+    if (!subscription.plan || subscription.plan === 'free') {
+      const line = invoice.lines?.data?.find((l) => l.price) || invoice.lines?.data?.[0];
+      const plan = planForStripePrice(line?.price || line?.pricing?.price_details?.price);
+      if (plan) subscription.plan = plan;
+    }
     await subscription.save();
   }
+}
+
+/**
+ * The subscription an invoice belongs to. Stripe API 2025-03-31 (basil) moved
+ * it from invoice.subscription to invoice.parent.subscription_details; on the
+ * newer shape every invoice handler here silently found nothing — no
+ * past_due, no receipt, no payment-failed e-mail.
+ */
+function invoiceSubscriptionId(invoice) {
+  const v = invoice?.subscription || invoice?.parent?.subscription_details?.subscription;
+  if (!v) return null;
+  return typeof v === 'string' ? v : v.id || null;
+}
+
+/** Paid after at least one failed attempt: a recovered payment. */
+function isRecoveredPayment(invoice) {
+  return Number(invoice?.attempt_count) > 1;
 }
 
 /**
@@ -678,10 +790,13 @@ async function handleInvoicePaidEmail(invoice) {
   try {
     // Skip zero-amount invoices (the trial-activation $0 invoice).
     if (!invoice.amount_paid || invoice.amount_paid === 0) return;
-    const { user, plan } = await resolveUserAndPlanFromStripeSub(invoice.subscription);
+    const { user, plan } = await resolveUserAndPlanFromStripeSub(invoiceSubscriptionId(invoice));
     if (!user) return;
     await sendPaymentReceiptEmail(user, {
       plan,
+      // After failed attempts this is the "it went through, Premium is back"
+      // note rather than a plain receipt.
+      recovered: isRecoveredPayment(invoice),
       amount: invoice.amount_paid, // minor units
       currency: invoice.currency,
       periodEnd: invoice.lines?.data?.[0]?.period?.end
@@ -700,7 +815,7 @@ async function handleInvoicePaidEmail(invoice) {
  */
 async function handleInvoiceFailedEmail(invoice) {
   try {
-    const { user, plan } = await resolveUserAndPlanFromStripeSub(invoice.subscription);
+    const { user, plan } = await resolveUserAndPlanFromStripeSub(invoiceSubscriptionId(invoice));
     if (!user) return;
     await sendPaymentFailedEmail(user, {
       plan,
@@ -734,7 +849,7 @@ async function handleSubscriptionCanceledEmail(stripeSubscription) {
 }
 
 async function handlePaymentFailed(invoice) {
-  const subscriptionId = invoice.subscription;
+  const subscriptionId = invoiceSubscriptionId(invoice);
   if (!subscriptionId) return;
 
   const subscription = await Subscription.findOne({ stripeSubscriptionId: subscriptionId });
@@ -890,6 +1005,7 @@ exports.cancelSubscription = async (req, res) => {
     }
 
     const subscription = user.subscriptionId;
+    if (refuseStoreBilled(subscription, res)) return;
 
     if (subscription.stripeSubscriptionId && stripe) {
       await stripe.subscriptions.update(subscription.stripeSubscriptionId, {
@@ -944,6 +1060,7 @@ exports.reactivateSubscription = async (req, res) => {
     }
 
     const subscription = user.subscriptionId;
+    if (refuseStoreBilled(subscription, res)) return;
 
     // Only email if there was actually a pending cancel to undo. Clicking
     // 'Reactivate' on an already-active subscription shouldn't trigger spam.
@@ -985,6 +1102,7 @@ exports.getPortalUrl = async (req, res) => {
     }
 
     const user = await User.findById(req.user.userId).populate('subscriptionId');
+    if (user?.subscriptionId && refuseStoreBilled(user.subscriptionId, res)) return;
     
     if (!user || !user.subscriptionId?.stripeCustomerId) {
       return res.status(404).json({ error: 'No subscription found' });
@@ -1204,9 +1322,15 @@ exports.revenueCatWebhook = async (req, res) => {
       { new: true, upsert: true, setDefaultsOnInsert: true },
     );
 
-    // Same role sync the Stripe path does — buying the Coach plan is how
+    // Premium is read through user.subscriptionId (premiumAccess), so the row
+    // must be linked to the account — most accounts have never had one. And
+    // the same role sync the Stripe path does: buying the Coach plan is how
     // somebody becomes a coach, whichever till the money went through.
-    await syncRoleWithPlan(user, patch.plan);
+    const roleChanged = await syncRoleWithPlan(user, patch.plan);
+    if (roleChanged || String(user.subscriptionId || '') !== String(subscription._id)) {
+      user.subscriptionId = subscription._id;
+      await user.save();
+    }
 
     console.log('[revenuecat] applied', event?.type, '→', patch.plan, patch.status,
       'for', userId, '| until', patch.currentPeriodEnd);
@@ -1217,3 +1341,6 @@ exports.revenueCatWebhook = async (req, res) => {
     return res.status(500).json({ error: 'Webhook handler failed' });
   }
 };
+
+// Exposed for tests.
+exports.invoiceSubscriptionId = invoiceSubscriptionId;

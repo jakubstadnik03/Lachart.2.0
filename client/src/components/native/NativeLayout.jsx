@@ -41,6 +41,7 @@ import {
 import { formatProfileFullName } from '../../utils/profileName';
 
 const TrainingZonesModal = lazy(() => import('../Profile/TrainingZonesModal'));
+const PremiumPaywall = lazy(() => import('./PremiumPaywall'));
 
 // Admin sees coach UI only when their role is not 'athlete'.
 const isCoachRole = (user) =>
@@ -1159,6 +1160,11 @@ const NativeLayout = ({ athletes = [], athleteStatuses = {}, effectiveAthleteId,
 
       {/* Bottom tab bar — hidden on immersive routes (live workout) */}
       {!isImmersiveRoute && <NativeBottomTabBar tabs={tabs} />}
+
+      {/* Full-screen Premium offer for free users, every few days. */}
+      {!isImmersiveRoute && isAuthenticated && (
+        <Suspense fallback={null}><PremiumPaywall /></Suspense>
+      )}
 
       {/* Profile sheet */}
       <NativeProfileSheet

@@ -16,6 +16,7 @@ const {
   hasPendingInviteFromCoach,
   athleteHasOwnAccount,
   coachLinkFields,
+  mayActForAthlete,
 } = require('./athleteCoachAccess');
 
 let passed = 0;
@@ -96,6 +97,28 @@ test('an existing athlete who has not answered is pending with an account', () =
   assert.deepStrictEqual(coachLinkFields(a, coach()), {
     invitationPending: true, coachLinkStatus: 'pending', hasAccount: true,
   });
+});
+
+// Any account can be a coach (sign-up takes the role from the form), so the
+// role must never be what opens another athlete's data.
+test('a coach role alone does not open an athlete', () => {
+  assert.strictEqual(mayActForAthlete({ _id: OTHER, role: 'coach' }, athlete({ coachIds: [COACH] })), false);
+});
+
+test('a linked coach, the athlete and an admin may act', () => {
+  assert.strictEqual(mayActForAthlete({ _id: COACH, role: 'coach' }, athlete({ coachIds: [COACH] })), true);
+  assert.strictEqual(mayActForAthlete({ _id: COACH, role: 'coach' }, athlete({ coachId: COACH })), true);
+  assert.strictEqual(mayActForAthlete({ _id: 'a1', role: 'athlete' }, athlete()), true);
+  assert.strictEqual(mayActForAthlete({ _id: OTHER, role: 'athlete', admin: true }, athlete()), true);
+});
+
+test('an unanswered invitation does not open an athlete', () => {
+  assert.strictEqual(mayActForAthlete({ _id: COACH, role: 'coach' }, athlete({ pendingCoachId: COACH })), false);
+});
+
+test('nothing to check against means no', () => {
+  assert.strictEqual(mayActForAthlete(null, athlete()), false);
+  assert.strictEqual(mayActForAthlete({ _id: COACH, role: 'coach' }, null), false);
 });
 
 console.log(`\n${passed} passed${process.exitCode ? ', with failures' : ''}`);

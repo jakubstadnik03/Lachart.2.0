@@ -8,6 +8,7 @@ import {
   HealthMetricsCard, ProgressCard,
 } from '../components/About/appCards';
 import SiteNav from '../components/About/SiteNav';
+import AppDemoCarousel from '../components/guide/AppDemoCarousel';
 import SiteFooter from '../components/About/SiteFooter';
 import { ATHLETE_PLAN_PRICE_LABEL } from '../constants/planPricing';
 
@@ -173,6 +174,18 @@ const ForAthletes = () => {
             </div>
           ))}
         </div>
+      </section>
+
+      {/* The iPhone app, recorded — swipe through the features. */}
+      <section id="app" className="lc-sectpad" style={{ paddingTop: 24 }}>
+        <div ref={pushRef} className="lc-reveal" style={{ marginBottom: 26, textAlign: 'center' }}>
+          <Eyebrow>On your phone</Eyebrow>
+          <h2 className="lc-big" style={{ margin: '14px 0 8px' }}>Swipe through the app</h2>
+          <p className="lc-lead" style={{ margin: '0 auto', maxWidth: 640 }}>
+            Real sessions from a triathlete's account. Pick a feature, or swipe the phone.
+          </p>
+        </div>
+        <AppDemoCarousel />
       </section>
 
       {/* The app over the training, not beside it. Each card here is live —

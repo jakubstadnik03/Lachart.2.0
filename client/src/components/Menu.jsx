@@ -61,7 +61,8 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
       // Load test statuses in background (non-blocking, best-effort)
       if (list.length > 0) {
         Promise.allSettled(
-          list.slice(0, 15).map(a =>
+          // An athlete who has not accepted the invitation shares no tests yet.
+          list.filter(a => a.coachLinkStatus !== 'pending').slice(0, 15).map(a =>
             api.get(`/test/list/${a._id}`).then(r => ({ id: a._id, tests: r.data || [] }))
           )
         ).then(results => {

@@ -27,6 +27,7 @@ import FormFitnessChart from "../components/DashboardPage/FormFitnessChart";
 import WeeklyTrainingLoad from "../components/DashboardPage/WeeklyTrainingLoad";
 import WellnessCard from "../components/DashboardPage/WellnessCard";
 import HealthStatusCard from "../components/DashboardPage/HealthStatusCard";
+import WellnessCheckInCard from "../components/Wellness/WellnessCheckInCard";
 import RaceCountdownCard from "../components/DashboardPage/RaceCountdownCard";
 import DailyCoachCard from "../components/DashboardPage/DailyCoachCard";
 import TrainingTimeline from "../components/DashboardPage/TrainingTimeline";
@@ -302,7 +303,7 @@ export default function DashboardPage() {
   const isCoachLikeRole = ['admin', 'coach', 'testing', 'tester'].includes(role) ||
     (user?.admin === true && role !== 'athlete');
   const { addNotification } = useNotification();
-  const { isPremium, gate, UpgradeModalProps } = usePremium();
+  const { isPremium, canViewAnalytics, gate, UpgradeModalProps } = usePremium();
   const [stravaConnected, setStravaConnected] = useState(false);
   const [showStravaBanner, setShowStravaBanner] = useState(false);
   const trainingsRequestRef = useRef(new Map());
@@ -396,7 +397,8 @@ export default function DashboardPage() {
     // alone brought this back on every sign-in.
     const paywallSeen = user?.onboarding?.welcomePaywallDone === true
       || !!localStorage.getItem(`welcomePaywall_seen_${uid}`);
-    if (!isPremium && !paywallSeen) {
+    // Not for an athlete whose coach already pays for them.
+    if (!canViewAnalytics && !paywallSeen) {
       queue.push('welcomePaywall');
     }
 
@@ -436,7 +438,7 @@ export default function DashboardPage() {
     }, MODAL_FIRST_DELAY);
     return () => clearTimeout(t);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAuthenticated, user?._id, user?.onboarding, isPremium]);
+  }, [isAuthenticated, user?._id, user?.onboarding, isPremium, canViewAnalytics]);
 
   // Advance to the next queued modal after the current one is dismissed.
   const advanceModalQueue = useCallback(() => {
@@ -3157,6 +3159,12 @@ export default function DashboardPage() {
               key={`hsc-${dashboardDataAthleteId}`}
               athleteId={dashboardDataAthleteId}
             />
+            {/* The athlete's daily "how are you" answers. Hidden for an athlete
+                who is not asked; a coach always sees it, to switch it on. */}
+            <WellnessCheckInCard
+              key={`wci-${dashboardDataAthleteId}`}
+              athleteId={dashboardDataAthleteId}
+            />
             <RaceCountdownCard
               key={`rcc-${dashboardDataAthleteId}`}
               athleteId={dashboardDataAthleteId}
@@ -3210,7 +3218,7 @@ export default function DashboardPage() {
           className="lg:col-span-5 md:col-span-2 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 items-stretch"
         >
           <div className="lg:col-span-3 md:col-span-2 flex flex-col min-h-0">
-            {isPremium ? (
+            {canViewAnalytics ? (
               <FormFitnessChart
                 key={`ffc-${dashboardDataAthleteId}`}
                 athleteId={dashboardDataAthleteId}
@@ -3238,7 +3246,7 @@ export default function DashboardPage() {
             )}
           </div>
           <div className="lg:col-span-2 md:col-span-2 flex flex-col min-h-0">
-            {isPremium ? (
+            {canViewAnalytics ? (
               <WeeklyTrainingLoad
                 key={`wtl-${dashboardDataAthleteId}`}
                 athleteId={dashboardDataAthleteId}
@@ -3263,7 +3271,7 @@ export default function DashboardPage() {
           transition={{ delay: 0.29 }}
           className="lg:col-span-3 md:col-span-2 flex flex-col self-start"
         >
-          {isPremium ? (
+          {canViewAnalytics ? (
             <IntensityDistributionChart
               athleteId={dashboardDataAthleteId}
               activities={calendarData || []}
@@ -3285,7 +3293,7 @@ export default function DashboardPage() {
           transition={{ delay: 0.32 }}
           className="lg:col-span-2 md:col-span-2 flex flex-col self-start"
         >
-          {isPremium ? (
+          {canViewAnalytics ? (
             <ZoneDistributionChart
               key={`zdc-${dashboardDataAthleteId}`}
               selectedAthleteId={dashboardDataAthleteId}
@@ -3310,7 +3318,7 @@ export default function DashboardPage() {
           transition={{ delay: 0.3 }}
           className="lg:col-span-3 md:col-span-2 flex flex-col"
         >
-          {isPremium ? (
+          {canViewAnalytics ? (
             <TrainingLoadHeatmap
               calendarData={calendarData}
               trainings={recentTrainings}
@@ -3330,7 +3338,7 @@ export default function DashboardPage() {
           transition={{ delay: 0.4 }}
           className="lg:col-span-2 md:col-span-2"
         >
-          {isPremium ? (
+          {canViewAnalytics ? (
             <SpiderChart
               key={`spider-${dashboardDataAthleteId}`}
               trainings={recentTrainings}
@@ -3374,7 +3382,7 @@ export default function DashboardPage() {
           transition={{ delay: 0.6 }}
           className="lg:col-span-2 md:col-span-2 flex flex-col h-full"
         >
-          {isPremium ? (
+          {canViewAnalytics ? (
             <TrainingGraph
               key={`tg-${dashboardDataAthleteId}`}
               trainingList={exportedTrainings}
@@ -3426,7 +3434,15 @@ export default function DashboardPage() {
                 />
                 {currentTest && currentTest.results && (
                   <>
-                    <LactateCurveCalculator mockData={currentTest} athleteId={dashboardDataAthleteId} />
+                    <LactateCurveCalculator
+                      mockData={currentTest}
+                      athleteId={dashboardDataAthleteId}
+                      onThresholdOverridesSaved={(testId, thresholdOverrides) => {
+                        const patch = (t) => (t && String(t._id) === String(testId) ? { ...t, thresholdOverrides } : t);
+                        setTests((prev) => (Array.isArray(prev) ? prev.map(patch) : prev));
+                        setCurrentTest(patch);
+                      }}
+                    />
                   </>
                 )}
               </>

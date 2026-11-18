@@ -236,58 +236,7 @@ export default function RaceCountdownCard({
   // Hide the whole card when there are no races (users can add from Calendar).
   if (races.length === 0 && !adding) return null;
 
-  return (
-    <div
-      style={{
-        background: '#fff',
-        border: '1px solid #E5E7EB',
-        borderRadius: 16,
-        padding: '12px 16px 12px',
-        boxShadow: '0 1px 2px rgba(15,23,42,.04)',
-        // The hint pills ("+26 CTL to target", "Week 620 TSS → taper") sit last
-        // and were being sliced in half by the card's bottom edge on desktop.
-        // This card is a flex child of a `flex flex-col` column, so it inherits
-        // flex-shrink:1 and gets squeezed when the column is short on room —
-        // and overflow:hidden then cut the overflowing pills off rather than
-        // letting them show. Refuse to shrink, and clip nothing: the rounded
-        // corners have no square-cornered children to contain.
-        overflow: 'visible',
-        flexShrink: 0,
-        minWidth: 0,
-      }}
-    >
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-        <span
-          style={{
-            fontSize: 12,
-            fontWeight: 800,
-            color: '#0A0E1A',
-            letterSpacing: '0.04em',
-            textTransform: 'uppercase',
-          }}
-        >
-          Upcoming races
-        </span>
-        {editable && (
-          <button
-            onClick={() => setAdding((a) => !a)}
-            style={{
-              fontSize: 12,
-              fontWeight: 700,
-              color: '#767EB5',
-              background: 'transparent',
-              border: '1px solid #767EB555',
-              borderRadius: 999,
-              padding: '3px 10px',
-              cursor: 'pointer',
-            }}
-          >
-            {adding ? 'Cancel' : '+ Add race'}
-          </button>
-        )}
-      </div>
-
-      {adding && (
+  const addForm = adding && (
         <form
           onSubmit={submit}
           style={{
@@ -363,7 +312,96 @@ export default function RaceCountdownCard({
             {saving ? 'Saving…' : 'Add race'}
           </button>
         </form>
-      )}
+  );
+
+  const raceModal = selectedRace && (
+    <RaceDetailModal
+      race={selectedRace}
+      activities={activities}
+      serverCtl={currentCTL}
+      serverForm={currentForm}
+      plannedWorkouts={plannedWorkouts}
+      userProfile={userProfile}
+      user={user}
+      editable={editable}
+      onClose={() => setSelectedRace(null)}
+      onSave={saveRace}
+      onDelete={() => remove(selectedRace._id)}
+    />
+  );
+
+  if (compact && !loading && next) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <CompactRaceHero
+          race={next}
+          days={days}
+          currentForm={currentForm}
+          onOpen={() => setSelectedRace(next)}
+          onAdd={() => setAdding((v) => !v)}
+          adding={adding}
+          editable={editable}
+          rest={rest}
+          onOpenRace={setSelectedRace}
+        />
+        {addForm && <div style={{ background: '#fff', borderRadius: 16, border: '1px solid #E5E7EB', padding: 4 }}>{addForm}</div>}
+        {raceModal}
+      </div>
+    );
+  }
+
+  return (
+    <div
+      style={{
+        background: '#fff',
+        border: '1px solid #E5E7EB',
+        borderRadius: 16,
+        padding: '12px 16px 12px',
+        boxShadow: '0 1px 2px rgba(15,23,42,.04)',
+        // The hint pills ("+26 CTL to target", "Week 620 TSS → taper") sit last
+        // and were being sliced in half by the card's bottom edge on desktop.
+        // This card is a flex child of a `flex flex-col` column, so it inherits
+        // flex-shrink:1 and gets squeezed when the column is short on room —
+        // and overflow:hidden then cut the overflowing pills off rather than
+        // letting them show. Refuse to shrink, and clip nothing: the rounded
+        // corners have no square-cornered children to contain.
+        overflow: 'visible',
+        flexShrink: 0,
+        minWidth: 0,
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+        <span
+          style={{
+            fontSize: 12,
+            fontWeight: 800,
+            color: '#0A0E1A',
+            letterSpacing: '0.04em',
+            textTransform: 'uppercase',
+          }}
+        >
+          Upcoming races
+        </span>
+        {editable && (
+          <button
+            onClick={() => setAdding((a) => !a)}
+            style={{
+              fontSize: 12,
+              fontWeight: 700,
+              color: '#767EB5',
+              background: 'transparent',
+              border: '1px solid #767EB555',
+              borderRadius: 999,
+              padding: '3px 10px',
+              cursor: 'pointer',
+            }}
+          >
+            {adding ? 'Cancel' : '+ Add race'}
+          </button>
+        )}
+      </div>
+
+      {addForm}
 
       {loading ? (
         <div style={{ fontSize: 12, color: '#9CA3AF', padding: '8px 0' }}>Loading…</div>
@@ -638,21 +676,7 @@ export default function RaceCountdownCard({
         </>
       )}
 
-      {selectedRace && (
-        <RaceDetailModal
-          race={selectedRace}
-          activities={activities}
-          serverCtl={currentCTL}
-          serverForm={currentForm}
-          plannedWorkouts={plannedWorkouts}
-          userProfile={userProfile}
-          user={user}
-          editable={editable}
-          onClose={() => setSelectedRace(null)}
-          onSave={saveRace}
-          onDelete={() => remove(selectedRace._id)}
-        />
-      )}
+      {raceModal}
     </div>
   );
 }
@@ -670,3 +694,123 @@ const inputStyle = {
   width: '100%',
   maxWidth: '100%',
 };
+
+// ─── Compact hero (phone) ─────────────────────────────────────────────────────
+
+/** Where the athlete is on the road to the race, by days left. */
+export function racePhase(days) {
+  if (days == null) return null;
+  if (days <= 0) return { key: 'race', label: 'Race day', note: 'Go get it.' };
+  if (days <= 7) return { key: 'raceweek', label: 'Race week', note: 'Short and sharp. Sleep is training now.' };
+  if (days <= 14) return { key: 'taper', label: 'Taper', note: `Volume down, intensity kept. ${days - 7} days to race week.` };
+  return { key: 'build', label: 'Build', note: `Taper starts in ${days - 14} day${days - 14 === 1 ? '' : 's'}.` };
+}
+
+/** "2 weeks 4 days", or just days under a week. */
+export function weeksAndDays(days) {
+  if (days == null || days < 7) return null;
+  const w = Math.floor(days / 7);
+  const d = days % 7;
+  return `${w} week${w === 1 ? '' : 's'}${d ? ` ${d} day${d === 1 ? '' : 's'}` : ''}`;
+}
+
+const HERO_ACCENT = { A: ['#F97362', '#E05347'], B: ['#FBBF24', '#F59E0B'], C: ['#7BC2EB', '#599FD0'] };
+const TRACK_DAYS = 42; // the last six weeks — the part of a block a phone needs to show
+
+/**
+ * The next race, quietly: days to go, the race, and where today sits between
+ * build, taper and race week. Same glass card as everything around it — the
+ * number carries it, the card does not need to shout. A race has a date but
+ * no start time, so it counts days; hours would be invented.
+ */
+function CompactRaceHero({ race, days, currentForm, onOpen, onAdd, adding, editable, rest, onOpenRace }) {
+  const [c1] = HERO_ACCENT[race.priority] || ['#9AA1D6'];
+  const phase = racePhase(days);
+  const left = Math.max(0, days);
+  const pos = Math.min(1, Math.max(0, 1 - left / TRACK_DAYS)); // 0 = six weeks out, 1 = race day
+  const segments = [
+    { key: 'build', flex: TRACK_DAYS - 14 },
+    { key: 'taper', flex: 7 },
+    { key: 'raceweek', flex: 7 },
+  ];
+  const form = formatForm(currentForm);
+  const activeKey = phase?.key === 'race' ? 'raceweek' : phase?.key;
+
+  return (
+    <div style={{
+      background: 'rgba(255,255,255,.65)',
+      backdropFilter: 'blur(22px) saturate(170%)', WebkitBackdropFilter: 'blur(22px) saturate(170%)',
+      border: '1px solid rgba(255,255,255,.7)',
+      boxShadow: '0 1px 0 rgba(255,255,255,.7) inset, 0 8px 24px -10px rgba(10,14,26,.08)',
+      borderRadius: 18, padding: '14px 16px',
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+        <button type="button" onClick={onOpen} style={{
+          display: 'flex', alignItems: 'center', gap: 14, flex: 1, minWidth: 0, background: 'transparent',
+          border: 'none', padding: 0, textAlign: 'left', color: 'inherit', cursor: 'pointer', WebkitTapHighlightColor: 'transparent',
+        }}>
+          <div style={{ textAlign: 'center', flexShrink: 0, minWidth: 48 }}>
+            <div style={{ fontSize: 30, fontWeight: 800, lineHeight: 1, letterSpacing: '-0.03em', color: '#0A0E1A', fontVariantNumeric: 'tabular-nums' }}>
+              {left}
+            </div>
+            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: '#9CA3AF', marginTop: 3 }}>
+              {left === 0 ? 'today' : left === 1 ? 'day' : 'days'}
+            </div>
+          </div>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ width: 7, height: 7, borderRadius: 4, background: c1, flexShrink: 0 }} />
+              <span style={{ fontSize: 15, fontWeight: 700, color: '#0A0E1A', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {race.name}
+              </span>
+            </div>
+            <div style={{ fontSize: 12, color: '#6B7280', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {fmtDate(race.date)}{race.sport ? ` · ${race.sport}` : ''}{form ? ` · Form ${form}` : ''}
+            </div>
+          </div>
+        </button>
+        {editable && (
+          <button type="button" onClick={onAdd} aria-label={adding ? 'Cancel' : 'Add race'} style={{
+            flexShrink: 0, width: 28, height: 28, borderRadius: 14, border: '1px solid #E5E7EB',
+            background: '#fff', color: '#5E6590', fontSize: 16, lineHeight: '24px', padding: 0,
+            cursor: 'pointer', WebkitTapHighlightColor: 'transparent',
+          }}>
+            {adding ? '×' : '+'}
+          </button>
+        )}
+      </div>
+
+      {/* Road to the race: build → taper → race week, today marked */}
+      <div style={{ position: 'relative', display: 'flex', gap: 3, height: 4, marginTop: 14 }}>
+        {segments.map((sg) => (
+          <div key={sg.key} style={{
+            flex: sg.flex, borderRadius: 2,
+            background: sg.key === activeKey ? '#5E6590' : '#E5E7EB',
+          }} />
+        ))}
+        <div aria-hidden="true" style={{
+          position: 'absolute', top: -3, left: `calc(${pos * 100}% - 5px)`, width: 10, height: 10,
+          borderRadius: 5, background: '#fff', border: '2px solid #5E6590', boxSizing: 'border-box',
+        }} />
+      </div>
+      <div style={{ fontSize: 12, color: '#6B7280', marginTop: 8, lineHeight: 1.4 }}>
+        <b style={{ color: '#0A0E1A', fontWeight: 600 }}>{phase?.label}</b> · {phase?.note}
+      </div>
+
+      {rest.length > 0 && (
+        <div style={{ marginTop: 10, paddingTop: 8, borderTop: '1px solid rgba(15,23,42,.06)', display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {rest.map((r) => (
+            <button key={r._id} type="button" onClick={() => onOpenRace(r)} style={{
+              display: 'flex', alignItems: 'center', gap: 8, width: '100%', background: 'transparent', border: 'none',
+              padding: 0, color: '#0A0E1A', cursor: 'pointer', textAlign: 'left', WebkitTapHighlightColor: 'transparent',
+            }}>
+              <span style={{ width: 6, height: 6, borderRadius: 3, flexShrink: 0, background: (HERO_ACCENT[r.priority] || ['#9AA1D6'])[0] }} />
+              <span style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.name}</span>
+              <span style={{ fontSize: 12, color: '#9CA3AF', fontVariantNumeric: 'tabular-nums' }}>{Math.max(0, daysUntil(r.date))} d</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}

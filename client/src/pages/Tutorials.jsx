@@ -5,6 +5,7 @@ import { Link } from 'react-router-dom';
 import { Helmet } from 'react-helmet';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../context/AuthProvider';
+import AppDemos from '../components/guide/AppDemos';
 
 const LC = {
   primary:      '#767EB5',
@@ -243,7 +244,7 @@ export default function Tutorials() {
     <>
       <Helmet>
         <title>LaChart Tutorials · Video walkthroughs for lactate testing</title>
-        <meta name="description" content="Step-by-step video walkthroughs: enter a lactate test, compare previous tests, training log, calendar, dashboard form/fitness, coach + athlete." />
+        <meta name="description" content="Step-by-step video walkthroughs on the web and in the iPhone app: lactate tests and curves, reading form and fitness, planning workouts, tracking repeated sessions, coach + athlete." />
         {/* This component answers to two URLs — /how-to-use and /tutorials —
             and without a canonical they were two identical pages competing
             with each other in the index. /how-to-use wins because it is what
@@ -401,6 +402,29 @@ export default function Tutorials() {
               </div>
             </motion.div>
           </AnimatePresence>
+        </section>
+
+        {/* The iPhone app, recorded */}
+        <section id="iphone-app" style={{ padding: '24px 24px 112px', maxWidth: 1080, margin: '0 auto' }}>
+          <div style={{ textAlign: 'center', maxWidth: 680, margin: '0 auto 56px' }}>
+            <span style={{
+              display: 'inline-flex', alignItems: 'center', gap: 8,
+              fontSize: 11, fontWeight: 700, color: LC.primaryDark,
+              letterSpacing: '0.14em', textTransform: 'uppercase',
+              padding: '6px 12px', borderRadius: 9999,
+              background: LC.primaryTint, border: '1px solid rgba(118,126,181,.20)',
+            }}>
+              <i style={{ width: 6, height: 6, borderRadius: '50%', background: LC.primary }} />
+              iPhone app
+            </span>
+            <h2 style={{ fontSize: 'clamp(28px, 3.4vw, 40px)', fontWeight: 800, letterSpacing: '-0.025em', lineHeight: 1.15, color: LC.ink, margin: '18px 0 10px' }}>
+              See it on your phone
+            </h2>
+            <p style={{ fontSize: 16, lineHeight: 1.6, color: LC.muted, margin: 0 }}>
+              Real sessions from a triathlete's account: reading your form, your lactate curve, planning a workout and tracking whether the sessions you repeat are getting better.
+            </p>
+          </div>
+          <AppDemos />
         </section>
       </div>
     </>

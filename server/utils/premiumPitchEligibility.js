@@ -63,6 +63,10 @@ function shouldPitchPremium({
   if (user.notifications?.marketingEmails === false) return { ok: false, reason: 'marketing_opt_out' };
   if (user.marketingEmails === false) return { ok: false, reason: 'marketing_opt_out' };
 
+  // A manual comp grant is on the user, not in the subscriptions the paying
+  // lookup reads: 3 of the 6 accounts holding one were sent this letter.
+  if (user.premium === true) return { ok: false, reason: 'already_paying' };
+
   // Selling a subscription to a subscriber. Required as an argument rather
   // than read off the user, because the answer lives in another collection
   // and a missing field would read as "not paying".

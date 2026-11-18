@@ -3,6 +3,35 @@ const router = express.Router();
 const verifyToken = require('../middleware/verifyToken');
 const { requirePremiumIfEnabled } = require('../middleware/requirePremium');
 const lactateSessionController = require('../controllers/lactateSessionController');
+const LactateSession = require('../models/lactateSession');
+const { canActForAthleteId } = require('../utils/athleteCoachAccess');
+
+// A session is its athlete's: they, a linked coach or an admin may use it.
+// Someone else's answers like a missing one.
+async function requireSessionAccess(req, res, next) {
+  try {
+    const session = await LactateSession.findById(req.params.id).select('athleteId').lean();
+    if (!session || !(await canActForAthleteId(req.user.userId, session.athleteId))) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
+    // A session stays with its athlete; moving it is not an update.
+    if (req.body && typeof req.body === 'object') delete req.body.athleteId;
+    return next();
+  } catch (e) {
+    console.error('[lactate-session] access check failed:', e);
+    return res.status(500).json({ error: 'Could not check access to this session' });
+  }
+}
+
+async function requireAthleteAccess(req, res, next) {
+  try {
+    if (await canActForAthleteId(req.user.userId, req.params.athleteId)) return next();
+    return res.status(403).json({ error: 'This athlete is not in your team' });
+  } catch (e) {
+    console.error('[lactate-session] access check failed:', e);
+    return res.status(500).json({ error: 'Could not check access to this athlete' });
+  }
+}
 
 /**
  * @swagger
@@ -65,7 +94,7 @@ router.post('/', verifyToken, requirePremiumIfEnabled, lactateSessionController.
  *       401:
  *         description: Unauthorized
  */
-router.get('/athlete/:athleteId', verifyToken, requirePremiumIfEnabled, lactateSessionController.getSessions);
+router.get('/athlete/:athleteId', verifyToken, requirePremiumIfEnabled, requireAthleteAccess, lactateSessionController.getSessions);
 
 /**
  * @swagger
@@ -90,7 +119,7 @@ router.get('/athlete/:athleteId', verifyToken, requirePremiumIfEnabled, lactateS
  *       401:
  *         description: Unauthorized
  */
-router.get('/:id', verifyToken, requirePremiumIfEnabled, lactateSessionController.getSessionById);
+router.get('/:id', verifyToken, requirePremiumIfEnabled, requireSessionAccess, lactateSessionController.getSessionById);
 
 /**
  * @swagger
@@ -133,7 +162,7 @@ router.get('/:id', verifyToken, requirePremiumIfEnabled, lactateSessionControlle
  *       401:
  *         description: Unauthorized
  */
-router.put('/:id', verifyToken, requirePremiumIfEnabled, lactateSessionController.updateSession);
+router.put('/:id', verifyToken, requirePremiumIfEnabled, requireSessionAccess, lactateSessionController.updateSession);
 
 /**
  * @swagger
@@ -169,7 +198,7 @@ router.put('/:id', verifyToken, requirePremiumIfEnabled, lactateSessionControlle
  *       401:
  *         description: Unauthorized
  */
-router.post('/:id/complete', verifyToken, requirePremiumIfEnabled, lactateSessionController.completeSession);
+router.post('/:id/complete', verifyToken, requirePremiumIfEnabled, requireSessionAccess, lactateSessionController.completeSession);
 
 /**
  * @swagger
@@ -194,7 +223,7 @@ router.post('/:id/complete', verifyToken, requirePremiumIfEnabled, lactateSessio
  *       401:
  *         description: Unauthorized
  */
-router.post('/:id/mock-fit', verifyToken, requirePremiumIfEnabled, lactateSessionController.generateMockFitFile);
+router.post('/:id/mock-fit', verifyToken, requirePremiumIfEnabled, requireSessionAccess, lactateSessionController.generateMockFitFile);
 
 /**
  * @swagger
@@ -224,7 +253,7 @@ router.post('/:id/mock-fit', verifyToken, requirePremiumIfEnabled, lactateSessio
  *       401:
  *         description: Unauthorized
  */
-router.get('/:id/download-fit', verifyToken, requirePremiumIfEnabled, lactateSessionController.downloadFitFile);
+router.get('/:id/download-fit', verifyToken, requirePremiumIfEnabled, requireSessionAccess, lactateSessionController.downloadFitFile);
 
 /**
  * @swagger
@@ -249,7 +278,7 @@ router.get('/:id/download-fit', verifyToken, requirePremiumIfEnabled, lactateSes
  *       401:
  *         description: Unauthorized
  */
-router.delete('/:id', verifyToken, requirePremiumIfEnabled, lactateSessionController.deleteSession);
+router.delete('/:id', verifyToken, requirePremiumIfEnabled, requireSessionAccess, lactateSessionController.deleteSession);
 
 /**
  * @swagger
