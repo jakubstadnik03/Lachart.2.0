@@ -41,6 +41,8 @@ describe('TrainingHub', () => {
     const groups = [group('g1', '4x10 LT2', [
       session('a', 40, 240), session('b', 20, 245), session('c', 2, 247, { lapsPending: true, lapsLoading: true }),
     ])];
+    // React's root.render, not Testing Library's: createRoot needs act here.
+    // eslint-disable-next-line testing-library/no-unnecessary-act
     act(() => { root.render(<TrainingHub groups={groups} sessions={groups[0].sessions} fmt={fmt} fmtDur={() => ''} fmtDist={() => ''} />); });
     expect(container.textContent).toContain('Reading laps');
     expect(container.textContent).not.toContain('Provisional');
