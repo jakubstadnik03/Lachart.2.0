@@ -145,23 +145,6 @@ const TestingPage = () => {
     }
     return user?._id ?? null;
   }, [isTestingRole, isCoachLikeRole, selectedAthleteId, user?.role, user?._id]);
-  /**
-   * The newest test on screen — the one a retest would follow.
-   *
-   * Dates are compared as numbers rather than sorting the array in place:
-   * `tests` is rendered elsewhere in its own order, and a sort here would
-   * reorder the list under the user.
-   */
-  const latestOwnTest = useMemo(() => {
-    if (!Array.isArray(tests) || tests.length === 0) return null;
-    return tests.reduce((best, t) => {
-      const d = new Date(t?.date || 0).getTime();
-      if (!Number.isFinite(d)) return best;
-      const bd = best ? new Date(best.date || 0).getTime() : -Infinity;
-      return d > bd ? t : best;
-    }, null);
-  }, [tests]);
-
   const isPendingSelectedAthlete = useMemo(() => {
     if (!isCoachLikeRole) return false;
     if (!selectedAthleteId) return false;
@@ -179,6 +162,23 @@ const TestingPage = () => {
    * remembers, which it found in the previous athlete's list.
    */
   const tests = String(testsLoadedFor) === String(effectiveTargetAthleteId) ? loadedTests : NO_TESTS;
+
+  /**
+   * The newest test on screen — the one a retest would follow.
+   *
+   * Dates are compared as numbers rather than sorting the array in place:
+   * `tests` is rendered elsewhere in its own order, and a sort here would
+   * reorder the list under the user.
+   */
+  const latestOwnTest = useMemo(() => {
+    if (!Array.isArray(tests) || tests.length === 0) return null;
+    return tests.reduce((best, t) => {
+      const d = new Date(t?.date || 0).getTime();
+      if (!Number.isFinite(d)) return best;
+      const bd = best ? new Date(best.date || 0).getTime() : -Infinity;
+      return d > bd ? t : best;
+    }, null);
+  }, [tests]);
   
   // Get testId from URL
   const testIdFromUrl = searchParams.get('testId');
