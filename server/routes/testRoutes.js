@@ -299,6 +299,91 @@ router.post(
 });
 
 /**
+ * PATCH /api/tests/:id/retest — schedule, reschedule or dismiss the retest
+ * that follows this test.
+ *
+ * This is the opt-in half of the retest loop. Repeat testing is the strongest
+ * behavioural predictor of paying in the data (2 tests → 15.7 % ever paid,
+ * 3+ → 37.3 %, against 9.0 % for a single test) and the rarest thing people
+ * do: 301 accounts hold exactly one test, 240 of them more than six weeks old.
+ *
+ * It is a PATCH on the test rather than a field on the PUT because the athlete
+ * sets it from the save confirmation — one small write, no risk of a stale
+ * full-test payload overwriting results on the way past.
+ *
+ * Body (one of):
+ *   { intervalDays: 42 }           → due that many days after the test date
+ *   { dueAt: '2027-01-01' }        → an explicit date the athlete picked
+ *   { dismiss: true }              → "not now", final; never re-asked
+ *   { clear: true }                → remove the plan entirely
+ *
+ * Scheduling always resets remindedAt/reminderCount: a date the athlete has
+ * just chosen deserves its nudges even if an older plan already used them up.
+ */
+router.patch('/:id/retest', verifyToken, async (req, res) => {
+  try {
+    const test = await Test.findById(req.params.id).lean();
+    if (!test) return res.status(404).json({ error: 'Test nenalezen' });
+
+    const requesterId = String(req.user.userId);
+    const ownerId     = String(test.athleteId);
+    const requester   = await User.findById(requesterId).lean();
+    const role        = String(requester?.role || '').toLowerCase();
+    const isPrivileged = ['admin', 'coach', 'tester', 'testing'].includes(role) || requester?.admin === true;
+
+    if (!isPrivileged && requesterId !== ownerId) {
+      return res.status(403).json({ error: 'Nemáte oprávnění upravit tento test' });
+    }
+
+    const { retestDueAt, normalizeIntervalDays, retestStatus } = require('../utils/retestPlan');
+    const now = new Date();
+    let set;
+
+    if (req.body?.clear === true) {
+      set = { 'retest.dueAt': null, 'retest.intervalDays': null, 'retest.scheduledAt': null,
+              'retest.remindedAt': null, 'retest.reminderCount': 0, 'retest.dismissedAt': null };
+    } else if (req.body?.dismiss === true) {
+      set = { 'retest.dismissedAt': now };
+    } else if (req.body?.dueAt != null) {
+      const due = new Date(req.body.dueAt);
+      if (Number.isNaN(due.getTime())) return res.status(400).json({ error: 'dueAt is not a date' });
+      set = { 'retest.dueAt': due, 'retest.intervalDays': null, 'retest.scheduledAt': now,
+              'retest.remindedAt': null, 'retest.reminderCount': 0, 'retest.dismissedAt': null };
+    } else {
+      // No explicit date: count the interval off the test itself. An absent
+      // intervalDays is the common case (the athlete tapped "remind me") and
+      // normalizeIntervalDays turns it into the six-week default.
+      const intervalDays = normalizeIntervalDays(req.body?.intervalDays);
+      const due = retestDueAt(test.date, intervalDays);
+      if (!due) return res.status(400).json({ error: 'Test has no usable date' });
+      set = { 'retest.dueAt': due, 'retest.intervalDays': intervalDays, 'retest.scheduledAt': now,
+              'retest.remindedAt': null, 'retest.reminderCount': 0, 'retest.dismissedAt': null };
+    }
+
+    const updated = await Test.findByIdAndUpdate(req.params.id, { $set: set }, { new: true }).lean();
+    if (!updated) return res.status(404).json({ error: 'Test nenalezen' });
+
+    // A later test closes the plan, so the status the client renders has to be
+    // resolved against real tests — not against the flags alone.
+    const newer = await Test.findOne({ athleteId: ownerId, date: { $gt: test.date } })
+      .sort({ date: -1 }).select('date').lean();
+
+    res.json({
+      retest: updated.retest || null,
+      status: retestStatus({
+        dueAt: updated.retest?.dueAt,
+        now,
+        newerTestAt: newer?.date || null,
+        dismissedAt: updated.retest?.dismissedAt,
+      }),
+    });
+  } catch (error) {
+    console.error('[test retest] failed:', error?.message || error);
+    res.status(500).json({ error: 'Chyba při plánování retestu' });
+  }
+});
+
+/**
  * @swagger
  * /api/tests/{id}:
  *   put:

@@ -351,6 +351,16 @@ export const getTestById = (id) => api.get(`/test/${id}`);
 export const addTest = (testData) => api.post('/test', testData, { handlesPremiumInline: true }).then(r => { invalidateTestCaches(); return r; });
 export const updateTest = (id, testData) => api.put(`/test/${id}`, testData).then(r => { invalidateTestCaches(); return r; });
 export const deleteTest = (id) => api.delete(`/test/${id}`).then(r => { invalidateTestCaches(); return r; });
+/**
+ * Schedule / reschedule / dismiss the retest that follows a test.
+ *
+ * `body` is one of { intervalDays }, { dueAt }, { dismiss: true }, { clear: true }.
+ * Repeat testing is the strongest predictor of paying in the data (2 tests →
+ * 15.7 % ever paid, 3+ → 37.3 %, against 9.0 % for one) and the rarest thing
+ * people do — see server/utils/retestPlan.js.
+ */
+export const setTestRetest = (id, body) => api.patch(`/test/${id}/retest`, body)
+  .then(r => { invalidateTestCaches(); return r; });
 export const sendDemoTestEmail = (testData, email, name, userId = null) => api.post('/test/send-demo-email', { testData, email, name, userId });
 
 export const getTestingsByAthleteId = async (athleteId) => {

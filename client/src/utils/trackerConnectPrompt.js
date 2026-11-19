@@ -12,10 +12,14 @@
  *
  *  - **post-save** — right after a test is saved, the one moment when the
  *    thresholds are on screen and connecting a watch has obvious value.
- *  - **standing** — someone who already has a test and still no tracker, on a
- *    later visit. The app had generic versions of this in both shells already;
- *    what it did not have was the ask carrying the person's own numbers, and
- *    on the web it never came back after onboarding consumed it once.
+ *  - **standing** — someone on a later visit who still has no tracker. The app
+ *    had generic versions of this in both shells already; what it did not have
+ *    was the ask carrying the person's own numbers, and on the web it never
+ *    came back after onboarding consumed it once. Two variants, one counter
+ *    and one clock between them: `shouldRaiseStandingTrackerPrompt` for
+ *    someone who has a test to lead with, `shouldRaiseUntestedTrackerPrompt`
+ *    for someone who has neither a test nor a tracker — 317 of 741 real
+ *    accounts on 2026-11-18, and the cohort that converts worst of all.
  *
  * Both shells (web `Layout` / `TestingForm`, native dashboard / testing page)
  * go through these helpers so the conditions and the cadence stay in one place.
@@ -142,7 +146,40 @@ export function shouldRaiseStandingTrackerPrompt({ user, hasTest, demoMode = fal
   return true;
 }
 
-/** Record that the standing prompt was shown. */
+/**
+ * Ask someone who has *no* test either — the other half of the standing ask.
+ *
+ * Why this audience needed adding: the standing prompt above requires a test,
+ * and on the web the onboarding chain spends its single ask into localStorage
+ * forever. So an athlete who signed up, skipped Strava in week one and never
+ * tested was asked exactly once, on the day they had nothing in the app to
+ * connect it to, and then never again. On 2026-11-18 that described 317 of 741
+ * real accounts — and the no-test cohort converts at 6.6 % against 22.3 % for
+ * accounts with a tracker.
+ *
+ * It is the same ask, not a fifth one: it shares the `standing` counter and
+ * the `lastAnyAt` clock, so an account still sees at most
+ * MAX_STANDING_PROMPTS standing asks in total, whichever variant they are.
+ * Record it with markStandingTrackerPromptShown, as the tested variant does.
+ *
+ * The copy differs because it has to. With no test there are no thresholds to
+ * lead with, so the pitch is the other direction: connect a tracker and
+ * LaChart can estimate a curve from the training itself, before testing.
+ *
+ * @param {object}  o
+ * @param {object}  o.user       the signed-in user
+ * @param {boolean} [o.demoMode]
+ * @returns {boolean}
+ */
+export function shouldRaiseUntestedTrackerPrompt({ user, demoMode = false } = {}) {
+  if (!eligible({ user, demoMode })) return false;
+  const { standing, lastAnyAt } = readState();
+  if (standing >= MAX_STANDING_PROMPTS) return false;
+  if (lastAnyAt && Date.now() - lastAnyAt < MIN_STANDING_DAYS_BETWEEN * DAY_MS) return false;
+  return true;
+}
+
+/** Record that a standing prompt was shown — either variant. */
 export function markStandingTrackerPromptShown() {
   const s = readState();
   writeState({ postSave: s.postSave, standing: s.standing + 1, lastAnyAt: Date.now() });

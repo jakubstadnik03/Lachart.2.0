@@ -74,16 +74,22 @@ const FEATURE_MATRIX = {
  * lives here because the gate middleware reads it on every request.
  */
 const QUOTA_LIMITS = {
-  // Total lactate tests a free athlete can create (lifetime). The UI advertises
-  // "3 lactate tests" — we enforce the cap at create time.
+  // Total lactate tests a free athlete can create (lifetime). The UI reads the
+  // number from planLimits.FREE_TEST_LIMIT — we enforce the cap at create time.
   //
-  // Three, not one: an athlete with two or more tests subscribes about three
-  // times as often as one with a single test, because the second test is the
-  // first time LaChart shows something a lab printout cannot — a threshold
-  // that moved. A cap of one gated exactly the act that earns the payment.
+  // Not one: an athlete with two or more tests subscribes about three times as
+  // often as one with a single test, because the second test is the first time
+  // LaChart shows something a lab printout cannot — a threshold that moved. A
+  // cap of one gated exactly the act that earns the payment.
+  //
+  // Two and not three: a cap nobody reaches is not a cap. On 2026-11-18 only
+  // 52 of 741 real accounts (7 %) had ever saved a third test, against 121 that
+  // had reached a second — so at three, the wall was invisible to 93 % of the
+  // base. Two keeps both of the free tests that earn the subscription and more
+  // than doubles the number of people who ever meet the paywall: 52 → 121.
   // Keep in step with client/src/constants/planLimits.js and PLANS.limits in
   // server/controllers/subscriptionController.js.
-  tests:    { free: 3, pro: -1, coach: -1, team: -1, enterprise: -1 },
+  tests:    { free: 2, pro: -1, coach: -1, team: -1, enterprise: -1 },
   // Linked athletes a coach can have. Free gets 1 (a taste); Pro is a solo
   // athlete plan so it gets 0; Coach is unlimited. Matches the client and the
   // /coach/invite-athlete cap.

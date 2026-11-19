@@ -3,6 +3,7 @@ import {
   shouldPromptTrackerConnect,
   markTrackerPromptShown,
   shouldRaiseStandingTrackerPrompt,
+  shouldRaiseUntestedTrackerPrompt,
   markStandingTrackerPromptShown,
   resetTrackerPromptState,
   MAX_PROMPTS,
@@ -122,7 +123,8 @@ describe('the standing prompt, for someone who already has a test', () => {
   });
 
   test('says nothing to someone who has never saved a test', () => {
-    // There are no thresholds to point at, so this is just another generic ask.
+    // This variant leads with the person's own thresholds, and there are none.
+    // shouldRaiseUntestedTrackerPrompt is what covers that person instead.
     expect(shouldRaiseStandingTrackerPrompt({ user: ATHLETE, hasTest: false })).toBe(false);
   });
 
@@ -189,5 +191,53 @@ describe('the two prompts never stack', () => {
     localStorage.setItem('trackerConnectPrompt', JSON.stringify({ count: 1, lastAt: Date.now() }));
     expect(shouldPromptTrackerConnect({ user: ATHLETE, testAthleteId: 'a1' })).toBe(false);
     expect(shouldRaiseStandingTrackerPrompt({ user: ATHLETE, hasTest: true })).toBe(false);
+  });
+});
+
+describe('the standing prompt, for someone with neither a test nor a tracker', () => {
+  test('asks an athlete who has neither', () => {
+    // 317 of 741 real accounts on 2026-11-18. On the web these people were
+    // asked once during onboarding, on the day they had nothing to connect a
+    // watch to, and then never again.
+    expect(shouldRaiseUntestedTrackerPrompt({ user: ATHLETE })).toBe(true);
+  });
+
+  test('stops once a tracker is connected', () => {
+    const connected = { ...ATHLETE, garmin: { athleteId: 7 } };
+    expect(shouldRaiseUntestedTrackerPrompt({ user: connected })).toBe(false);
+  });
+
+  test('leaves coaches alone, like the tested variant', () => {
+    expect(shouldRaiseUntestedTrackerPrompt({ user: COACH })).toBe(false);
+  });
+
+  test('never prompts in demo mode', () => {
+    expect(shouldRaiseUntestedTrackerPrompt({ user: ATHLETE, demoMode: true })).toBe(false);
+  });
+
+  test('shares one budget with the tested variant — it is the same ask', () => {
+    // The point of sharing the counter: an athlete who tests midway through
+    // must not get three more asks for having crossed from one variant to the
+    // other.
+    const realNow = Date.now;
+    let clock = realNow();
+    Date.now = () => clock;
+    try {
+      const gap = (MIN_STANDING_DAYS_BETWEEN + 1) * 24 * 60 * 60 * 1000;
+      for (let shown = 0; shown < MAX_STANDING_PROMPTS; shown += 1) {
+        expect(shouldRaiseUntestedTrackerPrompt({ user: ATHLETE })).toBe(true);
+        markStandingTrackerPromptShown();
+        clock += gap;
+      }
+      expect(shouldRaiseUntestedTrackerPrompt({ user: ATHLETE })).toBe(false);
+      expect(shouldRaiseStandingTrackerPrompt({ user: ATHLETE, hasTest: true })).toBe(false);
+    } finally {
+      Date.now = realNow;
+    }
+  });
+
+  test('shares the clock too, so it cannot follow a post-save ask', () => {
+    markTrackerPromptShown();
+    expect(shouldRaiseUntestedTrackerPrompt({ user: ATHLETE })).toBe(false);
   });
 });
