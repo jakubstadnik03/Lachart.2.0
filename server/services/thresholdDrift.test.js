@@ -53,8 +53,11 @@ function streamRide({ gainW, slope, lag = 30, drift = 3 }) {
   const watts = [];
   for (const [dur, w] of blocks) for (let k = 0; k < dur; k += 1) watts.push(w);
   // Offset that puts the athlete's LT2 at (lt2 + gainW) for the given LT2 HR.
-  const lt2 = 267.857142857;
-  const lt2Hr = 165;
+  // These are TEST_DOC's own LT2 and LT2 HR — keep them in step with the
+  // assertions below, or the ride is built around a threshold the anchor does
+  // not hold and every deltaDemand carries that gap as a silent bias.
+  const lt2 = 269.89482996386636;
+  const lt2Hr = 166;
   const a = lt2Hr - slope * (lt2 + gainW);
   const time = watts.map((_, i) => i);
   const heartrate = watts.map((_, i) => a + slope * watts[Math.max(0, i - lag)] + drift * (i / 3600));
@@ -113,13 +116,24 @@ test('returns nothing when the start date is unusable', () => {
 
 // ── extractAnchor ──────────────────────────────────────────────────────────
 
+// The four numbers below moved in c711211f ("One engine for LT1 and LT2, read
+// off a monotone curve"), which replaced the stage-picking pipeline this file
+// was written against. The old answers snapped to measured stages: LT1 was
+// stage 2's load (180 W) and its HR (134), LT2 was the OBLA 3.5 pick. On this
+// fixture 180 W is where lactate reads 1.1 against a 0.9 floor — still the
+// baseline, not a threshold, and LT1/LT2 = 0.67, far wider than an athlete
+// produces. The engine now reads both off a Fritsch-Carlson curve through the
+// stages: LT1 = 0.7 x the crossing at baseline + 0.8 mmol/L (220.59 W) + 0.3 x
+// the median of the log-log and segmented bend points (226.20 W) = 222.27 W,
+// where lactate is 1.74 mmol/L, and LT2 = 269.89 W at 3.59 mmol/L -- ratio
+// 0.82. Both HRs follow from the test's own HR curve read at those loads.
 test('derives LT1/LT2 and their heart rates from a test', () => {
   const a = extractAnchor(TEST_DOC);
   assert.ok(a, 'anchor should exist');
-  assert.strictEqual(a.lt1, 180);
-  assert.ok(Math.abs(a.lt2 - 267.86) < 0.1, `lt2 was ${a.lt2}`);
-  assert.strictEqual(a.lt1Hr, 134);
-  assert.strictEqual(a.lt2Hr, 165);
+  assert.ok(Math.abs(a.lt1 - 222.27) < 0.1, `lt1 was ${a.lt1}`);
+  assert.ok(Math.abs(a.lt2 - 269.89) < 0.1, `lt2 was ${a.lt2}`);
+  assert.strictEqual(a.lt1Hr, 149);
+  assert.strictEqual(a.lt2Hr, 166);
   assert.strictEqual(a.points.length, 6);
 });
 
@@ -127,7 +141,7 @@ test('a pinned threshold beats the calculated one', () => {
   const a = extractAnchor({ ...TEST_DOC, thresholdOverrides: { LTP2: 285, LTP2_hr: 172 } });
   assert.strictEqual(a.lt2, 285);
   assert.strictEqual(a.lt2Hr, 172);
-  assert.strictEqual(a.lt1, 180, 'an LT2 override must not disturb LT1');
+  assert.ok(Math.abs(a.lt1 - 222.27) < 0.1, `an LT2 override must not disturb LT1; lt1 was ${a.lt1}`);
 });
 
 test('an absent override does not read as a threshold of zero', () => {
