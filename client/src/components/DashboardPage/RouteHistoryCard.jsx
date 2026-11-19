@@ -30,7 +30,7 @@ function formatDelta(seconds) {
 function formatDate(value) {
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return '';
-  return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
 }
 
 /**

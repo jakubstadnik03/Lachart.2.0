@@ -171,7 +171,7 @@ export default function WellnessDetailSheet({ open, onClose, initialMetric = 'sl
     });
     const dates = windowRows.map((r) => {
       const d = new Date(`${r.date}T00:00:00`);
-      return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+      return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
     });
     const toUnit = (v) => (isSleep ? v / 60 : v);
     const avg = stats ? toUnit(stats.mean) : null;
@@ -209,7 +209,7 @@ export default function WellnessDetailSheet({ open, onClose, initialMetric = 'sl
           if (!p) return '';
           const row = windowRows[p.dataIndex] || {};
           const dateLabel = row.date
-            ? new Date(`${row.date}T00:00:00`).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })
+            ? new Date(`${row.date}T00:00:00`).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })
             : p.axisValue;
           const line = (label, v, suffix) => (v != null && v > 0
             ? `<div style="display:flex;justify-content:space-between;gap:14px"><span style="color:#6b7280">${label}</span><b>${v}${suffix}</b></div>` : '');
@@ -369,7 +369,7 @@ export default function WellnessDetailSheet({ open, onClose, initialMetric = 'sl
   if (!open) return null;
 
   const selDateLabel = selectedRow?.date
-    ? new Date(`${selectedRow.date}T00:00:00`).toLocaleDateString(undefined, { day: 'numeric', month: 'short', weekday: 'short' })
+    ? new Date(`${selectedRow.date}T00:00:00`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', weekday: 'short' })
     : null;
 
   return ReactDOM.createPortal(

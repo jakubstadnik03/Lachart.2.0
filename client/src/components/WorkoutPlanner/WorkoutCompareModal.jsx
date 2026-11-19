@@ -96,7 +96,7 @@ export default function WorkoutCompareModal({ pw, onClose }) {
   const steps = Array.isArray(executionData.steps) ? executionData.steps : EMPTY_STEPS;
 
   const completedAt = executionData.completedAt
-    ? new Date(executionData.completedAt).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })
+    ? new Date(executionData.completedAt).toLocaleDateString('en-GB', { weekday: 'short', month: 'short', day: 'numeric' })
     : null;
 
   return (

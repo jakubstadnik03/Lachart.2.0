@@ -491,7 +491,7 @@ export default function AutoClassifyModal({ onClose, onApplied }) {
                       <tbody>
                         {resetActivities.map((p, i) => {
                           const isSelected = resetSelected.has(p._id);
-                          const date = p.startDate ? new Date(p.startDate).toLocaleDateString('cs-CZ', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '-';
+                          const date = p.startDate ? new Date(p.startDate).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '-';
                           return (
                             <tr
                               key={p._id}
@@ -605,7 +605,7 @@ export default function AutoClassifyModal({ onClose, onApplied }) {
                   <tbody>
                     {visibleProposals.map((p, i) => {
                       const isSelected = selected.has(p._id);
-                      const date = p.startDate ? new Date(p.startDate).toLocaleDateString('cs-CZ', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '-';
+                      const date = p.startDate ? new Date(p.startDate).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '-';
                       return (
                         <tr
                           key={p._id}

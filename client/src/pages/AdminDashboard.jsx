@@ -1029,12 +1029,13 @@ const AdminDashboard = () => {
             return !u.isPremium;
           case 'any':
             return !!u.isPremium;
+          // Same buckets as the counts on the chips (premiumCounts).
           case 'manual':
-            return source === 'manual';
+            return !!u.isPremium && source === 'manual';
           case 'paid':
-            return source === 'subscription' && status === 'active';
+            return !!u.isPremium && source === 'subscription' && status === 'active';
           case 'trial':
-            return source === 'subscription' && status === 'trialing';
+            return !!u.isPremium && source === 'subscription' && status === 'trialing';
           default:
             return true;
         }
@@ -1127,14 +1128,18 @@ const AdminDashboard = () => {
   }, [users]);
 
   const premiumCounts = useMemo(() => {
-    const c = { all: users.length, free: 0, any: 0, manual: 0, paid: 0, trial: 0 };
+    // The breakdown only counts premium users, and every premium user lands in
+    // exactly one bucket: "41 — 25 paid · 7 trial · 6 manual" did not add up,
+    // because lapsed manual grants were counted and App Store / coach-covered
+    // premium had no bucket at all.
+    const c = { all: users.length, free: 0, any: 0, manual: 0, paid: 0, trial: 0, other: 0 };
     users.forEach((u) => {
-      if (u.isPremium) c.any += 1; else c.free += 1;
+      if (!u.isPremium) { c.free += 1; return; }
+      c.any += 1;
       if (u.premiumSource === 'manual') c.manual += 1;
-      if (u.premiumSource === 'subscription') {
-        if (u.subscription?.status === 'active') c.paid += 1;
-        else if (u.subscription?.status === 'trialing') c.trial += 1;
-      }
+      else if (u.premiumSource === 'subscription' && u.subscription?.status === 'active') c.paid += 1;
+      else if (u.premiumSource === 'subscription' && u.subscription?.status === 'trialing') c.trial += 1;
+      else c.other += 1;
     });
     return c;
   }, [users]);
@@ -2022,7 +2027,7 @@ const AdminDashboard = () => {
                     <p className="text-xs sm:text-sm font-medium text-gray-600">Premium Users</p>
                     <p className="text-xl sm:text-2xl font-bold text-gray-900">{premiumCounts.any}</p>
                     <p className="text-xs text-gray-500 mt-1">
-                      {premiumCounts.paid} paid · {premiumCounts.trial} trial · {premiumCounts.manual} manual
+                      {premiumCounts.paid} paid · {premiumCounts.trial} trial · {premiumCounts.manual} manual{premiumCounts.other > 0 ? ` · ${premiumCounts.other} other` : ''}
                     </p>
                   </div>
                 </div>
@@ -2034,7 +2039,10 @@ const AdminDashboard = () => {
                     <span className="text-xl sm:text-2xl">✅</span>
                   </div>
                   <div className="ml-3 sm:ml-4">
-                    <p className="text-xs sm:text-sm font-medium text-gray-600">Active Users</p>
+                    {/* Any training or test ever — not recent activity, which
+                        the "Last login" card below covers. "Active Users 697"
+                        next to 165 logins in 30 days read as a contradiction. */}
+                    <p className="text-xs sm:text-sm font-medium text-gray-600">Users with data</p>
                     <p className="text-xl sm:text-2xl font-bold text-gray-900">
                       {users.filter(u => (u.trainingCount || 0) > 0 || (u.testCount || 0) > 0).length}
                     </p>

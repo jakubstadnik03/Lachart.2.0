@@ -19,7 +19,7 @@ const COLORS = {
 
 function fmtDay(dateKey) {
   const d = new Date(`${dateKey}T00:00:00`);
-  return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
 }
 
 export default function SymptomLoadChart({ checkIns = [], catalogEntry }) {

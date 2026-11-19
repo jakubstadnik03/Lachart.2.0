@@ -1,4 +1,6 @@
 const express = require('express');
+const { channel } = require('../utils/streamChannel');
+const { averagePowerFromLaps } = require('../utils/lapAveragePower');
 const axios = require('axios');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
@@ -4194,6 +4196,9 @@ async function upsertGarminActivities(user, activities = []) {
       }
 
       const doc = mapGarminActivityToDoc(user, a);
+      // A summary with no power must not wipe the power the details push
+      // already worked out from the laps (see upsertGarminActivityDetails).
+      if (doc.averagePower == null) delete doc.averagePower;
       const resUp = await GarminActivity.updateOne(
         { userId: user._id, garminId: doc.garminId },
         { $set: doc },
@@ -4395,6 +4400,13 @@ async function upsertGarminActivityDetails(user, detail) {
   // if the summary push hasn't arrived yet; then attach the computed laps.
   const doc = mapGarminActivityToDoc(user, { ...summary, activityId: garminId });
   if (laps.length) doc.laps = laps;
+  // Garmin's summary often has no power for a ride whose laps all do (an
+  // indoor Tacx session); lists that read the summary then showed "—".
+  if (doc.averagePower == null) {
+    const fromLaps = averagePowerFromLaps(laps);
+    if (fromLaps != null) doc.averagePower = fromLaps;
+    else delete doc.averagePower;
+  }
 
   const resUp = await GarminActivity.updateOne(
     { userId: user._id, garminId },
@@ -5214,9 +5226,6 @@ function toPendingLactateRow(a, source, athleteIdParam) {
   const lapHrs = laps
     .map(l => l.avgHeartRate ?? l.avg_heart_rate ?? l.average_heartrate ?? l.averageHeartRate ?? 0)
     .filter(v => Number(v) > 0).map(Number);
-  const lapWatts = laps
-    .map(l => l.avgPower ?? l.avg_power ?? l.average_watts ?? l.averageWatts ?? 0)
-    .filter(v => Number(v) > 0).map(Number);
   const lapTimes = laps.map(lapDurationSeconds).filter(v => v > 0);
   const arrAvg = arr => arr.reduce((s2, v) => s2 + v, 0) / arr.length;
 
@@ -5236,7 +5245,12 @@ function toPendingLactateRow(a, source, athleteIdParam) {
     openPath,
     avgHr: lapHrs.length ? Math.round(arrAvg(lapHrs)) : null,
     maxHr: lapHrs.length ? Math.max(...lapHrs) : null,
-    avgWatts: lapWatts.length ? Math.round(arrAvg(lapWatts)) : null,
+    // The ride's own average when it has one, else the laps weighted by
+    // length — a plain mean of lap averages read 234 W for a 247 W ride.
+    avgWatts: (() => {
+      const own = Number(a.averagePower) > 0 ? Number(a.averagePower) : averagePowerFromLaps(laps);
+      return own != null ? Math.round(own) : null;
+    })(),
     // Shared with the activities list, so the "Intervals?" badge here and the
     // dashboard's admission rule can't disagree about what "structured" means.
     lapDurationCv: lapDurationCv(lapTimes),
@@ -5254,17 +5268,49 @@ function toPendingLactateRow(a, source, athleteIdParam) {
  * other are the same session; the copy with more laps wins, because laps are
  * the entire point of this panel.
  */
+const PENDING_SAME_SESSION_MS = 5 * 60 * 1000;
+const QUARTER_HOUR_MS = 15 * 60 * 1000;
+const MAX_TZ_OFFSET_MS = 14 * 60 * 60 * 1000;
+const TZ_OFFSET_SLACK_MS = 3 * 60 * 1000;
+
+function pendingSportBucket(sport) {
+  const s = String(sport || '').toLowerCase();
+  if (s.includes('ride') || s.includes('bike') || s.includes('cycl')) return 'bike';
+  if (s.includes('run')) return 'run';
+  if (s.includes('swim')) return 'swim';
+  return s || 'other';
+}
+
+/**
+ * Strava's startDate is the athlete's wall clock written as if it were UTC;
+ * Garmin's is real UTC. So one ride sits a whole time-zone offset apart in
+ * the two collections — an hour in Prague, five or six on the Florida coast —
+ * and the five-minute window above never saw the pair (2026-11: every ride of
+ * a race week listed twice). Across services, an offset that is a whole
+ * number of quarter hours, with the same sport and the same length, is one
+ * session. Within one service clocks agree, so this never joins two rows from
+ * the same source.
+ */
+function samePendingSession(a, b) {
+  const ta = a.startDate ? new Date(a.startDate).getTime() : NaN;
+  const tb = b.startDate ? new Date(b.startDate).getTime() : NaN;
+  if (!Number.isFinite(ta) || !Number.isFinite(tb)) return false;
+  const dt = Math.abs(ta - tb);
+  if (dt <= PENDING_SAME_SESSION_MS) return true;
+  if (a.source === b.source || dt > MAX_TZ_OFFSET_MS) return false;
+  const offBy = dt % QUARTER_HOUR_MS;
+  if (Math.min(offBy, QUARTER_HOUR_MS - offBy) > TZ_OFFSET_SLACK_MS) return false;
+  if (pendingSportBucket(a.sport) !== pendingSportBucket(b.sport)) return false;
+  const da = Number(a.movingTime) || 0;
+  const db = Number(b.movingTime) || 0;
+  if (!da || !db) return false;
+  return Math.abs(da - db) <= Math.max(180, 0.1 * Math.max(da, db));
+}
+
 function dedupePendingLactate(rows) {
-  const SAME_SESSION_MS = 5 * 60 * 1000;
   const kept = [];
   for (const row of rows) {
-    const t = row.startDate ? new Date(row.startDate).getTime() : NaN;
-    const twin = Number.isFinite(t)
-      ? kept.find((k) => {
-        const kt = k.startDate ? new Date(k.startDate).getTime() : NaN;
-        return Number.isFinite(kt) && Math.abs(kt - t) <= SAME_SESSION_MS;
-      })
-      : null;
+    const twin = kept.find((k) => samePendingSession(k, row)) || null;
     if (!twin) { kept.push(row); continue; }
     if ((row.lapCount || 0) > (twin.lapCount || 0)) kept[kept.indexOf(twin)] = row;
   }
@@ -5288,12 +5334,12 @@ async function handlePendingLactate(req, res) {
       StravaActivity.find(where)
         .sort({ startDate: -1 })
         .limit(150)
-        .select('_id stravaId name sport startDate laps movingTime elapsedTime distance')
+        .select('_id stravaId name titleManual sport startDate laps movingTime elapsedTime distance averagePower')
         .lean(),
       GarminActivity.find(where)
         .sort({ startDate: -1 })
         .limit(150)
-        .select('_id garminId name titleManual sport startDate laps movingTime elapsedTime distance')
+        .select('_id garminId name titleManual sport startDate laps movingTime elapsedTime distance averagePower')
         .lean(),
     ]);
 
@@ -5729,9 +5775,13 @@ router.get('/activities', verifyToken, activitiesCacheMiddleware, async (req, re
       : 'stravaId name titleManual category sport startDate elapsedTime movingTime distance averageSpeed averageHeartRate average_heartrate averagePower average_watts weightedAveragePower weighted_average_watts lactate manualTss tssDisplayMode metricsManualized calories rpe laps.lactate';
     // raw.activityType rides along (a few bytes) so a row stored as "other"
     // before the gym family was mapped still reads back as strength / yoga.
+    // Lap watts and lengths ride along only so a ride whose summary has no
+    // power (every Garmin ride in prod, 2026-11) can be given one below; they
+    // are stripped again before the list goes out.
+    const GARMIN_LAP_POWER = 'laps.average_watts laps.avgPower laps.moving_time laps.elapsed_time';
     const garminSelect = summaryOnly
-      ? 'garminId name titleManual category sport raw.activityType startDate elapsedTime movingTime distance averageSpeed averageHeartRate averagePower lactate manualTss tssDisplayMode metricsManualized'
-      : 'garminId name titleManual category sport raw.activityType startDate elapsedTime movingTime distance averageSpeed averageHeartRate averagePower lactate manualTss tssDisplayMode metricsManualized laps.lactate';
+      ? `garminId name titleManual category sport raw.activityType startDate elapsedTime movingTime distance averageSpeed averageHeartRate averagePower lactate manualTss tssDisplayMode metricsManualized ${GARMIN_LAP_POWER}`
+      : `garminId name titleManual category sport raw.activityType startDate elapsedTime movingTime distance averageSpeed averageHeartRate averagePower lactate manualTss tssDisplayMode metricsManualized laps.lactate ${GARMIN_LAP_POWER}`;
     const appleSelect = summaryOnly
       ? 'healthKitId title name category sport startDate durationSeconds distanceMeters avgHeartRate lactate'
       : null;
@@ -5913,8 +5963,13 @@ router.get('/activities', verifyToken, activitiesCacheMiddleware, async (req, re
         source: 'strava',
         sourceId: a.stravaId
       })),
-      ...garminActs.map(({ raw, ...a }) => ({
+      ...garminActs.map(({ raw, laps, ...a }) => ({
         ...a,
+        // Only lactate per lap was ever sent with the list; keep it that way.
+        ...(summaryOnly ? {} : { laps: Array.isArray(laps) ? laps.map((l) => ({ lactate: l?.lactate })) : laps }),
+        // Garmin's summary carries no power; the laps do. Without this the
+        // Training Log and calendar showed "—" for every Garmin-only ride.
+        averagePower: Number(a.averagePower) > 0 ? a.averagePower : averagePowerFromLaps(laps),
         // Re-map sport at read time: docs imported by older builds can hold a
         // raw Garmin typeKey (e.g. VIRTUAL_RIDE) that neither the client icon
         // helpers nor the dedup below understand, and rows synced before the
@@ -6063,8 +6118,21 @@ router.get('/activities', verifyToken, activitiesCacheMiddleware, async (req, re
         const bothSportsKnown = isConfidentSport(actSport) && isConfidentSport(candSport)
           && actSport === candSport;
 
+        // Indoor rides are the exception to "lengths within 3 min": the
+        // trainer app and the head unit start and stop on their own, so one
+        // Tacx ride read 7151 s on Strava and 6650 s on Garmin over the same
+        // 73.36 km. With the route the same to 1% over 5 km or more, the same
+        // sport and a clock offset, a 10% length gap is still one ride — and
+        // keeping it as two left the Garmin copy, which had no power, as a
+        // row of dashes in the Training Log.
+        const durationGap = closestDurationGap(act, candidate.activity);
+        const longerSec = Math.max(...durationCandidates(act), ...durationCandidates(candidate.activity), 0);
+        const lengthsAgree = durationGap <= 180
+          || (sameRouteExactly && bothSportsKnown && hrDoesNotVeto
+            && parseInt(actDistance) >= 50 && parseInt(distance) >= 50
+            && durationGap <= 0.1 * longerSec);
         const offsetClockMatch = looksLikeClockOffset
-          && closestDurationGap(act, candidate.activity) <= 180
+          && lengthsAgree
           && (sameRouteExactly || (strongDistanceMatch && bothSportsKnown && hrDoesNotVeto));
 
         if ((startsTogether && ((durationDiff <= 0.1 && distanceDiff <= 0.05) || strongDistanceMatch))
@@ -6448,7 +6516,7 @@ router.get('/strava/activities/:id', verifyToken, async (req, res) => {
     let detailResp = cached ? { data: cached.detail } : null;
     // Only use cached streams if they actually contain time-series data.
     const cachedStreamsHaveData = cached?.streams &&
-      Array.isArray(cached.streams.time?.data) && cached.streams.time.data.length > 0;
+      (channel(cached.streams, 'time').length > 0);
     let streamsData = cachedStreamsHaveData ? cached.streams : {};
     let laps = cached ? (cached.laps || []) : [];
 
@@ -6530,9 +6598,9 @@ router.get('/strava/activities/:id', verifyToken, async (req, res) => {
       // TrainingChart (power/HR over time) can render.
       const dbStreamsHaveTimeSeries = streamFromDb?.streams &&
         Object.keys(streamFromDb.streams).length > 0 && (
-          (Array.isArray(streamFromDb.streams.time?.data) && streamFromDb.streams.time.data.length > 0) ||
-          (Array.isArray(streamFromDb.streams.distance?.data) && streamFromDb.streams.distance.data.length > 0) ||
-          (Array.isArray(streamFromDb.streams.heartrate?.data) && streamFromDb.streams.heartrate.data.length > 0)
+          ((channel(streamFromDb.streams, 'time').length > 0)) ||
+          ((channel(streamFromDb.streams, 'distance').length > 0)) ||
+          ((channel(streamFromDb.streams, 'heartrate').length > 0))
         );
 
       // If the activity has heart-rate data (has_heartrate=true) but the cached
@@ -6540,8 +6608,8 @@ router.get('/strava/activities/:id', verifyToken, async (req, res) => {
       // ran before Strava finished processing the HR data. Treat the cache as
       // stale so we re-fetch and get the full stream set including heartrate.
       const activityHasHr = detailResp?.data?.has_heartrate === true;
-      const dbStreamsHaveHr = Array.isArray(streamFromDb?.streams?.heartrate?.data)
-        && streamFromDb.streams.heartrate.data.some(v => v > 0);
+      const dbStreamsHaveHr = channel(streamFromDb?.streams, 'heartrate')
+        .some(v => v > 0);
       const dbStreamsMissingHr = dbStreamsHaveTimeSeries && activityHasHr && !dbStreamsHaveHr;
 
       if (dbStreamsHaveTimeSeries && !dbStreamsMissingHr) {
@@ -6555,9 +6623,9 @@ router.get('/strava/activities/:id', verifyToken, async (req, res) => {
           streamsData = streamFromDb?.streams || {};
         }
         const hasUsableStreams = streamsData && Object.keys(streamsData).length > 0 && (
-          (Array.isArray(streamsData.time?.data) && streamsData.time.data.length > 0) ||
-          (Array.isArray(streamsData.distance?.data) && streamsData.distance.data.length > 0) ||
-          (Array.isArray(streamsData.heartrate?.data) && streamsData.heartrate.data.length > 0)
+          ((channel(streamsData, 'time').length > 0)) ||
+          ((channel(streamsData, 'distance').length > 0)) ||
+          ((channel(streamsData, 'heartrate').length > 0))
         );
         if (hasUsableStreams) {
           // Persist any streams that have at least one usable channel so future
@@ -6582,7 +6650,7 @@ router.get('/strava/activities/:id', verifyToken, async (req, res) => {
       // there are two source formats. The decoded polyline has lower
       // resolution than the latlng stream (one point per ~10–50 m vs.
       // one per second) but it's plenty for drawing the route shape.
-      if (!streamsData.latlng || !streamsData.latlng.data || streamsData.latlng.data.length === 0) {
+      if (!(channel(streamsData, 'latlng').length > 0)) {
         const poly = detailResp?.data?.map?.polyline || detailResp?.data?.map?.summary_polyline;
         if (poly && typeof poly === 'string') {
           try {
@@ -7456,12 +7524,12 @@ router.post('/strava/activities/:id/laps', verifyToken, async (req, res) => {
     }
 
     // Find data points in the selected time range
-    const timeStream = streams.time?.data || [];
-    const speedStream = streams.velocity_smooth?.data || [];
-    const hrStream = streams.heartrate?.data || [];
-    const powerStream = streams.watts?.data || [];
-    const cadenceStream = streams.cadence?.data || [];
-    const altitudeStream = streams.altitude?.data || [];
+    const timeStream = channel(streams, 'time');
+    const speedStream = channel(streams, 'velocity_smooth');
+    const hrStream = channel(streams, 'heartrate');
+    const powerStream = channel(streams, 'watts');
+    const cadenceStream = channel(streams, 'cadence');
+    const altitudeStream = channel(streams, 'altitude');
 
     const selectedIndices = [];
     for (let i = 0; i < timeStream.length; i++) {
@@ -7606,11 +7674,11 @@ router.post('/strava/activities/:id/laps/bulk', verifyToken, async (req, res) =>
 
     const activityStartMs = activityStartDate.getTime();
 
-    const timeStream = streams.time?.data || [];
-    const speedStream = streams.velocity_smooth?.data || [];
-    const hrStream = streams.heartrate?.data || [];
-    const powerStream = streams.watts?.data || [];
-    const cadenceStream = streams.cadence?.data || [];
+    const timeStream = channel(streams, 'time');
+    const speedStream = channel(streams, 'velocity_smooth');
+    const hrStream = channel(streams, 'heartrate');
+    const powerStream = channel(streams, 'watts');
+    const cadenceStream = channel(streams, 'cadence');
 
     if (!timeStream.length) {
       return res.status(400).json({ error: 'No time stream data available' });

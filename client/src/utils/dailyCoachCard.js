@@ -203,7 +203,7 @@ function capitalize(text) {
   return text ? text.charAt(0).toUpperCase() + text.slice(1) : text;
 }
 
-function buildDirective({ state, todayPlanned, yesterday, style, load, recovery }) {
+function buildDirective({ state, todayPlanned, todayCompleted = [], yesterday, style, load, recovery }) {
   const test = todayPlanned.find((p) => p.isLactateTest);
   if (test) {
     return {
@@ -251,6 +251,15 @@ function buildDirective({ state, todayPlanned, yesterday, style, load, recovery 
 
   if (todayPlanned.length) {
     return { kind: 'planned', text: style.frame[state] };
+  }
+
+  // Nothing was planned but the athlete already trained today. The card said
+  // "Nothing planned. Rest well" next to the swim they had just finished.
+  if (todayCompleted.length) {
+    const titles = todayCompleted.map((c) => c.title).filter(Boolean);
+    const what = titles.length > 1 ? `${titles.length} sessions` : (titles[0] || 'Today’s session');
+    // Not style.restLine: every variant of it announces a rest day.
+    return { kind: 'done-today', text: `${what} done today — the rest of the day is recovery.` };
   }
 
   if (yesterday && yesterday.tss >= 90) {
@@ -370,7 +379,7 @@ export function buildDailyCard({
     ? assessReadiness(wellness, { tsb: form })
     : null;
 
-  const directive = buildDirective({ state, todayPlanned, yesterday, style, load, recovery });
+  const directive = buildDirective({ state, todayPlanned, todayCompleted, yesterday, style, load, recovery });
   const lesson = getDailyLesson(now, String(user?._id || userProfile?._id || ''));
 
   const hour = now.getHours();

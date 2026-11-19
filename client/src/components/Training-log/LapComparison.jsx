@@ -42,7 +42,7 @@ function getSessionDate(t) {
 function fmtDate(t) {
   const d = getSessionDate(t);
   if (isNaN(d.getTime())) return '—';
-  return d.toLocaleDateString('cs-CZ', { day: '2-digit', month: '2-digit', year: '2-digit' });
+  return d.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit' });
 }
 
 /** Lap metric value (null if not available for this lap). */

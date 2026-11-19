@@ -12,7 +12,7 @@ function createTransporter() {
   return createEmailTransporter();
 }
 
-function formatDateShort(dateLike, locale = 'cs-CZ') {
+function formatDateShort(dateLike, locale = 'en-GB') {
   try {
     return new Date(dateLike).toLocaleDateString(locale, { day: '2-digit', month: '2-digit', year: 'numeric' });
   } catch {

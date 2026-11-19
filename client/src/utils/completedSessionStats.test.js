@@ -7,7 +7,7 @@
  * every formatter in the app prints NaN as "0m".
  */
 
-import { completedSecs, durationSecs } from './completedSessionStats';
+import { completedSecs, durationSecs, completedDistM } from './completedSessionStats';
 
 describe('durationSecs', () => {
   it('reads a clock the way a person wrote it', () => {
@@ -80,5 +80,28 @@ describe('completedSecs', () => {
     const total = week.reduce((sum, a) => sum + completedSecs(a), 0);
     expect(total).toBe(8948 + 4020 + 3000);
     expect(Number.isFinite(total)).toBe(true);
+  });
+});
+
+describe('completedDistM', () => {
+  // A 120 m warm-up swim printed "120 km" on the planner card and the week's
+  // DONE total grew by 240 km: every value under 500 was read as km.
+  it('keeps a short swim in metres', () => {
+    expect(completedDistM({ sport: 'swim', distance: 120 })).toBe(120);
+    expect(completedDistM({ sport_type: 'Swim', distance: 120.4 })).toBe(120.4);
+  });
+
+  it('keeps a short synced activity in metres', () => {
+    expect(completedDistM({ sport: 'run', distance: 400, stravaId: 123 })).toBe(400);
+    expect(completedDistM({ id: 'garmin-25003613313', distance: 300 })).toBe(300);
+  });
+
+  it('still reads a hand-entered run typed in km', () => {
+    expect(completedDistM({ sport: 'run', distance: 42.2 })).toBeCloseTo(42200);
+  });
+
+  it('passes long distances through', () => {
+    expect(completedDistM({ sport: 'swim', distance: 3230 })).toBe(3230);
+    expect(completedDistM({ sport: 'bike', distance: 180280 })).toBe(180280);
   });
 });

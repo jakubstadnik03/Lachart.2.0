@@ -19,7 +19,7 @@ function daysUntil(dateStr) {
 }
 
 function fmtDate(dateStr) {
-  return new Date(dateStr).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+  return new Date(dateStr).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
 function formatForm(tsb) {

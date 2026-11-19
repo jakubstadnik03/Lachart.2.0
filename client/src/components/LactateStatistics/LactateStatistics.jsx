@@ -1214,11 +1214,11 @@ const LactateStatistics = ({ selectedAthleteId = null }) => {
                     </div>
                   )}
 
-                  {/* Running Zones - Power Zones for Run */}
+                  {/* Running Zones - pace zones for Run */}
                   {selectedZoneType === 'running' && (month.runningZones || month.runningZoneTimes) && (
                     <div className="mb-2 p-2 bg-white/10 backdrop-blur-xl rounded-lg border border-white/20 shadow-md">
                       <h4 className="text-xs font-semibold text-text mb-2">
-                        Time in Power Zone
+                        Time in Pace Zone
                         {month.usesProfileRunningZones ? ' (profile)' : month.runningZones ? ' (default)' : ' (from training data)'}
                       </h4>
                       {month.runningZoneTimes && (() => {
@@ -1439,7 +1439,12 @@ const LactateStatistics = ({ selectedAthleteId = null }) => {
                       )}
                       {month.swimmingZoneTimes && Object.values(month.swimmingZoneTimes).every(z => !z || z.time === 0) && (
                         <div className="text-center py-2 text-lighterText text-[10px]">
-                          No swim trainings with pace data in this month.
+                          {/* The month card above already prints an average pace
+                              from the totals, so "no pace data" read as a
+                              contradiction. Zones need pace samples, not totals. */}
+                          {Number(month.swimmingTrainings) > 0
+                            ? `${month.swimmingTrainings} swim${Number(month.swimmingTrainings) === 1 ? '' : 's'} this month, but none has per-length pace samples to split into zones.`
+                            : 'No swim trainings in this month.'}
                         </div>
                       )}
                     </div>

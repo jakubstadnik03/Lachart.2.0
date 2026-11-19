@@ -34,7 +34,7 @@ const COLORS = {
 function fmtWeek(dateKey) {
   const d = new Date(`${dateKey}T00:00:00`);
   if (Number.isNaN(d.getTime())) return dateKey;
-  return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
 }
 
 /** m/s to seconds per km. Null-safe: a week with no usable speed has no pace. */

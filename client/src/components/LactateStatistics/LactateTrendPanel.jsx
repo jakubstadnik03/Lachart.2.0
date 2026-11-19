@@ -52,9 +52,18 @@ function fmtIntensity(value, unit) {
   return String(Math.round(v));
 }
 
-/** Client-side linear regression so a sport-filtered subset gets its own trend. */
-function regress(points) {
-  if (!points || points.length < 2) return { slope: 0, r2: 0, label: 'stable' };
+/**
+ * Client-side linear regression so a sport-filtered subset gets its own trend.
+ *
+ * Needs three readings on at least two different days. Two samples from one
+ * session have no time between them, so there is no slope to fit — the panel
+ * still called that "stable, R² 0.00", which reads as a measured finding.
+ */
+export function regress(points) {
+  const days = new Set((points || []).map((p) => new Date(p.date).toDateString()));
+  if (!points || points.length < 3 || days.size < 2) {
+    return { slope: 0, r2: null, label: 'insufficient_data' };
+  }
   const t0 = new Date(points[0].date).getTime();
   const xs = points.map((p) => (new Date(p.date).getTime() - t0) / 86400000); // days
   const ys = points.map((p) => p.lactate);
@@ -132,8 +141,10 @@ function BinScatter({ binKey, points, unit, onPointClick }) {
       <div className="flex items-center justify-between mb-1">
         <span className="text-[11px] font-bold text-gray-700 truncate max-w-[160px]">{binKey}</span>
         <div className="flex items-center gap-1.5">
-          <Badge label={label} />
-          <span className="text-[9px] text-gray-400">{pts.length} pts · R²{r2.toFixed(2)}</span>
+          <Badge label={label} color={label === 'insufficient_data' ? 'too few days' : undefined} />
+          <span className="text-[9px] text-gray-400">
+            {pts.length} pts{r2 != null ? ` · R² ${r2.toFixed(2)}` : ''}
+          </span>
         </div>
       </div>
 
@@ -155,7 +166,7 @@ function BinScatter({ binKey, points, unit, onPointClick }) {
             </text>
           ))}
           {/* Trend line */}
-          {pts.length >= 3 && r2 > 0.05 && (
+          {r2 != null && r2 > 0.05 && (
             <line x1={PAD_L} y1={y1} x2={PAD_L + innerW} y2={y2}
               stroke={trendColor} strokeWidth="1.5" strokeDasharray="4 3" opacity="0.7" />
           )}

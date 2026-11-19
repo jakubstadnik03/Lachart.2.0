@@ -1,3 +1,4 @@
+const { channel } = require('../utils/streamChannel');
 const FitTraining = require('../models/fitTraining');
 const User = require('../models/UserModel');
 const fs = require('fs');
@@ -1511,7 +1512,7 @@ async function analyzeTrainingsByMonth(req, res) {
       // If onlyMetadata, just count trainings per month, skip full analysis
       if (onlyMetadata) {
         if (!monthlyAnalysis[monthKey]) {
-          const monthName = trainingDate.toLocaleString('cs-CZ', { month: 'long', year: 'numeric' });
+          const monthName = trainingDate.toLocaleString('en-GB', { month: 'long', year: 'numeric' });
           monthlyAnalysis[monthKey] = {
             month: monthName,
             monthKey: monthKey,
@@ -1530,7 +1531,7 @@ async function analyzeTrainingsByMonth(req, res) {
       }
       
       fitTrainingsProcessed++;
-      const monthName = trainingDate.toLocaleString('cs-CZ', { month: 'long', year: 'numeric' });
+      const monthName = trainingDate.toLocaleString('en-GB', { month: 'long', year: 'numeric' });
 
       if (!monthlyAnalysis[monthKey]) {
         monthlyAnalysis[monthKey] = {
@@ -1948,7 +1949,7 @@ async function analyzeTrainingsByMonth(req, res) {
         type: 'fit',
         timestamp: training.timestamp,
         date: trainingDate.toISOString(),
-        title: training.title || `Training ${trainingDate.toLocaleDateString('cs-CZ')}`,
+        title: training.title || `Training ${trainingDate.toLocaleDateString('en-GB')}`,
         avgPower: Math.round(avgPowerInTraining),
         maxPower: Math.round(maxPowerInTraining),
         avgHeartRate: Math.round(avgHeartRateInTraining) || 0,
@@ -2046,7 +2047,7 @@ async function analyzeTrainingsByMonth(req, res) {
       // If onlyMetadata, just count activities per month
       if (onlyMetadata) {
         if (!monthlyAnalysis[monthKey]) {
-          const monthName = activityDate.toLocaleString('cs-CZ', { month: 'long', year: 'numeric' });
+          const monthName = activityDate.toLocaleString('en-GB', { month: 'long', year: 'numeric' });
           monthlyAnalysis[monthKey] = {
             month: monthName,
             monthKey: monthKey,
@@ -2137,8 +2138,12 @@ async function analyzeTrainingsByMonth(req, res) {
       const isStravaCycling = stravaSportKey === 'bike';
       
       // Check if we have required streams based on sport type
-      const hasPowerStream = streams && streams.watts && streams.watts.data && streams.watts.data.length > 0;
-      const hasSpeedStream = streams && streams.velocity_smooth && streams.velocity_smooth.data && streams.velocity_smooth.data.length > 0;
+      // Cached streams come back packed → unpacked as plain arrays; a fresh
+      // Strava response is { data: [...] }. Checking only `.data` sent every
+      // cached activity down the summary-only path, which never fills the
+      // time-in-zone buckets — Lactate Statistics showed 0% in every zone.
+      const hasPowerStream = channel(streams, 'watts').length > 0;
+      const hasSpeedStream = channel(streams, 'velocity_smooth').length > 0;
       
       // If no streams, use database data (averagePower, averageHeartRate, movingTime)
       const useDatabaseData = !streams || (!hasPowerStream && !hasSpeedStream);
@@ -2154,7 +2159,7 @@ async function analyzeTrainingsByMonth(req, res) {
         }
       }
       
-      const monthName = activityDate.toLocaleString('cs-CZ', { month: 'long', year: 'numeric' });
+      const monthName = activityDate.toLocaleString('en-GB', { month: 'long', year: 'numeric' });
 
       if (!monthlyAnalysis[monthKey]) {
         monthlyAnalysis[monthKey] = {
@@ -2290,6 +2295,10 @@ async function analyzeTrainingsByMonth(req, res) {
           }
           monthlyAnalysis[monthKey].runningTrainings++;
           monthlyAnalysis[monthKey].runningTime += stravaTotalTime;
+          // Finalisation derives bikeTime as totalTime − runningTime −
+          // swimmingTime, so a run that is not in totalTime is subtracted from
+          // the rides instead (summary-only path; the stream path adds it per record).
+          monthlyAnalysis[monthKey].totalTime += stravaTotalTime;
           if (activity.distance) {
             monthlyAnalysis[monthKey].runningDistance += activity.distance;
           }
@@ -2320,6 +2329,7 @@ async function analyzeTrainingsByMonth(req, res) {
         } else if (isStravaSwimming) {
           monthlyAnalysis[monthKey].swimmingTrainings++;
           monthlyAnalysis[monthKey].swimmingTime += stravaTotalTime;
+          monthlyAnalysis[monthKey].totalTime += stravaTotalTime; // see the run branch above
           if (activity.distance) {
             monthlyAnalysis[monthKey].swimmingDistance += activity.distance;
           }
@@ -2364,7 +2374,7 @@ async function analyzeTrainingsByMonth(req, res) {
           type: 'strava',
           timestamp: activity.startDate,
           date: activityDate.toISOString(),
-          title: activity.name || `Strava Activity ${activityDate.toLocaleDateString('cs-CZ')}`,
+          title: activity.name || `Strava Activity ${activityDate.toLocaleDateString('en-GB')}`,
           avgPower: Math.round(stravaAvgPower),
           maxPower: Math.round(stravaAvgPower), // Use avg as max if no stream data
           avgHeartRate: Math.round(stravaAvgHeartRate) || 0,
@@ -2377,10 +2387,10 @@ async function analyzeTrainingsByMonth(req, res) {
       }
 
       // Analyze Strava streams (sekundu po sekundě) stejně jako records pro FIT tréninky
-      const timeStream = streams.time?.data || [];
-      const powerStream = streams.watts?.data || [];
-      const speedStream = streams.velocity_smooth?.data || [];
-      const heartRateStream = streams.heartrate?.data || [];
+      const timeStream = channel(streams, 'time');
+      const powerStream = channel(streams, 'watts');
+      const speedStream = channel(streams, 'velocity_smooth');
+      const heartRateStream = channel(streams, 'heartrate');
       
       let stravaMaxPower = 0;
       let stravaAvgPower = 0;
@@ -2637,7 +2647,7 @@ async function analyzeTrainingsByMonth(req, res) {
         type: 'strava',
         timestamp: activity.startDate,
         date: activityDate.toISOString(),
-        title: activity.name || `Strava Activity ${activityDate.toLocaleDateString('cs-CZ')}`,
+        title: activity.name || `Strava Activity ${activityDate.toLocaleDateString('en-GB')}`,
         avgPower: Math.round(stravaAvgPower),
         maxPower: Math.round(stravaMaxPower),
         avgHeartRate: Math.round(stravaAvgHeartRate) || 0,
@@ -3312,8 +3322,8 @@ async function getPowerMetrics(req, res) {
           }
         }
 
-        const timeStream = streams.time?.data || [];
-        const powerStream = streams.watts?.data || [];
+        const timeStream = channel(streams, 'time');
+        const powerStream = channel(streams, 'watts');
         
         if (timeStream.length === 0 || powerStream.length === 0) continue;
         
@@ -4022,7 +4032,7 @@ async function getIntensityHistogram(req, res) {
       const streamDocs = await StravaStream.find({
         userId: athleteIdStr,
         stravaId: { $in: ids },
-      }).select('streams').lean();
+      }).select('streams packed').lean();
       for (const sd of streamDocs) {
         const s = sd.streams || {};
         const metricArr = isBike ? s.watts : s.velocity_smooth;

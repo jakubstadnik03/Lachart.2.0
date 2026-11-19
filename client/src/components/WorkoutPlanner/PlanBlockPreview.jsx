@@ -51,7 +51,7 @@ const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 function formatDay(key) {
   const d = new Date(`${key}T12:00:00`);
   if (Number.isNaN(d.getTime())) return key;
-  return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
 }
 
 /**

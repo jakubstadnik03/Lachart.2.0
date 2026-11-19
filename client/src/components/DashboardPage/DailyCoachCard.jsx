@@ -86,7 +86,16 @@ function ReadinessChip({ readiness, recovery }) {
 }
 
 /** Today's sessions as sport glyphs; a dot marks the hard ones. */
-function PlannedGlyphs({ items }) {
+function PlannedGlyphs({ items, done = [] }) {
+  // "Rest day" sat on the card of a day the athlete had already trained.
+  if (!items.length && done.length) {
+    return (
+      <span className="inline-flex items-center gap-1.5 text-[10px] font-semibold text-emerald-600" aria-label={`Done today: ${done.map((i) => i.title).join(', ')}`}>
+        {done.slice(0, 3).map((it, i) => <SportGlyph key={it.id || i} sport={it.sport} size={15} />)}
+        Done
+      </span>
+    );
+  }
   if (!items.length) return <span className="text-[10px] font-semibold text-gray-400">Rest day</span>;
   return (
     <span className="inline-flex items-center gap-1.5" aria-label={items.map((i) => i.title).join(', ')}>
@@ -555,7 +564,7 @@ export default function DailyCoachCard({
             <span className="text-[15px] font-bold text-gray-900">Today</span>
             <ReadinessChip readiness={card.readiness} recovery={card.recovery} />
           </div>
-          <PlannedGlyphs items={card.todayPlanned} />
+          <PlannedGlyphs items={card.todayPlanned} done={card.todayCompleted || []} />
         </div>
         {/* Body fills the card so it is as tall as the other pages */}
         <div
@@ -589,7 +598,7 @@ export default function DailyCoachCard({
               </div>
               <ReadinessChip readiness={card.readiness} recovery={card.recovery} />
             </div>
-            <PlannedGlyphs items={card.todayPlanned} />
+            <PlannedGlyphs items={card.todayPlanned} done={card.todayCompleted || []} />
           </div>
           <div className="text-sm font-bold text-gray-900 truncate mt-1">{card.headline}</div>
           {/* Two lines, then it stops — the rest is behind the tap. */}

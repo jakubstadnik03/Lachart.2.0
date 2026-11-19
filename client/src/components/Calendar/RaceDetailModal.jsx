@@ -36,7 +36,7 @@ const SPORTS = ['run', 'bike', 'swim', 'triathlon', 'hyrox', 'other'];
 
 function fmtDate(dateStr) {
   const d = new Date(`${String(dateStr).slice(0, 10)}T12:00:00`);
-  return d.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+  return d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
 }
 
 function fmtForm(v) {

@@ -83,7 +83,25 @@ export function completedDistM(t) {
   }
   const n = Number(d);
   if (!Number.isFinite(n) || n <= 0) return 0;
+  // Synced activities (Strava, Garmin, FIT) and every swim store metres. The
+  // "small number = km" guess is only for hand-entered sessions typed in km
+  // ("42.2"); applied to a 120 m warm-up swim it printed "120 km" and added
+  // 240 km to a week's total.
+  if (isSwimSession(t) || isSyncedSession(t)) return n;
   return n > 500 ? n : n * 1000;
+}
+
+function isSwimSession(t) {
+  const sport = String(t?.sport || t?.sport_type || t?.sportType || t?.type || '').toLowerCase();
+  return sport.includes('swim');
+}
+
+function isSyncedSession(t) {
+  if (t?.stravaId || t?.garminActivityId || t?.garminId || t?.fitFileId) return true;
+  const src = String(t?.source || '').toLowerCase();
+  if (src === 'strava' || src === 'garmin' || src === 'fit' || src === 'apple' || src === 'apple_health') return true;
+  const id = String(t?.id || '');
+  return /^(strava|garmin|fit)-/.test(id);
 }
 
 export function completedTss(t, userProfile, user) {

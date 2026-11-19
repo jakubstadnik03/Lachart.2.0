@@ -3,7 +3,7 @@ import React, { createContext, useContext, useState, useCallback, useEffect, use
 import { useNavigate, useLocation } from 'react-router-dom';
 import api, { clearApiCache } from '../services/api';
 import WelcomeModal from '../components/WelcomeModal';
-import { saveUserToStorage } from '../utils/userStorage';
+import { saveUserToStorage, carryPremiumState } from '../utils/userStorage';
 import { clearReturnSession } from '../utils/impersonation';
 import {
   PREMIUM_PREVIEW_NO_ACCESS_KEY,
@@ -244,7 +244,7 @@ export const AuthProvider = ({ children }) => {
     const handleUserUpdate = (event) => {
       const updatedUser = event.detail;
       if (updatedUser) {
-        setUser(updatedUser);
+        setUser((prev) => carryPremiumState(prev, updatedUser));
         syncTssDisplayModeFromUser(updatedUser);
         saveUserToStorage(updatedUser);
       }

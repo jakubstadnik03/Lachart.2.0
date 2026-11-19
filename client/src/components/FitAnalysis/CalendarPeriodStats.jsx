@@ -538,7 +538,7 @@ function shiftPeriod(period, steps) {
     ...period,
     periodStart: shifted,
     periodEnd: monthEnd,
-    label: shifted.toLocaleString(undefined, { month: 'long', year: 'numeric' }),
+    label: shifted.toLocaleString('en-GB', { month: 'long', year: 'numeric' }),
   };
 }
 
@@ -1069,7 +1069,7 @@ export default function CalendarPeriodStats({
 
     const deltaTss = cur.tss - prevSameDays;
     const ratio = prevSameDays > 0 ? cur.tss / prevSameDays : null;
-    const fmt = (d) => d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+    const fmt = (d) => d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
     const curEnd = new Date(curStart); curEnd.setDate(curEnd.getDate() + 6);
     return {
       curTss: cur.tss,
@@ -1831,7 +1831,7 @@ export default function CalendarPeriodStats({
       const wn = isoWeekNumber(d);
       return `W${wn} · ${d.getDate()}.${d.getMonth() + 1} – ${e.getDate()}.${e.getMonth() + 1}.${e.getFullYear()}`;
     }
-    return d.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+    return d.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
   }, [compareBounds, compareMode]);
 
   const cmpLYLabel = useMemo(() => {
@@ -1840,7 +1840,7 @@ export default function CalendarPeriodStats({
       const e = compareBoundsLY.end;
       return `${d.getDate()}.${d.getMonth() + 1} – ${e.getDate()}.${e.getMonth() + 1}.${e.getFullYear()}`;
     }
-    return d.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+    return d.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
   }, [compareBoundsLY, compareMode]);
 
   const cmpBreakdownOption = useMemo(() => {

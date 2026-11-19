@@ -2676,6 +2676,10 @@ export default function DashboardPage() {
   // ── Mobile/Native: render the redesigned native dashboard ──────────────────
   if (isCapacitorNative()) return (
     <>
+      {/* gate() below (+ Plan, Form & Fitness, …) only flips modal state;
+          without this mount the app has no paywall to show and the tap
+          silently does nothing. */}
+      <UpgradeModal {...UpgradeModalProps} />
       {/* One-time feature tour for fresh signups — same deck as the web */}
       <WhatsNewModal
         open={showFeatureTour}
@@ -3506,30 +3510,35 @@ export default function DashboardPage() {
       />
     )}
 
-    <AnimatePresence>
-      {isTrainingFormOpen && ReactDOM.createPortal(
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          style={{ position: 'fixed', inset: 0, zIndex: 200, pointerEvents: 'auto', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}
-        >
+    {/* Portal wraps AnimatePresence, not the reverse: AnimatePresence drops
+        any child that is not a real element, and a portal is not one. */}
+    {ReactDOM.createPortal(
+      <AnimatePresence>
+        {isTrainingFormOpen && (
           <motion.div
-            initial={{ y: '100%', opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            exit={{ y: '100%', opacity: 0 }}
-            transition={{ type: 'spring', damping: 30, stiffness: 300 }}
-            className="w-full sm:max-w-2xl"
+            key="dashboard-training-form"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            style={{ position: 'fixed', inset: 0, zIndex: 200, pointerEvents: 'auto', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}
           >
-            <TrainingForm
-              onClose={() => setIsTrainingFormOpen(false)}
-              onSubmit={handleDashboardAddTraining}
-            />
+            <motion.div
+              initial={{ y: '100%', opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: '100%', opacity: 0 }}
+              transition={{ type: 'spring', damping: 30, stiffness: 300 }}
+              className="w-full sm:max-w-2xl"
+            >
+              <TrainingForm
+                onClose={() => setIsTrainingFormOpen(false)}
+                onSubmit={handleDashboardAddTraining}
+              />
+            </motion.div>
           </motion.div>
-        </motion.div>,
-        document.getElementById('app-modal-root') || document.body
-      )}
-    </AnimatePresence>
+        )}
+      </AnimatePresence>,
+      document.getElementById('app-modal-root') || document.body
+    )}
 
     {/* Error banner for + Lactate failures (no laps, network, etc.) */}
     {lactateFormError && (

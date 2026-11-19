@@ -1197,7 +1197,7 @@ function ThresholdTimeline({ timeline, testMarkers, anchor, kind, storageMode })
             <XAxis
               dataKey="ms" type="number" scale="time" domain={['dataMin', 'dataMax']}
               ticks={monthTicks}
-              tickFormatter={(v) => new Date(v).toLocaleDateString(undefined, { month: 'short' })}
+              tickFormatter={(v) => new Date(v).toLocaleDateString('en-GB', { month: 'short' })}
               tick={{ fontSize: 11, fill: 'rgba(60,60,67,0.6)' }}
               axisLine={false} tickLine={false} tickMargin={6}
             />
@@ -1374,7 +1374,7 @@ function Contributors({ contributors, athleteId, kind }) {
                   style={{ borderColor: IOS.separator }}
                 >
                   <span className="w-14 shrink-0 tabular-nums" style={{ color: IOS.tertiary }}>
-                    {new Date(c.date).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}
+                    {new Date(c.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
                   </span>
                   <span className="min-w-0 flex-1 truncate" style={{ color: IOS.label }}>{c.title || 'Session'}</span>
                   <span className="shrink-0 tabular-nums" style={{ color: IOS.tertiary }}>{c.minutes} min</span>
@@ -1489,7 +1489,7 @@ function AgainstYourZones({ data, athleteId, anchor, kind, storageMode, governin
               <ComposedChart data={series} margin={{ top: 6, right: 10, bottom: 4, left: 0 }}>
                 <CartesianGrid stroke={IOS.separator} vertical={false} />
                 <XAxis dataKey="ms" type="number" scale="time" domain={['dataMin', 'dataMax']}
-                  tickFormatter={(v) => new Date(v).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}
+                  tickFormatter={(v) => new Date(v).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
                   tick={{ fontSize: 11, fill: 'rgba(60,60,67,0.6)' }}
                   axisLine={false} tickLine={false} tickMargin={6} />
                 <YAxis tick={{ fontSize: 11, fill: 'rgba(60,60,67,0.6)' }} axisLine={false} tickLine={false} width={34}
@@ -1646,7 +1646,7 @@ export default function SessionVsTestPanel({
   const storageMode = anchor.storageMode;
   const hasCloud = (result?.cloud?.length || 0) >= 3;
   const testDateLabel = governingTest?.date
-    ? new Date(governingTest.date).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
+    ? new Date(governingTest.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
     : null;
 
   const zones = drift.data;
