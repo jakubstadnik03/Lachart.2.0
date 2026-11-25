@@ -32,6 +32,27 @@ export function storePurchasesAvailable() {
   return Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'ios' && Boolean(IOS_API_KEY);
 }
 
+/**
+ * Why `storePurchasesAvailable()` said no, for telemetry. Null when it said yes.
+ *
+ * Every paywall falls back to lachart.net when it cannot sell, and that silence
+ * reads in the numbers exactly like nobody wanting to buy in the app. The one
+ * that matters is `no_key`: a build shipped without
+ * REACT_APP_REVENUECAT_IOS_KEY cannot sell on any iPhone, and nothing about it
+ * looks broken from the outside.
+ */
+export function storeUnavailableReason() {
+  try {
+    if (!Capacitor.isNativePlatform()) return 'web';
+    const platform = Capacitor.getPlatform();
+    if (platform !== 'ios') return platform === 'android' ? 'android' : 'platform';
+    if (!IOS_API_KEY) return 'no_key';
+    return null;
+  } catch (_) {
+    return 'platform';
+  }
+}
+
 let pluginPromise = null;
 let configuredFor = null; // the app user id RevenueCat is currently identified as
 const offerCache = new Map(); // `${userId}:${productId}` → Promise of the offer

@@ -17,6 +17,7 @@ import TestSection from './TestSection';
 import { useAuth } from '../../context/AuthProvider';
 import { resolveDistanceUnitSystem } from '../../utils/unitsConverter';
 import { getEffectiveLactateInputMode, getLactateDisplayMode } from '../../utils/lactateTestInputMode';
+import { withShortenedLastLevel } from '../../utils/lactateThresholdEngine';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend);
 
@@ -191,7 +192,8 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
   // Get unit system and input mode from user profile, mockData, or default
   // to metric/pace. User's live trainingPreferences.paceDisplay takes
   // priority for DISPLAY so switching the setting immediately updates every
-  // chart without re-saving each test.
+  // chart without re-saving each test, except a test typed as speed, which
+  // stays in speed (see getLactateDisplayMode).
   const unitSystem = resolveDistanceUnitSystem(user, mockData?.unitSystem || 'metric');
   const storageMode = getEffectiveLactateInputMode(mockData);
   const inputMode = getLactateDisplayMode(mockData, user);
@@ -246,7 +248,7 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
   }
 
   // Filter out rows with empty or invalid values
-  const validResults = mockData.results.filter(result => {
+  const validResults = withShortenedLastLevel(mockData).filter(result => {
     if (!result || result.power === undefined || result.power === null || result.lactate === undefined || result.lactate === null) {
       console.log('Invalid result - missing power or lactate');
       return false;

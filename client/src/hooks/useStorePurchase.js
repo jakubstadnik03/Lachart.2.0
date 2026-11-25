@@ -7,6 +7,7 @@ import {
   purchasePlan,
   restoreStorePurchases,
   storePurchasesAvailable,
+  storeUnavailableReason,
   waitForServerPremium,
 } from '../utils/storePurchases';
 
@@ -23,7 +24,22 @@ import {
  *
  * After a purchase it waits for the server (RevenueCat webhook) to flip
  * user.isPremium; the locks then unmount on their own.
+ *
+ * It also reports the two ways this can fail quietly — the store being
+ * unavailable in a native build, and an offering that will not load. Both send
+ * the person to the website with nothing recorded, so a build that cannot sell
+ * at all produces the same empty funnel as a user who looked and declined.
  */
+// Once per surface per app session: four locks can mount in the same moment,
+// and this is a diagnostic, not a funnel step.
+const reported = new Set();
+function reportOnce(name, params) {
+  const key = `${name}:${params.plan || ''}:${params.source || ''}:${params.reason || ''}`;
+  if (reported.has(key)) return;
+  reported.add(key);
+  trackEvent(name, params);
+}
+
 export function useStorePurchase(plan = 'pro', source = 'unknown', { loadOffer = true } = {}) {
   const { user } = useAuth();
   const userId = user?._id || user?.id || null;
@@ -33,14 +49,34 @@ export function useStorePurchase(plan = 'pro', source = 'unknown', { loadOffer =
   const [busy, setBusy] = useState(null);
   const [message, setMessage] = useState(null);
 
+  // A paywall that cannot sell. 'web' is not reported: the browser is supposed
+  // to buy through Stripe. Inside the app it is always worth knowing.
+  useEffect(() => {
+    if (available) return;
+    const reason = storeUnavailableReason() || (userId ? null : 'no_user');
+    if (!reason || reason === 'web') return;
+    reportOnce('store_unavailable', { plan, source, reason });
+  }, [available, plan, source, userId]);
+
   useEffect(() => {
     if (!available || !loadOffer) return undefined;
     let alive = true;
     getStoreOffer(plan, userId)
       .then((o) => { if (alive) setOffer(o); })
-      .catch((err) => console.warn('[store] could not load offer:', err?.message || err));
+      .catch((err) => {
+        console.warn('[store] could not load offer:', err?.message || err);
+        // No offering means no price, no trial eligibility and a button that
+        // cannot complete — until now a console line on a phone nobody reads.
+        reportOnce('store_offer_failed', {
+          plan,
+          source,
+          reason: String(err?.code ?? err?.message ?? 'unknown').slice(0, 100),
+        });
+      });
     return () => { alive = false; };
-  }, [available, loadOffer, plan, userId]);
+    // `source` is in here because the failure report carries it. It is a
+    // constant string per call site, so it never re-runs the load.
+  }, [available, loadOffer, plan, userId, source]);
 
   const confirm = useCallback(async () => {
     setBusy('confirming');

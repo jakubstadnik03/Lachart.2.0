@@ -811,9 +811,11 @@ export default function NativeDashboardPage({
     })();
     return () => { cancelled = true; };
   }, [stravaConnected, user]);
-  // The free trial offer. It only reaches someone whose zones are already
-  // measuring real training — anyone without a tracker gets the connect sheet
-  // instead, so the two never ask the same person at once.
+  // The free trial offer. It reaches anyone with a tracker connected, tested or
+  // not — anyone without one gets the connect sheet instead, so the two never
+  // ask the same person at once. A test is no longer required: 21 of the 78
+  // accounts that have ever paid never saved one, and `hasTest` now only picks
+  // which promise the card leads with.
   //
   // `everSubscribed` is false here because the client user object carries only
   // isPremium; there is no "has ever held a paid plan" flag on it yet. Until
@@ -1693,7 +1695,11 @@ export default function NativeDashboardPage({
 
           {trialOfferOpen && (
             <div style={{ ...cardEntry(4), ...snapStyle }}>
-              <TrialOfferCard user={user} onDismiss={() => setTrialOfferOpen(false)} />
+              <TrialOfferCard
+                user={user}
+                onDismiss={() => setTrialOfferOpen(false)}
+                hasTest={Array.isArray(tests) && tests.length > 0}
+              />
             </div>
           )}
 

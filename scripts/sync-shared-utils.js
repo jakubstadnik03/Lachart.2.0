@@ -37,6 +37,11 @@ const PAIRS = [
   // that quotes an estimated LT2 and the card that draws it have to agree on
   // the number, and the two are computed on different sides of the wire.
   ['client/src/utils/estimateAnchorFromTraining.js', 'server/utils/estimateAnchorFromTraining.js'],
+  // When a retest is due. Shared because the card that offers it and the
+  // scheduler that nudges about it are on opposite sides of the wire, and an
+  // athlete told "due today" by one and nothing by the other has no reason to
+  // trust either.
+  ['client/src/utils/retestPlan.js', 'server/utils/retestPlan.js'],
 ];
 
 /** Which generated twin a client module's relative import resolves to. */
@@ -95,10 +100,24 @@ function generate(source, from) {
 
 const check = process.argv.includes('--check');
 let stale = 0;
+let failed = 0;
 
 for (const [from, to] of PAIRS) {
-  const generated = generate(fs.readFileSync(path.join(ROOT, from), 'utf8'), from);
   const dest = path.join(ROOT, to);
+
+  // One pair the transform cannot handle used to abort the whole run, which
+  // meant a single unfollowable import in one module silently stopped every
+  // other server copy from being regenerated — including ones that were
+  // already out of date. Report it and carry on; the exit code still fails.
+  let generated;
+  try {
+    generated = generate(fs.readFileSync(path.join(ROOT, from), 'utf8'), from);
+  } catch (e) {
+    console.error(`FAILED       ${to}: ${e.message}`);
+    failed += 1;
+    continue;
+  }
+
   if (check) {
     const current = fs.existsSync(dest) ? fs.readFileSync(dest, 'utf8') : '';
     if (current !== generated) {
@@ -113,7 +132,10 @@ for (const [from, to] of PAIRS) {
   }
 }
 
-if (check && stale) {
+if (stale) {
   console.error(`\n${stale} file(s) out of date — run: node scripts/sync-shared-utils.js`);
-  process.exit(1);
 }
+if (failed) {
+  console.error(`${failed} pair(s) could not be generated at all — see FAILED above.`);
+}
+if (stale || failed) process.exit(1);

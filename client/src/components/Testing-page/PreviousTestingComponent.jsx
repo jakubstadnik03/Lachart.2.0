@@ -12,6 +12,7 @@ import { updateTest, deleteTest } from '../../services/api';
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from '../../context/AuthProvider';
 import { getUserUnits, resolveDistanceUnitSystem } from '../../utils/unitsConverter';
+import { withShortenedLastLevel } from '../../utils/lactateThresholdEngine';
 import { usePremium } from '../../hooks/usePremium';
 import UpgradeModal from '../UpgradeModal';
 import { LockClosedIcon, ClipboardDocumentListIcon } from '@heroicons/react/24/outline';
@@ -258,7 +259,11 @@ const PreviousTestingComponent = ({
 
     // Recovery:
     // If the currently displayed test is no longer present in the loaded list,
-    // clear it so Priority 5 fallback can select a valid test.
+    // drop it and carry on below, so the fallback picks one in this same run.
+    // Returning here left the panel empty: clearing it changes none of this
+    // effect's dependencies, so nothing ran it again.
+    let shownTest = currentTest;
+    let initialized = isInitialized;
     if (!selectedTestId && currentTest && Array.isArray(filteredTests) && filteredTests.length > 0) {
       const stillExists = filteredTests.some(t => String(t._id) === String(currentTest._id));
       if (!stillExists) {
@@ -266,13 +271,14 @@ const PreviousTestingComponent = ({
         setSelectedTests([]);
         setIsInitialized(false);
         lastRestoredTestIdRef.current = null;
-        return;
+        shownTest = null;
+        initialized = false;
       }
     }
-    
+
     // PRIORITY 2: If we already have a currentTest that matches the restored ID, keep it
-    if (currentTest && String(lastRestoredTestIdRef.current) === String(currentTest._id) && !selectedTestId) {
-      const stillValid = filteredTests.find(t => String(t._id) === String(currentTest._id));
+    if (shownTest && String(lastRestoredTestIdRef.current) === String(shownTest._id) && !selectedTestId) {
+      const stillValid = filteredTests.find(t => String(t._id) === String(shownTest._id));
       if (stillValid && stillValid.results && Array.isArray(stillValid.results) && stillValid.results.length > 0) {
         // Test is still valid, just update with fresh data
         setCurrentTest(stillValid);
@@ -313,16 +319,14 @@ const PreviousTestingComponent = ({
           localStorage.removeItem(lastTestKey);
           // But keep general key in case user switches back
         }
-        // If test not found at all and we're initialized, it might have been deleted
-        // Don't use fallback yet - wait a bit more
-        if (!isInitialized) {
-          return; // Wait for tests to fully load
-        }
+        // Not in this list: another athlete's test (the key is shared by all
+        // of them), another sport, or a deleted one. The list has loaded, as
+        // it is not empty, so waiting would never end: fall through instead.
       }
     }
-    
+
     // PRIORITY 4: If already initialized and we have a restored test ID, try to keep it
-    if (isInitialized && lastRestoredTestIdRef.current && !selectedTestId) {
+    if (initialized && lastRestoredTestIdRef.current && !selectedTestId) {
       const restoredTest = filteredTests.find(t => String(t._id) === String(lastRestoredTestIdRef.current));
       if (restoredTest && restoredTest.results && Array.isArray(restoredTest.results) && restoredTest.results.length > 0) {
         setCurrentTest(restoredTest);
@@ -330,8 +334,8 @@ const PreviousTestingComponent = ({
       }
     }
     
-    // PRIORITY 5: Fallback - only if we haven't initialized and no test in localStorage or URL
-    if (!isInitialized && !lastRestoredTestIdRef.current && !lastTestId && !selectedTestId) {
+    // PRIORITY 5: Fallback - nothing open yet, and neither the URL nor the remembered test named one in this list
+    if (!initialized && !lastRestoredTestIdRef.current && !selectedTestId) {
       // fallback – nejnovější test s validními results
       const validTests = filteredTests.filter(t => t.results && Array.isArray(t.results) && t.results.length > 0);
       if (validTests.length > 0) {
@@ -428,7 +432,7 @@ const PreviousTestingComponent = ({
     const anchors = resolveLtAnchorsFromTest(currentTest);
     if (!anchors) return null;
 
-    const raw = currentTest.results
+    const raw = withShortenedLastLevel(currentTest)
       .map((r) => ({
         load: Number(String(r.power ?? "").replace(",", ".")),
         lac: Number(String(r.lactate ?? "").replace(",", ".")),

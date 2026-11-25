@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { speedLoadsAsPaceSeconds } = require('../utils/lactateTestInputMode');
 
 const testResultSchema = new mongoose.Schema({
     power: Number,
@@ -109,6 +110,34 @@ const testSchema = new mongoose.Schema({
     // Link to the raw LactateSession that generated this test (auto-saved from Lactate Testing page)
     lactateSessionId: { type: String, default: null },
 
+    /**
+     * The retest the athlete scheduled off the back of this test.
+     *
+     * Repeat testing is the strongest predictor of paying in the data
+     * (2 tests → 15.7 % ever paid, 3+ → 37.3 %, against 9.0 % for one), and
+     * the rarest behaviour in the product: 301 accounts hold exactly one test
+     * and 240 are more than six weeks past it. See utils/retestPlan.js for the
+     * rules and for why this is deliberately not another campaign email.
+     *
+     * `dueAt` is only ever set because the athlete asked for it — an unset
+     * dueAt means no reminder, ever. Every key is declared because this
+     * subdocument is strict: an undeclared path is dropped from writes as
+     * silently as from queries, so the scheduler would mark nobody and nudge
+     * the same people on every tick (the same trap that cost
+     * retentionEmails.premiumPitch a release).
+     */
+    retest: {
+      dueAt:         { type: Date,   default: null },
+      intervalDays:  { type: Number, default: null },
+      /** When the athlete set it, for telling an old plan from a fresh one. */
+      scheduledAt:   { type: Date,   default: null },
+      /** Last nudge, and how many have gone out (cap lives in retestPlan). */
+      remindedAt:    { type: Date,   default: null },
+      reminderCount: { type: Number, default: 0 },
+      /** "Not now" — final, and never re-asked. */
+      dismissedAt:   { type: Date,   default: null },
+    },
+
     // Manual LT1/LT2 override — set by coach/athlete to pin thresholds (overrides auto-calculation)
     thresholdOverrides: {
       LTP1:         { type: Number, default: null },
@@ -121,5 +150,21 @@ const testSchema = new mongoose.Schema({
 }, {
     timestamps: true,
 });
+
+// Every reader expects run and swim loads in pace seconds. A few saved tests
+// hold km/h instead, from when the public calculator's signup save stored them
+// as typed, so they are corrected on the way out, for lean queries too. The
+// database only changes if something later saves one of these documents, and
+// then it gets the corrected values.
+function readLoadsAsPaceSeconds(test) {
+  const seconds = test?.results ? speedLoadsAsPaceSeconds(test) : null;
+  if (!seconds) return;
+  test.results.forEach((row, i) => {
+    if (row) row.power = seconds[i];
+  });
+  test.inputMode = 'speed';
+}
+testSchema.post('find', (tests) => tests.forEach(readLoadsAsPaceSeconds));
+testSchema.post(['findOne', 'findOneAndUpdate'], (test) => readLoadsAsPaceSeconds(test));
 
 module.exports = mongoose.model('Test', testSchema);

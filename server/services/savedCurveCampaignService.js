@@ -43,6 +43,7 @@ const { createCampaignTransporter, campaignSender } = require('../utils/createEm
 const { getClientUrl } = require('../utils/emailTemplate');
 const { buildLactateCurveSvg, svgToEmailImgSrc, escapeHtml } = require('../utils/lactateReportSvgs');
 const { calculateThresholds } = require('../utils/lactateThresholds');
+const { withShortenedLastLevel } = require('../utils/lactateThresholdEngine');
 const { formatPace } = require('../utils/lactateZones');
 const { buildEmailLoginUrl } = require('../routes/emailLoginRoutes');
 
@@ -393,7 +394,7 @@ async function renderHtml(d) {
   const unsub = unsubscribeUrlFor(d.user._id);
 
   const svg = buildLactateCurveSvg({
-    results: d.test.results || [],
+    results: withShortenedLastLevel(d.test),
     sportLabel: `${String(d.sport).toUpperCase()} • Your lactate curve`,
     xLabel: xLabelFor(d.sport, d.unitSystem),
     sport: d.sport,

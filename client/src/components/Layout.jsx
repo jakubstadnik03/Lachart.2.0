@@ -13,7 +13,7 @@ import { athleteIdInPath, useAthleteSelection } from "../context/AthleteSelectio
 import NativeLayout from "./native/NativeLayout";
 import { shouldShowOnboarding } from "./Onboarding/OnboardingFlow";
 import TrackerConnectPrompt from "./Testing-page/TrackerConnectPrompt";
-import { shouldRaiseStandingTrackerPrompt, markStandingTrackerPromptShown } from "../utils/trackerConnectPrompt";
+import { shouldRaiseStandingTrackerPrompt, shouldRaiseUntestedTrackerPrompt, markStandingTrackerPromptShown } from "../utils/trackerConnectPrompt";
 import {
   OPEN_TRAINING_ZONES_MODAL_EVENT,
   profileNeedsTrainingZones,
@@ -65,6 +65,8 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
   const [showStravaModal, setShowStravaModal] = useState(false);
   /** A standing "connect a tracker" ask: the test it leads with, or null. */
   const [standingTrackerTest, setStandingTrackerTest] = useState(null);
+  /** The same standing ask, for someone who has no test to lead with. */
+  const [standingTrackerUntested, setStandingTrackerUntested] = useState(false);
   const [showWalkthrough, setShowWalkthrough] = useState(false);
   const walkthroughTimerRef = useRef(null);
   const [hasCheckedProfile, setHasCheckedProfile] = useState(false);
@@ -90,8 +92,11 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
     try { onboardingAskSpent = localStorage.getItem(`stravaConnectModalDone_${user._id}`) === 'true'; } catch { /* storage blocked */ }
     if (!onboardingAskSpent) return undefined;
     // Everything except "do they have a test" is free to check, so check it
-    // first and only pay for the lookup when the answer could matter.
-    if (!shouldRaiseStandingTrackerPrompt({ user, hasTest: true })) return undefined;
+    // first and only pay for the lookup when the answer could matter. The two
+    // variants share one budget, so either being available means the lookup is
+    // worth doing.
+    if (!shouldRaiseStandingTrackerPrompt({ user, hasTest: true })
+      && !shouldRaiseUntestedTrackerPrompt({ user })) return undefined;
 
     let cancelled = false;
     const timer = setTimeout(() => {
@@ -99,7 +104,21 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
         .then((res) => {
           if (cancelled) return;
           const list = Array.isArray(res?.data) ? res.data : [];
-          if (!list.length) return;
+
+          // No test at all. This used to be where the ask gave up — and on the
+          // web that meant giving up for good, because onboarding had already
+          // spent its single localStorage-backed ask on the day they signed up
+          // and had nothing to connect a watch to. 317 of 741 real accounts on
+          // 2026-11-18 were in exactly this state, converting at 6.6 % against
+          // 22.3 % for accounts with a tracker. Same ask, same budget, no test
+          // to lead with — so the modal pitches the other direction instead.
+          if (!list.length) {
+            if (!shouldRaiseUntestedTrackerPrompt({ user })) return;
+            markStandingTrackerPromptShown();
+            setStandingTrackerUntested(true);
+            return;
+          }
+
           const latest = [...list].sort(
             (a, b) => new Date(b.date || b.createdAt || 0) - new Date(a.date || a.createdAt || 0)
           )[0];
@@ -844,6 +863,18 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
               test={standingTrackerTest}
               variant="standing"
               onClose={() => setStandingTrackerTest(null)}
+            />
+          )}
+          {/* Same ask, same budget, for someone with neither a test nor a
+              tracker — so it has no thresholds to show and pitches the other
+              direction: connect first, and LaChart can estimate a curve from
+              the training itself. */}
+          {user && (
+            <TrackerConnectPrompt
+              isOpen={standingTrackerUntested}
+              test={null}
+              variant="untested"
+              onClose={() => setStandingTrackerUntested(false)}
             />
           )}
           {user && (

@@ -21,6 +21,7 @@ const UserDao = require("../dao/userDao");
 const TrainingDao = require("../dao/trainingDao");
 const forgotPasswordAbl = require("../abl/user-abl/forgot-password-abl");
 const { toCoachSafeAthlete } = require("../utils/coachSafeAthlete");
+const { athleteIdentityFields } = require("../utils/coachAthleteProfile");
 const { findRecentDuplicateAthlete } = require("../utils/recentDuplicateAthlete");
 const { normalizeSignupRole } = require("../utils/signupRole");
 const bcrypt = require("bcrypt");
@@ -1443,18 +1444,7 @@ router.get("/athlete/:athleteId", verifyToken, async (req, res) => {
         const athleteResponse = {
             _id: athlete._id,
             ...displayNameForCoach(athlete),
-            email: athlete.email,
-            role: athlete.role,
-            dateOfBirth: athlete.dateOfBirth,
-            address: athlete.address,
-            phone: athlete.phone,
-            height: athlete.height,
-            weight: athlete.weight,
-            sport: athlete.sport,
-            specialization: athlete.specialization,
-            bio: athlete.bio,
-            avatar: athlete.avatar, // Include avatar
-            coachId: athlete.coachId
+            ...athleteIdentityFields(athlete),
         };
 
         res.status(200).json(athleteResponse);
@@ -1500,18 +1490,7 @@ router.get("/athlete/:athleteId/profile", verifyToken, async (req, res) => {
         const athleteResponse = {
             _id: athlete._id,
             ...displayNameForCoach(athlete),
-            email: athlete.email,
-            role: athlete.role,
-            dateOfBirth: athlete.dateOfBirth,
-            address: athlete.address,
-            phone: athlete.phone,
-            height: athlete.height,
-            weight: athlete.weight,
-            sport: athlete.sport,
-            specialization: athlete.specialization,
-            bio: athlete.bio,
-            avatar: athlete.avatar,
-            coachId: athlete.coachId,
+            ...athleteIdentityFields(athlete),
             powerZones: athlete.powerZones,
             heartRateZones: athlete.heartRateZones,
             units: athlete.units || { distance: 'metric', weight: 'kg', temperature: 'celsius' },

@@ -5,6 +5,7 @@ import { useNotification } from '../context/NotificationContext';
 import api, { invalidateCache, addTest } from '../services/api';
 import SportsSelector from "../components/Header/SportsSelector";
 import PreviousTestingComponent from "../components/Testing-page/PreviousTestingComponent";
+import RetestCard from "../components/Testing-page/RetestCard";
 import ErrorBoundary from "../components/common/ErrorBoundary";
 import NewTestingComponent from "../components/Testing-page/NewTestingComponent";
 import CPTestPanel from "../components/Testing-page/CPTestPanel";
@@ -42,6 +43,8 @@ function normalizeTestSportKey(sport) {
   return null;
 }
 
+const NO_TESTS = [];
+
 const TestingPage = () => {
   const { athleteId } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -61,8 +64,12 @@ const TestingPage = () => {
   const setSelectedAthleteId = _setGlobalAthleteId;
   const [showNewTesting, setShowNewTesting] = useState(false);
   const [selectedSport, setSelectedSport] = useState("all");
-  const [tests, setTests] = useState([]);
-  
+  const [loadedTests, setTests] = useState([]);
+  // Whose tests loadedTests are. The list stays in state while the next
+  // athlete's loads, so without this a coach switching athlete got the previous
+  // athlete's test reopened under the new name. See `tests` below.
+  const [testsLoadedFor, setTestsLoadedFor] = useState(null);
+
   // Limit tests to prevent memory issues (max 500)
   const MAX_TESTS = 500;
   const [error, setError] = useState(null);
@@ -149,6 +156,30 @@ const TestingPage = () => {
   /** Current effective athlete for data loads — used to drop stale / out-of-order list responses */
   const effectiveAthleteIdRef = useRef(effectiveTargetAthleteId);
   effectiveAthleteIdRef.current = effectiveTargetAthleteId;
+
+  /**
+   * The selected athlete's tests, and nobody else's: empty until their list
+   * arrives. The test list remounts per athlete and reopens the last test it
+   * remembers, which it found in the previous athlete's list.
+   */
+  const tests = String(testsLoadedFor) === String(effectiveTargetAthleteId) ? loadedTests : NO_TESTS;
+
+  /**
+   * The newest test on screen — the one a retest would follow.
+   *
+   * Dates are compared as numbers rather than sorting the array in place:
+   * `tests` is rendered elsewhere in its own order, and a sort here would
+   * reorder the list under the user.
+   */
+  const latestOwnTest = useMemo(() => {
+    if (!Array.isArray(tests) || tests.length === 0) return null;
+    return tests.reduce((best, t) => {
+      const d = new Date(t?.date || 0).getTime();
+      if (!Number.isFinite(d)) return best;
+      const bd = best ? new Date(best.date || 0).getTime() : -Infinity;
+      return d > bd ? t : best;
+    }, null);
+  }, [tests]);
   
   // Get testId from URL
   const testIdFromUrl = searchParams.get('testId');
@@ -307,6 +338,7 @@ const TestingPage = () => {
         return;
       }
 
+      setTestsLoadedFor(String(targetId));
       setTests(limitedTests);
     } catch (err) {
       // Silently ignore aborted/cancelled requests (user switched athlete mid-flight)
@@ -1588,6 +1620,27 @@ const TestingPage = () => {
               )}
 
               {/* Free-plan usage banner removed — all users have unlimited tests */}
+
+              {/* ── Retest loop ───────────────────────────────────────────────
+                  Offered on the athlete's own most recent test, which is also
+                  the only test it can be offered on: a retest follows the
+                  latest one. Deliberately a standing card rather than a prompt
+                  after saving, so it also reaches the 240 accounts that already
+                  sit more than six weeks past their single test — a save-time
+                  prompt would reach none of them. See utils/retestPlan.js. ── */}
+              {latestOwnTest && (
+                <div style={sectionSnap}>
+                  <RetestCard
+                    test={latestOwnTest}
+                    newerTestAt={null}
+                    canEdit={String(effectiveTargetAthleteId || '') === String(user?._id || '')}
+                    onChanged={(retest) => setTests((prev) => prev.map((t) => (
+                      String(t._id) === String(latestOwnTest._id) ? { ...t, retest } : t
+                    )))}
+                    onAddTest={() => setShowNewTesting(true)}
+                  />
+                </div>
+              )}
 
               {/* Tests list — wrapped in ErrorBoundary so a single bad
                   test (NaN, weird lactate sequence, etc.) can't freeze

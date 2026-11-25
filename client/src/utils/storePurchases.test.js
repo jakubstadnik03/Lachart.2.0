@@ -19,15 +19,17 @@ const setUpStore = () => Object.assign(mockPurchases, {
 });
 
 jest.mock('@revenuecat/purchases-capacitor', () => ({ Purchases: mockPurchases }));
+// Mutable so the availability tests below can stand on another platform.
+let mockPlatform = 'ios';
 jest.mock('@capacitor/core', () => ({
-  Capacitor: { isNativePlatform: () => true, getPlatform: () => 'ios' },
+  Capacitor: { isNativePlatform: () => mockPlatform !== 'web', getPlatform: () => mockPlatform },
 }));
 jest.mock('../services/api', () => ({ __esModule: true, default: { get: jest.fn() } }));
 
-const load = () => {
+const load = (key = 'appl_test') => {
   let mod;
   jest.isolateModules(() => {
-    process.env.REACT_APP_REVENUECAT_IOS_KEY = 'appl_test';
+    process.env.REACT_APP_REVENUECAT_IOS_KEY = key;
     // eslint-disable-next-line global-require
     mod = require('./storePurchases');
   });
@@ -35,7 +37,32 @@ const load = () => {
 };
 
 // CRA resets mock implementations before every test, so build them here.
-beforeEach(() => { setUpStore(); }); // not returned: the mock is thenable
+beforeEach(() => { setUpStore(); mockPlatform = 'ios'; }); // not returned: the mock is thenable
+
+/**
+ * Why the store said no, which is the whole point of the telemetry: a build
+ * that cannot sell on any iPhone and a user who simply did not buy produce
+ * the same empty funnel, and only this distinguishes them.
+ */
+describe('storeUnavailableReason', () => {
+  it('is null on an iOS build that has the key — nothing to report', () => {
+    expect(load().storeUnavailableReason()).toBeNull();
+  });
+
+  it('names a build shipped without the RevenueCat key', () => {
+    // The release mistake this exists for. Nothing about it looks broken.
+    const s = load('');
+    expect(s.storePurchasesAvailable()).toBe(false);
+    expect(s.storeUnavailableReason()).toBe('no_key');
+  });
+
+  it('tells Android and the browser apart, because only one of them is a gap', () => {
+    mockPlatform = 'android';
+    expect(load().storeUnavailableReason()).toBe('android');
+    mockPlatform = 'web';
+    expect(load().storeUnavailableReason()).toBe('web');
+  });
+});
 
 describe('storePurchases', () => {
   it('never awaits the plugin itself, which a Capacitor proxy turns into a hang', async () => {
