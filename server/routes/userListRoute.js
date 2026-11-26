@@ -4600,7 +4600,7 @@ router.post("/admin/send-feature-announcement-email/:userId", verifyToken, async
                 const safeNum = (v, d = 2) => (Number.isFinite(Number(v)) ? Number(v).toFixed(d) : '—');
                 const fmtDate = (v) => {
                     try {
-                        return new Date(v).toLocaleDateString('cs-CZ', { day: '2-digit', month: '2-digit', year: 'numeric' });
+                        return new Date(v).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
                     } catch {
                         return '—';
                     }

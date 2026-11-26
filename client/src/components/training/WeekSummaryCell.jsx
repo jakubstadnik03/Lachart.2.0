@@ -54,7 +54,16 @@ export default function WeekSummaryCell({ weekSummary, formatHours, formatKm, us
   const plannedDist = (sport) => plannedBySport[sport]?.dist || 0;
   const plannedSecs = (sport) => plannedBySport[sport]?.secs || 0;
 
-  const pctOf = (done, planned) => (planned > 0 ? Math.round((done / planned) * 100) : null);
+  // Past a few times the plan, the percentage stops describing compliance:
+  // one planned 52-minute swim in a seventeen-hour week read "2011 %". The
+  // plan clearly was not the week, so the badge says nothing rather than a
+  // number nobody can act on; the bar still fills and the hours still show.
+  const MAX_MEANINGFUL_PCT = 300;
+  const pctOf = (done, planned) => {
+    if (!(planned > 0)) return null;
+    const pct = Math.round((done / planned) * 100);
+    return pct > MAX_MEANINGFUL_PCT ? null : pct;
+  };
 
   // Under 85% is behind, 85–110% is on plan, above that is over — the same
   // bands the coach's weekly review uses when it flags a week.

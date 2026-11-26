@@ -121,13 +121,13 @@ export function fmtHours(sec) {
 export function fmtShortDate(d) {
   const t = new Date(d);
   if (Number.isNaN(t.getTime())) return '';
-  return t.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+  return t.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
 }
 
 export function fmtLongDate(d) {
   const t = new Date(d);
   if (Number.isNaN(t.getTime())) return '';
-  return t.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+  return t.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
 /** "3 weeks" / "4 months" — how a coach says how old a test is. */

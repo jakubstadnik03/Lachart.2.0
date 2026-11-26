@@ -51,7 +51,7 @@ const fmtDuration = (secs) => {
 
 const fmtDate = (dateKey) => {
   const d = new Date(dateKey + "T12:00:00");
-  return d.toLocaleDateString("cs-CZ", { weekday: "long", day: "numeric", month: "long" });
+  return d.toLocaleDateString('en-GB', { weekday: "long", day: "numeric", month: "long" });
 };
 
 // ── Load intensity bucket (0–4) ───────────────────────────────────────────────

@@ -99,7 +99,14 @@ function availableSports(tests) {
   return [...seen];
 }
 
-export default function LT2TrendSparkline({ tests = [], sport = 'all' }) {
+/**
+ * @param {function} [getLT2] test → the LT2 the rest of the screen shows for it
+ *   (pinned override, else the curve method). The card used to estimate its
+ *   own — the first stage at ≥ 4 mmol/L, never interpolated — so it read
+ *   "320 W → 440 W" while the test right below it said LT2 412 W: 440 W was
+ *   simply the next stage. The estimate is kept only as a fallback.
+ */
+export default function LT2TrendSparkline({ tests = [], sport = 'all', getLT2 = null }) {
   const { user } = useAuth();
   const unitSystem = resolveDistanceUnitSystem(user);
 
@@ -122,18 +129,22 @@ export default function LT2TrendSparkline({ tests = [], sport = 'all' }) {
     }
   }, [sports, activeSport]);
 
+  const isPaceSport = activeSport === 'run' || activeSport === 'swim';
   const chartData = useMemo(() => {
     const filtered = filterAndSortTests(tests, activeSport);
     return filtered
       .map((t) => {
-        const lt2 = estimateLT2(t.results, t.sport, unitSystem);
+        const shared = getLT2 ? Number(getLT2(t)) : NaN;
+        const lt2 = Number.isFinite(shared) && shared > 0
+          ? { value: Math.round(shared), unit: t.sport === 'bike' ? 'W' : paceUnit(unitSystem, t.sport) }
+          : estimateLT2(t.results, t.sport, unitSystem);
         if (!lt2) return null;
         const date = new Date(t.date);
         const label = date.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
         return { label, value: lt2.value, unit: lt2.unit, date };
       })
       .filter(Boolean);
-  }, [tests, activeSport, unitSystem]);
+  }, [tests, activeSport, unitSystem, getLT2]);
 
   const hasData = chartData.length >= 2;
 
@@ -141,8 +152,14 @@ export default function LT2TrendSparkline({ tests = [], sport = 'all' }) {
   const latest = hasData ? chartData[chartData.length - 1] : null;
 
   const delta = hasData ? latest.value - first.value : null;
-  const improving = delta !== null && delta > 0;
-  const declining = delta !== null && delta < 0;
+  // Pace counts the other way: fewer seconds per km is the improvement.
+  const improving = delta !== null && (isPaceSport ? delta < 0 : delta > 0);
+  const declining = delta !== null && (isPaceSport ? delta > 0 : delta < 0);
+  const fmtV = (v) => {
+    if (!isPaceSport) return String(Math.round(v));
+    const a = Math.abs(Math.round(v));
+    return `${Math.floor(a / 60)}:${String(a % 60).padStart(2, '0')}`;
+  };
 
   const monthsDiff = hasData
     ? Math.round((latest.date - first.date) / (1000 * 60 * 60 * 24 * 30))
@@ -237,16 +254,16 @@ export default function LT2TrendSparkline({ tests = [], sport = 'all' }) {
           {/* Footer summary */}
           <div className="mt-3 flex items-center justify-between text-xs text-gray-500">
             <span>
-              {first.value} {first.unit}
+              {fmtV(first.value)} {first.unit}
               <span className="mx-1 text-gray-300">→</span>
               <span className="font-semibold text-gray-700">
-                {latest.value} {latest.unit}
+                {fmtV(latest.value)} {latest.unit}
               </span>
             </span>
             {delta !== null && (
               <span className={improving ? 'text-green-600 font-medium' : declining ? 'text-red-500 font-medium' : 'text-gray-400'}>
-                {delta > 0 ? '+' : ''}
-                {delta} {latest.unit} over {monthsDiff} mo
+                {delta > 0 ? '+' : delta < 0 ? '−' : ''}
+                {fmtV(Math.abs(delta))} {latest.unit} over {monthsDiff} mo
               </span>
             )}
           </div>

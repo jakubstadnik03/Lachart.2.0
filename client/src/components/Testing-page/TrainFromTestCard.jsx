@@ -53,7 +53,7 @@ function fmtAnchor(value, sport, imperialRun) {
 }
 
 function dayLabel(date) {
-  return date.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
+  return date.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
 }
 
 function plannedDayKey(date) {
@@ -328,7 +328,7 @@ export default function TrainFromTestCard({ test, isPremium, athleteId = null, o
   const weeks = [0, 1, 2, 3].map((w) => addDays(cursor, w * 7));
   const lines = session ? stepsToLines(session.steps) : [];
   const today = new Date();
-  const monthLabel = cursor.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+  const monthLabel = cursor.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
 
   const catOrder = Object.keys(PRESET_CATEGORY_LABELS);
   const catalogGroups = catOrder

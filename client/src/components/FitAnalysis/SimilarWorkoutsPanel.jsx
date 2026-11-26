@@ -31,7 +31,7 @@ const SportIcon = ({ sport = '', className = "w-5 h-5" }) => {
 const fmtDate = (iso) => {
   if (!iso) return '—';
   try {
-    return new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: '2-digit' });
+    return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: '2-digit' });
   } catch { return '—'; }
 };
 

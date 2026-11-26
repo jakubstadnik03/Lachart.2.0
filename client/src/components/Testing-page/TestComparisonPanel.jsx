@@ -25,7 +25,7 @@ import { calculateThresholds } from './DataTable';
 function fmtDate(d) {
   if (!d) return '';
   try {
-    return new Date(d).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+    return new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
   } catch { return String(d); }
 }
 
@@ -47,10 +47,24 @@ function fmtPowerOrPace(value, sport) {
   return `${m}:${String(s).padStart(2, '0')}`;
 }
 
-function fmtChange(delta, sport, isPercent = false) {
-  if (delta == null || !Number.isFinite(Number(delta)) || Math.abs(delta) < 0.05) return '0';
-  const sign = delta > 0 ? '+' : '−';
+/**
+ * The change between two tests, in the unit of the row. Every row used to go
+ * through the power/pace branch, so a lactate drop of 1.90 → 1.41 mmol/L read
+ * "↓ −0 s" and a heart-rate shift was printed in seconds.
+ */
+export function fmtChange(delta, sport, kind = 'power_or_pace', isPercent = false) {
+  if (delta == null || !Number.isFinite(Number(delta))) return '0';
   const abs = Math.abs(Number(delta));
+  const sign = delta > 0 ? '+' : '−';
+  if (kind === 'lactate') {
+    if (abs < 0.005) return '0';
+    return `${sign}${abs.toFixed(2)} mmol/L`;
+  }
+  if (kind === 'hr') {
+    if (abs < 0.5) return '0';
+    return `${sign}${Math.round(abs)} bpm`;
+  }
+  if (abs < 0.05) return '0';
   if (isPercent) return `${sign}${abs.toFixed(1)} %`;
   if (sport === 'bike') return `${sign}${Math.round(abs)} W`;
   // pace: lower is better; the caller decides sign convention. We show MM:SS abs.
@@ -139,8 +153,10 @@ function computeDelta({ prev, curr, sport, kind }) {
     else isImprove = delta < 0;
   }
   const percent = (prev !== 0 && Number.isFinite(delta)) ? (delta / Math.abs(prev)) * 100 : null;
+  // "No change" means below what the row can show: 0.005 mmol/L, half a beat.
+  const noChangeBelow = kind === 'lactate' ? 0.005 : kind === 'hr' ? 0.5 : 0.05;
   const arrow = (kind === 'power_or_pace' || kind === 'lactate' || kind === 'hr')
-    ? (Math.abs(delta) < 0.05 ? '−' : (delta > 0 ? '↑' : '↓'))
+    ? (Math.abs(delta) < noChangeBelow ? '−' : (delta > 0 ? '↑' : '↓'))
     : '—';
   let color = 'gray';
   if (isImprove === true) color = 'green';
@@ -163,7 +179,7 @@ function changeCell({ prev, curr, sport, kind, label }) {
   return (
     <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold whitespace-nowrap ${bgClass}`} title={label}>
       <span>{c.arrow}</span>
-      <span className="tabular-nums">{fmtChange(absDelta, sport)}</span>
+      <span className="tabular-nums">{fmtChange(absDelta, sport, kind)}</span>
       {c.percent != null && (
         <span className="tabular-nums opacity-80">({c.percent > 0 ? '+' : ''}{c.percent.toFixed(1)} %)</span>
       )}

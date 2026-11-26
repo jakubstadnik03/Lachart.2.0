@@ -1367,10 +1367,16 @@ export default function TrainingPage() {
 
 
       {/* Portal modals — rendered into #app-modal-root (inside NativeLayout's fixed
-          container, above bottom tab bar) so they cover the bottom navigation. */}
-      <AnimatePresence>
-        {isFormOpen && ReactDOM.createPortal(
+          container, above bottom tab bar) so they cover the bottom navigation.
+          The portal must wrap AnimatePresence, never the other way round:
+          AnimatePresence keeps only real elements (isValidElement) and a
+          portal is not one, so a portal placed inside it is silently dropped
+          and the modal never mounts. */}
+      {ReactDOM.createPortal(
+        <AnimatePresence>
+          {isFormOpen && (
           <motion.div
+            key="training-form"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -1395,13 +1401,13 @@ export default function TrainingPage() {
                 initialData={editingTraining}
               />
             </motion.div>
-          </motion.div>,
-          document.getElementById('app-modal-root') || document.body
-        )}
-      </AnimatePresence>
+          </motion.div>
+          )}
+        </AnimatePresence>,
+        document.getElementById('app-modal-root') || document.body
+      )}
 
-      <AnimatePresence>
-        {showRecordLactate && ReactDOM.createPortal(
+      {showRecordLactate && ReactDOM.createPortal(
           <div style={{ position: 'fixed', inset: 0, zIndex: 200, pointerEvents: 'auto' }}>
             <RecordLactateModal
               onClose={() => setShowRecordLactate(false)}
@@ -1416,8 +1422,7 @@ export default function TrainingPage() {
             />
           </div>,
           document.getElementById('app-modal-root') || document.body
-        )}
-      </AnimatePresence>
+      )}
 
       {/* Upgrade modal for subscription-gated features */}
       <UpgradeModal
@@ -1427,9 +1432,11 @@ export default function TrainingPage() {
         requiredPlan="pro"
       />
 
-      <AnimatePresence>
-        {stravaLactateModal.isOpen && stravaLactateModal.initialData && ReactDOM.createPortal(
+      {ReactDOM.createPortal(
+        <AnimatePresence>
+          {stravaLactateModal.isOpen && stravaLactateModal.initialData && (
           <motion.div
+            key="strava-lactate-form"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -1473,10 +1480,11 @@ export default function TrainingPage() {
                 isLoading={stravaLactateSubmitting}
               />
             </motion.div>
-          </motion.div>,
-          document.getElementById('app-modal-root') || document.body
-        )}
-      </AnimatePresence>
+          </motion.div>
+          )}
+        </AnimatePresence>,
+        document.getElementById('app-modal-root') || document.body
+      )}
     </motion.div>
   );
 }

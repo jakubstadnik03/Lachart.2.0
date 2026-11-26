@@ -218,7 +218,11 @@ export function parseWorkoutText(text) {
         // "5x3min build" → five steps of three minutes; "15min build" → five of three.
         const count = reps > 1 ? reps : 5;
         const secs = build.secs != null ? build.secs : null;
-        items.push({ build: { count, secs: reps > 1 ? secs : (secs != null ? Math.round(secs / count) : null), metres: build.metres, to: build.target || null } });
+        // "6x4min build 1min rec" is a step test: the recovery between the
+        // stages is where the blood is drawn. It used to be dropped, so the
+        // ladder came back 6 minutes short with no pauses in it.
+        const rec = steps.find((st) => !st.build && isEasy(st));
+        items.push({ build: { count, secs: reps > 1 ? secs : (secs != null ? Math.round(secs / count) : null), metres: build.metres, to: build.target || null, ...(rec ? { rec } : {}) } });
         continue;
       }
       const last = items[items.length - 1];

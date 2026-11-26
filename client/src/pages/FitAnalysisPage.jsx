@@ -4243,7 +4243,7 @@ const FitAnalysisPage = () => {
         savedTrainingId = resp?.data?._id || null;
         if (similarTrainings.length > 0) {
           const similarList = similarTrainings.map(t => 
-            `${t.title} (${new Date(t.date).toLocaleDateString('cs-CZ')})`
+            `${t.title} (${new Date(t.date).toLocaleDateString('en-GB')})`
           ).join(', ');
           alert(`Training created successfully! Found ${similarTrainings.length} similar training(s): ${similarList}`);
         } else {

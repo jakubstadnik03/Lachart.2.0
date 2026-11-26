@@ -13,6 +13,28 @@ import { ltZoneBounds, TOP_FACTOR } from '../../utils/trainingZoneBounds';
 import { heartRateZonesForTest } from './zoneCalculator';
 import { resolveDistanceUnitSystem } from '../../utils/unitsConverter';
 
+/**
+ * Top of zone 1 lactate. When LT1 sits barely above the resting value
+ * (base 1.3, LT1 1.41 mmol/L) the old floor of "base + 0.2" put Z1's top above
+ * LT1, so Z2 collapsed to "1.5–1.5 mmol/L" and Z3 started below Z2. Then the
+ * base→LT1 span is shared between Z1 and Z2 instead.
+ */
+export function zone1TopLactate(zone1Bottom, lt1Lactate, headroom) {
+  const wanted = Math.max(zone1Bottom + 0.2, lt1Lactate - headroom);
+  if (wanted < lt1Lactate) return wanted;
+  return zone1Bottom + Math.max(0, lt1Lactate - zone1Bottom) / 2;
+}
+
+/** "1.3–1.4" — or "1.36–1.41" when one decimal would print the same number twice. */
+export function fmtLactateRange(min, max) {
+  if (min == null || max == null || min === '' || max === '') return '-';
+  const a = Number(min), b = Number(max);
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return '-';
+  const d = a.toFixed(1) === b.toFixed(1) ? 2 : 1;
+  return `${a.toFixed(d)}–${b.toFixed(d)}`;
+}
+
+
 const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
   const { user } = useAuth();
   const [zones, setZones] = useState(null);
@@ -470,7 +492,7 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
               description: 'Tempo / Threshold (LT1–LT2)',
               hr: hasHR ? `${Math.round(hr1 * 1.00)}–${Math.round(hr2 * 1.00)} BPM` : 'N/A',
               percent: 'LT1–LT2',
-              lactate: (lt1_lactate && lt2_lactate) ? `${Number(lt1_lactate).toFixed(1)}–${Number(lt2_lactate).toFixed(1)}` : '-',
+              lactate: (lt1_lactate && lt2_lactate) ? fmtLactateRange(Number(lt1_lactate), Number(lt2_lactate)) : '-',
             },
             zone3: {
               min: toDisplaySpeed(lt2_value * 1.00),
@@ -502,7 +524,7 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
             description: 'Tempo / Threshold (LT1–LT2)',
             hr: hasHR ? `${Math.round(hr1 * 1.00)}–${Math.round(hr2 * 1.00)} BPM` : 'N/A',
             percent: 'LT1–LT2',
-            lactate: (lt1_lactate && lt2_lactate) ? `${Number(lt1_lactate).toFixed(1)}–${Number(lt2_lactate).toFixed(1)}` : '-',
+            lactate: (lt1_lactate && lt2_lactate) ? fmtLactateRange(Number(lt1_lactate), Number(lt2_lactate)) : '-',
           },
           zone3: {
             min: fmt(lt2_value / 1.00),
@@ -535,7 +557,7 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
             description: 'Tempo / Threshold (LT1–LT2)',
             hr: hasHR ? `${Math.round(hr1 * 1.00)}–${Math.round(hr2 * 1.00)} BPM` : 'N/A',
             percent: 'LT1–LT2',
-            lactate: (lt1_lactate && lt2_lactate) ? `${Number(lt1_lactate).toFixed(1)}–${Number(lt2_lactate).toFixed(1)}` : '-',
+            lactate: (lt1_lactate && lt2_lactate) ? fmtLactateRange(Number(lt1_lactate), Number(lt2_lactate)) : '-',
           },
           zone3: {
             min: Math.round(lt2_value * 1.00),
@@ -595,7 +617,7 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
 
       // Zone 1: base -> clearly below LT1
       const zone1_min_lactate = Math.max(0.7, baseLactate);
-      const zone1_max_lactate = Math.max(zone1_min_lactate + 0.2, lt1_lactate_value - z2Headroom);
+      const zone1_max_lactate = zone1TopLactate(zone1_min_lactate, lt1_lactate_value, z2Headroom);
       
       // Zone 2: broad aerobic range up to LT1
       const zone2_min_lactate = zone1_max_lactate;
@@ -643,7 +665,7 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
             description: '< 80% LT1 (recovery / easy)',
             hr: hasHR ? hrRange(1) : 'N/A',
             percent: '< 80% LT1',
-            lactate: `${finalZone1.min.toFixed(1)}–${finalZone1.max.toFixed(1)}`,
+            lactate: fmtLactateRange(finalZone1.min, finalZone1.max),
           },
           zone2: {
             min: zone2_min_power,
@@ -651,7 +673,7 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
             description: '80%–100% LT1',
             hr: hasHR ? hrRange(2) : 'N/A',
             percent: '80–100% LT1',
-            lactate: `${finalZone2.min.toFixed(1)}–${finalZone2.max.toFixed(1)}`,
+            lactate: fmtLactateRange(finalZone2.min, finalZone2.max),
           },
           zone3: {
             min: zone3_min_power,
@@ -659,7 +681,7 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
             description: 'LT1 – LT2 (tempo)',
             hr: hasHR ? hrRange(3) : 'N/A',
             percent: 'LT1 – LT2',
-            lactate: `${finalZone3.min.toFixed(1)}–${finalZone3.max.toFixed(1)}`,
+            lactate: fmtLactateRange(finalZone3.min, finalZone3.max),
           },
           zone4: {
             min: zone4_min_power,
@@ -668,7 +690,7 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
             hr: hasHR ? hrRange(4) : 'N/A',
             percent: 'LT2 ± 3%',
             // Use the calculated range for this specific test (no hardcoded 4.0 anchor)
-            lactate: `${finalZone4.min.toFixed(1)}–${finalZone4.max.toFixed(1)}`,
+            lactate: fmtLactateRange(finalZone4.min, finalZone4.max),
           },
           zone5: {
             min: zone5_min_power,
@@ -677,7 +699,7 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
             hr: hasHR ? hrRange(5) : 'N/A',
             percent: '> LT2 + 3%',
             // Use the calculated range for this specific test (no hardcoded 4.0 anchor)
-            lactate: `${finalZone5.min.toFixed(1)}–${finalZone5.max.toFixed(1)}`,
+            lactate: fmtLactateRange(finalZone5.min, finalZone5.max),
           },
         },
         heartRate: hrZones,
@@ -711,7 +733,7 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
       const z2HeadroomSpeed = Math.max(0.5, Math.min(1.2, ltGapSpeed * 0.45));
 
       const zone1_min_lactate_speed = Math.max(0.7, baseLactate);
-      const zone1_max_lactate_speed = Math.max(zone1_min_lactate_speed + 0.2, lt1_lactate_value_speed - z2HeadroomSpeed);
+      const zone1_max_lactate_speed = zone1TopLactate(zone1_min_lactate_speed, lt1_lactate_value_speed, z2HeadroomSpeed);
       const zone2_min_lactate_speed = zone1_max_lactate_speed;
       const zone2_max_lactate_speed = lt1_lactate_value_speed;
       const zone3_min_lactate_speed = lt1_lactate_value_speed;
@@ -750,7 +772,7 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
             description: '< 80% LT1 (recovery / easy)',
             hr: hasHR ? hrRange(1) : 'N/A',
             percent: '< 80% LT1',
-            lactate: `${finalZone1Speed.min.toFixed(1)}–${finalZone1Speed.max.toFixed(1)}`,
+            lactate: fmtLactateRange(finalZone1Speed.min, finalZone1Speed.max),
           },
           zone2: {
             min: toDisplaySpeed(zone2_min_speed),
@@ -758,7 +780,7 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
             description: '80%–100% LT1',
             hr: hasHR ? hrRange(2) : 'N/A',
             percent: '80–100% LT1',
-            lactate: `${finalZone2Speed.min.toFixed(1)}–${finalZone2Speed.max.toFixed(1)}`,
+            lactate: fmtLactateRange(finalZone2Speed.min, finalZone2Speed.max),
           },
           zone3: {
             min: toDisplaySpeed(zone3_min_speed),
@@ -766,7 +788,7 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
             description: 'LT1 – LT2 (tempo)',
             hr: hasHR ? hrRange(3) : 'N/A',
             percent: 'LT1 – LT2',
-            lactate: `${finalZone3Speed.min.toFixed(1)}–${finalZone3Speed.max.toFixed(1)}`,
+            lactate: fmtLactateRange(finalZone3Speed.min, finalZone3Speed.max),
           },
           zone4: {
             min: toDisplaySpeed(zone4_min_speed),
@@ -774,7 +796,7 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
             description: 'LT2 ± 3% (threshold)',
             hr: hasHR ? hrRange(4) : 'N/A',
             percent: 'LT2 ± 3%',
-            lactate: `${finalZone4Speed.min.toFixed(1)}–${finalZone4Speed.max.toFixed(1)}`,
+            lactate: fmtLactateRange(finalZone4Speed.min, finalZone4Speed.max),
           },
           zone5: {
             min: toDisplaySpeed(zone5_min_speed),
@@ -782,7 +804,7 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
             description: '> LT2 + 3% (VO₂max+ / sprint)',
             hr: hasHR ? hrRange(5) : 'N/A',
             percent: '> LT2 + 3%',
-            lactate: `${finalZone5Speed.min.toFixed(1)}–${finalZone5Speed.max.toFixed(1)}`,
+            lactate: fmtLactateRange(finalZone5Speed.min, finalZone5Speed.max),
           },
         },
         heartRate: hrZones,
@@ -824,7 +846,7 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
       const z2HeadroomPace = Math.max(0.5, Math.min(1.2, ltGapPace * 0.45));
 
       const zone1_min_lactate_pace = Math.max(0.7, baseLactate);
-      const zone1_max_lactate_pace = Math.max(zone1_min_lactate_pace + 0.2, lt1_lactate_value_pace - z2HeadroomPace);
+      const zone1_max_lactate_pace = zone1TopLactate(zone1_min_lactate_pace, lt1_lactate_value_pace, z2HeadroomPace);
       
       const zone2_min_lactate_pace = zone1_max_lactate_pace;
       const zone2_max_lactate_pace = lt1_lactate_value_pace;
@@ -868,7 +890,7 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
           description: '< 80% LT1 (recovery / easy)',
           hr: hrRange(1),
           percent: '< 80% LT1',
-          lactate: `${finalZone1Pace.min.toFixed(1)}–${finalZone1Pace.max.toFixed(1)}`,
+          lactate: fmtLactateRange(finalZone1Pace.min, finalZone1Pace.max),
         },
         zone2: {
             min: fmt(zone2_min_pace_sec), // pomalejší
@@ -876,7 +898,7 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
           description: '80%–100% LT1',
           hr: hrRange(2),
           percent: '80–100% LT1',
-          lactate: `${finalZone2Pace.min.toFixed(1)}–${finalZone2Pace.max.toFixed(1)}`,
+          lactate: fmtLactateRange(finalZone2Pace.min, finalZone2Pace.max),
         },
         zone3: {
             min: fmt(zone3_min_pace_sec), // pomalejší
@@ -884,7 +906,7 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
           description: 'LT1 – LT2 (tempo)',
           hr: hrRange(3),
           percent: 'LT1 – LT2',
-          lactate: `${finalZone3Pace.min.toFixed(1)}–${finalZone3Pace.max.toFixed(1)}`,
+          lactate: fmtLactateRange(finalZone3Pace.min, finalZone3Pace.max),
         },
         zone4: {
             min: fmt(zone4_min_pace_sec), // pomalejší
@@ -893,7 +915,7 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
           hr: hrRange(4),
           percent: 'LT2 ± 3%',
           // Use the calculated range for this specific test (no hardcoded 4.0 anchor)
-          lactate: `${finalZone4Pace.min.toFixed(1)}–${finalZone4Pace.max.toFixed(1)}`,
+          lactate: fmtLactateRange(finalZone4Pace.min, finalZone4Pace.max),
         },
         zone5: {
             min: fmt(zone5_min_pace_sec), // pomalejší
@@ -902,7 +924,7 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
           hr: hrRange(5),
           percent: '> LT2 + 3%',
           // Use the calculated range for this specific test (no hardcoded 4.0 anchor)
-          lactate: `${finalZone5Pace.min.toFixed(1)}–${finalZone5Pace.max.toFixed(1)}`,
+          lactate: fmtLactateRange(finalZone5Pace.min, finalZone5Pace.max),
         },
       },
       heartRate: hrZones,

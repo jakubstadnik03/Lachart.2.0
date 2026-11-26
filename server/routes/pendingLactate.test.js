@@ -136,4 +136,60 @@ test('survives an activity with no start date rather than merging it into one', 
   assert.strictEqual(dedupePendingLactate(rows).length, 2);
 });
 
+// Production pairs, 2026-11: Strava stores the wall clock as UTC, Garmin real
+// UTC, so one ride sits a whole zone offset apart.
+const ride = (source, startIso, movingTime, over = {}) => toPendingLactateRow({
+  _id: `${source}-${startIso}`,
+  ...(source === 'garmin' ? { garminId: `g${startIso}` } : { stravaId: `s${startIso}` }),
+  name: source === 'garmin' ? 'Panama City Beach Road Cycling' : 'Morning Ride',
+  sport: source === 'garmin' ? 'cycling' : 'Ride',
+  startDate: new Date(startIso), movingTime,
+  laps: [lap(), lap()],
+  ...over,
+}, source, null);
+
+test('joins the Strava and Garmin copy of a ride six hours apart (Florida)', () => {
+  const kept = dedupePendingLactate([
+    ride('garmin', '2026-11-07T12:35:19Z', 14703),
+    ride('strava', '2026-11-07T06:35:19Z', 14707),
+  ]);
+  assert.strictEqual(kept.length, 1);
+});
+
+test('joins a pair one hour apart whose lengths differ a little (Tacx app vs watch)', () => {
+  const kept = dedupePendingLactate([
+    ride('strava', '2026-10-28T08:25:09Z', 7151, { sport: 'VirtualRide', name: 'Bike endurance' }),
+    ride('garmin', '2026-10-28T07:25:09Z', 6650, { name: 'Tacx - Bike - rege' }),
+  ]);
+  assert.strictEqual(kept.length, 1);
+});
+
+test('keeps two rides from the same service an hour apart', () => {
+  assert.strictEqual(dedupePendingLactate([
+    ride('strava', '2026-11-07T08:00:00Z', 3600),
+    ride('strava', '2026-11-07T09:00:00Z', 3600),
+  ]).length, 2);
+});
+
+test('keeps a ride and a run an offset apart', () => {
+  assert.strictEqual(dedupePendingLactate([
+    ride('garmin', '2026-11-07T12:00:00Z', 3600),
+    ride('strava', '2026-11-07T06:00:00Z', 3600, { sport: 'Run' }),
+  ]).length, 2);
+});
+
+test('keeps sessions an offset apart whose lengths do not match', () => {
+  assert.strictEqual(dedupePendingLactate([
+    ride('garmin', '2026-11-07T12:00:00Z', 7200),
+    ride('strava', '2026-11-07T06:00:00Z', 3600),
+  ]).length, 2);
+});
+
+test('keeps sessions whose gap is not a zone offset', () => {
+  assert.strictEqual(dedupePendingLactate([
+    ride('garmin', '2026-11-07T12:00:00Z', 3600),
+    ride('strava', '2026-11-07T10:37:00Z', 3600),
+  ]).length, 2);
+});
+
 console.log(`\n${passed} passed`);

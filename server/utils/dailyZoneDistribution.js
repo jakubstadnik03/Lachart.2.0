@@ -365,7 +365,7 @@ async function dailyZoneDistribution(athleteId, startDate, endDate, { sport = 'a
     ? await StravaStream.find({
         userId: athleteIdStr,
         stravaId: { $in: wanted.map((a) => a.stravaId) },
-      }).select('stravaId streams').lean()
+      }).select('stravaId streams packed').lean()
     : [];
   const streamsById = new Map(streamDocs.map((d) => [String(d.stravaId), d.streams || {}]));
 

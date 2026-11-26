@@ -46,3 +46,23 @@ export function plannedTotals({ steps, context, sport, typedTss, typedDurationSe
     tss: typedTss ? Number(typedTss) : undefined,
   };
 }
+
+/**
+ * Which steps a save writes.
+ *
+ * On a fresh session the builder's composer is pre-filled, so the chart draws
+ * its draft (15 min Z1, 4×10 min LT2, 10 min Z1) the moment "Build workout" is
+ * opened — but the draft only became steps after "Build steps". "Plan it"
+ * pressed straight away saved `steps: []`: an empty session behind a chart of
+ * intervals, and nothing on the athlete's watch.
+ *
+ * With nothing built, the draft is the session on screen, so it is saved.
+ * With steps built, a draft stays a draft: it may be the untouched default of
+ * a composer opened just to look, and appending it would add blocks nobody
+ * asked for.
+ */
+export function stepsToSave({ builderOpen, steps, draft }) {
+  const built = Array.isArray(steps) ? steps : [];
+  if (builderOpen && built.length === 0 && Array.isArray(draft) && draft.length > 0) return draft;
+  return built;
+}

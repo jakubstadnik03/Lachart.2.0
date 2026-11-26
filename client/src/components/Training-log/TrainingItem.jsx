@@ -155,8 +155,8 @@ const fmtIntervalDuration = (r) => {
   return sec > 0 ? fmtIntervalDurationSec(sec) : '—';
 };
 
-const fmtIntervalDistance = (r, unitSystem = 'metric') => {
-  const meters = parseLapDistanceMeters(r);
+const fmtIntervalDistance = (r, unitSystem = 'metric', sport) => {
+  const meters = parseLapDistanceMeters(r, sport);
   return meters > 0 ? fmtDistanceM(meters, unitSystem) : '—';
 };
 
@@ -223,17 +223,19 @@ const parseLapDurationSec = (r) => {
   return n;
 };
 
-const parseLapDistanceMeters = (r) => {
+const parseLapDistanceMeters = (r, sport) => {
+  // Swim laps are metres — a 25 m length is not 25 km (see parseLapDistanceToMeters).
+  const isSwim = String(sport || '').toLowerCase().includes('swim');
   // distanceMeters is canonical; fall back to .distance (which on Training
   // results may be km, on Strava laps is metres). When durationType === 'distance'
   // the `duration` field IS the distance — interpret it likewise.
   const dm = Number(r?.distanceMeters);
   if (Number.isFinite(dm) && dm > 0) return dm;
   const d = Number(r?.distance);
-  if (Number.isFinite(d) && d > 0) return parseLapDistanceToMeters(d);
+  if (Number.isFinite(d) && d > 0) return isSwim ? d : parseLapDistanceToMeters(d);
   if (r?.durationType === 'distance') {
     const raw = Number(r?.duration);
-    if (Number.isFinite(raw) && raw > 0) return parseLapDistanceToMeters(raw);
+    if (Number.isFinite(raw) && raw > 0) return isSwim ? raw : parseLapDistanceToMeters(raw);
   }
   return 0;
 };
@@ -263,7 +265,7 @@ function SkylineChart({ results, sport, width = 180, height = 52 }) {
   // Falls back to the other measure rather than drawing nothing, for the
   // sessions that only carry one of the two. A lap with neither is a thin
   // sliver, not a disqualification.
-  const distances = results.map(parseLapDistanceMeters);
+  const distances = results.map((r) => parseLapDistanceMeters(r, sport));
   const durations = results.map(r => parseLapDurationSec(r));
   const sum = (xs) => xs.reduce((a, b) => a + (b > 0 ? b : 0), 0);
   const preferDistance = isRunLikeSport(sport);
@@ -427,7 +429,7 @@ function IntervalTable({ results, sport, startIndex = 0, globalMax = null, unitS
   const isRun  = String(sport || '').toLowerCase().includes('run');
   const isSwim = String(sport || '').toLowerCase().includes('swim');
   const paceUnit = isSwim ? paceUnitShort(unitSystem, 'swim') : paceUnitShort(unitSystem, 'run');
-  const showDistance = results.some(r => parseLapDistanceMeters(r) > 0);
+  const showDistance = results.some(r => parseLapDistanceMeters(r, sport) > 0);
 
   // Use provided globalMax so zone colours are consistent across pages
   const maxV = globalMax ?? Math.max(...results.map(x => toPowerNum(x.power, sport)), 0.001);
@@ -483,7 +485,7 @@ function IntervalTable({ results, sport, startIndex = 0, globalMax = null, unitS
                 </td>
                 {showDistance && (
                   <td className="py-1.5 text-right text-gray-500">
-                    {fmtIntervalDistance(r, unitSystem)}
+                    {fmtIntervalDistance(r, unitSystem, sport)}
                   </td>
                 )}
                 <td className="py-1.5 text-right text-gray-500">

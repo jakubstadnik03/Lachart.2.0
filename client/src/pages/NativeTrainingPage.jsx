@@ -486,6 +486,10 @@ function getIntervalsForChart(t, stravaLapsCache = {}, garminLapsCache = {}) {
   return intervals;
 }
 
+// Laps are fetched in the background for this many days back; older
+// sessions load theirs only when opened.
+const BACKGROUND_LAP_DAYS = 120;
+
 function needsStravaLapFetch(t, stravaLapsCache = {}) {
   if (!isStravaActivityShape(t)) return false;
   if (hasDetailedLaps(t)) return false;
@@ -2047,10 +2051,13 @@ export default function NativeTrainingPage({
 
   // Laps to fetch: every listed session, plus the Strava/Garmin record behind
   // a saved training — the record is where its recoveries are (fullLapSource).
-  const lapFetchTargets = useMemo(() => {
-    const extra = intervalTrainingsBase.map(fullLapSource).filter(Boolean);
-    return [...intervalTrainingsBase, ...extra];
-  }, [intervalTrainingsBase, trainings]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Each session next to its record, newest first: appending every record
+  // after all the sessions put the newest session's own laps behind the
+  // whole archive, and the hub waited on them for minutes.
+  const lapFetchTargets = useMemo(
+    () => intervalTrainingsBase.flatMap((t) => [t, fullLapSource(t)].filter(Boolean)),
+    [intervalTrainingsBase, trainings], // eslint-disable-line react-hooks/exhaustive-deps
+  );
 
   // Lazy-fetch full Strava/Garmin laps — the activities list only carries
   // lactate stubs, so the charts would otherwise have nothing to draw.
@@ -2115,7 +2122,7 @@ export default function NativeTrainingPage({
     // lists are read from. Each fetch can reach Strava for streams, and the
     // whole archive at once ran into its rate limit. Older sessions load
     // when opened.
-    const since = Date.now() - 120 * 86400000;
+    const since = Date.now() - BACKGROUND_LAP_DAYS * 86400000;
     lapFetchTargets.filter((t) => getDate(t).getTime() >= since).forEach((t) => {
       const job = lapJobFor(t);
       if (!job) return;
@@ -2589,7 +2596,23 @@ export default function NativeTrainingPage({
 
   // ── Training hub: groups with trends, search, session sheet ──────────────
   const [showClassic, setShowClassic] = useState(false);
-  const tssProfile = useMemo(() => mergeProfileZones(user, user) || user, [user]);
+  // Score sessions against the athlete being viewed. In coach view this used
+  // the coach's own profile, so an athlete's swim fell back to a duration
+  // estimate ("31 TSS (est.)") although the athlete has a swim LT2.
+  const viewingOtherAthlete = Boolean(athleteId && user && String(athleteId) !== String(user._id || user.id || ''));
+  const [viewedAthleteProfile, setViewedAthleteProfile] = useState(null);
+  useEffect(() => {
+    if (!viewingOtherAthlete) { setViewedAthleteProfile(null); return undefined; }
+    let cancelled = false;
+    api.get(`/user/athlete/${athleteId}/profile`)
+      .then((r) => { if (!cancelled) setViewedAthleteProfile(r?.data || null); })
+      .catch(() => { if (!cancelled) setViewedAthleteProfile(null); });
+    return () => { cancelled = true; };
+  }, [viewingOtherAthlete, athleteId]);
+  const tssProfile = useMemo(() => {
+    if (viewingOtherAthlete) return viewedAthleteProfile ? (mergeProfileZones(viewedAthleteProfile, viewedAthleteProfile) || viewedAthleteProfile) : null;
+    return mergeProfileZones(user, user) || user;
+  }, [user, viewingOtherAthlete, viewedAthleteProfile]);
   const hubSession = useCallback((t) => {
     const sport = normSport(t.sport);
     // Chart the full lap list (recoveries included) when the training has a
@@ -2617,6 +2640,11 @@ export default function NativeTrainingPage({
       avgHr: Number(t.avgHeartRate ?? t.average_heartrate ?? t.averageHeartRate) || null,
       laps,
       lapsPending: [t, full].filter(Boolean).some((x) => needsStravaLapFetch(x, stravaLapsCache) || needsGarminLapFetch(x, garminLapsCache)),
+      // Pending AND on its way: inside the background window, so its laps
+      // will arrive without the athlete opening it. The hub waits on these
+      // before it prints a number that would otherwise change under them.
+      lapsLoading: getDate(t).getTime() >= Date.now() - BACKGROUND_LAP_DAYS * 86400000
+        && [t, full].filter(Boolean).some((x) => needsStravaLapFetch(x, stravaLapsCache) || needsGarminLapFetch(x, garminLapsCache)),
       summary,
       // Measured from the session's own averages, not its laps — not comparable with lap-based ones.
       wholeOnly: laps.length === 1 && laps[0].whole === true,
@@ -3716,7 +3744,7 @@ export default function NativeTrainingPage({
               const sameDay = d.toDateString() === today.toDateString();
               const dayPart = sameDay
                 ? 'Today'
-                : d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+                : d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
               const timePart = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
               return `${dayPart} · ${timePart}`;
             };
@@ -4834,7 +4862,7 @@ function LactateAssignmentSheet({ measurement, trainings, user = null, getStrava
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                   {candidates.map((t) => {
                     const d = new Date(t.date || t.timestamp || t.startDate || 0);
-                    const dStr = isNaN(d.getTime()) ? '' : d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: '2-digit' });
+                    const dStr = isNaN(d.getTime()) ? '' : d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: '2-digit' });
                     const sport = normSport(t.sport);
                     const tint = SPORT_TINT[sport] || SPORT_TINT.other;
                     const title = t.title || t.name || t.titleManual || 'Untitled';

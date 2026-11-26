@@ -87,7 +87,7 @@ function lapPaceSecs(r, sport) {
   const parsed = parsePaceSecs(r?.power);
   if (parsed && isPlausiblePaceSec(parsed, sport)) return parsed;
   const dur = parseDurationSecs(r);
-  const dist = parseDistMeters(r?.distance || (r?.durationType === "distance" ? r?.duration : null));
+  const dist = parseDistMeters(r?.distance || (r?.durationType === "distance" ? r?.duration : null), sport);
   if (dur >= 30 && dist >= 100) {
     const pace = sport === "swim" ? (dur / dist) * 100 : (dur / dist) * 1000;
     if (isPlausiblePaceSec(pace, sport)) return Math.round(pace);
@@ -141,7 +141,7 @@ function computePaceAxisFromResults(rows, sport) {
   for (const { r, sport: rowSport } of rows) {
     const s = rowSport || sport;
     const dur = parseDurationSecs(r);
-    const dist = parseDistMeters(r.distance || (r.durationType === "distance" ? r.duration : null));
+    const dist = parseDistMeters(r.distance || (r.durationType === "distance" ? r.duration : null), s);
     if ((s === "run" || s === "swim") && (dur < 30 || dist < 100)) continue;
     const pace = lapPaceSecs(r, s);
     if (!pace || !isPlausiblePaceSec(pace, s)) continue;
@@ -156,7 +156,16 @@ function computePaceAxisFromResults(rows, sport) {
   }
   return computePaceAxisFromPaces(fastSet, allPaces.length ? allPaces : fastSet, sport);
 }
-function parseDistMeters(d) {
+/**
+ * Lap distance in metres. Swim laps always arrive in metres; the generic
+ * "small number = km" guess turned a 25 m pool length into 25 km, which the
+ * tooltip printed and the chart drew as one bar the width of the session.
+ */
+function parseDistMeters(d, sport) {
+  if (normalizeSport(sport) === 'swim') {
+    const n = typeof d === 'number' ? d : Number(String(d ?? '').trim());
+    if (Number.isFinite(n) && n > 0) return n;
+  }
   return parseLapDistanceToMeters(d);
 }
 /** Normalize sport string → 'run' | 'bike' | 'swim' | original lowercase | '' */
@@ -253,7 +262,7 @@ function BarTooltip({ barRef, visible, index, power, heartRate, lactate, duratio
     return `${formatPaceMMSS(displaySec)}${paceUnitShort(unitSystem, 'swim')}`;
   };
   const fmtDist = (v) => {
-    const m = typeof v === "number" ? v : parseDistMeters(v);
+    const m = typeof v === "number" ? v : parseDistMeters(v, sport);
     if (!m) return null;
     return formatDistance(m, unitSystem).formatted;
   };
@@ -265,8 +274,8 @@ function BarTooltip({ barRef, visible, index, power, heartRate, lactate, duratio
     }
     return parseDurationSecs({ duration, durationType, moving_time: duration, elapsed_time: duration });
   })();
-  const distM = parseDistMeters(distance)
-    || (durationType === "distance" ? parseDistMeters(duration) : 0);
+  const distM = parseDistMeters(distance, sport)
+    || (durationType === "distance" ? parseDistMeters(duration, sport) : 0);
 
   const rows = [
     durSec > 0 ? { label: "Time",     value: fmtDur(durSec) } : null,
@@ -1331,7 +1340,7 @@ export function TrainingStats({
               const lapWidthVal = (r) => {
                 if (widthByDistance) {
                   const d = r.distance || (r.durationType === "distance" ? r.duration : null);
-                  return parseDistMeters(d);
+                  return parseDistMeters(d, sportKey);
                 }
                 return parseDurationSecs(r);
               };
@@ -1461,7 +1470,7 @@ export function TrainingStats({
               {shown.length > CHART_SCROLL_LAP_THRESHOLD && !shown.some((r) => {
                 const sk = resolveTrainingSport(t) || normalizeSport(currentSelectedSport) || "bike";
                 return (sk === "run" || sk === "swim")
-                  ? parseDistMeters(r.distance || (r.durationType === "distance" ? r.duration : null)) > 0
+                  ? parseDistMeters(r.distance || (r.durationType === "distance" ? r.duration : null), sk) > 0
                   : parseDurationSecs(r) > 0;
               }) && (
                 <span className="text-gray-300">scroll chart →</span>

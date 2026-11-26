@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { retestLevelForAge, stricterRetestLevel } from '../../utils/retestAge';
 import {
   ComposedChart, Line, XAxis, YAxis, Tooltip, CartesianGrid,
   ResponsiveContainer, ReferenceLine, Legend,
@@ -166,7 +167,8 @@ function CustomTooltip({ active, payload, label, isPace }) {
   if (!active || !payload?.length) return null;
   return (
     <div className="bg-white border border-gray-100 rounded-2xl shadow-lg px-3 py-2.5 text-xs min-w-[150px]">
-      <div className="font-semibold text-text mb-1.5">{label}</div>
+      {/* The x axis is time now, so `label` is a timestamp; the point carries its date. */}
+      <div className="font-semibold text-text mb-1.5">{payload[0]?.payload?.date || label}</div>
       {payload.map(p => (
         <div key={p.name} className="flex items-center gap-2 py-0.5">
           <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: p.color }} />
@@ -260,29 +262,44 @@ export default function ThresholdHistory({
     [activeSport, externalActivities, bikePowerMetrics]
   );
 
+  // Power-vs-threshold verdict (Strava) and the test's age, combined: the
+  // stricter one wins. On its own the power check said "Threshold Still Valid
+  // — no retest needed" under a badge saying the test was 95 days old.
   const stravaRec = useMemo(() => {
-    if (!stravaPerf || !lastPt?.ltp2) return null;
-    const ratio = isPace
-      ? lastPt.ltp2 / stravaPerf.value   // pace: lower = faster; >1 means athlete is now faster
-      : stravaPerf.value / lastPt.ltp2;  // power: >1 means current > threshold
-    if (ratio >= 1.05) return {
-      level: 'retest',
-      detail: isPace
-        ? `Current pace (${fmtPace(stravaPerf.value)}) is faster than last test LTP2 (${fmtPace(lastPt.ltp2)})`
-        : `Current power (~${stravaPerf.value} W) exceeds last test LTP2 (${Math.round(lastPt.ltp2)} W)`,
+    if (!lastPt?.ltp2) return null;
+    const ageDays = lastPt.rawDate ? Math.floor((Date.now() - lastPt.rawDate) / 86400000) : null;
+    const ageLevel = retestLevelForAge(ageDays);
+    const ageRec = ageLevel && ageLevel !== 'ok'
+      ? { level: ageLevel, detail: `Last test ${ageDays} days ago — ${ageLevel === 'retest' ? 'retest recommended' : 'schedule a retest soon'}` }
+      : null;
+    const powerVerdict = () => {
+      if (!stravaPerf) return null;
+      const ratio = isPace
+        ? lastPt.ltp2 / stravaPerf.value   // pace: lower = faster; >1 means athlete is now faster
+        : stravaPerf.value / lastPt.ltp2;  // power: >1 means current > threshold
+      if (ratio >= 1.05) return {
+        level: 'retest',
+        detail: isPace
+          ? `Current pace (${fmtPace(stravaPerf.value)}) is faster than last test LTP2 (${fmtPace(lastPt.ltp2)})`
+          : `Current power (~${stravaPerf.value} W) exceeds last test LTP2 (${Math.round(lastPt.ltp2)} W)`,
+      };
+      if (ratio >= 1.02) return {
+        level: 'soon',
+        detail: isPace
+          ? `Current pace (${fmtPace(stravaPerf.value)}) approaching LTP2 (${fmtPace(lastPt.ltp2)})`
+          : `Current power (~${stravaPerf.value} W) approaching LTP2 (${Math.round(lastPt.ltp2)} W)`,
+      };
+      return {
+        level: 'ok',
+        detail: isPace
+          ? `Fitness below LTP2 (${fmtPace(lastPt.ltp2)}) — no retest needed yet`
+          : `Fitness below LTP2 (${Math.round(lastPt.ltp2)} W) — no retest needed yet`,
+      };
     };
-    if (ratio >= 1.02) return {
-      level: 'soon',
-      detail: isPace
-        ? `Current pace (${fmtPace(stravaPerf.value)}) approaching LTP2 (${fmtPace(lastPt.ltp2)})`
-        : `Current power (~${stravaPerf.value} W) approaching LTP2 (${Math.round(lastPt.ltp2)} W)`,
-    };
-    return {
-      level: 'ok',
-      detail: isPace
-        ? `Fitness below LTP2 (${fmtPace(lastPt.ltp2)}) — no retest needed yet`
-        : `Fitness below LTP2 (${Math.round(lastPt.ltp2)} W) — no retest needed yet`,
-    };
+    const powerRec = powerVerdict();
+    if (!powerRec) return ageRec;
+    if (!ageRec) return powerRec;
+    return stricterRetestLevel(powerRec.level, ageRec.level) === powerRec.level ? powerRec : ageRec;
   }, [stravaPerf, lastPt, isPace]);
 
   // Y-axis bounds
@@ -291,7 +308,17 @@ export default function ThresholdHistory({
   const yMin = allVals.length ? Math.min(...allVals) : 0;
   const yMax = allVals.length ? Math.max(...allVals) : 100;
   const pad  = (yMax - yMin) * 0.2 || 15;
-  const yDomain = [Math.max(0, yMin - pad), yMax + pad];
+  // Whole units at the ends: a domain of yMin − 20 % produced ticks such as
+  // "214.4636946886501W", which did not fit the axis either.
+  // Round ticks: every 50 W, or every 15 s of pace (30 s / 25 W on wide ranges).
+  const span = (yMax + pad) - Math.max(0, yMin - pad);
+  const yStep = isPace ? (span > 150 ? 30 : 15) : (span > 400 ? 100 : span > 150 ? 50 : 25);
+  const yDomain = [
+    Math.max(0, Math.floor((yMin - pad) / yStep) * yStep),
+    Math.ceil((yMax + pad) / yStep) * yStep,
+  ];
+  const yTicks = [];
+  for (let v = yDomain[0]; v <= yDomain[1] + 1e-6; v += yStep) yTicks.push(v);
 
   if (availableSports.length === 0) return null;
 
@@ -399,18 +426,27 @@ export default function ThresholdHistory({
               <ResponsiveContainer width="100%" height="100%">
                 <ComposedChart data={points} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
+                  {/* Real time, not one slot per test: two years between tests
+                      were drawn as wide as eleven days. */}
                   <XAxis
-                    dataKey="date"
+                    dataKey="rawDate"
+                    type="number"
+                    scale="time"
+                    domain={['dataMin', 'dataMax']}
+                    padding={{ left: 14, right: 14 }}
+                    tickFormatter={(ts) => fmtDate(ts)}
                     tick={{ fontSize: 10, fill: '#94A3B8' }}
                     tickLine={false}
                     axisLine={false}
                   />
                   <YAxis
                     domain={yDomain}
+                    ticks={yTicks}
+                    allowDecimals={false}
                     tick={{ fontSize: 10, fill: '#94A3B8' }}
                     tickLine={false}
                     axisLine={false}
-                    tickFormatter={v => isPace ? fmtPace(v) : `${v}W`}
+                    tickFormatter={v => isPace ? fmtPace(v) : `${Math.round(v)}W`}
                     width={isPace ? 60 : 40}
                   />
                   <Tooltip content={(props) => <CustomTooltip {...props} isPace={isPace} />} />

@@ -240,8 +240,11 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData, zonesOnly = fal
               zone3: { min: cyclingZones.zone3?.min || '', max: cyclingZones.zone3?.max || '', description: cyclingZones.zone3?.description || '' },
               zone4: { min: cyclingZones.zone4?.min || '', max: cyclingZones.zone4?.max || '', description: cyclingZones.zone4?.description || '' },
               zone5: { min: cyclingZones.zone5?.min || '', max: cyclingZones.zone5?.max || '', description: cyclingZones.zone5?.description || '' },
-              lt1: cyclingZones.lt1 || '',
-              lt2: cyclingZones.lt2 || ''
+              // Older profiles stored only the zone bands. Show (and so save)
+              // the thresholds those bands were built from, or LTP1/LTP2 sit
+              // empty and every save writes the zones without them.
+              lt1: cyclingZones.lt1 || cyclingZones.zone3?.min || '',
+              lt2: cyclingZones.lt2 || cyclingZones.zone4?.min || ''
             },
             running: {
               zone1: { 

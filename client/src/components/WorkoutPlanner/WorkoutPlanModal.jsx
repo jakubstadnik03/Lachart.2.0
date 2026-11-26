@@ -21,7 +21,7 @@ import { isCapacitorNative } from '../../utils/isNativeApp';
 import { motion, AnimatePresence, useDragControls } from 'framer-motion';
 import { XMarkIcon, TrashIcon, BookmarkIcon, MagnifyingGlassIcon, WrenchScrewdriverIcon, RectangleStackIcon, ArrowRightIcon, ArrowLeftIcon, BellIcon, CheckCircleIcon, PlayIcon, ChevronDownIcon, CheckIcon } from '@heroicons/react/24/outline';
 import { Bike, WavesLadder, Dumbbell, PersonStanding, Repeat2, Sparkles, Waves, TestTube2, MoreHorizontal, Mountain, Snowflake } from 'lucide-react';
-import { plannedTotals, stepTotalSecs } from './plannedTotals';
+import { plannedTotals, stepTotalSecs, stepsToSave } from './plannedTotals';
 import WorkoutBuilder, {
   PRESET_CATALOG, PRESET_CATEGORY_LABELS, buildPresetSteps, computeEstTSS,
   expandSteps, resolveTargetWatts, resolveTargetPace, resolveTargetSwimPace,
@@ -587,6 +587,10 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
   // through a scrollbar the size of a stamp. The panel around this already
   // scrolls, so there is nothing to protect by keeping the box small.
   const descRef = useRef(null);
+  // "Plan it" used to sit greyed out with no title and no word as to why.
+  // It now stays pressable and points at the field that is missing.
+  const titleRef = useRef(null);
+  const [titleMissing, setTitleMissing] = useState(false);
   const commentRef = useRef(null);
   useAutoGrow(descRef, desc);
   const [tss, setTss]             = useState(workout?.targetTss || '');
@@ -634,6 +638,9 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
   const categoryLabel = (id) => (categories || []).find((c) => c.id === id)?.label || PRESET_CATEGORY_LABELS[id] || id;
   // Build workout section: collapsed until user clicks "Build Workout"
   const [showBuilder, setShowBuilder] = useState((isEdit || arrivesBuilt) && (workout?.steps?.length > 0));
+  // The builder's composer draft (pre-filled, drawn in the chart before
+  // "Build steps" is pressed). Cleared when the builder unmounts.
+  const [pendingDraft, setPendingDraft] = useState(null);
   // Planned manual stats (used when no builder steps)
   const [plannedDurStr, setPlannedDurStr] = useState(
     workout?.plannedDuration ? secsToHMS(workout.plannedDuration) : ''
@@ -679,8 +686,10 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
     // duration — so a session edited from 3h/120 down to 1:25/102 went back to
     // the calendar as 1:25/120, and the card went on claiming a number the
     // builder had already contradicted.
+    // Nothing built yet but a draft on the chart → the draft is what was shown.
+    const savedSteps = stepsToSave({ builderOpen: showBuilder, steps, draft: pendingDraft });
     const totals = plannedTotals({
-      steps, context: effContext, sport,
+      steps: savedSteps, context: effContext, sport,
       typedTss: tss, typedDurationSecs: parseDurStr(plannedDurStr),
     });
     try {
@@ -692,7 +701,7 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
         description: desc,
         comment: comment.trim() || undefined,
         targetTss:       totals.tss,
-        steps,
+        steps:           savedSteps,
         category:        category || null,
         plannedDuration: totals.durationSecs,
         plannedDistance: plannedDistStr
@@ -1032,11 +1041,17 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
               {/* ── Big title input ── */}
               <div className="px-5 pt-5 pb-3">
                 <input
-                  type="text" value={title} onChange={e => setTitle(e.target.value)}
+                  ref={titleRef}
+                  type="text" value={title}
+                  onChange={e => { setTitle(e.target.value); if (e.target.value.trim()) setTitleMissing(false); }}
                   placeholder="Untitled Workout"
-                  className="w-full text-xl font-bold text-slate-900 border-0 border-b-2 border-slate-100 pb-2 focus:border-primary focus:outline-none bg-transparent placeholder:text-slate-300 transition-colors"
+                  aria-invalid={titleMissing || undefined}
+                  className={`w-full text-xl font-bold text-slate-900 border-0 border-b-2 pb-2 focus:outline-none bg-transparent placeholder:text-slate-300 transition-colors ${titleMissing ? 'border-red-400 focus:border-red-400' : 'border-slate-100 focus:border-primary'}`}
                   autoFocus={step === 'build'}
                 />
+                {titleMissing && (
+                  <p className="mt-1.5 text-xs font-medium text-red-500" role="alert">Give the session a title to plan it.</p>
+                )}
               </div>
 
               {/* ── Sport + planned stats row ── */}
@@ -1206,7 +1221,7 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
                     </div>
 
                     {tab === 'builder' && (
-                      <WorkoutBuilder initialSteps={steps} context={effContext} sport={sport} onChange={setSteps} />
+                      <WorkoutBuilder initialSteps={steps} context={effContext} sport={sport} onChange={setSteps} onDraftChange={setPendingDraft} />
                     )}
 
                     {tab === 'templates' && (
@@ -1495,8 +1510,11 @@ export default function WorkoutPlanModal({ date, workout, onSave, onDelete, onCl
               </button>
               <button
                 type="button"
-                onClick={handleSave}
-                disabled={!title.trim() || saving}
+                onClick={() => {
+                  if (!title.trim()) { setTitleMissing(true); titleRef.current?.focus(); return; }
+                  handleSave();
+                }}
+                disabled={saving}
                 className={`flex-[1.2] min-w-0 px-4 py-3 rounded-xl text-white text-sm font-semibold disabled:opacity-40 min-h-[48px] ${sport === 'lactate' ? 'bg-red-500' : 'bg-primary'}`}
               >
                 {saving ? 'Saving…' : isEdit ? 'Update' : sport === 'lactate' ? 'Plan test' : 'Plan it'}

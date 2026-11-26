@@ -45,7 +45,7 @@ const BRAND = {
 
 function formatDateShort(dateLike) {
   try {
-    return new Date(dateLike).toLocaleDateString('cs-CZ', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    return new Date(dateLike).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
   } catch {
     return '—';
   }

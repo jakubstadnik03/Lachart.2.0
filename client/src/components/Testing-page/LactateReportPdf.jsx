@@ -157,7 +157,7 @@ const s = StyleSheet.create({
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 const fmtDate = (d) => {
-  try { return new Date(d).toLocaleDateString('cs-CZ', { day:'2-digit', month:'2-digit', year:'numeric' }); }
+  try { return new Date(d).toLocaleDateString('en-GB', { day:'2-digit', month:'2-digit', year:'numeric' }); }
   catch { return '—'; }
 };
 
